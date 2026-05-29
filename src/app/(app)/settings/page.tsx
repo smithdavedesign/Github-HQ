@@ -1,0 +1,175 @@
+import { auth, signOut } from '@/lib/auth'
+import { redirect } from 'next/navigation'
+import { db } from '@/lib/db'
+import { users, scans } from '@/lib/db/schema'
+import { eq, desc } from 'drizzle-orm'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { formatDistanceToNow } from '@/lib/utils'
+import { Shield, Clock, GitFork, Cpu } from 'lucide-react'
+
+export default async function SettingsPage() {
+  const session = await auth()
+  if (!session?.user?.id) redirect('/login')
+
+  const [user, recentScans] = await Promise.all([
+    db.query.users.findFirst({
+      where: eq(users.id, session.user.id),
+      columns: { id: true, name: true, email: true, image: true, githubLogin: true, lastSyncedAt: true, createdAt: true },
+    }),
+    db.query.scans.findMany({
+      where: eq(scans.userId, session.user.id),
+      orderBy: [desc(scans.startedAt)],
+      limit: 5,
+    }),
+  ])
+
+  const initials = session.user.name?.split(' ').map((n) => n[0]).join('').toUpperCase() ?? '?'
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        <p className="text-muted-foreground text-sm mt-1">Account and sync configuration</p>
+      </div>
+
+      {/* Profile */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Profile</CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center gap-4">
+          <Avatar className="w-14 h-14">
+            <AvatarImage src={session.user.image ?? undefined} />
+            <AvatarFallback>{initials}</AvatarFallback>
+          </Avatar>
+          <div className="space-y-1">
+            <p className="font-medium">{session.user.name}</p>
+            <p className="text-sm text-muted-foreground">{session.user.email}</p>
+            {user?.githubLogin && (
+              <p className="text-xs text-muted-foreground">@{user.githubLogin}</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* GitHub Access */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Shield className="w-4 h-4" />
+            GitHub OAuth Scopes
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            RepoHQ was granted the following permissions when you signed in:
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {['repo', 'read:user', 'read:org', 'read:project', 'read:packages', 'security_events'].map((scope) => (
+              <Badge key={scope} variant="outline" className="font-mono text-xs">{scope}</Badge>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            The <code className="bg-muted px-1 rounded">repo</code> scope is required to access private repositories.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Sync Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            Sync History
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recentScans.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No syncs yet. Use the Sync button in the top bar.</p>
+          ) : (
+            <div className="space-y-2">
+              {recentScans.map((scan) => {
+                const statusColor = scan.status === 'complete' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                  : scan.status === 'running' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
+                  : scan.status === 'failed' ? 'bg-red-500/10 text-red-600 border-red-500/20'
+                  : 'bg-slate-500/10 text-slate-500 border-slate-500/20'
+
+                return (
+                  <div key={scan.id} className="flex items-center justify-between text-sm py-2 border-b last:border-0">
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline" className={`capitalize text-xs ${statusColor}`}>
+                        {scan.status}
+                      </Badge>
+                      <span className="text-muted-foreground capitalize">{scan.type}</span>
+                      {scan.totalRepos != null && scan.totalRepos > 0 && (
+                        <span className="text-muted-foreground text-xs">
+                          {scan.processedRepos}/{scan.totalRepos} repos
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(scan.startedAt)}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Cron Schedule */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Cpu className="w-4 h-4" />
+            Scheduled Jobs
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2 text-sm">
+            {[
+              { label: 'GitHub Sync', schedule: 'Daily at 02:00 UTC', path: '/api/cron/sync' },
+              { label: 'Security Scan', schedule: 'Daily at 03:00 UTC', path: '/api/cron/security' },
+              { label: 'Deployment Checks', schedule: 'Daily at 04:00 UTC', path: '/api/cron/deployments' },
+              { label: 'AI Summaries', schedule: 'Sundays at 05:00 UTC', path: '/api/cron/ai-summary' },
+            ].map(({ label, schedule, path }) => (
+              <div key={path} className="flex items-center justify-between py-1.5 border-b last:border-0">
+                <div>
+                  <p className="font-medium">{label}</p>
+                  <p className="text-xs text-muted-foreground font-mono">{path}</p>
+                </div>
+                <span className="text-xs text-muted-foreground">{schedule}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground mt-3">
+            Running on Vercel Hobby (daily limit). Upgrade to Pro for higher frequency.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Separator />
+
+      {/* Sign out */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium">Sign out</p>
+          <p className="text-xs text-muted-foreground">
+            Member since {formatDistanceToNow(user?.createdAt ?? null)}
+          </p>
+        </div>
+        <form action={async () => {
+          'use server'
+          await signOut({ redirectTo: '/login' })
+        }}>
+          <Button variant="outline" size="sm" type="submit">Sign out</Button>
+        </form>
+      </div>
+    </div>
+  )
+}
