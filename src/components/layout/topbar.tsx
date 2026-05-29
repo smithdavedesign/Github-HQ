@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useTheme } from 'next-themes'
+import { useTheme } from '@/components/layout/theme-provider'
 import { useState } from 'react'
 import { triggerSync } from '@/lib/actions/sync'
 import { toast } from 'sonner'
@@ -66,7 +66,7 @@ export function Topbar({ user, lastSyncedAt }: TopbarProps) {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}
           className="w-8 h-8"
         >
           <Sun className="w-4 h-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />

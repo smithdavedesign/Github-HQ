@@ -3,9 +3,14 @@ import { MetricCard } from '@/components/dashboard/metric-card'
 import { HealthBadge } from '@/components/repos/health-badge'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { auth } from '@/lib/auth'
+import { redirect } from 'next/navigation'
 import Link from 'next/link'
 
 export default async function DashboardPage() {
+  const session = await auth()
+  if (!session?.user?.id) redirect('/login')
+
   const [stats, repos] = await Promise.all([getDashboardStats(), getRepositories()])
 
   const topRepos = repos

@@ -3,13 +3,13 @@
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, techStack, deployments, securityFindings } from '@/lib/db/schema'
-import { eq, desc, and, sql } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 
 export async function getRepositories() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  return db.query.repositories.findMany({
+  const rows = await db.query.repositories.findMany({
     where: eq(repositories.userId, session.user.id),
     with: {
       metrics: true,
@@ -19,8 +19,11 @@ export async function getRepositories() {
         where: eq(securityFindings.state, 'open'),
       },
     },
-    orderBy: [desc(repositoryMetrics.healthScore)],
   })
+
+  // Sort by health score descending (health score lives on the related metrics table,
+  // not on repositories, so ORDER BY in the lateral-join query won't work)
+  return rows.sort((a, b) => (b.metrics?.healthScore ?? -1) - (a.metrics?.healthScore ?? -1))
 }
 
 export async function getRepositoryById(id: number) {

@@ -1,6 +1,10 @@
 # RepoHQ
 
+**Live:** https://repohq.vercel.app
+
 Personal GitHub portfolio health dashboard. Connect your GitHub account and get a single-pane-of-glass view of every repository — public and private — with health scores, security alerts, deployment status, and AI-generated summaries.
+
+→ [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
 
 ## Features
 

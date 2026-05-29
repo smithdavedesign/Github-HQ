@@ -31,15 +31,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       return session
     },
+  },
+  events: {
     async signIn({ user, account }) {
-      // Store the GitHub access token on the user record for API calls
+      // Store the GitHub access token after the adapter has finished creating the user
       if (account?.provider === 'github' && account.access_token && user.id) {
         await db
           .update(users)
           .set({ githubToken: account.access_token })
           .where(eq(users.id, user.id))
       }
-      return true
     },
   },
   pages: {

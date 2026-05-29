@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import { Toaster } from '@/components/ui/sonner'
-import { ThemeProvider } from '@/components/layout/theme-provider'
 import { QueryProvider } from '@/components/layout/query-provider'
 
 const geistSans = Geist({
@@ -28,12 +27,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${geistSans.variable} ${geistMono.variable} h-full`}
     >
       <body className="h-full antialiased">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <QueryProvider>
-            {children}
-            <Toaster richColors />
-          </QueryProvider>
-        </ThemeProvider>
+        <QueryProvider>
+          {children}
+          <Toaster richColors />
+        </QueryProvider>
       </body>
     </html>
   )
