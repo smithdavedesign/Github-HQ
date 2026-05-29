@@ -1,0 +1,232 @@
+import {
+  pgTable,
+  text,
+  integer,
+  boolean,
+  timestamp,
+  serial,
+  real,
+  jsonb,
+  index,
+} from 'drizzle-orm/pg-core'
+import { relations } from 'drizzle-orm'
+
+// ─── Auth.js required tables ─────────────────────────────────────────────────
+
+export const accounts = pgTable('accounts', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  provider: text('provider').notNull(),
+  providerAccountId: text('provider_account_id').notNull(),
+  refresh_token: text('refresh_token'),
+  access_token: text('access_token'),
+  expires_at: integer('expires_at'),
+  token_type: text('token_type'),
+  scope: text('scope'),
+  id_token: text('id_token'),
+  session_state: text('session_state'),
+})
+
+export const sessions = pgTable('sessions', {
+  sessionToken: text('session_token').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  expires: timestamp('expires', { mode: 'date' }).notNull(),
+})
+
+export const verificationTokens = pgTable('verification_tokens', {
+  identifier: text('identifier').notNull(),
+  token: text('token').notNull().unique(),
+  expires: timestamp('expires', { mode: 'date' }).notNull(),
+})
+
+// ─── Users ───────────────────────────────────────────────────────────────────
+
+export const users = pgTable('users', {
+  id: text('id').primaryKey(),
+  name: text('name'),
+  email: text('email').unique(),
+  emailVerified: timestamp('email_verified', { mode: 'date' }),
+  image: text('image'),
+  githubId: integer('github_id').unique(),
+  githubLogin: text('github_login'),
+  githubToken: text('github_token'), // stored encrypted by Auth.js adapter
+  lastSyncedAt: timestamp('last_synced_at', { mode: 'date' }),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+})
+
+// ─── Repositories ─────────────────────────────────────────────────────────────
+
+export const repositories = pgTable('repositories', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  githubId: integer('github_id').notNull(),
+  name: text('name').notNull(),
+  owner: text('owner').notNull(),
+  fullName: text('full_name').notNull(),
+  visibility: text('visibility').notNull().default('public'), // public | private | internal
+  description: text('description'),
+  defaultBranch: text('default_branch').default('main'),
+  homepage: text('homepage'),
+  stars: integer('stars').default(0),
+  forks: integer('forks').default(0),
+  language: text('language'),
+  isArchived: boolean('is_archived').default(false),
+  isFork: boolean('is_fork').default(false),
+  isRevenueGenerating: boolean('is_revenue_generating').default(false),
+  tags: text('tags').array().default([]),
+  aiSummary: jsonb('ai_summary'), // { what_it_does, maturity, risk, recommendations[] }
+  aiSummaryGeneratedAt: timestamp('ai_summary_generated_at', { mode: 'date' }),
+  createdAt: timestamp('created_at', { mode: 'date' }).notNull(),
+  updatedAt: timestamp('updated_at', { mode: 'date' }).notNull(),
+  syncedAt: timestamp('synced_at', { mode: 'date' }).defaultNow(),
+}, (table) => [
+  index('repos_user_id_idx').on(table.userId),
+  index('repos_github_id_idx').on(table.githubId),
+])
+
+// ─── Repository Metrics ───────────────────────────────────────────────────────
+
+export const repositoryMetrics = pgTable('repository_metrics', {
+  id: serial('id').primaryKey(),
+  repoId: integer('repo_id').notNull().references(() => repositories.id, { onDelete: 'cascade' }).unique(),
+  healthScore: real('health_score').default(0),
+  activityScore: real('activity_score').default(0),
+  securityScore: real('security_score').default(100),
+  documentationScore: real('documentation_score').default(0),
+  testingScore: real('testing_score').default(0),
+  dependencyScore: real('dependency_score').default(50),
+  qualityScore: real('quality_score').default(70),
+  lastCommit: timestamp('last_commit', { mode: 'date' }),
+  lastPush: timestamp('last_push', { mode: 'date' }),
+  openIssues: integer('open_issues').default(0),
+  openPrs: integer('open_prs').default(0),
+  weeklyCommits: integer('weekly_commits').default(0),
+  monthlyCommits: integer('monthly_commits').default(0),
+  quarterlyCommits: integer('quarterly_commits').default(0),
+  activityStatus: text('activity_status').default('unknown'), // Actively Maintained | Low Activity | Dormant | Abandoned
+  calculatedAt: timestamp('calculated_at', { mode: 'date' }).defaultNow(),
+}, (table) => [
+  index('metrics_repo_id_idx').on(table.repoId),
+])
+
+// ─── Tech Stack ───────────────────────────────────────────────────────────────
+
+export const techStack = pgTable('tech_stack', {
+  id: serial('id').primaryKey(),
+  repoId: integer('repo_id').notNull().references(() => repositories.id, { onDelete: 'cascade' }).unique(),
+  frontend: text('frontend'),   // Next.js | React | Vue | etc.
+  backend: text('backend'),     // Express | Node | Server Actions | etc.
+  database: text('database'),   // PostgreSQL | MySQL | MongoDB | etc.
+  hosting: text('hosting'),     // Vercel | AWS | Render | etc.
+  language: text('language'),   // TypeScript | JavaScript | Python | etc.
+  testing: text('testing'),     // Jest | Vitest | Cypress | etc.
+  analytics: text('analytics'), // PostHog | Mixpanel | Vercel Analytics | etc.
+  aiTools: text('ai_tools'),    // Claude | OpenAI | etc.
+  ciCd: text('ci_cd'),          // GitHub Actions | CircleCI | etc.
+  detectedAt: timestamp('detected_at', { mode: 'date' }).defaultNow(),
+})
+
+// ─── Deployments ──────────────────────────────────────────────────────────────
+
+export const deployments = pgTable('deployments', {
+  id: serial('id').primaryKey(),
+  repoId: integer('repo_id').notNull().references(() => repositories.id, { onDelete: 'cascade' }),
+  url: text('url').notNull(),
+  provider: text('provider'), // vercel | netlify | render | railway | custom
+  status: text('status').default('unknown'), // healthy | slow | down | unknown
+  lastChecked: timestamp('last_checked', { mode: 'date' }),
+  responseTimeMs: integer('response_time_ms'),
+  sslValid: boolean('ssl_valid'),
+  sslExpiry: timestamp('ssl_expiry', { mode: 'date' }),
+  httpStatus: integer('http_status'),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow(),
+}, (table) => [
+  index('deployments_repo_id_idx').on(table.repoId),
+])
+
+// ─── Security Findings ────────────────────────────────────────────────────────
+
+export const securityFindings = pgTable('security_findings', {
+  id: serial('id').primaryKey(),
+  repoId: integer('repo_id').notNull().references(() => repositories.id, { onDelete: 'cascade' }),
+  githubAlertId: integer('github_alert_id'),
+  type: text('type').notNull(), // dependabot | secret | vulnerability | license
+  severity: text('severity').notNull(), // critical | high | medium | low | info
+  title: text('title').notNull(),
+  description: text('description'),
+  packageName: text('package_name'),
+  state: text('state').default('open'), // open | dismissed | fixed
+  dismissedAt: timestamp('dismissed_at', { mode: 'date' }),
+  fixedAt: timestamp('fixed_at', { mode: 'date' }),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow(),
+}, (table) => [
+  index('security_repo_id_idx').on(table.repoId),
+  index('security_severity_idx').on(table.severity),
+])
+
+// ─── Scans ────────────────────────────────────────────────────────────────────
+
+export const scans = pgTable('scans', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(), // sync | security | deployment | ai
+  status: text('status').default('pending'), // pending | running | complete | failed
+  totalRepos: integer('total_repos').default(0),
+  processedRepos: integer('processed_repos').default(0),
+  error: text('error'),
+  startedAt: timestamp('started_at', { mode: 'date' }).defaultNow(),
+  completedAt: timestamp('completed_at', { mode: 'date' }),
+}, (table) => [
+  index('scans_user_id_idx').on(table.userId),
+])
+
+// ─── Relations ────────────────────────────────────────────────────────────────
+
+export const usersRelations = relations(users, ({ many }) => ({
+  repositories: many(repositories),
+  scans: many(scans),
+}))
+
+export const repositoriesRelations = relations(repositories, ({ one, many }) => ({
+  user: one(users, { fields: [repositories.userId], references: [users.id] }),
+  metrics: one(repositoryMetrics, { fields: [repositories.id], references: [repositoryMetrics.repoId] }),
+  techStack: one(techStack, { fields: [repositories.id], references: [techStack.repoId] }),
+  deployments: many(deployments),
+  securityFindings: many(securityFindings),
+}))
+
+export const repositoryMetricsRelations = relations(repositoryMetrics, ({ one }) => ({
+  repository: one(repositories, { fields: [repositoryMetrics.repoId], references: [repositories.id] }),
+}))
+
+export const techStackRelations = relations(techStack, ({ one }) => ({
+  repository: one(repositories, { fields: [techStack.repoId], references: [repositories.id] }),
+}))
+
+export const deploymentsRelations = relations(deployments, ({ one }) => ({
+  repository: one(repositories, { fields: [deployments.repoId], references: [repositories.id] }),
+}))
+
+export const securityFindingsRelations = relations(securityFindings, ({ one }) => ({
+  repository: one(repositories, { fields: [securityFindings.repoId], references: [repositories.id] }),
+}))
+
+export const scansRelations = relations(scans, ({ one }) => ({
+  user: one(users, { fields: [scans.userId], references: [users.id] }),
+}))
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type User = typeof users.$inferSelect
+export type Repository = typeof repositories.$inferSelect
+export type RepositoryMetrics = typeof repositoryMetrics.$inferSelect
+export type TechStack = typeof techStack.$inferSelect
+export type Deployment = typeof deployments.$inferSelect
+export type SecurityFinding = typeof securityFindings.$inferSelect
+export type Scan = typeof scans.$inferSelect
+export type InsertRepository = typeof repositories.$inferInsert
+export type InsertRepositoryMetrics = typeof repositoryMetrics.$inferInsert
+export type InsertTechStack = typeof techStack.$inferInsert
+export type InsertDeployment = typeof deployments.$inferInsert
+export type InsertSecurityFinding = typeof securityFindings.$inferInsert

@@ -1,0 +1,20 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/sync",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/security",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/deployments",
+      "schedule": "0 */12 * * *"
+    },
+    {
+      "path": "/api/cron/ai-summary",
+      "schedule": "0 3 * * 0"
+    }
+  ]
+}
