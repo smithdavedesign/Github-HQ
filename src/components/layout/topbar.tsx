@@ -12,7 +12,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTheme } from '@/components/layout/theme-provider'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { triggerSync } from '@/lib/actions/sync'
 import { toast } from 'sonner'
 
@@ -28,15 +29,30 @@ interface TopbarProps {
 export function Topbar({ user, lastSyncedAt }: TopbarProps) {
   const { theme, setTheme } = useTheme()
   const [syncing, setSyncing] = useState(false)
+  const router = useRouter()
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Stop polling when component unmounts
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
 
   async function handleSync() {
     setSyncing(true)
     try {
       await triggerSync()
-      toast.success('Sync started — your repos will update shortly.')
+      toast.success('Sync started — refreshing as repos come in…')
+
+      // Refresh page data every 5s for up to 3 minutes so new repos appear live
+      let ticks = 0
+      pollRef.current = setInterval(() => {
+        router.refresh()
+        ticks++
+        if (ticks >= 36) {
+          clearInterval(pollRef.current!)
+          setSyncing(false)
+        }
+      }, 5000)
     } catch {
       toast.error('Failed to start sync. Please try again.')
-    } finally {
       setSyncing(false)
     }
   }
