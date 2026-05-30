@@ -37,14 +37,15 @@ export async function syncAllRepos(userId: string): Promise<void> {
 
     await db.update(scans).set({ totalRepos: repos.length }).where(eq(scans.id, scan.id))
 
-    for (let i = 0; i < repos.length; i++) {
-      const repo = repos[i]
+    let processed = 0
+    for (const repo of repos) {
       try {
         await syncSingleRepo(userId, user.githubToken, repo)
-      } catch {
-        // Continue even if individual repo sync fails
+        processed++
+        await db.update(scans).set({ processedRepos: processed }).where(eq(scans.id, scan.id))
+      } catch (err) {
+        console.error(`[sync] failed repo ${repo.full_name}:`, err instanceof Error ? err.message : err)
       }
-      await db.update(scans).set({ processedRepos: i + 1 }).where(eq(scans.id, scan.id))
     }
 
     await db.update(users).set({ lastSyncedAt: new Date() }).where(eq(users.id, userId))

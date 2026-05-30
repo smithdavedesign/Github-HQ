@@ -8,6 +8,7 @@ import {
   real,
   jsonb,
   index,
+  uniqueIndex,
   primaryKey,
 } from 'drizzle-orm/pg-core'
 import { relations } from 'drizzle-orm'
@@ -92,7 +93,7 @@ export const repositories = pgTable('repositories', {
   syncedAt: timestamp('synced_at', { mode: 'date' }).defaultNow(),
 }, (table) => [
   index('repos_user_id_idx').on(table.userId),
-  index('repos_github_id_idx').on(table.githubId),
+  uniqueIndex('repos_github_id_idx').on(table.githubId),
 ])
 
 // ─── Repository Metrics ───────────────────────────────────────────────────────

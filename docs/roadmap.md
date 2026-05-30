@@ -13,6 +13,10 @@
 - [x] Neon PostgreSQL persistence (Drizzle ORM)
 - [x] Vercel deployment with daily cron jobs
 - [x] Dark mode toggle
+- [x] Settings page (profile, OAuth scopes, sync history, cron schedule)
+- [x] 54 unit tests (Vitest) — health scoring, scanner detection, uptime, utils
+- [x] 38 e2e tests (Playwright) — all pages, auth flows, table interactions
+- [x] Live at https://repohq.vercel.app
 
 ---
 
