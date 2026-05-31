@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { syncAllRepos } from '@/lib/github/sync'
 import { snapshotHealthScores } from '@/lib/health/history'
+import { refreshGoalProgress } from '@/lib/actions/goals'
 import { isNotNull } from 'drizzle-orm'
 
 function verifyCronSecret(request: Request): boolean {
@@ -23,8 +24,10 @@ export async function GET(request: Request) {
   for (const user of allUsers) {
     try {
       await syncAllRepos(user.id)
-      // Snapshot health scores after sync — one row per repo per day
-      await snapshotHealthScores(user.id)
+      await Promise.allSettled([
+        snapshotHealthScores(user.id),
+        refreshGoalProgress(user.id),
+      ])
       processed++
     } catch {
       // Continue to next user

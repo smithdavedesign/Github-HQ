@@ -9,14 +9,16 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { formatDistanceToNow } from '@/lib/utils'
-import { Shield, Clock, GitFork, Cpu } from 'lucide-react'
+import { Shield, Clock, GitFork, Cpu, Target } from 'lucide-react'
 import { PublicProfileToggle } from '@/components/settings/public-profile-toggle'
+import { GoalManager } from '@/components/settings/goal-manager'
+import { getGoals } from '@/lib/actions/goals'
 
 export default async function SettingsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [user, recentScans] = await Promise.all([
+  const [user, recentScans, activeGoals] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, session.user.id),
       columns: { id: true, name: true, email: true, image: true, githubLogin: true, lastSyncedAt: true, createdAt: true, publicProfile: true },
@@ -26,6 +28,7 @@ export default async function SettingsPage() {
       orderBy: [desc(scans.startedAt)],
       limit: 5,
     }),
+    getGoals(),
   ])
 
   const initials = session.user.name?.split(' ').map((n) => n[0]).join('').toUpperCase() ?? '?'
@@ -151,6 +154,19 @@ export default async function SettingsPage() {
           <p className="text-xs text-muted-foreground mt-3">
             Running on Vercel Hobby (daily limit). Upgrade to Pro for higher frequency.
           </p>
+        </CardContent>
+      </Card>
+
+      {/* Goals */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Target className="w-4 h-4" />
+            Goals
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <GoalManager initialGoals={activeGoals} />
         </CardContent>
       </Card>
 

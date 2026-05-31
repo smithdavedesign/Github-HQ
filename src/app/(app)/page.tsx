@@ -6,6 +6,8 @@ import { OpportunityPanel } from '@/components/dashboard/opportunity-panel'
 import { LifecycleDistribution } from '@/components/dashboard/lifecycle-distribution'
 import { AdvisorCard } from '@/components/dashboard/advisor-card'
 import { PortfolioValuation } from '@/components/dashboard/portfolio-valuation'
+import { GoalsCard } from '@/components/dashboard/goals-card'
+import { getGoals } from '@/lib/actions/goals'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { auth } from '@/lib/auth'
@@ -17,7 +19,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, digest, opportunity, lifecycleDistribution, valuation, advisor] = await Promise.all([
+  const [stats, repos, digest, opportunity, lifecycleDistribution, valuation, advisor, activeGoals] = await Promise.all([
     getDashboardStats(),
     getRepositories(),
     getLatestDigest(session.user.id),
@@ -25,6 +27,7 @@ export default async function DashboardPage() {
     getLifecycleDistribution(),
     getPortfolioValuation(),
     getLatestAdvisorContent(),
+    getGoals(),
   ])
 
   const topRepos = repos
@@ -108,8 +111,11 @@ export default async function DashboardPage() {
         <LifecycleDistribution distribution={lifecycleDistribution} />
       </div>
 
-      {/* AI Portfolio Advisor (Phase 14) */}
-      <AdvisorCard advisor={advisor} />
+      {/* Goals (Phase 17) + Advisor (Phase 14) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <GoalsCard goals={activeGoals} />
+        <AdvisorCard advisor={advisor} />
+      </div>
 
       {/* Opportunity Scoring (Phase 4) */}
       <OpportunityPanel

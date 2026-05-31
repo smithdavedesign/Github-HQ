@@ -142,18 +142,17 @@ Historical trend charts — health over time, opportunity over time, revenue ove
 - [ ] Revenue trend if MRR data exists
 
 ### Phase 17 — Goal Tracking
-Set portfolio-level or per-repo goals. AI recommends which repos to focus on.
-
-- [ ] `goals` table: type (mrr, health, repos_live), target, deadline
-- [ ] Goal progress card on dashboard
-- [ ] AI recommendation: "to reach $5k MRR, focus on Repo X and Repo Y"
+- [x] `goals` table: type (mrr | health_avg | repos_live | revenue_repos | custom), target, deadline, notes
+- [x] Goal CRUD actions: createGoal, deleteGoal, updateCustomGoalProgress, refreshGoalProgress
+- [x] Auto-progress computed from live data on every sync
+- [x] GoalsCard on dashboard — progress bars, deadline countdown, On Track / Behind status
+- [x] GoalManager in Settings — type presets, target input, optional deadline
 
 ### Phase 18 — Portfolio Resume & Shareable Reports
-Auto-generated public-facing summaries for consultants, job seekers, and sharing.
-
-- [ ] Portfolio resume at `/u/[username]/resume` — stats card designed for sharing
-- [ ] Quarterly report at `/u/[username]/report/2026-q2` — charts + AI commentary
-- [ ] Social card image (OG image) for portfolio pages
+- [x] Portfolio resume at `/u/[username]/resume` — print-friendly, skills, top projects, stats bar
+- [x] Dynamic OG image for `/u/[username]` — dark card, name, repo count, avg health
+- [x] Quarterly report at `/u/[username]/report/2026-q2` — repos added, health trend, security, AI commentary
+- [x] Quarter URL parsing: `YYYY-q[1-4]`, graceful when data is sparse
 
 ### Phase 19 — Dependency Risk Monitoring
 Track dependency versions across all repos against the current latest.

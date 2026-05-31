@@ -241,6 +241,25 @@ export const digests = pgTable('digests', {
   index('digests_user_id_idx').on(table.userId),
 ])
 
+// ─── Goals (Phase 17) ────────────────────────────────────────────────────────
+
+export const goals = pgTable('goals', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(), // mrr | health_avg | repos_live | revenue_repos | custom
+  name: text('name').notNull(),
+  targetValue: real('target_value').notNull(),
+  currentValue: real('current_value').default(0),
+  unit: text('unit').default(''),   // '$', 'repos', 'score', or custom label
+  deadline: date('deadline'),       // optional target date YYYY-MM-DD
+  notes: text('notes'),
+  isActive: boolean('is_active').default(true),
+  completedAt: timestamp('completed_at', { mode: 'date' }),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow(),
+}, (table) => [
+  index('goals_user_id_idx').on(table.userId),
+])
+
 // ─── Relations ────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -284,6 +303,10 @@ export const digestsRelations = relations(digests, ({ one }) => ({
   user: one(users, { fields: [digests.userId], references: [users.id] }),
 }))
 
+export const goalsRelations = relations(goals, ({ one }) => ({
+  user: one(users, { fields: [goals.userId], references: [users.id] }),
+}))
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type User = typeof users.$inferSelect
@@ -300,3 +323,5 @@ export type InsertDeployment = typeof deployments.$inferInsert
 export type InsertSecurityFinding = typeof securityFindings.$inferInsert
 export type HealthScoreHistory = typeof healthScoreHistory.$inferSelect
 export type Digest = typeof digests.$inferSelect
+export type Goal = typeof goals.$inferSelect
+export type InsertGoal = typeof goals.$inferInsert
