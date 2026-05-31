@@ -6,6 +6,7 @@ import {
   timestamp,
   serial,
   real,
+  numeric,
   jsonb,
   index,
   uniqueIndex,
@@ -86,6 +87,10 @@ export const repositories = pgTable('repositories', {
   isFork: boolean('is_fork').default(false),
   isRevenueGenerating: boolean('is_revenue_generating').default(false),
   tags: text('tags').array().default([]),
+  // Revenue & cost fields (Phase 3)
+  mrr: numeric('mrr', { precision: 10, scale: 2 }).default('0'),
+  arr: numeric('arr', { precision: 10, scale: 2 }).default('0'),
+  monthlyCost: numeric('monthly_cost', { precision: 10, scale: 2 }).default('0'),
   aiSummary: jsonb('ai_summary'), // { what_it_does, maturity, risk, recommendations[] }
   aiSummaryGeneratedAt: timestamp('ai_summary_generated_at', { mode: 'date' }),
   createdAt: timestamp('created_at', { mode: 'date' }).notNull(),
@@ -116,6 +121,8 @@ export const repositoryMetrics = pgTable('repository_metrics', {
   monthlyCommits: integer('monthly_commits').default(0),
   quarterlyCommits: integer('quarterly_commits').default(0),
   activityStatus: text('activity_status').default('unknown'), // Actively Maintained | Low Activity | Dormant | Abandoned
+  buildStatus: text('build_status'), // success | failure | cancelled | in_progress | null
+  weeklyCommitData: jsonb('weekly_commit_data'), // last 13 weeks: [{ week: timestamp, total: number }]
   calculatedAt: timestamp('calculated_at', { mode: 'date' }).defaultNow(),
 }, (table) => [
   index('metrics_repo_id_idx').on(table.repoId),

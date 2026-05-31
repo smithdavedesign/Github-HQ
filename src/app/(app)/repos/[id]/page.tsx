@@ -4,8 +4,13 @@ import { HealthBadge, ActivityBadge } from '@/components/repos/health-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ExternalLink, GitFork, Star, AlertTriangle, Lock, Globe } from 'lucide-react'
+import { ExternalLink, GitFork, Star, AlertTriangle, Lock, Globe, CheckCircle, XCircle, Clock } from 'lucide-react'
 import { formatDistanceToNow } from '@/lib/utils'
+import { CommitActivityChart } from '@/components/repos/commit-activity-chart'
+import { TagEditor } from '@/components/repos/tag-editor'
+import { RevenueEditor } from '@/components/repos/revenue-editor'
+import { ResyncButton } from '@/components/repos/resync-button'
+
 type Props = { params: Promise<{ id: string }> }
 
 export default async function RepoDetailPage({ params }: Props) {
@@ -25,6 +30,23 @@ export default async function RepoDetailPage({ params }: Props) {
   const openFindings = repo.securityFindings.filter((f) => f.state === 'open')
   const criticalCount = openFindings.filter((f) => f.severity === 'critical').length
   const highCount = openFindings.filter((f) => f.severity === 'high').length
+
+  const weeklyCommitData = metrics?.weeklyCommitData as { week: number; total: number }[] | null
+
+  function BuildStatusBadge({ status }: { status: string | null }) {
+    if (!status) return <span className="text-muted-foreground text-xs">—</span>
+    const icon = status === 'success' ? <CheckCircle className="w-3 h-3" />
+      : status === 'failure' ? <XCircle className="w-3 h-3" />
+        : <Clock className="w-3 h-3" />
+    const color = status === 'success' ? 'text-emerald-600 dark:text-emerald-400'
+      : status === 'failure' ? 'text-red-600 dark:text-red-400'
+        : 'text-amber-600 dark:text-amber-400'
+    return (
+      <span className={`flex items-center gap-1 text-xs font-medium capitalize ${color}`}>
+        {icon} {status}
+      </span>
+    )
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -46,31 +68,30 @@ export default async function RepoDetailPage({ params }: Props) {
             <span className="flex items-center gap-1"><Star className="w-3 h-3" /> {repo.stars}</span>
             <span className="flex items-center gap-1"><GitFork className="w-3 h-3" /> {repo.forks}</span>
             {repo.homepage && (
-              <a
-                href={repo.homepage}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 hover:text-foreground transition-colors"
-              >
+              <a href={repo.homepage} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground transition-colors">
                 <ExternalLink className="w-3 h-3" /> {repo.homepage.replace(/^https?:\/\//, '')}
               </a>
             )}
           </div>
         </div>
 
-        {metrics?.activityStatus && <ActivityBadge status={metrics.activityStatus} />}
+        <div className="flex items-center gap-2 flex-wrap">
+          {metrics?.activityStatus && <ActivityBadge status={metrics.activityStatus} />}
+          <ResyncButton repoId={repo.id} />
+        </div>
       </div>
 
       {/* Metrics row */}
       {metrics && (
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+        <div className="grid grid-cols-3 sm:grid-cols-7 gap-3">
           {[
             { label: 'Health', value: metrics.healthScore ?? '—' },
             { label: 'Activity', value: metrics.activityScore ?? '—' },
             { label: 'Security', value: metrics.securityScore ?? '—' },
             { label: 'Docs', value: metrics.documentationScore ?? '—' },
             { label: 'Testing', value: metrics.testingScore ?? '—' },
-            { label: 'Open Issues', value: metrics.openIssues ?? 0 },
+            { label: 'Issues', value: metrics.openIssues ?? 0 },
+            { label: 'PRs', value: metrics.openPrs ?? 0 },
           ].map(({ label, value }) => (
             <Card key={label} className="p-3">
               <p className="text-xs text-muted-foreground">{label}</p>
@@ -82,18 +103,17 @@ export default async function RepoDetailPage({ params }: Props) {
 
       {/* Tabs */}
       <Tabs defaultValue="overview">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="stack">Tech Stack</TabsTrigger>
           <TabsTrigger value="security">
             Security
             {openFindings.length > 0 && (
-              <Badge variant="destructive" className="ml-1.5 h-4 px-1 text-xs">
-                {openFindings.length}
-              </Badge>
+              <Badge variant="destructive" className="ml-1.5 h-4 px-1 text-xs">{openFindings.length}</Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="deployments">Deployments</TabsTrigger>
+          <TabsTrigger value="revenue">Revenue</TabsTrigger>
           <TabsTrigger value="ai">AI Summary</TabsTrigger>
         </TabsList>
 
@@ -109,8 +129,8 @@ export default async function RepoDetailPage({ params }: Props) {
               <p className="font-medium">{metrics?.monthlyCommits ?? '—'}</p>
             </div>
             <div>
-              <p className="text-muted-foreground text-xs">Open PRs</p>
-              <p className="font-medium">{metrics?.openPrs ?? '—'}</p>
+              <p className="text-muted-foreground text-xs">Build Status</p>
+              <BuildStatusBadge status={metrics?.buildStatus ?? null} />
             </div>
             <div>
               <p className="text-muted-foreground text-xs">Default Branch</p>
@@ -124,6 +144,17 @@ export default async function RepoDetailPage({ params }: Props) {
               <p className="text-muted-foreground text-xs">Created</p>
               <p className="font-medium">{formatDistanceToNow(repo.createdAt)}</p>
             </div>
+          </div>
+
+          {/* Commit activity chart */}
+          {weeklyCommitData && weeklyCommitData.length > 0 && (
+            <CommitActivityChart data={weeklyCommitData} />
+          )}
+
+          {/* Tags */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-2">Tags</p>
+            <TagEditor repoId={repo.id} initialTags={repo.tags ?? []} />
           </div>
         </TabsContent>
 
@@ -181,8 +212,8 @@ export default async function RepoDetailPage({ params }: Props) {
                     {openFindings.map((f) => {
                       const severityColor = f.severity === 'critical' ? 'text-red-600 dark:text-red-400'
                         : f.severity === 'high' ? 'text-orange-600 dark:text-orange-400'
-                        : f.severity === 'medium' ? 'text-amber-600 dark:text-amber-400'
-                        : 'text-slate-600 dark:text-slate-400'
+                          : f.severity === 'medium' ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-slate-600 dark:text-slate-400'
                       return (
                         <tr key={f.id} className="border-t">
                           <td className={`px-4 py-2 font-medium capitalize ${severityColor}`}>{f.severity}</td>
@@ -207,34 +238,36 @@ export default async function RepoDetailPage({ params }: Props) {
               {repo.deployments.map((dep) => {
                 const statusColor = dep.status === 'healthy' ? 'text-emerald-600 dark:text-emerald-400'
                   : dep.status === 'slow' ? 'text-amber-600 dark:text-amber-400'
-                  : 'text-red-600 dark:text-red-400'
+                    : 'text-red-600 dark:text-red-400'
                 return (
                   <Card key={dep.id} className="p-4">
                     <div className="flex items-center justify-between gap-4 flex-wrap">
                       <div>
-                        <a
-                          href={dep.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-sm hover:underline flex items-center gap-1"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          {dep.url}
+                        <a href={dep.url} target="_blank" rel="noopener noreferrer" className="font-medium text-sm hover:underline flex items-center gap-1">
+                          <ExternalLink className="w-3.5 h-3.5" />{dep.url}
                         </a>
                         <p className="text-xs text-muted-foreground mt-1">
                           Last checked {formatDistanceToNow(dep.lastChecked)}
                           {dep.responseTimeMs && ` · ${dep.responseTimeMs}ms`}
                         </p>
                       </div>
-                      <span className={`text-sm font-medium capitalize ${statusColor}`}>
-                        {dep.status ?? 'Unknown'}
-                      </span>
+                      <span className={`text-sm font-medium capitalize ${statusColor}`}>{dep.status ?? 'Unknown'}</span>
                     </div>
                   </Card>
                 )
               })}
             </div>
           )}
+        </TabsContent>
+
+        {/* Revenue */}
+        <TabsContent value="revenue" className="pt-4">
+          <RevenueEditor
+            repoId={repo.id}
+            initialMrr={String(repo.mrr ?? '0')}
+            initialArr={String(repo.arr ?? '0')}
+            initialMonthlyCost={String(repo.monthlyCost ?? '0')}
+          />
         </TabsContent>
 
         {/* AI Summary */}
@@ -257,10 +290,7 @@ export default async function RepoDetailPage({ params }: Props) {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Risk</p>
-                    <Badge
-                      variant="outline"
-                      className={`mt-1 ${summary.risk === 'High' ? 'border-red-500 text-red-600' : summary.risk === 'Medium' ? 'border-amber-500 text-amber-600' : 'border-emerald-500 text-emerald-600'}`}
-                    >
+                    <Badge variant="outline" className={`mt-1 ${summary.risk === 'High' ? 'border-red-500 text-red-600' : summary.risk === 'Medium' ? 'border-amber-500 text-amber-600' : 'border-emerald-500 text-emerald-600'}`}>
                       {summary.risk}
                     </Badge>
                   </div>

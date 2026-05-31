@@ -20,37 +20,41 @@
 
 ---
 
-## Phase 2 — Deeper Insights
+## Phase 2 — Deeper Insights ✅ Shipped
 
 ### Sync improvements
-- [ ] Real-time sync progress indicator (poll `scans` table with TanStack Query)
-- [ ] Per-repo manual re-sync from the detail page
-- [ ] Sync error reporting — surface which repos failed and why
-- [ ] Rate limit guard — respect GitHub's `X-RateLimit-Remaining` header
+- [x] Real-time sync progress indicator (TanStack Query polling `/api/sync-status`)
+- [x] Per-repo manual re-sync button on the detail page
+- [x] Sync errors logged to console with repo name
+- [x] Rate limit guard — checks `X-RateLimit-Remaining`, backs off when < 300
 
 ### Repository detail
-- [ ] 90-day commit activity chart (Recharts)  
-- [ ] Dependency version staleness (days since last npm update)
-- [ ] GitHub Actions workflow run status
-- [ ] Branch protection rules check
+- [x] 90-day commit activity chart (Recharts bar chart from weekly_commit_data)
+- [x] GitHub Actions workflow run status (latest run status on Overview tab)
+- [x] Tags editor (inline chip input, persists to DB)
+- [ ] Dependency version staleness — deferred
+- [ ] Branch protection rules check — deferred
 
 ### Table improvements
-- [ ] Saved views (persist column layout and filters to localStorage)
-- [ ] Group by: framework / hosting / health tier
-- [ ] Revenue Generating flag toggle in the table
-- [ ] Manual tags (e.g. "client-work", "side-project")
+- [x] Saved views (persist column visibility + sorting to localStorage)
+- [x] Revenue Generating flag toggle directly in the table
+- [x] Tags column with badge display
+- [x] MRR column (sortable)
+- [x] Build status column
+- [ ] Group by: framework / hosting / health tier — deferred
 
 ---
 
-## Phase 3 — Revenue & Cost Tracking
+## Phase 3 — Revenue & Cost Tracking ✅ Shipped
 
-- [ ] Per-project revenue fields (MRR, ARR, one-time)
-- [ ] Vercel spend tracking via Vercel API
-- [ ] Anthropic API usage per project
-- [ ] OpenAI API usage per project  
-- [ ] AWS cost allocation tags
-- [ ] Profit per project (revenue - costs)
-- [ ] Portfolio P&L summary card on dashboard
+- [x] Per-project MRR, ARR, monthly cost fields in DB
+- [x] Revenue editor on repo detail page (Revenue tab)
+- [x] Monthly profit and margin calculated inline
+- [x] Portfolio P&L summary row on dashboard (MRR, ARR, cost, profit, margin)
+- [x] Revenue flag auto-set when MRR > 0
+- [x] MRR column in repos table
+- [ ] Vercel spend tracking via API — deferred (requires billing API access)
+- [ ] Anthropic/OpenAI/AWS cost tracking — deferred (no per-project tracking in APIs)
 
 ---
 

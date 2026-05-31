@@ -8,26 +8,34 @@ import { scanRepository } from './scanner'
 import { calculateHealthScore } from '@/lib/health/scoring'
 import { eq, and } from 'drizzle-orm'
 
-export async function syncAllRepos(userId: string): Promise<void> {
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, userId),
-  })
-
-  if (!user?.githubToken) {
-    throw new Error('No GitHub token found for user')
+// Pause between repos if GitHub rate limit is getting low
+async function respectRateLimit(octokit: Awaited<ReturnType<typeof createOctokit>>) {
+  try {
+    const { data } = await octokit.rest.rateLimit.get()
+    const remaining = data.rate.remaining
+    if (remaining < 100) {
+      const resetMs = data.rate.reset * 1000 - Date.now()
+      const waitMs = Math.min(resetMs + 1000, 60_000)
+      console.warn(`[sync] rate limit low (${remaining} remaining), waiting ${Math.round(waitMs / 1000)}s`)
+      await new Promise(r => setTimeout(r, waitMs))
+    } else if (remaining < 300) {
+      // Slow down gently
+      await new Promise(r => setTimeout(r, 500))
+    }
+  } catch {
+    // Non-fatal — continue
   }
+}
+
+export async function syncAllRepos(userId: string): Promise<void> {
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) })
+  if (!user?.githubToken) throw new Error('No GitHub token found for user')
 
   const octokit = createOctokit(user.githubToken)
 
-  // Create a scan record to track progress
-  const [scan] = await db.insert(scans).values({
-    userId,
-    type: 'sync',
-    status: 'running',
-  }).returning()
+  const [scan] = await db.insert(scans).values({ userId, type: 'sync', status: 'running' }).returning()
 
   try {
-    // Fetch all repos (public + private) with pagination
     const repos = await octokit.paginate(octokit.rest.repos.listForAuthenticatedUser, {
       visibility: 'all',
       affiliation: 'owner',
@@ -40,20 +48,17 @@ export async function syncAllRepos(userId: string): Promise<void> {
     let processed = 0
     for (const repo of repos) {
       try {
+        await respectRateLimit(octokit)
         await syncSingleRepo(userId, user.githubToken, repo)
         processed++
         await db.update(scans).set({ processedRepos: processed }).where(eq(scans.id, scan.id))
       } catch (err) {
-        console.error(`[sync] failed repo ${repo.full_name}:`, err instanceof Error ? err.message : err)
+        console.error(`[sync] failed ${repo.full_name}:`, err instanceof Error ? err.message : err)
       }
     }
 
     await db.update(users).set({ lastSyncedAt: new Date() }).where(eq(users.id, userId))
-    await db.update(scans).set({
-      status: 'complete',
-      completedAt: new Date(),
-      processedRepos: repos.length,
-    }).where(eq(scans.id, scan.id))
+    await db.update(scans).set({ status: 'complete', completedAt: new Date() }).where(eq(scans.id, scan.id))
   } catch (error) {
     await db.update(scans).set({
       status: 'failed',
@@ -74,7 +79,6 @@ export async function syncSingleRepo(
   const owner = githubRepo.owner.login
   const name = githubRepo.name
 
-  // Upsert repository record
   const repoData: InsertRepository = {
     userId,
     githubId: githubRepo.id,
@@ -119,21 +123,24 @@ export async function syncSingleRepo(
 
   const repoId = upsertedRepo.id
 
-  // Fetch activity data
-  const [commitActivity, openIssues, openPRs, releases] = await Promise.allSettled([
+  // Fetch all data in parallel
+  const [commitActivity, openIssues, openPRs, releases, workflowRuns] = await Promise.allSettled([
     octokit.rest.repos.getCommitActivityStats({ owner, repo: name }),
     octokit.rest.issues.listForRepo({ owner, repo: name, state: 'open', per_page: 1 }),
     octokit.rest.pulls.list({ owner, repo: name, state: 'open', per_page: 1 }),
     octokit.rest.repos.listReleases({ owner, repo: name, per_page: 1 }),
+    octokit.rest.actions.listWorkflowRunsForRepo({ owner, repo: name, per_page: 1 }),
   ])
 
-  // Calculate commit counts from activity stats
+  // Process commit data
   let weeklyCommits = 0
   let monthlyCommits = 0
   let quarterlyCommits = 0
+  let weeklyCommitData: { week: number; total: number }[] = []
 
   if (commitActivity.status === 'fulfilled' && Array.isArray(commitActivity.value.data)) {
-    const weeks = commitActivity.value.data.slice(-13) // last 13 weeks
+    const weeks = commitActivity.value.data.slice(-13)
+    weeklyCommitData = weeks.map(w => ({ week: w.week ?? 0, total: w.total ?? 0 }))
     quarterlyCommits = weeks.reduce((sum, w) => sum + (w.total ?? 0), 0)
     monthlyCommits = weeks.slice(-4).reduce((sum, w) => sum + (w.total ?? 0), 0)
     weeklyCommits = weeks[weeks.length - 1]?.total ?? 0
@@ -142,23 +149,26 @@ export async function syncSingleRepo(
   const issueCount = openIssues.status === 'fulfilled'
     ? parseInt(String(openIssues.value.headers['x-total-count'] ?? '0')) || 0
     : 0
-  const prCount = openPRs.status === 'fulfilled'
-    ? openPRs.value.data.length
-    : 0
+  const prCount = openPRs.status === 'fulfilled' ? openPRs.value.data.length : 0
   const hasReleases = releases.status === 'fulfilled' && releases.value.data.length > 0
+
+  // Build status from latest workflow run
+  let buildStatus: string | null = null
+  if (workflowRuns.status === 'fulfilled' && workflowRuns.value.data.workflow_runs.length > 0) {
+    const run = workflowRuns.value.data.workflow_runs[0]
+    buildStatus = run.conclusion ?? run.status ?? null
+  }
 
   const lastPush = githubRepo.pushed_at ? new Date(githubRepo.pushed_at) : null
   const activityStatus = deriveActivityStatus(monthlyCommits, quarterlyCommits, lastPush)
   const activityScore = calculateActivityScore(monthlyCommits, quarterlyCommits, prCount, hasReleases)
 
-  // Run tech stack scanner
   const stackData = await scanRepository(octokit, owner, name, repoId)
 
-  // Calculate initial health score (security score will be updated by security cron)
   const metrics: InsertRepositoryMetrics = {
     repoId,
     activityScore,
-    securityScore: 100, // default; updated by security scan
+    securityScore: 100,
     documentationScore: stackData.documentationScore,
     testingScore: stackData.testingScore,
     dependencyScore: calculateDependencyScore(lastPush),
@@ -171,10 +181,11 @@ export async function syncSingleRepo(
     monthlyCommits,
     quarterlyCommits,
     activityStatus,
+    buildStatus,
+    weeklyCommitData: weeklyCommitData.length > 0 ? weeklyCommitData : null,
     calculatedAt: new Date(),
   }
 
-  // Health score computed after sub-scores are set
   metrics.healthScore = calculateHealthScore({
     activityScore: metrics.activityScore ?? 0,
     securityScore: metrics.securityScore ?? 100,
@@ -204,25 +215,18 @@ export async function syncSingleRepo(
         monthlyCommits: metrics.monthlyCommits,
         quarterlyCommits: metrics.quarterlyCommits,
         activityStatus: metrics.activityStatus,
+        buildStatus: metrics.buildStatus,
+        weeklyCommitData: metrics.weeklyCommitData,
         calculatedAt: metrics.calculatedAt,
       },
     })
 }
 
-function calculateActivityScore(
-  monthlyCommits: number,
-  quarterlyCommits: number,
-  openPRs: number,
-  hasReleases: boolean,
-): number {
+function calculateActivityScore(monthlyCommits: number, quarterlyCommits: number, openPRs: number, hasReleases: boolean): number {
   let score = 0
-  // commits last 30 days (max 40pts)
   score += Math.min(40, (monthlyCommits / 10) * 40)
-  // commits last 90 days (max 30pts)
   score += Math.min(30, (quarterlyCommits / 30) * 30)
-  // open PRs signal active work (max 15pts)
   score += openPRs > 0 ? Math.min(15, openPRs * 5) : 0
-  // has recent releases (15pts)
   score += hasReleases ? 15 : 0
   return Math.round(Math.min(100, score))
 }
@@ -235,11 +239,7 @@ function calculateDependencyScore(lastPush: Date | null): number {
   return 20
 }
 
-function deriveActivityStatus(
-  monthlyCommits: number,
-  quarterlyCommits: number,
-  lastPush: Date | null,
-): string {
+function deriveActivityStatus(monthlyCommits: number, quarterlyCommits: number, lastPush: Date | null): string {
   if (!lastPush) return 'Abandoned'
   const daysSince = (Date.now() - lastPush.getTime()) / (1000 * 60 * 60 * 24)
   if (daysSince > 730) return 'Abandoned'

@@ -14,7 +14,9 @@ import {
 import { useTheme } from '@/components/layout/theme-provider'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { triggerSync } from '@/lib/actions/sync'
+import { SyncProgress } from './sync-progress'
 import { toast } from 'sonner'
 
 interface TopbarProps {
@@ -30,6 +32,7 @@ export function Topbar({ user, lastSyncedAt }: TopbarProps) {
   const { theme, setTheme } = useTheme()
   const [syncing, setSyncing] = useState(false)
   const router = useRouter()
+  const queryClient = useQueryClient()
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Stop polling when component unmounts
@@ -39,12 +42,16 @@ export function Topbar({ user, lastSyncedAt }: TopbarProps) {
     setSyncing(true)
     try {
       await triggerSync()
-      toast.success('Sync started — refreshing as repos come in…')
+      toast.success('Sync started')
 
-      // Refresh page data every 5s for up to 3 minutes so new repos appear live
+      // Immediately refresh the sync-status query so the progress bar appears
+      await queryClient.invalidateQueries({ queryKey: ['sync-status'] })
+
+      // Also refresh page data every 5s so repos appear live
       let ticks = 0
       pollRef.current = setInterval(() => {
         router.refresh()
+        queryClient.invalidateQueries({ queryKey: ['sync-status'] })
         ticks++
         if (ticks >= 36) {
           clearInterval(pollRef.current!)
@@ -61,10 +68,11 @@ export function Topbar({ user, lastSyncedAt }: TopbarProps) {
 
   return (
     <header className="h-14 border-b flex items-center justify-between px-4 gap-4 bg-background shrink-0">
-      <div className="text-sm text-muted-foreground">
-        {lastSyncedAt
-          ? `Last synced ${formatRelative(lastSyncedAt)}`
-          : 'Never synced'}
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-muted-foreground">
+          {lastSyncedAt ? `Last synced ${formatRelative(lastSyncedAt)}` : 'Never synced'}
+        </span>
+        <SyncProgress />
       </div>
 
       <div className="flex items-center gap-2">
