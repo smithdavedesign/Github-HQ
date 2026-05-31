@@ -50,46 +50,39 @@
 - [x] Deployment manager on repo detail — add, remove, check URLs
 - [x] Named labels and provider badges per deployment URL
 
+### Phase 7 — Shareable Portfolio View
+- [x] Opt-in toggle in Settings → Portfolio (default off)
+- [x] Public route `/u/[githubLogin]` — no auth, ISR 1h cache
+- [x] Profile card: avatar, name, stats (total repos, avg health, top languages)
+- [x] Public repos only — health badge, tech stack pills, AI summary, deployment status dot
+- [x] Powered-by footer linking back to RepoHQ
+
+### Phase 8 — Automated Triage Digest
+- [x] `digests` table stores weekly Claude briefing per user
+- [x] `/api/cron/digest` — Mondays at 06:00 UTC
+- [x] Top 3 priorities with urgency (critical/high/medium), reason, concrete action, repo link
+- [x] "Weekly AI Briefing" card on dashboard — visible if digest < 8 days old
+- [x] Uses claude-haiku for speed; system prompt cached
+
+### Phase 9 — Health Score History (Drift Detection)
+- [x] `health_score_history` table — unique on `(repo_id, recorded_date)`
+- [x] Snapshot written by daily sync cron after each full sync (idempotent)
+- [x] `getHealthTrend()` compares current score to oldest snapshot
+- [x] HealthBadge shows ↑/↓ arrow with delta tooltip after 7+ days of history
+- [ ] 30-day trend line on Analytics page — needs more data (ships automatically after ~30 syncs)
+- [ ] Drift alerts integrated into triage digest
+
+### Phase 10 — Natural Language Query
+- [x] Sparkle input bar above repos table — plain English filter queries
+- [x] `/api/nl-query` — claude-haiku returns structured `NLQueryFilters` (no raw SQL)
+- [x] 14-field filter vocabulary: health, activity, last push, visibility, language, framework, DB, revenue, security, stars, MRR, sort
+- [x] "AI filtered: [explanation]" banner with clear button
+- [x] Pure JS predicate chain applied before TanStack Table — safe by design
+- [x] 28 unit tests covering all filter cases and sort direction
+
 ---
 
 ## Up Next
-
-### Phase 7 — Shareable Portfolio View
-A public URL showing your repos, health scores, tech stack, and deployment status. No auth required. Living engineering resume.
-
-- [ ] Opt-in toggle in Settings (default off)
-- [ ] Public route `/u/[githubLogin]` — outside authenticated layout
-- [ ] Profile card: avatar, name, stats (repos, avg health, languages)
-- [ ] Public repos only by default (private repo count shown, no details)
-- [ ] Health badges, tech stack pills, Claude analysis summary per repo
-- [ ] ISR revalidation — fast page, refreshed hourly
-
-### Phase 8 — Automated Triage Digest
-Weekly Claude briefing: looks across your whole portfolio and surfaces the 3 most important things to act on. Zero clicks required.
-
-- [ ] `digests` DB table to store weekly output
-- [ ] New cron `/api/cron/digest` — Mondays at 06:00 UTC
-- [ ] Prompt: all repo metrics in one call, return top 3 priorities with repo, reason, action
-- [ ] Dashboard card: "Weekly AI Briefing" — visible if digest < 7 days old
-- [ ] In-app only (email via Resend is stretch goal)
-
-### Phase 9 — Health Score History (Drift Detection)
-Daily snapshots make the system feel alive — "this got worse since last month."
-
-- [ ] `health_score_history` table — one row per repo per day
-- [ ] Snapshot written by the existing daily sync cron
-- [ ] Trend arrows on health score badge (↑ ↓ →) after 7+ days of data
-- [ ] 30-day trend line on Analytics page
-- [ ] Drift alerts in the triage digest
-
-### Phase 10 — Natural Language Query
-Ask questions about your portfolio in plain English. Claude translates to structured filters applied to the repos table.
-
-- [ ] NL query input on `/repos` page with sparkle icon
-- [ ] `/api/nl-query` route — Claude returns structured filter spec (not raw SQL)
-- [ ] Predefined filter vocabulary: health range, activity status, last push, framework, security issues, MRR, tags, etc.
-- [ ] "AI filtered: repos not updated in 6 months with low health" explanation banner
-- [ ] Clear button to reset back to full table
 
 ### Phase 4 — Opportunity Scoring *(original)*
 Which projects deserve your attention?
