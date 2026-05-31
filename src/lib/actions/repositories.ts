@@ -130,6 +130,14 @@ export async function updateRepoTags(repoId: number, tags: string[]) {
     .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
 }
 
+export async function togglePublicProfile(enabled: boolean) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const { users } = await import('@/lib/db/schema')
+  await db.update(users).set({ publicProfile: enabled }).where(eq(users.id, session.user.id))
+}
+
 export async function analyzeRepo(repoId: number) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')

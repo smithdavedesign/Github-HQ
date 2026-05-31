@@ -1,13 +1,15 @@
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import type { TrendInfo } from '@/lib/health/history'
 
 interface HealthBadgeProps {
   score: number
   showScore?: boolean
+  trend?: TrendInfo | null
   className?: string
 }
 
-export function HealthBadge({ score, showScore = true, className }: HealthBadgeProps) {
+export function HealthBadge({ score, showScore = true, trend, className }: HealthBadgeProps) {
   const color = score >= 90 ? 'emerald' : score >= 70 ? 'amber' : 'red'
 
   const colorClasses = {
@@ -18,10 +20,23 @@ export function HealthBadge({ score, showScore = true, className }: HealthBadgeP
 
   const label = score >= 90 ? 'Healthy' : score >= 70 ? 'At Risk' : 'Dead'
 
+  const trendSymbol = trend
+    ? trend.direction === 'up' ? '↑'
+      : trend.direction === 'down' ? '↓'
+      : null
+    : null
+
+  const trendColor = trend?.direction === 'up'
+    ? 'text-emerald-600'
+    : trend?.direction === 'down'
+      ? 'text-red-500'
+      : ''
+
   return (
     <Badge
       variant="outline"
       className={cn('gap-1.5 font-mono text-xs', colorClasses[color], className)}
+      title={trend ? `${trend.direction === 'up' ? '+' : ''}${trend.delta} pts over ${trend.days}d` : undefined}
     >
       <span
         className={cn(
@@ -30,6 +45,9 @@ export function HealthBadge({ score, showScore = true, className }: HealthBadgeP
         )}
       />
       {showScore ? `${score}` : label}
+      {trendSymbol && (
+        <span className={cn('text-xs leading-none', trendColor)}>{trendSymbol}</span>
+      )}
     </Badge>
   )
 }

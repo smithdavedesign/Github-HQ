@@ -1,17 +1,23 @@
 import { getDashboardStats, getRepositories } from '@/lib/actions/repositories'
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { HealthBadge } from '@/components/repos/health-badge'
+import { WeeklyBriefing } from '@/components/dashboard/weekly-briefing'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { getLatestDigest } from '@/lib/ai/digest'
 
 export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos] = await Promise.all([getDashboardStats(), getRepositories()])
+  const [stats, repos, digest] = await Promise.all([
+    getDashboardStats(),
+    getRepositories(),
+    getLatestDigest(session.user.id),
+  ])
 
   const topRepos = repos
     .filter((r) => r.metrics?.healthScore != null)
@@ -82,6 +88,9 @@ export default async function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Weekly AI Briefing */}
+      {digest && <WeeklyBriefing digest={digest} />}
 
       {/* Top repos */}
       <Card>

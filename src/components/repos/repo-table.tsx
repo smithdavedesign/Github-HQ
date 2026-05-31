@@ -31,6 +31,7 @@ import { formatDistanceToNow } from '@/lib/utils'
 import { toggleRevenueGenerating } from '@/lib/actions/repositories'
 import { toast } from 'sonner'
 import type { Repository, RepositoryMetrics, TechStack, Deployment } from '@/lib/db/schema'
+import type { NLQueryFilters } from '@/app/api/nl-query/route'
 
 type RepoRow = Repository & {
   metrics: RepositoryMetrics | null
@@ -56,7 +57,96 @@ function loadSavedViews(): Record<string, SavedView> {
   }
 }
 
-export function RepoTable({ data }: { data: RepoRow[] }) {
+/**
+ * Apply NL query filters to the raw repo rows before passing to TanStack.
+ * Structured filters from Claude are applied as pure JS predicates — no SQL.
+ */
+function applyNLFilters(rows: RepoRow[], filters: NLQueryFilters): RepoRow[] {
+  const now = Date.now()
+  let result = rows.filter(row => {
+    const m = row.metrics
+    const stack = row.techStack
+
+    if (filters.healthMin != null && (m?.healthScore ?? 0) < filters.healthMin) return false
+    if (filters.healthMax != null && (m?.healthScore ?? 0) > filters.healthMax) return false
+
+    if (filters.activityStatus && filters.activityStatus.length > 0) {
+      if (!m?.activityStatus || !filters.activityStatus.includes(m.activityStatus)) return false
+    }
+
+    if (filters.lastPushBeforeDays != null) {
+      const cutoff = now - filters.lastPushBeforeDays * 86400_000
+      const push = m?.lastPush ? new Date(m.lastPush).getTime() : 0
+      if (push > cutoff) return false
+    }
+
+    if (filters.lastPushAfterDays != null) {
+      const cutoff = now - filters.lastPushAfterDays * 86400_000
+      const push = m?.lastPush ? new Date(m.lastPush).getTime() : 0
+      if (push < cutoff) return false
+    }
+
+    if (filters.visibility && row.visibility !== filters.visibility) return false
+
+    if (filters.language) {
+      const lang = (stack?.language ?? row.language ?? '').toLowerCase()
+      if (!lang.includes(filters.language.toLowerCase())) return false
+    }
+
+    if (filters.framework) {
+      const fw = (stack?.frontend ?? '').toLowerCase()
+      if (!fw.includes(filters.framework.toLowerCase())) return false
+    }
+
+    if (filters.database) {
+      const db_ = (stack?.database ?? '').toLowerCase()
+      if (!db_.includes(filters.database.toLowerCase())) return false
+    }
+
+    if (filters.isRevenueGenerating != null && row.isRevenueGenerating !== filters.isRevenueGenerating) return false
+
+    if (filters.hasSecurityIssues === true) {
+      const serious = row.securityFindings.filter(f => f.severity === 'critical' || f.severity === 'high')
+      if (serious.length === 0) return false
+    }
+
+    if (filters.starsMin != null && (row.stars ?? 0) < filters.starsMin) return false
+
+    if (filters.mrrMin != null && parseFloat(String(row.mrr ?? '0')) < filters.mrrMin) return false
+
+    return true
+  })
+
+  // Apply NL sort if specified
+  if (filters.sortBy) {
+    // dir=1 → (b-a) → descending  |  dir=-1 → (a-b) → ascending
+    const dir = filters.sortDir === 'desc' ? 1 : -1
+    result = result.sort((a, b) => {
+      switch (filters.sortBy) {
+        case 'health': return ((b.metrics?.healthScore ?? 0) - (a.metrics?.healthScore ?? 0)) * dir
+        case 'activity': return ((b.metrics?.activityScore ?? 0) - (a.metrics?.activityScore ?? 0)) * dir
+        case 'security': return ((b.metrics?.securityScore ?? 0) - (a.metrics?.securityScore ?? 0)) * dir
+        case 'lastPush': {
+          const aT = a.metrics?.lastPush ? new Date(a.metrics.lastPush).getTime() : 0
+          const bT = b.metrics?.lastPush ? new Date(b.metrics.lastPush).getTime() : 0
+          return (bT - aT) * dir
+        }
+        case 'stars': return ((b.stars ?? 0) - (a.stars ?? 0)) * dir
+        case 'mrr': return (parseFloat(String(b.mrr ?? '0')) - parseFloat(String(a.mrr ?? '0'))) * dir
+        case 'name': return a.name.localeCompare(b.name) * dir
+        default: return 0
+      }
+    })
+  }
+
+  return result
+}
+
+export function RepoTable({ data, nlFilters, nlExplanation }: {
+  data: RepoRow[]
+  nlFilters?: NLQueryFilters | null
+  nlExplanation?: string | null
+}) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'healthScore', desc: true }])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ tags: false, buildStatus: false, mrr: false })
@@ -263,8 +353,11 @@ export function RepoTable({ data }: { data: RepoRow[] }) {
     },
   ], [revenueLoading, handleRevenueToggle])
 
+  // Apply NL filters first, then let TanStack handle the rest
+  const filteredData = nlFilters ? applyNLFilters(data, nlFilters) : data
+
   const table = useReactTable({
-    data,
+    data: filteredData,
     columns,
     state: { sorting, columnFilters, columnVisibility, globalFilter },
     onSortingChange: setSorting,
@@ -434,7 +527,10 @@ export function RepoTable({ data }: { data: RepoRow[] }) {
 
       {/* Pagination */}
       <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>{table.getFilteredRowModel().rows.length} of {data.length} repositories</span>
+        <span>
+          {table.getFilteredRowModel().rows.length} of {data.length} repositories
+          {nlFilters && filteredData.length !== data.length && ` (${filteredData.length} after AI filter)`}
+        </span>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" className="h-7" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>Previous</Button>
           <Button variant="outline" size="sm" className="h-7" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>Next</Button>

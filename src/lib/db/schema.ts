@@ -4,6 +4,7 @@ import {
   integer,
   boolean,
   timestamp,
+  date,
   serial,
   real,
   numeric,
@@ -65,6 +66,8 @@ export const users = pgTable('users', {
   githubToken: text('github_token'), // stored encrypted by Auth.js adapter
   lastSyncedAt: timestamp('last_synced_at', { mode: 'date' }),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  // Phase 7: public portfolio
+  publicProfile: boolean('public_profile').default(false),
 })
 
 // ─── Repositories ─────────────────────────────────────────────────────────────
@@ -203,6 +206,32 @@ export const scans = pgTable('scans', {
   index('scans_user_id_idx').on(table.userId),
 ])
 
+// ─── Health Score History (Phase 9 — drift detection) ────────────────────────
+
+export const healthScoreHistory = pgTable('health_score_history', {
+  id: serial('id').primaryKey(),
+  repoId: integer('repo_id').notNull().references(() => repositories.id, { onDelete: 'cascade' }),
+  healthScore: real('health_score').notNull(),
+  activityScore: real('activity_score'),
+  securityScore: real('security_score'),
+  recordedDate: date('recorded_date').notNull(),  // deduplication key: one row per repo per day
+  recordedAt: timestamp('recorded_at', { mode: 'date' }).defaultNow(),
+}, (table) => [
+  uniqueIndex('hsh_repo_date_idx').on(table.repoId, table.recordedDate),
+  index('hsh_repo_id_idx').on(table.repoId),
+])
+
+// ─── Digests (Phase 8 — weekly triage briefing) ───────────────────────────────
+
+export const digests = pgTable('digests', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  content: jsonb('content').notNull(), // DigestContent: { summary, priorities[], generatedAt }
+  generatedAt: timestamp('generated_at', { mode: 'date' }).defaultNow(),
+}, (table) => [
+  index('digests_user_id_idx').on(table.userId),
+])
+
 // ─── Relations ────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -238,6 +267,14 @@ export const scansRelations = relations(scans, ({ one }) => ({
   user: one(users, { fields: [scans.userId], references: [users.id] }),
 }))
 
+export const healthScoreHistoryRelations = relations(healthScoreHistory, ({ one }) => ({
+  repository: one(repositories, { fields: [healthScoreHistory.repoId], references: [repositories.id] }),
+}))
+
+export const digestsRelations = relations(digests, ({ one }) => ({
+  user: one(users, { fields: [digests.userId], references: [users.id] }),
+}))
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type User = typeof users.$inferSelect
@@ -252,3 +289,5 @@ export type InsertRepositoryMetrics = typeof repositoryMetrics.$inferInsert
 export type InsertTechStack = typeof techStack.$inferInsert
 export type InsertDeployment = typeof deployments.$inferInsert
 export type InsertSecurityFinding = typeof securityFindings.$inferInsert
+export type HealthScoreHistory = typeof healthScoreHistory.$inferSelect
+export type Digest = typeof digests.$inferSelect

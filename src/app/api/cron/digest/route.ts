@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
-import { syncAllRepos } from '@/lib/github/sync'
-import { snapshotHealthScores } from '@/lib/health/history'
+import { generateDigest } from '@/lib/ai/digest'
 import { isNotNull } from 'drizzle-orm'
 
 function verifyCronSecret(request: Request): boolean {
@@ -20,16 +19,16 @@ export async function GET(request: Request) {
   })
 
   let processed = 0
+  const errors: string[] = []
+
   for (const user of allUsers) {
     try {
-      await syncAllRepos(user.id)
-      // Snapshot health scores after sync — one row per repo per day
-      await snapshotHealthScores(user.id)
+      await generateDigest(user.id)
       processed++
-    } catch {
-      // Continue to next user
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : 'Unknown error')
     }
   }
 
-  return NextResponse.json({ ok: true, processed })
+  return NextResponse.json({ ok: true, processed, errors })
 }

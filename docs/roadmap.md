@@ -54,7 +54,44 @@
 
 ## Up Next
 
-### Phase 4 — Opportunity Scoring
+### Phase 7 — Shareable Portfolio View
+A public URL showing your repos, health scores, tech stack, and deployment status. No auth required. Living engineering resume.
+
+- [ ] Opt-in toggle in Settings (default off)
+- [ ] Public route `/u/[githubLogin]` — outside authenticated layout
+- [ ] Profile card: avatar, name, stats (repos, avg health, languages)
+- [ ] Public repos only by default (private repo count shown, no details)
+- [ ] Health badges, tech stack pills, Claude analysis summary per repo
+- [ ] ISR revalidation — fast page, refreshed hourly
+
+### Phase 8 — Automated Triage Digest
+Weekly Claude briefing: looks across your whole portfolio and surfaces the 3 most important things to act on. Zero clicks required.
+
+- [ ] `digests` DB table to store weekly output
+- [ ] New cron `/api/cron/digest` — Mondays at 06:00 UTC
+- [ ] Prompt: all repo metrics in one call, return top 3 priorities with repo, reason, action
+- [ ] Dashboard card: "Weekly AI Briefing" — visible if digest < 7 days old
+- [ ] In-app only (email via Resend is stretch goal)
+
+### Phase 9 — Health Score History (Drift Detection)
+Daily snapshots make the system feel alive — "this got worse since last month."
+
+- [ ] `health_score_history` table — one row per repo per day
+- [ ] Snapshot written by the existing daily sync cron
+- [ ] Trend arrows on health score badge (↑ ↓ →) after 7+ days of data
+- [ ] 30-day trend line on Analytics page
+- [ ] Drift alerts in the triage digest
+
+### Phase 10 — Natural Language Query
+Ask questions about your portfolio in plain English. Claude translates to structured filters applied to the repos table.
+
+- [ ] NL query input on `/repos` page with sparkle icon
+- [ ] `/api/nl-query` route — Claude returns structured filter spec (not raw SQL)
+- [ ] Predefined filter vocabulary: health range, activity status, last push, framework, security issues, MRR, tags, etc.
+- [ ] "AI filtered: repos not updated in 6 months with low health" explanation banner
+- [ ] Clear button to reset back to full table
+
+### Phase 4 — Opportunity Scoring *(original)*
 Which projects deserve your attention?
 
 ```

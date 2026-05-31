@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/ai-summary",
       "schedule": "0 5 * * 0"
+    },
+    {
+      "path": "/api/cron/digest",
+      "schedule": "0 6 * * 1"
     }
   ]
 }

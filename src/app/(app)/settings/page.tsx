@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { formatDistanceToNow } from '@/lib/utils'
 import { Shield, Clock, GitFork, Cpu } from 'lucide-react'
+import { PublicProfileToggle } from '@/components/settings/public-profile-toggle'
 
 export default async function SettingsPage() {
   const session = await auth()
@@ -18,7 +19,7 @@ export default async function SettingsPage() {
   const [user, recentScans] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, session.user.id),
-      columns: { id: true, name: true, email: true, image: true, githubLogin: true, lastSyncedAt: true, createdAt: true },
+      columns: { id: true, name: true, email: true, image: true, githubLogin: true, lastSyncedAt: true, createdAt: true, publicProfile: true },
     }),
     db.query.scans.findMany({
       where: eq(scans.userId, session.user.id),
@@ -150,6 +151,22 @@ export default async function SettingsPage() {
           <p className="text-xs text-muted-foreground mt-3">
             Running on Vercel Hobby (daily limit). Upgrade to Pro for higher frequency.
           </p>
+        </CardContent>
+      </Card>
+
+      {/* Public Portfolio */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <GitFork className="w-4 h-4" />
+            Portfolio
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PublicProfileToggle
+            enabled={user?.publicProfile ?? false}
+            username={user?.githubLogin}
+          />
         </CardContent>
       </Card>
 
