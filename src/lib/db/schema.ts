@@ -93,6 +93,9 @@ export const repositories = pgTable('repositories', {
   monthlyCost: numeric('monthly_cost', { precision: 10, scale: 2 }).default('0'),
   aiSummary: jsonb('ai_summary'), // { what_it_does, maturity, risk, recommendations[] }
   aiSummaryGeneratedAt: timestamp('ai_summary_generated_at', { mode: 'date' }),
+  // Phase 5: Deep Claude analysis
+  claudeAnalysis: jsonb('claude_analysis'), // { architecture, security, quality, techDebt, recommendations, score }
+  claudeAnalysisAt: timestamp('claude_analysis_at', { mode: 'date' }),
   createdAt: timestamp('created_at', { mode: 'date' }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull(),
   syncedAt: timestamp('synced_at', { mode: 'date' }).defaultNow(),
@@ -151,7 +154,8 @@ export const deployments = pgTable('deployments', {
   id: serial('id').primaryKey(),
   repoId: integer('repo_id').notNull().references(() => repositories.id, { onDelete: 'cascade' }),
   url: text('url').notNull(),
-  provider: text('provider'), // vercel | netlify | render | railway | custom
+  provider: text('provider'), // vercel | netlify | render | railway | github-pages | custom
+  name: text('name'), // optional display name (e.g. "Production", "Preview")
   status: text('status').default('unknown'), // healthy | slow | down | unknown
   lastChecked: timestamp('last_checked', { mode: 'date' }),
   responseTimeMs: integer('response_time_ms'),

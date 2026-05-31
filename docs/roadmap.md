@@ -76,23 +76,28 @@ Opportunity Score =
 
 ---
 
-## Phase 5 — Claude Code Integration
+## Phase 5 — Claude Code Integration ✅ Shipped
 
-- [ ] Per-repo **Analyze Repository** button → Claude reviews architecture, security, code quality
-- [ ] Architecture report stored in DB, viewable in detail page
-- [ ] Suggested refactors and tech debt highlights
-- [ ] Compare health score before/after Claude recommendations
+- [x] **Analyze with Claude** button on every repo detail page
+- [x] Deep analysis: architecture pattern, strengths/concerns, security rating, code quality rating, tech debt level
+- [x] Prioritised action plan (High/Medium/Low) with rationale
+- [x] Overall score 0–100 from Claude
+- [x] Analysis stored in DB (`claude_analysis` jsonb), shown in dedicated Analysis tab
+- [x] Prompt caching on system prompt (cost-efficient for bulk runs)
+- [ ] Compare health score before/after recommendations — deferred (needs historical snapshots)
 
 ---
 
-## Phase 6 — Extended Deployment Support
+## Phase 6 — Extended Deployment Support ✅ Shipped
 
-Currently only monitors production URLs. Planned integrations:
-- [ ] Vercel API — pull deployment history, preview URLs, build failures
-- [ ] Netlify API — site health and deploy logs
-- [ ] Render API — service status and deploy state
-- [ ] Railway — project status
-- [ ] GitHub Pages — availability check
+- [x] **Auto-discover** button: fetches GitHub Environments + GitHub Pages via GitHub API
+- [x] Homepage URL auto-added as deployment if set on repo
+- [x] Provider auto-detected from URL pattern (Vercel, Netlify, Render, Railway, Fly, GitHub Pages, AWS, Azure)
+- [x] Deployment manager on repo detail: add/remove URLs, manual check, auto-discover
+- [x] Provider badges and deployment name labels on all URLs
+- [x] Remove button per deployment URL
+- [ ] Vercel API deployment history (build logs, preview URLs) — needs `VERCEL_TOKEN`
+- [ ] Netlify/Render/Railway API integrations — needs per-platform tokens
 
 ---
 
@@ -116,8 +121,10 @@ Currently only monitors production URLs. Planned integrations:
 
 | Limitation | Workaround / Fix |
 |------------|-----------------|
-| Sync is fire-and-forget — no live progress | Phase 2: poll `scans` table |
+| Sync is fire-and-forget — no live progress | Fixed Phase 2: TanStack Query polls `/api/sync-status` |
 | Dark mode flashes on hard reload (manual preference) | Acceptable trade-off; no script injection |
 | Cron runs once/day on Vercel Hobby | Upgrade to Vercel Pro for higher frequency |
 | `neon-http` driver has no transactions | All writes are idempotent upserts |
 | Security scan requires Dependabot to be enabled per-repo | User must enable in GitHub settings |
+| Vercel/Netlify/Render deployment history requires API tokens | Add tokens to `.env.local` when available |
+| Claude analysis depends on metadata only (no file access) | Claude Code MCP integration planned for Phase 5 extension |

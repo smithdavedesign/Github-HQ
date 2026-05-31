@@ -130,6 +130,27 @@ export async function updateRepoTags(repoId: number, tags: string[]) {
     .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
 }
 
+export async function analyzeRepo(repoId: number) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  // Verify ownership
+  const repo = await db.query.repositories.findFirst({
+    where: and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)),
+    columns: { id: true },
+  })
+  if (!repo) throw new Error('Not found')
+
+  const { after } = await import('next/server')
+  const { analyzeRepository } = await import('@/lib/ai/analysis')
+  const { revalidatePath } = await import('next/cache')
+
+  after(async () => {
+    await analyzeRepository(repoId)
+    revalidatePath(`/repos/${repoId}`)
+  })
+}
+
 export async function resyncRepo(repoId: number) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')

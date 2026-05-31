@@ -5,11 +5,16 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExternalLink, GitFork, Star, AlertTriangle, Lock, Globe, CheckCircle, XCircle, Clock } from 'lucide-react'
+// ExternalLink used in header homepage link
 import { formatDistanceToNow } from '@/lib/utils'
 import { CommitActivityChart } from '@/components/repos/commit-activity-chart'
 import { TagEditor } from '@/components/repos/tag-editor'
 import { RevenueEditor } from '@/components/repos/revenue-editor'
 import { ResyncButton } from '@/components/repos/resync-button'
+import { AnalyzeButton } from '@/components/repos/analyze-button'
+import { AnalysisTab } from '@/components/repos/analysis-tab'
+import { DeploymentManager } from '@/components/repos/deployment-manager'
+import type { ClaudeAnalysis } from '@/lib/ai/analysis'
 
 type Props = { params: Promise<{ id: string }> }
 
@@ -32,6 +37,7 @@ export default async function RepoDetailPage({ params }: Props) {
   const highCount = openFindings.filter((f) => f.severity === 'high').length
 
   const weeklyCommitData = metrics?.weeklyCommitData as { week: number; total: number }[] | null
+  const claudeAnalysis = repo.claudeAnalysis as ClaudeAnalysis | null
 
   function BuildStatusBadge({ status }: { status: string | null }) {
     if (!status) return <span className="text-muted-foreground text-xs">—</span>
@@ -77,6 +83,7 @@ export default async function RepoDetailPage({ params }: Props) {
 
         <div className="flex items-center gap-2 flex-wrap">
           {metrics?.activityStatus && <ActivityBadge status={metrics.activityStatus} />}
+          <AnalyzeButton repoId={repo.id} />
           <ResyncButton repoId={repo.id} />
         </div>
       </div>
@@ -106,6 +113,10 @@ export default async function RepoDetailPage({ params }: Props) {
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="stack">Tech Stack</TabsTrigger>
+          <TabsTrigger value="analysis">
+            Analysis
+            {claudeAnalysis && <span className="ml-1 text-xs text-emerald-500">✓</span>}
+          </TabsTrigger>
           <TabsTrigger value="security">
             Security
             {openFindings.length > 0 && (
@@ -184,6 +195,11 @@ export default async function RepoDetailPage({ params }: Props) {
           )}
         </TabsContent>
 
+        {/* Analysis */}
+        <TabsContent value="analysis" className="pt-4">
+          <AnalysisTab analysis={claudeAnalysis} repoId={repo.id} analysisAt={repo.claudeAnalysisAt} />
+        </TabsContent>
+
         {/* Security */}
         <TabsContent value="security" className="pt-4">
           {openFindings.length === 0 ? (
@@ -231,33 +247,7 @@ export default async function RepoDetailPage({ params }: Props) {
 
         {/* Deployments */}
         <TabsContent value="deployments" className="pt-4">
-          {repo.deployments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No deployment URLs configured.</p>
-          ) : (
-            <div className="space-y-3">
-              {repo.deployments.map((dep) => {
-                const statusColor = dep.status === 'healthy' ? 'text-emerald-600 dark:text-emerald-400'
-                  : dep.status === 'slow' ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-red-600 dark:text-red-400'
-                return (
-                  <Card key={dep.id} className="p-4">
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
-                      <div>
-                        <a href={dep.url} target="_blank" rel="noopener noreferrer" className="font-medium text-sm hover:underline flex items-center gap-1">
-                          <ExternalLink className="w-3.5 h-3.5" />{dep.url}
-                        </a>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Last checked {formatDistanceToNow(dep.lastChecked)}
-                          {dep.responseTimeMs && ` · ${dep.responseTimeMs}ms`}
-                        </p>
-                      </div>
-                      <span className={`text-sm font-medium capitalize ${statusColor}`}>{dep.status ?? 'Unknown'}</span>
-                    </div>
-                  </Card>
-                )
-              })}
-            </div>
-          )}
+          <DeploymentManager repoId={repo.id} initialDeployments={repo.deployments} />
         </TabsContent>
 
         {/* Revenue */}

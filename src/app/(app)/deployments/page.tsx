@@ -11,7 +11,6 @@ export default async function DeploymentsPage() {
   const healthy = deployments.filter((d) => d.status === 'healthy').length
   const slow = deployments.filter((d) => d.status === 'slow').length
   const down = deployments.filter((d) => d.status === 'down').length
-  const unconfigured = 0 // repos without any deployment URL
 
   const statusBadge = (status: string | null) => {
     switch (status) {
