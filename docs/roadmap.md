@@ -82,22 +82,20 @@
 
 ---
 
+### Phase 4 — Opportunity Scoring
+- [x] `opportunity_score` column in `repository_metrics` (0–100)
+- [x] 4-factor weighted formula: Revenue Potential × 30%, Activity × 25%, Health × 25%, Stars × 20%
+- [x] Revenue potential uses log-scale for MRR repos; signals-based proxy for non-revenue repos
+- [x] Backfill for all existing repos on deploy
+- [x] Calculated every sync and security-score update
+- [x] "Needs Attention" card on dashboard — high opportunity + poor health
+- [x] "Dormant but Promising" card — high opportunity + low/no activity
+- [x] Opportunity column in repos table (sortable, color-coded)
+- [x] 24 unit tests covering all sub-scores, edge cases, and labels
+
+---
+
 ## Up Next
-
-### Phase 4 — Opportunity Scoring *(original)*
-Which projects deserve your attention?
-
-```
-Opportunity Score =
-  Revenue Potential  × 30%
-  Recent Activity    × 25%
-  Health Score       × 25%
-  Traffic / Stars    × 20%
-```
-
-- [ ] Opportunity score calculation and storage
-- [ ] "Needs attention" smart list on dashboard
-- [ ] "Abandoned but high-potential" detector
 
 ---
 
@@ -113,7 +111,6 @@ These items require additional API access or are lower priority:
 | Dependency version staleness | Requires npm registry lookups per dep |
 | Branch protection rules check | Low signal-to-noise for solo developers |
 | Group by in repos table | Complex UX with TanStack Table |
-| Historical health score snapshots | Needs a time-series table + cron to write snapshots |
 | Incremental sync (only changed repos) | Nice-to-have once portfolio > 200 repos |
 
 ---

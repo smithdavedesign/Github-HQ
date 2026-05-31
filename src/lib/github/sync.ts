@@ -5,7 +5,7 @@ import { repositories, repositoryMetrics, scans, users } from '@/lib/db/schema'
 import type { InsertRepository, InsertRepositoryMetrics } from '@/lib/db/schema'
 import { createOctokit } from './client'
 import { scanRepository } from './scanner'
-import { calculateHealthScore } from '@/lib/health/scoring'
+import { calculateHealthScore, calculateOpportunityScore } from '@/lib/health/scoring'
 import { eq, and } from 'drizzle-orm'
 
 // Pause between repos if GitHub rate limit is getting low
@@ -195,6 +195,22 @@ export async function syncSingleRepo(
     qualityScore: metrics.qualityScore ?? 70,
   })
 
+  // Opportunity score — needs repo-level data (mrr, stars, deployments)
+  const repoRecord = await db.query.repositories.findFirst({
+    where: eq(repositories.id, repoId),
+    with: { deployments: { columns: { status: true } } },
+    columns: { mrr: true, stars: true, isRevenueGenerating: true },
+  })
+  const hasLiveDeployment = repoRecord?.deployments.some(d => d.status === 'healthy' || d.status === 'slow') ?? false
+  metrics.opportunityScore = calculateOpportunityScore({
+    healthScore: metrics.healthScore ?? 0,
+    activityScore: metrics.activityScore ?? 0,
+    stars: githubRepo.stargazers_count ?? 0,
+    mrr: parseFloat(String(repoRecord?.mrr ?? '0')),
+    isRevenueGenerating: repoRecord?.isRevenueGenerating ?? false,
+    hasLiveDeployment,
+  })
+
   await db
     .insert(repositoryMetrics)
     .values(metrics)
@@ -207,6 +223,7 @@ export async function syncSingleRepo(
         dependencyScore: metrics.dependencyScore,
         qualityScore: metrics.qualityScore,
         healthScore: metrics.healthScore,
+        opportunityScore: metrics.opportunityScore,
         lastCommit: metrics.lastCommit,
         lastPush: metrics.lastPush,
         openIssues: metrics.openIssues,

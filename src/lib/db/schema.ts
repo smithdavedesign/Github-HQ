@@ -128,6 +128,7 @@ export const repositoryMetrics = pgTable('repository_metrics', {
   quarterlyCommits: integer('quarterly_commits').default(0),
   activityStatus: text('activity_status').default('unknown'), // Actively Maintained | Low Activity | Dormant | Abandoned
   buildStatus: text('build_status'), // success | failure | cancelled | in_progress | null
+  opportunityScore: real('opportunity_score').default(0), // Phase 4: 0-100 weighted score
   weeklyCommitData: jsonb('weekly_commit_data'), // last 13 weeks: [{ week: timestamp, total: number }]
   calculatedAt: timestamp('calculated_at', { mode: 'date' }).defaultNow(),
 }, (table) => [

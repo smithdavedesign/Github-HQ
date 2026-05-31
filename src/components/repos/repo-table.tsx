@@ -192,6 +192,23 @@ export function RepoTable({ data, nlFilters, nlExplanation }: {
       ),
     },
     {
+      id: 'opportunityScore',
+      accessorFn: (row) => row.metrics?.opportunityScore ?? -1,
+      header: ({ column }) => (
+        <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}>
+          Opp <ArrowUpDown className="w-3 h-3" />
+        </Button>
+      ),
+      cell: ({ getValue }) => {
+        const score = getValue<number>()
+        if (score < 0) return <span className="text-muted-foreground text-xs">—</span>
+        const rounded = Math.round(score)
+        const color = rounded >= 55 ? 'text-violet-600' : rounded >= 30 ? 'text-blue-600' : 'text-muted-foreground'
+        return <span className={`text-xs font-mono tabular-nums ${color}`}>{rounded}</span>
+      },
+      sortDescFirst: true,
+    },
+    {
       id: 'healthScore',
       accessorFn: (row) => row.metrics?.healthScore ?? -1,
       header: ({ column }) => (

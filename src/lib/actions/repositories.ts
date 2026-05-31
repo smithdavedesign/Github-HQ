@@ -130,6 +130,71 @@ export async function updateRepoTags(repoId: number, tags: string[]) {
     .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
 }
 
+export async function getOpportunityData() {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const userId = session.user.id
+
+  const allRepos = await db.query.repositories.findMany({
+    where: eq(repositories.userId, userId),
+    with: { metrics: true },
+    columns: {
+      id: true, name: true, description: true, stars: true,
+      mrr: true, isRevenueGenerating: true,
+    },
+  })
+
+  type RepoSummary = {
+    id: number
+    name: string
+    description: string | null
+    opportunityScore: number
+    healthScore: number
+    activityStatus: string | null
+    stars: number
+    mrr: string | null
+    isRevenueGenerating: boolean | null
+  }
+
+  const withScores = allRepos
+    .filter(r => r.metrics?.opportunityScore != null)
+    .map(r => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      opportunityScore: Math.round(r.metrics!.opportunityScore ?? 0),
+      healthScore: Math.round(r.metrics!.healthScore ?? 0),
+      activityStatus: r.metrics!.activityStatus,
+      stars: r.stars ?? 0,
+      mrr: String(r.mrr ?? '0'),
+      isRevenueGenerating: r.isRevenueGenerating,
+    })) as RepoSummary[]
+
+  const OPPORTUNITY_THRESHOLD = 10  // top relative to this portfolio
+
+  // Sort descending by opportunity score to find the threshold dynamically
+  const sorted = [...withScores].sort((a, b) => b.opportunityScore - a.opportunityScore)
+  const top25pctScore = sorted[Math.floor(sorted.length * 0.25)]?.opportunityScore ?? 0
+  const threshold = Math.max(OPPORTUNITY_THRESHOLD, top25pctScore)
+
+  const needsAttention = withScores
+    .filter(r => r.opportunityScore >= threshold && r.healthScore < 70)
+    .sort((a, b) => b.opportunityScore - a.opportunityScore)
+    .slice(0, 5)
+
+  const highPotentialDormant = withScores
+    .filter(r =>
+      r.opportunityScore >= threshold &&
+      (r.activityStatus === 'Dormant' || r.activityStatus === 'Abandoned' || r.activityStatus === 'Low Activity')
+    )
+    .filter(r => !needsAttention.find(n => n.id === r.id))  // no duplicates
+    .sort((a, b) => b.opportunityScore - a.opportunityScore)
+    .slice(0, 5)
+
+  return { needsAttention, highPotentialDormant }
+}
+
 export async function togglePublicProfile(enabled: boolean) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')

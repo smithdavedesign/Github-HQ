@@ -1,7 +1,8 @@
-import { getDashboardStats, getRepositories } from '@/lib/actions/repositories'
+import { getDashboardStats, getRepositories, getOpportunityData } from '@/lib/actions/repositories'
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { HealthBadge } from '@/components/repos/health-badge'
 import { WeeklyBriefing } from '@/components/dashboard/weekly-briefing'
+import { OpportunityPanel } from '@/components/dashboard/opportunity-panel'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { auth } from '@/lib/auth'
@@ -13,10 +14,11 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, digest] = await Promise.all([
+  const [stats, repos, digest, opportunity] = await Promise.all([
     getDashboardStats(),
     getRepositories(),
     getLatestDigest(session.user.id),
+    getOpportunityData(),
   ])
 
   const topRepos = repos
@@ -88,6 +90,12 @@ export default async function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Opportunity Scoring (Phase 4) */}
+      <OpportunityPanel
+        needsAttention={opportunity.needsAttention}
+        highPotentialDormant={opportunity.highPotentialDormant}
+      />
 
       {/* Weekly AI Briefing */}
       {digest && <WeeklyBriefing digest={digest} />}
