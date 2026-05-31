@@ -6,6 +6,7 @@ import type { InsertRepository, InsertRepositoryMetrics } from '@/lib/db/schema'
 import { createOctokit } from './client'
 import { scanRepository } from './scanner'
 import { calculateHealthScore, calculateOpportunityScore } from '@/lib/health/scoring'
+import { calculateValuation } from '@/lib/health/valuation'
 import { eq, and } from 'drizzle-orm'
 
 // Pause between repos if GitHub rate limit is getting low
@@ -202,14 +203,31 @@ export async function syncSingleRepo(
     columns: { mrr: true, stars: true, isRevenueGenerating: true },
   })
   const hasLiveDeployment = repoRecord?.deployments.some(d => d.status === 'healthy' || d.status === 'slow') ?? false
+  const mrrNum = parseFloat(String(repoRecord?.mrr ?? '0'))
+  const stars = githubRepo.stargazers_count ?? 0
+
   metrics.opportunityScore = calculateOpportunityScore({
     healthScore: metrics.healthScore ?? 0,
     activityScore: metrics.activityScore ?? 0,
-    stars: githubRepo.stargazers_count ?? 0,
-    mrr: parseFloat(String(repoRecord?.mrr ?? '0')),
+    stars,
+    mrr: mrrNum,
     isRevenueGenerating: repoRecord?.isRevenueGenerating ?? false,
     hasLiveDeployment,
   })
+
+  // Phase 15: Valuation
+  const valuation = calculateValuation({
+    mrr: mrrNum,
+    stars,
+    healthScore: metrics.healthScore ?? 0,
+    activityScore: metrics.activityScore ?? 0,
+    hasLiveDeployment,
+    isArchived: githubRepo.archived ?? false,
+    isRevenueGenerating: repoRecord?.isRevenueGenerating ?? false,
+  })
+  metrics.estimatedValue = valuation.estimatedValue
+  metrics.valuationConfidence = valuation.valuationConfidence
+  metrics.valuationMethod = valuation.valuationMethod
 
   await db
     .insert(repositoryMetrics)
@@ -224,6 +242,9 @@ export async function syncSingleRepo(
         qualityScore: metrics.qualityScore,
         healthScore: metrics.healthScore,
         opportunityScore: metrics.opportunityScore,
+        estimatedValue: metrics.estimatedValue,
+        valuationConfidence: metrics.valuationConfidence,
+        valuationMethod: metrics.valuationMethod,
         lastCommit: metrics.lastCommit,
         lastPush: metrics.lastPush,
         openIssues: metrics.openIssues,

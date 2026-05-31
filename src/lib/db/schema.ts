@@ -133,6 +133,10 @@ export const repositoryMetrics = pgTable('repository_metrics', {
   buildStatus: text('build_status'), // success | failure | cancelled | in_progress | null
   opportunityScore: real('opportunity_score').default(0), // Phase 4: 0-100 weighted score
   weeklyCommitData: jsonb('weekly_commit_data'), // last 13 weeks: [{ week: timestamp, total: number }]
+  // Phase 15: Repository Valuation
+  estimatedValue: integer('estimated_value').default(0),   // USD
+  valuationConfidence: text('valuation_confidence').default('none'), // none|very_low|low|medium|high
+  valuationMethod: text('valuation_method').default('signal_based'), // saas_multiple|signal_based|archived
   calculatedAt: timestamp('calculated_at', { mode: 'date' }).defaultNow(),
 }, (table) => [
   index('metrics_repo_id_idx').on(table.repoId),
@@ -230,7 +234,8 @@ export const healthScoreHistory = pgTable('health_score_history', {
 export const digests = pgTable('digests', {
   id: serial('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  content: jsonb('content').notNull(), // DigestContent: { summary, priorities[], generatedAt }
+  content: jsonb('content').notNull(),         // DigestContent: { summary, priorities[], generatedAt }
+  advisorContent: jsonb('advisor_content'),    // AdvisorContent: { headline, actions[], portfolioInsight }
   generatedAt: timestamp('generated_at', { mode: 'date' }).defaultNow(),
 }, (table) => [
   index('digests_user_id_idx').on(table.userId),

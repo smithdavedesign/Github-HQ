@@ -145,6 +145,45 @@ export async function updateRepoTags(repoId: number, tags: string[]) {
     .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
 }
 
+export async function getPortfolioValuation() {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const rows = await db
+    .select({
+      totalValue: sql<number>`coalesce(sum(${repositoryMetrics.estimatedValue}), 0)`.mapWith(Number),
+      valuedRepos: sql<number>`count(*) filter (where ${repositoryMetrics.estimatedValue} > 0)`.mapWith(Number),
+      revenueValue: sql<number>`coalesce(sum(${repositoryMetrics.estimatedValue}) filter (where ${repositoryMetrics.valuationMethod} = 'saas_multiple'), 0)`.mapWith(Number),
+    })
+    .from(repositoryMetrics)
+    .innerJoin(repositories, eq(repositories.id, repositoryMetrics.repoId))
+    .where(eq(repositories.userId, session.user.id))
+
+  return rows[0] ?? { totalValue: 0, valuedRepos: 0, revenueValue: 0 }
+}
+
+export async function triggerAdvisor() {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const { after } = await import('next/server')
+  const { generateAdvisor } = await import('@/lib/ai/advisor')
+  const { revalidatePath } = await import('next/cache')
+  const userId = session.user.id
+
+  after(async () => {
+    await generateAdvisor(userId)
+    revalidatePath('/')
+  })
+}
+
+export async function getLatestAdvisorContent() {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+  const { getLatestAdvisor } = await import('@/lib/ai/advisor')
+  return getLatestAdvisor(session.user.id)
+}
+
 export async function getLifecycleDistribution() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')

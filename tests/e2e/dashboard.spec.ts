@@ -14,8 +14,8 @@ test.describe('Dashboard', () => {
   test('shows repo count after sync', async ({ page }) => {
     await page.goto('/')
     const totalCard = page.locator('text=Total Repos').locator('..').locator('..')
-    const value = await totalCard.locator('.text-2xl').textContent()
-    // Should be a number (not empty)
+    // metric-value is the CSS class used for the large number
+    const value = await totalCard.locator('.metric-value').textContent()
     expect(Number(value)).toBeGreaterThanOrEqual(0)
   })
 

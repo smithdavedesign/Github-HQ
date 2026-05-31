@@ -115,21 +115,23 @@
 - [ ] Tech debt summary on dashboard (count by level)
 
 ### Phase 14 — AI Portfolio Advisor
-Evolution of the triage digest — instead of "here are problems," says "here's what to do to move the needle on portfolio value."
-
-- [ ] Advisor card on dashboard, regenerated weekly
-- [ ] Quantified impact: "fixing Repo A security issues could increase opportunity score by 18 points"
-- [ ] Prioritised action list ranked by estimated value impact
-- [ ] Extends the Phase 8 digest cron
+- [x] `advisor_content` jsonb stored on `digests` table alongside weekly briefing
+- [x] Pre-computes opportunity score deltas per repo before calling Claude — no hallucinated numbers
+- [x] Top 5 actions ranked by impact: revenue > security > deployment > activity
+- [x] Each action shows: specific repo, verb phrase, effort (quick/medium/substantial), exact delta
+- [x] "Generate Advisor" button on dashboard — fires via `after()`, ~30s to complete
+- [x] Extended Monday digest cron to generate both briefing and advisor in parallel
+- [x] AdvisorCard on dashboard with generate/regenerate button
 
 ### Phase 15 — Repository Valuation Engine
-Estimated portfolio valuation with confidence ranges. Think: SaaS multiples, content site valuation, open-source sponsorship potential.
-
-- [ ] `estimated_value` and `valuation_confidence` on repository_metrics
-- [ ] SaaS valuation: MRR × 36–60× multiple (adjusted by health, growth trend)
-- [ ] Non-revenue: stars + traffic + deployment signals
-- [ ] Portfolio net worth card on dashboard
-- [ ] Valuation column in repos table
+- [x] `estimated_value`, `valuation_confidence`, `valuation_method` on `repository_metrics`
+- [x] SaaS multiple method: MRR × 36–60× adjusted for health (quality) and activity (momentum)
+- [x] Signal-based method: stars × $20 + deployment bonus, adjusted for activity/health floor
+- [x] Confidence tiers: none / very_low / low / medium (high reserved for growth data)
+- [x] Portfolio net worth card on dashboard (shows breakdown: revenue vs signal value)
+- [x] Valuation column in repos table (hidden by default, toggleable)
+- [x] Backfilled for all 64 existing repos
+- [x] 30 unit tests covering all methods, confidence tiers, edge cases, formatValuation
 
 ### Phase 16 — Portfolio Analytics (Trend Lines)
 Historical trend charts — health over time, opportunity over time, revenue over time.

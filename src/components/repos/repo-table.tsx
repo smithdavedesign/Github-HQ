@@ -34,6 +34,7 @@ import type { Repository, RepositoryMetrics, TechStack, Deployment } from '@/lib
 import type { NLQueryFilters } from '@/app/api/nl-query/route'
 import { LifecycleBadge } from './lifecycle-badge'
 import { LIFECYCLE_META, type LifecycleStage } from '@/lib/lifecycle'
+import { formatValuation, type ValuationConfidence } from '@/lib/health/valuation'
 
 type RepoRow = Repository & {
   metrics: RepositoryMetrics | null
@@ -151,7 +152,7 @@ export function RepoTable({ data, nlFilters, nlExplanation }: {
 }) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'healthScore', desc: true }])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ tags: false, buildStatus: false, mrr: false, techDebt: false })
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ tags: false, buildStatus: false, mrr: false, techDebt: false, valuation: false })
   const [globalFilter, setGlobalFilter] = useState('')
   const [savedViews, setSavedViews] = useState<Record<string, SavedView>>(loadSavedViews)
   const [viewNameInput, setViewNameInput] = useState('')
@@ -358,6 +359,29 @@ export function RepoTable({ data, nlFilters, nlExplanation }: {
           </button>
         )
       },
+    },
+    {
+      id: 'valuation',
+      accessorFn: (row) => row.metrics?.estimatedValue ?? 0,
+      header: ({ column }) => (
+        <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}>
+          Value <ArrowUpDown className="w-3 h-3" />
+        </Button>
+      ),
+      cell: ({ row }) => {
+        const value = row.original.metrics?.estimatedValue ?? 0
+        const confidence = (row.original.metrics?.valuationConfidence ?? 'none') as ValuationConfidence
+        if (value === 0 || confidence === 'none') {
+          return <span className="text-xs text-muted-foreground">—</span>
+        }
+        const confidenceColor = confidence === 'medium' ? 'text-emerald-600' : 'text-muted-foreground'
+        return (
+          <span className={`text-xs font-mono font-medium tabular-nums ${confidenceColor}`}>
+            {formatValuation(value)}
+          </span>
+        )
+      },
+      sortDescFirst: true,
     },
     {
       id: 'lifecycle',

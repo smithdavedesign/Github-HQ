@@ -1,9 +1,11 @@
-import { getDashboardStats, getRepositories, getOpportunityData, getLifecycleDistribution } from '@/lib/actions/repositories'
+import { getDashboardStats, getRepositories, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent } from '@/lib/actions/repositories'
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { HealthBadge } from '@/components/repos/health-badge'
 import { WeeklyBriefing } from '@/components/dashboard/weekly-briefing'
 import { OpportunityPanel } from '@/components/dashboard/opportunity-panel'
 import { LifecycleDistribution } from '@/components/dashboard/lifecycle-distribution'
+import { AdvisorCard } from '@/components/dashboard/advisor-card'
+import { PortfolioValuation } from '@/components/dashboard/portfolio-valuation'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { auth } from '@/lib/auth'
@@ -15,12 +17,14 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, digest, opportunity, lifecycleDistribution] = await Promise.all([
+  const [stats, repos, digest, opportunity, lifecycleDistribution, valuation, advisor] = await Promise.all([
     getDashboardStats(),
     getRepositories(),
     getLatestDigest(session.user.id),
     getOpportunityData(),
     getLifecycleDistribution(),
+    getPortfolioValuation(),
+    getLatestAdvisorContent(),
   ])
 
   const topRepos = repos
@@ -93,8 +97,19 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Lifecycle Distribution (Phase 11) */}
-      <LifecycleDistribution distribution={lifecycleDistribution} />
+      {/* Portfolio Valuation (Phase 15) + Lifecycle Distribution (Phase 11) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <PortfolioValuation
+          totalValue={valuation.totalValue}
+          valuedRepos={valuation.valuedRepos}
+          revenueValue={valuation.revenueValue}
+          totalRepos={stats.total}
+        />
+        <LifecycleDistribution distribution={lifecycleDistribution} />
+      </div>
+
+      {/* AI Portfolio Advisor (Phase 14) */}
+      <AdvisorCard advisor={advisor} />
 
       {/* Opportunity Scoring (Phase 4) */}
       <OpportunityPanel
@@ -102,7 +117,7 @@ export default async function DashboardPage() {
         highPotentialDormant={opportunity.highPotentialDormant}
       />
 
-      {/* Weekly AI Briefing */}
+      {/* Weekly AI Briefing (Phase 8) */}
       {digest && <WeeklyBriefing digest={digest} />}
 
       {/* Top repos */}

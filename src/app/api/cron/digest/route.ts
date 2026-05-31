@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { generateDigest } from '@/lib/ai/digest'
+import { generateAdvisor } from '@/lib/ai/advisor'
 import { isNotNull } from 'drizzle-orm'
 
 function verifyCronSecret(request: Request): boolean {
@@ -23,7 +24,11 @@ export async function GET(request: Request) {
 
   for (const user of allUsers) {
     try {
-      await generateDigest(user.id)
+      // Generate weekly briefing and advisor in parallel
+      await Promise.allSettled([
+        generateDigest(user.id),
+        generateAdvisor(user.id),
+      ])
       processed++
     } catch (err) {
       errors.push(err instanceof Error ? err.message : 'Unknown error')
