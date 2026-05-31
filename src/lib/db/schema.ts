@@ -90,6 +90,9 @@ export const repositories = pgTable('repositories', {
   isFork: boolean('is_fork').default(false),
   isRevenueGenerating: boolean('is_revenue_generating').default(false),
   tags: text('tags').array().default([]),
+  // Phase 11: Repository lifecycle status
+  lifecycleStatus: text('lifecycle_status').default('maintaining'),
+  // idea | building | beta | production | growing | maintaining | sunsetting | archived
   // Revenue & cost fields (Phase 3)
   mrr: numeric('mrr', { precision: 10, scale: 2 }).default('0'),
   arr: numeric('arr', { precision: 10, scale: 2 }).default('0'),

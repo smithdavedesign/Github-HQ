@@ -97,6 +97,86 @@
 
 ## Up Next
 
+### Phase 11 — Repository Lifecycle Status
+- [x] `lifecycle_status` column on repositories table (8 stages: Idea→Building→Beta→Production→Growing→Maintaining→Sunsetting→Archived)
+- [x] Lifecycle selector on repo detail Overview tab — updates instantly
+- [x] Lifecycle badge column in repos table (color-coded per stage)
+- [x] Dashboard distribution card: counts by lifecycle stage
+
+### Phase 12 — Portfolio Health Feed
+- [x] `/feed` page in authenticated layout — sidebar nav entry
+- [x] Events: health drops/improvements, down/slow deployments, critical/high security alerts, dormant repos, failing builds
+- [x] Sorted by severity (critical → warning → info → positive), then by recency
+- [x] Left-border color coding + icons per event type
+
+### Phase 13 — Technical Debt Visibility
+- [x] Tech Debt column in repos table — reads from `claude_analysis.techDebt.level`
+- [x] Low / Medium / High badge, color-coded, custom sort order (High first)
+- [ ] Tech debt summary on dashboard (count by level)
+
+### Phase 14 — AI Portfolio Advisor
+Evolution of the triage digest — instead of "here are problems," says "here's what to do to move the needle on portfolio value."
+
+- [ ] Advisor card on dashboard, regenerated weekly
+- [ ] Quantified impact: "fixing Repo A security issues could increase opportunity score by 18 points"
+- [ ] Prioritised action list ranked by estimated value impact
+- [ ] Extends the Phase 8 digest cron
+
+### Phase 15 — Repository Valuation Engine
+Estimated portfolio valuation with confidence ranges. Think: SaaS multiples, content site valuation, open-source sponsorship potential.
+
+- [ ] `estimated_value` and `valuation_confidence` on repository_metrics
+- [ ] SaaS valuation: MRR × 36–60× multiple (adjusted by health, growth trend)
+- [ ] Non-revenue: stars + traffic + deployment signals
+- [ ] Portfolio net worth card on dashboard
+- [ ] Valuation column in repos table
+
+### Phase 16 — Portfolio Analytics (Trend Lines)
+Historical trend charts — health over time, opportunity over time, revenue over time.
+
+- [ ] Depends on 30+ days of `health_score_history` data (accumulating automatically)
+- [ ] Line chart on Analytics page: portfolio avg health over time
+- [ ] Per-repo health trend on detail page Overview tab
+- [ ] Revenue trend if MRR data exists
+
+### Phase 17 — Goal Tracking
+Set portfolio-level or per-repo goals. AI recommends which repos to focus on.
+
+- [ ] `goals` table: type (mrr, health, repos_live), target, deadline
+- [ ] Goal progress card on dashboard
+- [ ] AI recommendation: "to reach $5k MRR, focus on Repo X and Repo Y"
+
+### Phase 18 — Portfolio Resume & Shareable Reports
+Auto-generated public-facing summaries for consultants, job seekers, and sharing.
+
+- [ ] Portfolio resume at `/u/[username]/resume` — stats card designed for sharing
+- [ ] Quarterly report at `/u/[username]/report/2026-q2` — charts + AI commentary
+- [ ] Social card image (OG image) for portfolio pages
+
+### Phase 19 — Dependency Risk Monitoring
+Track dependency versions across all repos against the current latest.
+
+- [ ] npm registry lookups per package.json dependency
+- [ ] Version staleness score per repo
+- [ ] "React 16 → current 19" style callouts on repo detail
+- [ ] Dependency risk column in repos table
+
+### Phase 20 — GitHub Webhook Real-time Sync
+Move from daily cron to event-driven updates.
+
+- [ ] GitHub App (replaces OAuth App) for webhook access
+- [ ] Push event → update repository + metrics immediately
+- [ ] PR event → update open PR count
+- [ ] Security alert event → update security findings
+
+---
+
+## Enterprise Direction *(future)*
+
+- [ ] Organization Dashboard — team health, security posture, repo ownership, bus factor
+- [ ] Public Portfolio Leaderboards — top indie hacker portfolios, top open source portfolios
+- [ ] AI PR Reviews — Claude reviews every PR (competing with CodeRabbit)
+
 ---
 
 ## Deferred

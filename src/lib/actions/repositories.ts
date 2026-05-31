@@ -120,6 +120,21 @@ export async function updateRepoRevenue(repoId: number, data: { mrr?: string; ar
     .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
 }
 
+export async function updateLifecycleStatus(repoId: number, status: string) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  await db
+    .update(repositories)
+    .set({ lifecycleStatus: status })
+    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath(`/repos/${repoId}`)
+  revalidatePath('/repos')
+  revalidatePath('/')
+}
+
 export async function updateRepoTags(repoId: number, tags: string[]) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
@@ -128,6 +143,22 @@ export async function updateRepoTags(repoId: number, tags: string[]) {
     .update(repositories)
     .set({ tags })
     .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+}
+
+export async function getLifecycleDistribution() {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const rows = await db
+    .select({ status: repositories.lifecycleStatus, count: sql<number>`count(*)`.mapWith(Number) })
+    .from(repositories)
+    .where(eq(repositories.userId, session.user.id))
+    .groupBy(repositories.lifecycleStatus)
+
+  return rows.reduce<Record<string, number>>((acc, r) => {
+    acc[r.status ?? 'maintaining'] = r.count
+    return acc
+  }, {})
 }
 
 export async function getOpportunityData() {

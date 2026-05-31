@@ -2,7 +2,7 @@
 
 **Live:** https://repohq.vercel.app
 
-Personal GitHub portfolio health dashboard. Connect your GitHub account and get a single-pane-of-glass view of every repository — public and private — with health scores, security alerts, deployment monitoring, revenue tracking, and AI-powered analysis.
+Personal GitHub portfolio health dashboard. Connect your GitHub account and get a single-pane-of-glass view of every repository — public and private — with health scores, lifecycle tracking, opportunity scoring, security alerts, deployment monitoring, revenue tracking, and AI-powered analysis.
 
 → [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
 
@@ -13,13 +13,17 @@ Personal GitHub portfolio health dashboard. Connect your GitHub account and get 
 **Dashboard**
 - Portfolio overview with metric cards: total repos, healthy/at-risk/dead counts, security issues, average health score
 - Portfolio P&L row: MRR, ARR, monthly cost, profit and margin (when revenue data is set)
+- **Lifecycle Distribution** — counts by stage: Idea / Building / Beta / Production / Growing / Maintaining / Sunsetting / Archived
+- **Opportunity scoring** cards: "Needs Attention" (high opportunity + poor health) and "Dormant but Promising" (high opportunity + low activity)
+- **Weekly AI Briefing** — top 3 portfolio priorities from Claude, regenerated every Monday
 - Top repositories table with health scores and tech stack
 
 **Repository Health Matrix**
 - Sortable, filterable TanStack Table across all repos
-- Columns: health score, activity, security, build status, last push, production URL, issues, PRs, framework, database, hosting, AI tools, MRR, revenue flag, tags
+- Columns: opportunity score, health, activity, security, build status, lifecycle, tech debt, last push, production URL, issues, PRs, framework, database, hosting, AI tools, MRR, revenue flag, tags
 - Global search, column visibility toggle, CSV export
 - Saved views — persist column layout and sort order to localStorage
+- **Natural language query** — ask in plain English: *"repos not updated in 6 months"* or *"show my Next.js projects with security issues"*
 
 **Health Score Engine**
 - Weighted formula: 20% activity · 20% security · 15% deployment · 15% docs · 10% testing · 10% dependency · 10% quality
@@ -31,8 +35,14 @@ Personal GitHub portfolio health dashboard. Connect your GitHub account and get 
 **Repository Detail**
 - 13-week commit activity chart
 - GitHub Actions build status
+- **Lifecycle selector** — set stage (Idea → Production → Archived) per repo
 - Tags editor — add/remove chip tags
 - Revenue tab — set MRR, ARR, monthly cost; see live profit and margin
+
+**Portfolio Feed**
+- Chronological activity feed at `/feed` — health drops, down deployments, security alerts, dormant repos, build failures
+- Sorted by severity: critical → warning → info → positive
+- Every event links directly to the relevant repo
 
 **Claude Analysis** *(Phase 5)*
 - Per-repo deep analysis: architecture pattern, security rating, code quality rating, tech debt level
@@ -55,10 +65,16 @@ Personal GitHub portfolio health dashboard. Connect your GitHub account and get 
 - Rate limit guard — backs off when GitHub API limit is running low
 - Vercel Cron jobs keep data fresh automatically
 
+**Shareable Portfolio View**
+- Public URL at `/u/[github-username]` — no auth required
+- Enable in Settings → Portfolio toggle
+- Shows public repos with health badges, tech stack, AI summary, deployment dots
+
 **Settings**
 - GitHub OAuth scopes overview
 - Sync history with repo counts
 - Cron schedule reference
+- Public portfolio toggle
 
 ---
 

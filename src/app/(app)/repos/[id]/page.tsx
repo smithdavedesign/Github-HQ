@@ -14,6 +14,7 @@ import { ResyncButton } from '@/components/repos/resync-button'
 import { AnalyzeButton } from '@/components/repos/analyze-button'
 import { AnalysisTab } from '@/components/repos/analysis-tab'
 import { DeploymentManager } from '@/components/repos/deployment-manager'
+import { LifecycleSelector } from '@/components/repos/lifecycle-selector'
 import type { ClaudeAnalysis } from '@/lib/ai/analysis'
 
 type Props = { params: Promise<{ id: string }> }
@@ -162,10 +163,16 @@ export default async function RepoDetailPage({ params }: Props) {
             <CommitActivityChart data={weeklyCommitData} />
           )}
 
-          {/* Tags */}
-          <div>
-            <p className="text-xs text-muted-foreground mb-2">Tags</p>
-            <TagEditor repoId={repo.id} initialTags={repo.tags ?? []} />
+          {/* Lifecycle + Tags */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Lifecycle Stage</p>
+              <LifecycleSelector repoId={repo.id} current={repo.lifecycleStatus} />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Tags</p>
+              <TagEditor repoId={repo.id} initialTags={repo.tags ?? []} />
+            </div>
           </div>
         </TabsContent>
 

@@ -32,6 +32,8 @@ import { toggleRevenueGenerating } from '@/lib/actions/repositories'
 import { toast } from 'sonner'
 import type { Repository, RepositoryMetrics, TechStack, Deployment } from '@/lib/db/schema'
 import type { NLQueryFilters } from '@/app/api/nl-query/route'
+import { LifecycleBadge } from './lifecycle-badge'
+import { LIFECYCLE_META, type LifecycleStage } from '@/lib/lifecycle'
 
 type RepoRow = Repository & {
   metrics: RepositoryMetrics | null
@@ -149,7 +151,7 @@ export function RepoTable({ data, nlFilters, nlExplanation }: {
 }) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'healthScore', desc: true }])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ tags: false, buildStatus: false, mrr: false })
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ tags: false, buildStatus: false, mrr: false, techDebt: false })
   const [globalFilter, setGlobalFilter] = useState('')
   const [savedViews, setSavedViews] = useState<Record<string, SavedView>>(loadSavedViews)
   const [viewNameInput, setViewNameInput] = useState('')
@@ -355,6 +357,36 @@ export function RepoTable({ data, nlFilters, nlExplanation }: {
             {isRev ? 'Yes' : 'No'}
           </button>
         )
+      },
+    },
+    {
+      id: 'lifecycle',
+      accessorFn: (row) => row.lifecycleStatus ?? 'maintaining',
+      header: 'Lifecycle',
+      cell: ({ getValue }) => <LifecycleBadge status={getValue<string>()} />,
+    },
+    {
+      id: 'techDebt',
+      accessorFn: (row) => {
+        const analysis = row.claudeAnalysis as { techDebt?: { level?: string } } | null
+        return analysis?.techDebt?.level ?? null
+      },
+      header: 'Tech Debt',
+      cell: ({ getValue }) => {
+        const level = getValue<string | null>()
+        if (!level) return <span className="text-xs text-muted-foreground">—</span>
+        const styles: Record<string, string> = {
+          Low: 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20',
+          Medium: 'text-amber-600 bg-amber-500/10 border-amber-500/20',
+          High: 'text-red-600 bg-red-500/10 border-red-500/20',
+        }
+        return <Badge variant="outline" className={`text-xs ${styles[level] ?? ''}`}>{level}</Badge>
+      },
+      sortingFn: (a, b) => {
+        const order: Record<string, number> = { High: 3, Medium: 2, Low: 1 }
+        const aLevel = (a.original.claudeAnalysis as { techDebt?: { level?: string } } | null)?.techDebt?.level ?? ''
+        const bLevel = (b.original.claudeAnalysis as { techDebt?: { level?: string } } | null)?.techDebt?.level ?? ''
+        return (order[aLevel] ?? 0) - (order[bLevel] ?? 0)
       },
     },
     {

@@ -84,17 +84,42 @@ health_score =
   quality_score       × 0.10   (default 70; future: GitHub code scanning)
 ```
 
-Pure function in `src/lib/health/scoring.ts`. Recalculated on every sync and security scan.
+### Opportunity Score
+```
+opportunity_score =
+  revenue_potential   × 0.30   (log-scale MRR if revenue; stars+deployment+activity proxy otherwise)
+  activity_score      × 0.25   (same sub-score as health)
+  health_score        × 0.25   (full health score)
+  traffic_score       × 0.20   (log-scale stars; 500+ = max)
+```
+
+Both are pure functions in `src/lib/health/scoring.ts`. Recalculated on every sync.
+
+### Portfolio Feed
+`/feed` page computes events from existing tables on each page load (no dedicated events table):
+- **Health drops/improvements** — compare latest vs oldest `health_score_history` row per repo
+- **Down/slow deployments** — scan `deployments.status`
+- **Security alerts** — scan `security_findings` for open critical/high findings
+- **Dormant repos** — `repository_metrics.last_push` > 90 days ago
+- **Failing builds** — `repository_metrics.build_status = 'failure'`
+
+Sorted by severity (critical → warning → info → positive), then date descending.
+
+### Lifecycle Status
+User-set enum on every repo: `idea | building | beta | production | growing | maintaining | sunsetting | archived`.
+Stored in `repositories.lifecycle_status`. Updated via server action from repo detail page.
+Displayed as a sortable badge column in the repos table and aggregated on the dashboard.
 
 ### Scheduled Jobs
-Vercel Cron hits each endpoint daily (`Authorization: Bearer $CRON_SECRET`):
+Vercel Cron hits each endpoint (`Authorization: Bearer $CRON_SECRET`):
 
 | Endpoint | Time (UTC) | What it does |
 |----------|-----------|-------------|
-| `/api/cron/sync` | 02:00 | Full GitHub sync for all users |
-| `/api/cron/security` | 03:00 | Dependabot + secret scanning, recalculates health |
-| `/api/cron/deployments` | 04:00 | Uptime check for all deployment URLs |
-| `/api/cron/ai-summary` | 05:00 Sun | Regenerates Claude AI summaries for all repos |
+| `/api/cron/sync` | 02:00 daily | Full GitHub sync for all users + health score snapshot |
+| `/api/cron/security` | 03:00 daily | Dependabot + secret scanning, recalculates health |
+| `/api/cron/deployments` | 04:00 daily | Uptime check for all deployment URLs |
+| `/api/cron/ai-summary` | 05:00 Sunday | Regenerates Claude AI summaries |
+| `/api/cron/digest` | 06:00 Monday | Weekly AI triage digest per user |
 
 ---
 
@@ -105,10 +130,11 @@ src/
 ├── app/
 │   ├── (app)/                    # Route group — shared authenticated layout
 │   │   ├── layout.tsx            # Auth check, Sidebar, Topbar
-│   │   ├── page.tsx              # Dashboard with P&L row
+│   │   ├── page.tsx              # Dashboard (metrics, P&L, lifecycle, opportunity, digest)
 │   │   ├── repos/
-│   │   │   ├── page.tsx          # Repos table (TanStack)
+│   │   │   ├── page.tsx          # Repos table (TanStack) — server page
 │   │   │   └── [id]/page.tsx     # Repo detail with tabs
+│   │   ├── feed/page.tsx         # Portfolio health feed (Phase 12)
 │   │   ├── security/page.tsx
 │   │   ├── deployments/page.tsx
 │   │   ├── analytics/page.tsx
@@ -183,6 +209,7 @@ repositories
   name, owner, full_name, visibility, description
   stars, forks, language, is_archived, is_fork
   is_revenue_generating, tags[]
+  lifecycle_status                ← idea|building|beta|production|growing|maintaining|sunsetting|archived
   mrr, arr, monthly_cost          ← Phase 3 revenue fields
   ai_summary jsonb                ← { what_it_does, maturity, risk, recommendations[] }
   claude_analysis jsonb           ← { architecture, security, codeQuality, techDebt, recommendations[], overallScore }
@@ -196,6 +223,7 @@ repository_metrics      (one-to-one with repositories)
   weekly_commit_data jsonb        ← [{ week: unix_ts, total: number }] × 13
   activity_status                 ← Actively Maintained | Low Activity | Dormant | Abandoned
   build_status                    ← success | failure | cancelled | in_progress
+  opportunity_score               ← 0-100 weighted score (Phase 4)
 
 tech_stack              (one-to-one with repositories)
   frontend, backend, database, hosting, language

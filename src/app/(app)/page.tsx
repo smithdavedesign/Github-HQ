@@ -1,8 +1,9 @@
-import { getDashboardStats, getRepositories, getOpportunityData } from '@/lib/actions/repositories'
+import { getDashboardStats, getRepositories, getOpportunityData, getLifecycleDistribution } from '@/lib/actions/repositories'
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { HealthBadge } from '@/components/repos/health-badge'
 import { WeeklyBriefing } from '@/components/dashboard/weekly-briefing'
 import { OpportunityPanel } from '@/components/dashboard/opportunity-panel'
+import { LifecycleDistribution } from '@/components/dashboard/lifecycle-distribution'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { auth } from '@/lib/auth'
@@ -14,11 +15,12 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, digest, opportunity] = await Promise.all([
+  const [stats, repos, digest, opportunity, lifecycleDistribution] = await Promise.all([
     getDashboardStats(),
     getRepositories(),
     getLatestDigest(session.user.id),
     getOpportunityData(),
+    getLifecycleDistribution(),
   ])
 
   const topRepos = repos
@@ -90,6 +92,9 @@ export default async function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Lifecycle Distribution (Phase 11) */}
+      <LifecycleDistribution distribution={lifecycleDistribution} />
 
       {/* Opportunity Scoring (Phase 4) */}
       <OpportunityPanel
