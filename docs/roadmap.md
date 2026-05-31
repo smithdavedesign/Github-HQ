@@ -1,65 +1,60 @@
 # RepoHQ — Roadmap
 
-## Phase 1 — Core Dashboard ✅ Shipped
+## Shipped
 
-- [x] GitHub OAuth (public + private repos via `repo` scope)
-- [x] Full repository sync with pagination
-- [x] Health score engine (7-factor weighted formula)
-- [x] Repository intelligence scanner (framework, language, DB, hosting detection)
-- [x] TanStack Table with sorting, filtering, column visibility, CSV export
-- [x] Security dashboard (Dependabot alerts, secret scanning)
-- [x] Production URL monitoring (uptime, response time, SSL)
-- [x] AI repo summaries (Claude API — what it does, maturity, risk, actions)
-- [x] Neon PostgreSQL persistence (Drizzle ORM)
-- [x] Vercel deployment with daily cron jobs
-- [x] Dark mode toggle
-- [x] Settings page (profile, OAuth scopes, sync history, cron schedule)
-- [x] 54 unit tests (Vitest) — health scoring, scanner detection, uptime, utils
-- [x] 38 e2e tests (Playwright) — all pages, auth flows, table interactions
-- [x] Live at https://repohq.vercel.app
+### Phase 1 — Core Dashboard
+- [x] GitHub OAuth with `repo`, `read:user`, `read:org`, `security_events` scopes
+- [x] Full repo sync (public + private) with pagination via Octokit
+- [x] Health score engine — 7-factor weighted formula
+- [x] Repository intelligence scanner — detects framework, language, DB, hosting, CI/CD, AI tools
+- [x] TanStack Table — sorting, filtering, column visibility, CSV export
+- [x] Security dashboard — Dependabot alerts and secret scanning by severity
+- [x] Production URL monitoring — uptime, response time, SSL
+- [x] AI repo summaries — Claude: what it does, maturity, risk, next actions
+- [x] Neon PostgreSQL persistence via Drizzle ORM
+- [x] Vercel Cron jobs for automated daily updates
+- [x] Dark mode (CSS media query + localStorage toggle)
+- [x] Settings page — profile, OAuth scopes, sync history, cron schedule
+- [x] 54 Vitest unit tests + 38 Playwright e2e tests
 
----
+### Phase 2 — Deeper Insights
+- [x] Real-time sync progress bar (TanStack Query polls `/api/sync-status` every 3s)
+- [x] Per-repo manual re-sync button on detail page
+- [x] Rate limit guard — backs off when `X-RateLimit-Remaining` < 300
+- [x] GitHub Actions build status fetched during sync, shown in table and detail
+- [x] 13-week commit activity chart (Recharts) on repo detail Overview tab
+- [x] Tags editor — inline chip input, persists to DB
+- [x] Saved views — save/load/delete column + sort presets in localStorage
+- [x] Revenue Generating flag toggle directly in the table row
+- [x] MRR and Build Status columns in the repos table
 
-## Phase 2 — Deeper Insights ✅ Shipped
-
-### Sync improvements
-- [x] Real-time sync progress indicator (TanStack Query polling `/api/sync-status`)
-- [x] Per-repo manual re-sync button on the detail page
-- [x] Sync errors logged to console with repo name
-- [x] Rate limit guard — checks `X-RateLimit-Remaining`, backs off when < 300
-
-### Repository detail
-- [x] 90-day commit activity chart (Recharts bar chart from weekly_commit_data)
-- [x] GitHub Actions workflow run status (latest run status on Overview tab)
-- [x] Tags editor (inline chip input, persists to DB)
-- [ ] Dependency version staleness — deferred
-- [ ] Branch protection rules check — deferred
-
-### Table improvements
-- [x] Saved views (persist column visibility + sorting to localStorage)
-- [x] Revenue Generating flag toggle directly in the table
-- [x] Tags column with badge display
-- [x] MRR column (sortable)
-- [x] Build status column
-- [ ] Group by: framework / hosting / health tier — deferred
-
----
-
-## Phase 3 — Revenue & Cost Tracking ✅ Shipped
-
-- [x] Per-project MRR, ARR, monthly cost fields in DB
-- [x] Revenue editor on repo detail page (Revenue tab)
-- [x] Monthly profit and margin calculated inline
-- [x] Portfolio P&L summary row on dashboard (MRR, ARR, cost, profit, margin)
+### Phase 3 — Revenue & Cost Tracking
+- [x] MRR, ARR, monthly cost fields on every repo (editable via Revenue tab)
+- [x] Live profit and margin preview in the Revenue editor
+- [x] Portfolio P&L summary on the dashboard (hidden until data exists)
+- [x] MRR column in repos table (sortable)
 - [x] Revenue flag auto-set when MRR > 0
-- [x] MRR column in repos table
-- [ ] Vercel spend tracking via API — deferred (requires billing API access)
-- [ ] Anthropic/OpenAI/AWS cost tracking — deferred (no per-project tracking in APIs)
+
+### Phase 5 — Claude Code Integration
+- [x] **Analyze with Claude** button on every repo detail page
+- [x] Deep analysis: architecture pattern, security rating, code quality rating, tech debt level
+- [x] Prioritised action plan (High/Medium/Low) with rationale per item
+- [x] Overall score 0–100 from Claude (separate from health score)
+- [x] Results stored in DB (`claude_analysis` jsonb) and shown in dedicated Analysis tab
+- [x] System prompt cached (ephemeral) for cost efficiency on bulk runs
+
+### Phase 6 — Extended Deployment Support
+- [x] **Auto-discover** button — fetches GitHub Environments + GitHub Pages via GitHub API
+- [x] Homepage URL auto-included in discovery
+- [x] Provider auto-detected from URL: Vercel, Netlify, Render, Railway, Fly.io, GitHub Pages, AWS, Azure
+- [x] Deployment manager on repo detail — add, remove, check URLs
+- [x] Named labels and provider badges per deployment URL
 
 ---
 
-## Phase 4 — Opportunity Scoring
+## Up Next
 
+### Phase 4 — Opportunity Scoring
 Which projects deserve your attention?
 
 ```
@@ -70,61 +65,38 @@ Opportunity Score =
   Traffic / Stars    × 20%
 ```
 
-- [ ] Opportunity score calculation
-- [ ] "Projects that need attention" smart list
+- [ ] Opportunity score calculation and storage
+- [ ] "Needs attention" smart list on dashboard
 - [ ] "Abandoned but high-potential" detector
 
 ---
 
-## Phase 5 — Claude Code Integration ✅ Shipped
+## Deferred
 
-- [x] **Analyze with Claude** button on every repo detail page
-- [x] Deep analysis: architecture pattern, strengths/concerns, security rating, code quality rating, tech debt level
-- [x] Prioritised action plan (High/Medium/Low) with rationale
-- [x] Overall score 0–100 from Claude
-- [x] Analysis stored in DB (`claude_analysis` jsonb), shown in dedicated Analysis tab
-- [x] Prompt caching on system prompt (cost-efficient for bulk runs)
-- [ ] Compare health score before/after recommendations — deferred (needs historical snapshots)
+These items require additional API access or are lower priority:
 
----
-
-## Phase 6 — Extended Deployment Support ✅ Shipped
-
-- [x] **Auto-discover** button: fetches GitHub Environments + GitHub Pages via GitHub API
-- [x] Homepage URL auto-added as deployment if set on repo
-- [x] Provider auto-detected from URL pattern (Vercel, Netlify, Render, Railway, Fly, GitHub Pages, AWS, Azure)
-- [x] Deployment manager on repo detail: add/remove URLs, manual check, auto-discover
-- [x] Provider badges and deployment name labels on all URLs
-- [x] Remove button per deployment URL
-- [ ] Vercel API deployment history (build logs, preview URLs) — needs `VERCEL_TOKEN`
-- [ ] Netlify/Render/Railway API integrations — needs per-platform tokens
+| Feature | Reason deferred |
+|---------|----------------|
+| Vercel deployment history (build logs, preview URLs) | Needs `VERCEL_TOKEN` with billing scope |
+| Netlify / Render / Railway API integrations | Needs per-platform API tokens |
+| Anthropic / OpenAI / AWS cost tracking | No per-project tracking available in those APIs |
+| Dependency version staleness | Requires npm registry lookups per dep |
+| Branch protection rules check | Low signal-to-noise for solo developers |
+| Group by in repos table | Complex UX with TanStack Table |
+| Historical health score snapshots | Needs a time-series table + cron to write snapshots |
+| Incremental sync (only changed repos) | Nice-to-have once portfolio > 200 repos |
 
 ---
 
-## Infrastructure Upgrades
+## Infrastructure
 
-### For Vercel Pro plan
-- Switch cron schedules back to optimal frequency:
-  - GitHub Sync: every 6 hours
-  - Deployment checks: every 12 hours
-  - Security scan: daily
-  - AI summaries: weekly
+### Vercel Pro upgrade
+Switching to Pro unlocks optimal cron frequency:
+- GitHub Sync: every 6 hours (currently daily)
+- Deployment checks: every 12 hours (currently daily)
+- Security scan: daily
+- AI summaries: weekly
 
 ### Performance
-- [ ] Incremental sync — only fetch repos updated since `last_synced_at`
-- [ ] Background job queue (for large portfolios 100+ repos)
-- [ ] TanStack Query infinite scroll on repos table
-
----
-
-## Known Limitations
-
-| Limitation | Workaround / Fix |
-|------------|-----------------|
-| Sync is fire-and-forget — no live progress | Fixed Phase 2: TanStack Query polls `/api/sync-status` |
-| Dark mode flashes on hard reload (manual preference) | Acceptable trade-off; no script injection |
-| Cron runs once/day on Vercel Hobby | Upgrade to Vercel Pro for higher frequency |
-| `neon-http` driver has no transactions | All writes are idempotent upserts |
-| Security scan requires Dependabot to be enabled per-repo | User must enable in GitHub settings |
-| Vercel/Netlify/Render deployment history requires API tokens | Add tokens to `.env.local` when available |
-| Claude analysis depends on metadata only (no file access) | Claude Code MCP integration planned for Phase 5 extension |
+- [ ] Incremental sync — compare `pushed_at` to skip unchanged repos
+- [ ] TanStack Query infinite scroll on repos table for very large portfolios

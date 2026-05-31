@@ -2,21 +2,65 @@
 
 **Live:** https://repohq.vercel.app
 
-Personal GitHub portfolio health dashboard. Connect your GitHub account and get a single-pane-of-glass view of every repository — public and private — with health scores, security alerts, deployment status, and AI-generated summaries.
+Personal GitHub portfolio health dashboard. Connect your GitHub account and get a single-pane-of-glass view of every repository — public and private — with health scores, security alerts, deployment monitoring, revenue tracking, and AI-powered analysis.
 
 → [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
 
+---
+
 ## Features
 
-- **Portfolio Dashboard** — metric cards for total repos, healthy/at-risk/dead counts, security issues, average health
-- **Repository Health Matrix** — sortable, filterable TanStack Table with column pinning and CSV export
-- **Health Score Engine** — weighted formula: 20% activity · 20% security · 15% deployment · 15% docs · 10% testing · 10% dependency · 10% quality
-- **Repository Intelligence** — auto-detects framework, language, database, hosting, CI/CD, and AI tools from `package.json`, Prisma schema, Docker Compose, and config files
-- **Production Monitoring** — uptime checks with response time and SSL validation
-- **Security Dashboard** — Dependabot alerts and secret scanning results grouped by severity
-- **AI Repo Summaries** — Claude-powered summaries: what it does, maturity, risk, and next actions
-- **Scheduled Sync** — Vercel Cron jobs keep everything up to date automatically
-- **Dark mode** — system-aware theme with manual toggle
+**Dashboard**
+- Portfolio overview with metric cards: total repos, healthy/at-risk/dead counts, security issues, average health score
+- Portfolio P&L row: MRR, ARR, monthly cost, profit and margin (when revenue data is set)
+- Top repositories table with health scores and tech stack
+
+**Repository Health Matrix**
+- Sortable, filterable TanStack Table across all repos
+- Columns: health score, activity, security, build status, last push, production URL, issues, PRs, framework, database, hosting, AI tools, MRR, revenue flag, tags
+- Global search, column visibility toggle, CSV export
+- Saved views — persist column layout and sort order to localStorage
+
+**Health Score Engine**
+- Weighted formula: 20% activity · 20% security · 15% deployment · 15% docs · 10% testing · 10% dependency · 10% quality
+- Color coded: green ≥ 90, yellow 70–89, red < 70
+
+**Repository Intelligence**
+- Auto-detects framework, language, database, hosting, CI/CD, analytics, and AI tools from `package.json`, Prisma schema, Docker Compose, and config files
+
+**Repository Detail**
+- 13-week commit activity chart
+- GitHub Actions build status
+- Tags editor — add/remove chip tags
+- Revenue tab — set MRR, ARR, monthly cost; see live profit and margin
+
+**Claude Analysis** *(Phase 5)*
+- Per-repo deep analysis: architecture pattern, security rating, code quality rating, tech debt level
+- Prioritised action plan (High/Medium/Low) with rationale
+- Overall Claude score 0–100, stored in DB and shown in Analysis tab
+
+**Security Dashboard**
+- Dependabot alerts and secret scanning results across all repos
+- Grouped by severity: critical, high, medium, low
+
+**Deployment Monitoring** *(Phase 6)*
+- Auto-discover URLs from GitHub Environments and GitHub Pages
+- Manual URL entry with provider auto-detection (Vercel, Netlify, Render, Railway, Fly, GitHub Pages, AWS, Azure)
+- Per-URL uptime check: response time, HTTP status, SSL validation
+- Add/remove/check individual deployment URLs from repo detail page
+
+**Sync**
+- Full GitHub sync (public + private repos) with real-time progress bar
+- Per-repo manual re-sync button
+- Rate limit guard — backs off when GitHub API limit is running low
+- Vercel Cron jobs keep data fresh automatically
+
+**Settings**
+- GitHub OAuth scopes overview
+- Sync history with repo counts
+- Cron schedule reference
+
+---
 
 ## Tech Stack
 
@@ -32,18 +76,19 @@ Personal GitHub portfolio health dashboard. Connect your GitHub account and get 
 | ORM | Drizzle ORM |
 | Auth | Auth.js v5 (GitHub OAuth) |
 | AI | Anthropic Claude API (`claude-sonnet-4-6`) |
-| Hosting | Vercel (Cron, Analytics) |
+| Hosting | Vercel (Cron) |
+
+---
 
 ## Getting Started
 
-### 1. Prerequisites
+### Prerequisites
 
-You need accounts at:
 - [Neon](https://neon.tech) — PostgreSQL database
 - [GitHub Developer Settings](https://github.com/settings/developers) — OAuth App
-- [Anthropic Console](https://console.anthropic.com) — Claude API key (for AI summaries)
+- [Anthropic Console](https://console.anthropic.com) — Claude API key
 
-### 2. Clone and install
+### Clone and install
 
 ```bash
 git clone https://github.com/smithdavedesign/Github-HQ.git
@@ -51,9 +96,7 @@ cd Github-HQ
 npm install
 ```
 
-### 3. Environment variables
-
-Copy the example file and fill in your values:
+### Environment variables
 
 ```bash
 cp .env.example .env.local
@@ -62,122 +105,70 @@ cp .env.example .env.local
 | Variable | How to get it |
 |----------|--------------|
 | `DATABASE_URL` | Neon project → Connection string |
-| `GITHUB_CLIENT_ID` | GitHub → Settings → Developer settings → OAuth Apps → New OAuth App |
+| `GITHUB_CLIENT_ID` | GitHub → Settings → Developer settings → OAuth Apps |
 | `GITHUB_CLIENT_SECRET` | Same OAuth App → Generate a new client secret |
-| `AUTH_SECRET` | Run `openssl rand -base64 32` |
+| `AUTH_SECRET` | `openssl rand -base64 32` |
 | `ANTHROPIC_API_KEY` | Anthropic Console → API Keys |
-| `CRON_SECRET` | Run `openssl rand -hex 32` |
+| `CRON_SECRET` | `openssl rand -hex 32` |
 | `NEXTAUTH_URL` | `http://localhost:3000` (dev) or your Vercel URL (prod) |
 
-**GitHub OAuth App settings:**
+**GitHub OAuth App:**
 - Homepage URL: `http://localhost:3000`
-- Authorization callback URL: `http://localhost:3000/api/auth/callback/github`
+- Callback URL: `http://localhost:3000/api/auth/callback/github`
 
-### 4. Push database schema
+### Push database schema
 
 ```bash
 DATABASE_URL=your_connection_string npx drizzle-kit push --config=drizzle.config.ts
 ```
 
-### 5. Run locally
+### Run locally
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), sign in with GitHub, then click **Sync** to import your repositories.
+Open [localhost:3000](http://localhost:3000), sign in with GitHub, click **Sync**.
 
-## Project Structure
+---
 
-```
-src/
-├── app/
-│   ├── (app)/                 # Authenticated pages (shared layout)
-│   │   ├── page.tsx           # Dashboard /
-│   │   ├── repos/             # Repository table + detail
-│   │   ├── security/          # Security findings
-│   │   ├── deployments/       # Uptime monitoring
-│   │   └── analytics/         # Health charts
-│   ├── api/
-│   │   ├── auth/              # Auth.js route handler
-│   │   └── cron/              # Scheduled job endpoints
-│   └── login/                 # Sign-in page
-├── components/
-│   ├── layout/                # Sidebar, Topbar, ThemeProvider
-│   ├── dashboard/             # MetricCard, HealthTrendChart
-│   └── repos/                 # RepoTable (TanStack), HealthBadge
-├── lib/
-│   ├── db/                    # Drizzle schema + connection
-│   ├── github/                # Sync engine, scanner, security
-│   ├── health/                # Health score formula
-│   ├── monitoring/            # Uptime checker
-│   ├── ai/                    # Claude API summaries
-│   └── actions/               # Server actions
-├── proxy.ts                   # Route protection (Next.js 16 middleware)
-└── types/                     # TypeScript augmentations
+## Testing
+
+```bash
+npm test              # 54 Vitest unit tests
+npm run test:e2e      # 38 Playwright e2e tests (requires dev server)
+npm run test:all      # both
 ```
 
-## Database Schema
+Unit tests cover: health scoring formula, repository intelligence scanner, uptime classification, date utilities.
 
-| Table | Purpose |
-|-------|---------|
-| `users` | Auth.js users + GitHub token |
-| `accounts` | Auth.js OAuth accounts |
-| `sessions` | Auth.js sessions |
-| `repositories` | All synced GitHub repos |
-| `repository_metrics` | Health, activity, security scores |
-| `tech_stack` | Detected framework/db/hosting per repo |
-| `deployments` | Production URLs + uptime status |
-| `security_findings` | Dependabot + secret scanning alerts |
-| `scans` | Sync job history and progress |
+E2e tests cover: auth flows, all pages, repos table interactions, repo detail tabs.
 
-## Health Score Formula
-
-```
-Health Score (0–100) =
-  Activity Score      × 20%
-  Security Score      × 20%
-  Deployment Score    × 15%
-  Documentation Score × 15%
-  Testing Score       × 10%
-  Dependency Score    × 10%
-  Quality Score       × 10%
-```
-
-| Score | Color | Label |
-|-------|-------|-------|
-| 90–100 | Green | Healthy |
-| 70–89 | Yellow | At Risk |
-| 0–69 | Red | Dead |
-
-## Cron Schedule (Vercel)
-
-| Job | Schedule | What it does |
-|-----|----------|-------------|
-| `/api/cron/sync` | Every 6 hours | Full GitHub repo sync |
-| `/api/cron/security` | Every 24 hours | Dependabot + secret scanning |
-| `/api/cron/deployments` | Every 12 hours | Uptime checks |
-| `/api/cron/ai-summary` | Every Sunday 3am | Regenerate Claude summaries |
-
-Cron routes require `Authorization: Bearer $CRON_SECRET` header.
+---
 
 ## Deployment
 
-### Vercel
+1. Push to GitHub (repo must be public for Vercel Hobby plan)
+2. Import in Vercel, set all env vars from `.env.example`
+3. Set `NEXTAUTH_URL` to your production domain
+4. Update GitHub OAuth App callback to `https://yourdomain.com/api/auth/callback/github`
 
-1. Push to GitHub
-2. Import the repo in Vercel
-3. Set all environment variables from `.env.example`
-4. Update `NEXTAUTH_URL` to your production domain
-5. Update your GitHub OAuth App callback URL to `https://yourdomain.com/api/auth/callback/github`
+Vercel picks up `vercel.json` automatically and registers cron jobs.
 
-Vercel will automatically pick up `vercel.json` and register the cron jobs.
+**Cron schedule (Vercel Hobby — daily limit):**
 
-## Roadmap
+| Job | Time (UTC) | Action |
+|-----|-----------|--------|
+| `/api/cron/sync` | 02:00 daily | Full GitHub repo sync |
+| `/api/cron/security` | 03:00 daily | Dependabot + secret scanning |
+| `/api/cron/deployments` | 04:00 daily | Uptime checks |
+| `/api/cron/ai-summary` | 05:00 Sunday | Claude AI summaries |
 
-- [ ] Revenue tracking per project (MRR/ARR)
-- [ ] Cost tracking (Vercel, OpenAI, Anthropic, AWS spend)
-- [ ] Claude Code deep analysis per repo
-- [ ] Opportunity scoring (which projects deserve attention?)
-- [ ] Netlify and Render deployment integrations
-- [ ] GitHub Actions workflow status
+All cron routes require `Authorization: Bearer $CRON_SECRET`.
+
+---
+
+## Docs
+
+- [Architecture](docs/architecture.md) — system design, data flow, key decisions
+- [Roadmap](docs/roadmap.md) — shipped phases and what's next
