@@ -6,16 +6,10 @@ import { goals, repositories, repositoryMetrics, deployments } from '@/lib/db/sc
 import type { InsertGoal } from '@/lib/db/schema'
 import { eq, and, sql, inArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
+import type { GoalType } from '@/lib/goals'
+import { GOAL_PRESETS } from '@/lib/goals'
 
-export type GoalType = 'mrr' | 'health_avg' | 'repos_live' | 'revenue_repos' | 'custom'
-
-export const GOAL_PRESETS: Record<GoalType, { label: string; unit: string; placeholder: string; description: string }> = {
-  mrr:          { label: 'Monthly Revenue',      unit: '$',      placeholder: '5000', description: 'Total MRR across all repos' },
-  health_avg:   { label: 'Avg Portfolio Health', unit: 'score',  placeholder: '80',   description: 'Average health score across all repos' },
-  repos_live:   { label: 'Repos in Production',  unit: 'repos',  placeholder: '10',   description: 'Repos with a healthy deployment URL' },
-  revenue_repos:{ label: 'Revenue-Generating',   unit: 'repos',  placeholder: '5',    description: 'Repos marked as revenue-generating' },
-  custom:       { label: 'Custom Goal',           unit: '',       placeholder: '100',  description: 'Track anything manually' },
-}
+export type { GoalType }  // re-export for convenience
 
 /** Compute current value for auto-tracked goal types */
 async function computeCurrentValue(userId: string, type: GoalType): Promise<number> {
