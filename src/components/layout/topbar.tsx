@@ -35,7 +35,6 @@ export function Topbar({ user, lastSyncedAt }: TopbarProps) {
   const queryClient = useQueryClient()
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Stop polling when component unmounts
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
 
   async function handleSync() {
@@ -43,23 +42,16 @@ export function Topbar({ user, lastSyncedAt }: TopbarProps) {
     try {
       await triggerSync()
       toast.success('Sync started')
-
-      // Immediately refresh the sync-status query so the progress bar appears
       await queryClient.invalidateQueries({ queryKey: ['sync-status'] })
-
-      // Also refresh page data every 5s so repos appear live
       let ticks = 0
       pollRef.current = setInterval(() => {
         router.refresh()
         queryClient.invalidateQueries({ queryKey: ['sync-status'] })
         ticks++
-        if (ticks >= 36) {
-          clearInterval(pollRef.current!)
-          setSyncing(false)
-        }
+        if (ticks >= 36) { clearInterval(pollRef.current!); setSyncing(false) }
       }, 5000)
     } catch {
-      toast.error('Failed to start sync. Please try again.')
+      toast.error('Failed to start sync')
       setSyncing(false)
     }
   }
@@ -67,23 +59,29 @@ export function Topbar({ user, lastSyncedAt }: TopbarProps) {
   const initials = user.name?.split(' ').map((n) => n[0]).join('').toUpperCase() ?? '?'
 
   return (
-    <header className="h-14 border-b flex items-center justify-between px-4 gap-4 bg-background shrink-0">
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground">
-          {lastSyncedAt ? `Last synced ${formatRelative(lastSyncedAt)}` : 'Never synced'}
-        </span>
+    <header className="h-13 border-b border-border/60 flex items-center justify-between px-5 gap-4 bg-background/95 backdrop-blur-sm shrink-0">
+      {/* Left — sync status */}
+      <div className="flex items-center gap-3 min-w-0">
+        {lastSyncedAt ? (
+          <span className="text-xs text-muted-foreground hidden sm:block">
+            Synced {formatRelative(lastSyncedAt)}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground hidden sm:block">Never synced</span>
+        )}
         <SyncProgress />
       </div>
 
-      <div className="flex items-center gap-2">
+      {/* Right — actions */}
+      <div className="flex items-center gap-1.5">
         <Button
           variant="outline"
           size="sm"
           onClick={handleSync}
           disabled={syncing}
-          className="gap-1.5"
+          className="h-8 px-3 gap-1.5 text-xs font-medium border-border/60 shadow-none hover:bg-muted/60"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
           {syncing ? 'Syncing…' : 'Sync'}
         </Button>
 
@@ -91,32 +89,34 @@ export function Topbar({ user, lastSyncedAt }: TopbarProps) {
           variant="ghost"
           size="icon"
           onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}
-          className="w-8 h-8"
+          className="w-8 h-8 text-muted-foreground hover:text-foreground"
         >
-          <Sun className="w-4 h-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-          <Moon className="absolute w-4 h-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+          <Sun className="w-3.5 h-3.5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+          <Moon className="absolute w-3.5 h-3.5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
         </Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="rounded-full w-8 h-8">
-              <Avatar className="w-7 h-7">
+            <Button variant="ghost" size="icon" className="rounded-full w-8 h-8 p-0">
+              <Avatar className="w-7 h-7 ring-1 ring-border">
                 <AvatarImage src={user.image ?? undefined} alt={user.name ?? 'User'} />
-                <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                <AvatarFallback className="text-[10px] font-semibold bg-primary text-primary-foreground">
+                  {initials}
+                </AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <div className="px-2 py-1.5">
-              <p className="text-sm font-medium">{user.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+          <DropdownMenuContent align="end" className="w-52">
+            <div className="px-3 py-2">
+              <p className="text-sm font-semibold">{user.name}</p>
+              <p className="text-xs text-muted-foreground truncate mt-0.5">{user.email}</p>
             </div>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              className="text-destructive gap-2"
+              className="text-destructive gap-2 text-sm"
               onSelect={() => signOut({ callbackUrl: '/login' })}
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5" />
               Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>

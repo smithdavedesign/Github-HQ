@@ -84,7 +84,7 @@ export default async function PublicPortfolioPage({ params }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-muted/20">
+    <div className="min-h-screen page-content">
       <div className="max-w-4xl mx-auto px-4 py-12 space-y-8">
 
         {/* Profile header */}
