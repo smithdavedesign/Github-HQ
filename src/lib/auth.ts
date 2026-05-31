@@ -33,12 +33,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   events: {
-    async signIn({ user, account }) {
-      // Store the GitHub access token after the adapter has finished creating the user
-      if (account?.provider === 'github' && account.access_token && user.id) {
+    async signIn({ user, account, profile }) {
+      if (account?.provider === 'github' && user.id) {
+        const githubProfile = profile as { login?: string; id?: number } | undefined
         await db
           .update(users)
-          .set({ githubToken: account.access_token })
+          .set({
+            githubToken: account.access_token ?? undefined,
+            githubLogin: githubProfile?.login ?? undefined,
+            githubId: githubProfile?.id ?? undefined,
+          })
           .where(eq(users.id, user.id))
       }
     },
