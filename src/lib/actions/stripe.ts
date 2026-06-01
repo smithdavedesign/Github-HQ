@@ -19,8 +19,7 @@ interface StripeSubscriptionPage {
     id: string
     items: {
       data: Array<{
-        price: { unit_amount: number | null; recurring?: { interval: string } }
-        product: string
+        price: { unit_amount: number | null; recurring?: { interval: string }; product: string }
       }>
     }
   }>
@@ -46,7 +45,7 @@ async function fetchStripeMrr(apiKey: string): Promise<Map<string, { mrr: number
 
     for (const sub of page.data) {
       for (const item of sub.items.data) {
-        const productId = item.product
+        const productId = item.price.product
         const unitAmount = item.price.unit_amount ?? 0
         const monthly = item.price.recurring?.interval === 'year' ? unitAmount / 12 : unitAmount
         const existing = mrrByProduct.get(productId) ?? { mrr: 0, count: 0 }
