@@ -15,10 +15,11 @@ interface Repo { id: number; name: string; stripeProductId: string | null }
 
 interface Props {
   connected: boolean
+  keySource: 'db' | 'env' | null
   repos: Repo[]
 }
 
-export function StripeConnect({ connected, repos }: Props) {
+export function StripeConnect({ connected, keySource, repos }: Props) {
   const router = useRouter()
   const [apiKey, setApiKey] = useState('')
   const [showKeyInput, setShowKeyInput] = useState(!connected)
@@ -98,7 +99,9 @@ export function StripeConnect({ connected, repos }: Props) {
           <CreditCard className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-medium">Stripe</span>
           {connected
-            ? <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 text-xs">Connected</Badge>
+            ? <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 text-xs">
+                Connected{keySource === 'env' ? ' (via env var)' : ''}
+              </Badge>
             : <Badge variant="outline" className="text-muted-foreground text-xs">Not connected</Badge>}
         </div>
         {connected && (
@@ -107,15 +110,17 @@ export function StripeConnect({ connected, repos }: Props) {
               <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? 'animate-spin' : ''}`} />
               {syncing ? 'Syncing…' : 'Sync MRR'}
             </Button>
-            <Button size="sm" variant="ghost" onClick={handleRemoveKey} disabled={isPending} className="text-destructive hover:text-destructive">
-              <Trash2 className="w-3.5 h-3.5" />
-            </Button>
+            {keySource === 'db' && (
+              <Button size="sm" variant="ghost" onClick={handleRemoveKey} disabled={isPending} className="text-destructive hover:text-destructive">
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            )}
           </div>
         )}
       </div>
 
-      {/* API key input */}
-      {showKeyInput && !connected && (
+      {/* API key input — only shown when no env var and not yet connected via DB */}
+      {showKeyInput && !connected && keySource !== 'env' && (
         <form onSubmit={handleSaveKey} className="space-y-2">
           <Input
             type="password"

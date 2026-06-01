@@ -15,14 +15,14 @@ import { GoalManager } from '@/components/settings/goal-manager'
 import { HoursInput } from '@/components/settings/hours-input'
 import { StripeConnect } from '@/components/settings/stripe-connect'
 import { getGoals } from '@/lib/actions/goals'
-import { hasStripeKey } from '@/lib/actions/stripe'
+import { hasStripeKey, stripeKeySource } from '@/lib/actions/stripe'
 import { repositories } from '@/lib/db/schema'
 
 export default async function SettingsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [user, recentScans, activeGoals, stripeConnected, repoList] = await Promise.all([
+  const [user, recentScans, activeGoals, stripeConnected, stripeSource, repoList] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, session.user.id),
       columns: { id: true, name: true, email: true, image: true, githubLogin: true, lastSyncedAt: true, createdAt: true, publicProfile: true, hoursPerWeek: true },
@@ -34,6 +34,7 @@ export default async function SettingsPage() {
     }),
     getGoals(),
     hasStripeKey(),
+    stripeKeySource(),
     db.query.repositories.findMany({
       where: eq(repositories.userId, session.user.id),
       columns: { id: true, name: true, stripeProductId: true },
@@ -176,7 +177,7 @@ export default async function SettingsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <StripeConnect connected={stripeConnected} repos={repoList} />
+          <StripeConnect connected={stripeConnected} keySource={stripeSource} repos={repoList} />
         </CardContent>
       </Card>
 

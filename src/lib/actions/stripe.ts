@@ -76,6 +76,15 @@ async function fetchStripeProducts(apiKey: string, productIds: string[]): Promis
   return nameById
 }
 
+/** Resolve API key: user's saved key in DB takes priority, falls back to STRIPE_API_KEY env var. */
+async function resolveApiKey(userId: string): Promise<string | null> {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { stripeApiKey: true },
+  })
+  return user?.stripeApiKey ?? process.env.STRIPE_API_KEY ?? null
+}
+
 export async function saveStripeKey(apiKey: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
@@ -101,14 +110,11 @@ export async function getStripeProducts(): Promise<StripeProduct[]> {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, session.user.id),
-    columns: { stripeApiKey: true },
-  })
-  if (!user?.stripeApiKey) return []
+  const apiKey = await resolveApiKey(session.user.id)
+  if (!apiKey) return []
 
-  const mrrByProduct = await fetchStripeMrr(user.stripeApiKey)
-  const names = await fetchStripeProducts(user.stripeApiKey, [...mrrByProduct.keys()])
+  const mrrByProduct = await fetchStripeMrr(apiKey)
+  const names = await fetchStripeProducts(apiKey, [...mrrByProduct.keys()])
 
   return [...mrrByProduct.entries()]
     .map(([id, { mrr, count }]) => ({
@@ -134,13 +140,10 @@ export async function syncStripeMrr(): Promise<{ synced: number }> {
   if (!session?.user?.id) throw new Error('Unauthorized')
 
   const userId = session.user.id
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, userId),
-    columns: { stripeApiKey: true },
-  })
-  if (!user?.stripeApiKey) return { synced: 0 }
+  const apiKey = await resolveApiKey(userId)
+  if (!apiKey) return { synced: 0 }
 
-  const mrrByProduct = await fetchStripeMrr(user.stripeApiKey)
+  const mrrByProduct = await fetchStripeMrr(apiKey)
 
   const mappedRepos = await db.query.repositories.findMany({
     where: and(eq(repositories.userId, userId)),
@@ -170,9 +173,18 @@ export async function syncStripeMrr(): Promise<{ synced: number }> {
 export async function hasStripeKey(): Promise<boolean> {
   const session = await auth()
   if (!session?.user?.id) return false
+  const key = await resolveApiKey(session.user.id)
+  return !!key
+}
+
+export async function stripeKeySource(): Promise<'db' | 'env' | null> {
+  const session = await auth()
+  if (!session?.user?.id) return null
   const user = await db.query.users.findFirst({
     where: eq(users.id, session.user.id),
     columns: { stripeApiKey: true },
   })
-  return !!user?.stripeApiKey
+  if (user?.stripeApiKey) return 'db'
+  if (process.env.STRIPE_API_KEY) return 'env'
+  return null
 }
