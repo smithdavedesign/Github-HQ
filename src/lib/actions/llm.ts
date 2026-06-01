@@ -37,6 +37,9 @@ export async function saveLLMSettings(provider: LLMProvider, apiKey: string) {
   await db.update(users)
     .set({ llmProvider: provider, llmApiKey: apiKey })
     .where(eq(users.id, session.user.id))
+
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath('/settings')
 }
 
 export async function removeLLMKey() {
@@ -46,6 +49,9 @@ export async function removeLLMKey() {
   await db.update(users)
     .set({ llmApiKey: null })
     .where(eq(users.id, session.user.id))
+
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath('/settings')
 }
 
 export async function setLLMProvider(provider: LLMProvider) {
@@ -55,4 +61,7 @@ export async function setLLMProvider(provider: LLMProvider) {
   await db.update(users)
     .set({ llmProvider: provider, llmApiKey: null })
     .where(eq(users.id, session.user.id))
+
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath('/settings')
 }

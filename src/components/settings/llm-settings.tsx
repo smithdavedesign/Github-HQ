@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -38,6 +38,9 @@ export function LLMSettings({ initialProvider, keySource }: Props) {
 
   const providerMeta = PROVIDERS.find(p => p.value === provider)!
 
+  // Sync server-provided keySource when navigating back to this page
+  useEffect(() => { setCurrentKeySource(keySource) }, [keySource])
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!apiKey.trim()) return
@@ -56,6 +59,7 @@ export function LLMSettings({ initialProvider, keySource }: Props) {
   }
 
   function handleProviderChange(p: LLMProvider) {
+    if (p === provider) return  // no-op — prevent wiping key when clicking active provider
     setProvider(p)
     setApiKey('')
     startTransition(async () => {
