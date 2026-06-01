@@ -73,6 +73,15 @@ export default async function RepoDetailPage({ params }: Props) {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold tracking-tight">{repo.name}</h1>
+            <a
+              href={`https://github.com/${repo.fullName}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Open on GitHub"
+            >
+              <ExternalLink className="w-4 h-4" />
+            </a>
             <Badge variant="outline" className="gap-1 text-xs">
               {repo.visibility === 'private' ? <Lock className="w-3 h-3" /> : <Globe className="w-3 h-3" />}
               {repo.visibility}

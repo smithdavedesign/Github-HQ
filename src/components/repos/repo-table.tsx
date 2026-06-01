@@ -180,9 +180,20 @@ export function RepoTable({ data, nlFilters, nlExplanation }: {
       header: 'Repository',
       cell: ({ row }) => (
         <div>
-          <Link href={`/repos/${row.original.id}`} className="font-medium hover:underline">
-            {row.original.name}
-          </Link>
+          <div className="flex items-center gap-1.5">
+            <Link href={`/repos/${row.original.id}`} className="font-medium hover:underline">
+              {row.original.name}
+            </Link>
+            <a
+              href={`https://github.com/${row.original.fullName}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Open on GitHub"
+            >
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
           {row.original.description && (
             <p className="text-xs text-muted-foreground truncate max-w-48 mt-0.5">{row.original.description}</p>
           )}
