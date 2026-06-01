@@ -73,8 +73,9 @@ export const users = pgTable('users', {
   // Phase 37: Stripe integration
   stripeApiKey: text('stripe_api_key'),
   // Phase 44: Bring Your Own LLM Key
-  llmProvider: text('llm_provider').default('anthropic'), // anthropic | openai
-  llmApiKey: text('llm_api_key'),
+  llmProvider: text('llm_provider').default('anthropic'), // anthropic | openai | gemini
+  llmApiKey: text('llm_api_key'),   // legacy single-key field (kept for migration safety)
+  llmKeys: jsonb('llm_keys').$type<Partial<Record<string, string>>>(), // { anthropic?, openai?, gemini? }
 })
 
 // ─── Repositories ─────────────────────────────────────────────────────────────

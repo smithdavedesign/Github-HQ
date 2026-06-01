@@ -97,16 +97,19 @@ function createGeminiAdapter(apiKey: string): LLMAdapter {
 export async function getLLMAdapter(userId: string): Promise<LLMAdapter> {
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
-    columns: { llmProvider: true, llmApiKey: true },
+    columns: { llmProvider: true, llmKeys: true, llmApiKey: true },
   })
 
   const provider = (user?.llmProvider ?? 'anthropic') as LLMProvider
+  const keys = (user?.llmKeys ?? {}) as Partial<Record<LLMProvider, string>>
+
   const envKey =
     provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY :
     provider === 'openai'    ? process.env.OPENAI_API_KEY :
     provider === 'gemini'    ? process.env.GEMINI_API_KEY : null
 
-  const apiKey = (user?.llmApiKey || null) ?? envKey ?? null
+  // Priority: per-provider key > legacy single key > env var
+  const apiKey = keys[provider] || user?.llmApiKey || envKey || null
 
   if (!apiKey) {
     throw new Error(

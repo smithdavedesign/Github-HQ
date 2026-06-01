@@ -67,6 +67,7 @@ export default async function SettingsPage() {
           <LLMSettings
             initialProvider={llmSettings.provider}
             keySource={llmSettings.keySource}
+            savedProviders={llmSettings.savedProviders}
           />
         </CardContent>
       </Card>

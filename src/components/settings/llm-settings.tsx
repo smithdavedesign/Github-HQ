@@ -32,20 +32,23 @@ const PROVIDERS: { value: LLMProvider; label: string; hint: string }[] = [
 interface Props {
   initialProvider: LLMProvider
   keySource: 'user' | 'env' | null
+  savedProviders: LLMProvider[]
 }
 
-export function LLMSettings({ initialProvider, keySource }: Props) {
+export function LLMSettings({ initialProvider, keySource, savedProviders: initialSavedProviders }: Props) {
   const router = useRouter()
   const [provider, setProvider] = useState<LLMProvider>(initialProvider)
   const [apiKey, setApiKey] = useState('')
   const [testing, setTesting] = useState(false)
   const [currentKeySource, setCurrentKeySource] = useState(keySource)
+  const [savedProviders, setSavedProviders] = useState<LLMProvider[]>(initialSavedProviders)
   const [isPending, startTransition] = useTransition()
 
   const providerMeta = PROVIDERS.find(p => p.value === provider)!
 
-  // Sync server-provided keySource when navigating back to this page
+  // Sync server-provided state when navigating back to this page
   useEffect(() => { setCurrentKeySource(keySource) }, [keySource])
+  useEffect(() => { setSavedProviders(initialSavedProviders) }, [initialSavedProviders])
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -56,6 +59,8 @@ export function LLMSettings({ initialProvider, keySource }: Props) {
       toast.success(`${providerMeta.label} connected`)
       setApiKey('')
       setCurrentKeySource('user')
+      // Track locally that this provider now has a key
+      setSavedProviders(prev => prev.includes(provider) ? prev : [...prev, provider])
       router.refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Key test failed — check it has the right permissions')
@@ -65,16 +70,16 @@ export function LLMSettings({ initialProvider, keySource }: Props) {
   }
 
   function handleProviderChange(p: LLMProvider) {
-    if (p === provider) return  // no-op — prevent wiping key when clicking active provider
+    if (p === provider) return  // no-op
     setProvider(p)
     setApiKey('')
-    // Update local UI state immediately — no router.refresh() here.
-    // A stale router.refresh() from the provider switch racing with the
-    // save's router.refresh() was overwriting "Your key active" with null
-    // on Vercel (network latency made the deferred refresh arrive last).
-    setCurrentKeySource(null)
+    // Restore "Your key active" if this provider already has a saved key,
+    // otherwise show "No key" so the user can enter one.
+    setCurrentKeySource(savedProviders.includes(p) ? 'user' : null)
     startTransition(async () => {
       await setLLMProvider(p)
+      // No router.refresh() — avoids the race condition where a stale
+      // server render overwrites the correct client state on Vercel.
     })
   }
 
@@ -82,6 +87,7 @@ export function LLMSettings({ initialProvider, keySource }: Props) {
     startTransition(async () => {
       await removeLLMKey()
       setCurrentKeySource(null)
+      setSavedProviders(prev => prev.filter(p => p !== provider))
       toast.success('Key removed')
       router.refresh()
     })

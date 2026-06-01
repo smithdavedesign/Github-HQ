@@ -11,7 +11,7 @@ const DB_URL     = process.env.DATABASE_URL ?? ''
 async function resetLLMSettings() {
   if (!DB_URL) return
   const sql = neon(DB_URL)
-  await sql`UPDATE users SET llm_provider = 'anthropic', llm_api_key = NULL`
+  await sql`UPDATE users SET llm_provider = 'anthropic', llm_keys = '{}'::jsonb, llm_api_key = NULL`
 }
 
 async function getDBState() {
@@ -19,31 +19,24 @@ async function getDBState() {
   const sql = neon(DB_URL)
   const [row] = await sql`
     SELECT llm_provider,
-           CASE WHEN llm_api_key IS NULL THEN false ELSE true END AS has_key,
-           LEFT(llm_api_key, 8) AS key_prefix
+           llm_keys,
+           llm_keys->>'openai' IS NOT NULL AS has_openai_key
     FROM users LIMIT 1`
-  return row
+  return row as { llm_provider: string; llm_keys: Record<string, string>; has_openai_key: boolean }
 }
 
 test.describe('OpenAI key persistence', () => {
-  test.beforeEach(async () => {
-    await resetLLMSettings()
-  })
+  test.beforeEach(async () => { await resetLLMSettings() })
 
   test('key shows as active immediately after save', async ({ page }) => {
     test.skip(!OPENAI_KEY, 'OPENAI_API_KEY not in .env.local')
 
     await page.goto('/settings')
-
-    // Select OpenAI
     await page.getByRole('button').filter({ hasText: 'GPT-4o (OpenAI)' }).click()
     const input = page.locator('input[type="password"]').first()
     await expect(input).toBeVisible({ timeout: 5000 })
-
     await input.fill(OPENAI_KEY)
     await page.getByRole('button', { name: /Save & verify/i }).click()
-
-    // Should show "Your key active" within 30s (API validation takes time)
     await expect(page.getByText('Your key active')).toBeVisible({ timeout: 30000 })
   })
 
@@ -58,16 +51,14 @@ test.describe('OpenAI key persistence', () => {
     await page.getByRole('button', { name: /Save & verify/i }).click()
     await expect(page.getByText('Your key active')).toBeVisible({ timeout: 30000 })
 
-    // Verify DB was actually written
     const state = await getDBState()
     expect(state?.llm_provider).toBe('openai')
-    expect(state?.has_key).toBe(true)
+    expect(state?.has_openai_key).toBe(true)
   })
 
   test('key persists after navigating away and back', async ({ page }) => {
     test.skip(!OPENAI_KEY, 'OPENAI_API_KEY not in .env.local')
 
-    // Save the key
     await page.goto('/settings')
     await page.getByRole('button').filter({ hasText: 'GPT-4o (OpenAI)' }).click()
     const input = page.locator('input[type="password"]').first()
@@ -76,20 +67,14 @@ test.describe('OpenAI key persistence', () => {
     await page.getByRole('button', { name: /Save & verify/i }).click()
     await expect(page.getByText('Your key active')).toBeVisible({ timeout: 30000 })
 
-    // Navigate away
     await page.goto('/')
-    await page.waitForURL('**/')
-
-    // Navigate back to settings
     await page.goto('/settings')
-    await page.waitForURL('**/settings')
 
-    // THE KEY ASSERTION — this is what currently fails
     await expect(page.getByText('Your key active')).toBeVisible({ timeout: 10000 })
     await expect(page.locator('input[type="password"]')).not.toBeVisible()
   })
 
-  test('key persists after hard page reload (full server render)', async ({ page }) => {
+  test('key persists after hard page reload', async ({ page }) => {
     test.skip(!OPENAI_KEY, 'OPENAI_API_KEY not in .env.local')
 
     await page.goto('/settings')
@@ -100,10 +85,66 @@ test.describe('OpenAI key persistence', () => {
     await page.getByRole('button', { name: /Save & verify/i }).click()
     await expect(page.getByText('Your key active')).toBeVisible({ timeout: 30000 })
 
-    // Full page reload — bypasses all Next.js router cache
     await page.reload()
-    await page.waitForURL('**/settings')
 
     await expect(page.getByText('Your key active')).toBeVisible({ timeout: 10000 })
+  })
+
+  // ── Tab-switch regression test ──────────────────────────────────────────
+  // Clicking a different provider tab called setLLMProvider which wiped
+  // llmApiKey=null, destroying the saved key. This test locks that fix.
+
+  test('key survives switching to Anthropic tab and back', async ({ page }) => {
+    test.skip(!OPENAI_KEY, 'OPENAI_API_KEY not in .env.local')
+
+    // 1. Save OpenAI key
+    await page.goto('/settings')
+    await page.getByRole('button').filter({ hasText: 'GPT-4o (OpenAI)' }).click()
+    const input = page.locator('input[type="password"]').first()
+    await expect(input).toBeVisible()
+    await input.fill(OPENAI_KEY)
+    await page.getByRole('button', { name: /Save & verify/i }).click()
+    await expect(page.getByText('Your key active')).toBeVisible({ timeout: 30000 })
+
+    // 2. Click Anthropic tab — this used to call setLLMProvider('anthropic')
+    //    which set llmApiKey=null, wiping the OpenAI key
+    await page.getByRole('button').filter({ hasText: 'Claude (Anthropic)' }).click()
+    await page.waitForTimeout(800)
+
+    // 3. Click back to OpenAI
+    await page.getByRole('button').filter({ hasText: 'GPT-4o (OpenAI)' }).click()
+    await page.waitForTimeout(500)
+
+    // 4. Key must still be active
+    await expect(page.getByText('Your key active')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('input[type="password"]')).not.toBeVisible()
+  })
+
+  test('key survives switching through all tabs and back to OpenAI', async ({ page }) => {
+    test.skip(!OPENAI_KEY, 'OPENAI_API_KEY not in .env.local')
+
+    // Save OpenAI key
+    await page.goto('/settings')
+    await page.getByRole('button').filter({ hasText: 'GPT-4o (OpenAI)' }).click()
+    const input = page.locator('input[type="password"]').first()
+    await expect(input).toBeVisible()
+    await input.fill(OPENAI_KEY)
+    await page.getByRole('button', { name: /Save & verify/i }).click()
+    await expect(page.getByText('Your key active')).toBeVisible({ timeout: 30000 })
+
+    // Cycle through all providers
+    await page.getByRole('button').filter({ hasText: 'Claude (Anthropic)' }).click()
+    await page.waitForTimeout(500)
+    await page.getByRole('button').filter({ hasText: 'Gemini (Google)' }).click()
+    await page.waitForTimeout(500)
+    await page.getByRole('button').filter({ hasText: 'GPT-4o (OpenAI)' }).click()
+    await page.waitForTimeout(500)
+
+    // OpenAI key must still be active
+    await expect(page.getByText('Your key active')).toBeVisible({ timeout: 5000 })
+
+    // Verify DB still has the key
+    const state = await getDBState()
+    expect(state?.has_openai_key).toBe(true)
   })
 })
