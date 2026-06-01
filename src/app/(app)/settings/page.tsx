@@ -9,17 +9,20 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { formatDistanceToNow } from '@/lib/utils'
-import { Shield, Clock, GitFork, Cpu, Target } from 'lucide-react'
+import { Shield, Clock, GitFork, Cpu, Target, CreditCard } from 'lucide-react'
 import { PublicProfileToggle } from '@/components/settings/public-profile-toggle'
 import { GoalManager } from '@/components/settings/goal-manager'
 import { HoursInput } from '@/components/settings/hours-input'
+import { StripeConnect } from '@/components/settings/stripe-connect'
 import { getGoals } from '@/lib/actions/goals'
+import { hasStripeKey } from '@/lib/actions/stripe'
+import { repositories } from '@/lib/db/schema'
 
 export default async function SettingsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [user, recentScans, activeGoals] = await Promise.all([
+  const [user, recentScans, activeGoals, stripeConnected, repoList] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, session.user.id),
       columns: { id: true, name: true, email: true, image: true, githubLogin: true, lastSyncedAt: true, createdAt: true, publicProfile: true, hoursPerWeek: true },
@@ -30,6 +33,12 @@ export default async function SettingsPage() {
       limit: 5,
     }),
     getGoals(),
+    hasStripeKey(),
+    db.query.repositories.findMany({
+      where: eq(repositories.userId, session.user.id),
+      columns: { id: true, name: true, stripeProductId: true },
+      orderBy: (r, { asc }) => [asc(r.name)],
+    }),
   ])
 
   const initials = session.user.name?.split(' ').map((n) => n[0]).join('').toUpperCase() ?? '?'
@@ -155,6 +164,19 @@ export default async function SettingsPage() {
           <p className="text-xs text-muted-foreground mt-3">
             Running on Vercel Hobby (daily limit). Upgrade to Pro for higher frequency.
           </p>
+        </CardContent>
+      </Card>
+
+      {/* Stripe */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <CreditCard className="w-4 h-4" />
+            Revenue Integration
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <StripeConnect connected={stripeConnected} repos={repoList} />
         </CardContent>
       </Card>
 

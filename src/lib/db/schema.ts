@@ -70,6 +70,8 @@ export const users = pgTable('users', {
   publicProfile: boolean('public_profile').default(false),
   // Phase 25: hours available per week for time allocation
   hoursPerWeek: integer('hours_per_week').default(10),
+  // Phase 37: Stripe integration
+  stripeApiKey: text('stripe_api_key'),
 })
 
 // ─── Repositories ─────────────────────────────────────────────────────────────
@@ -105,6 +107,8 @@ export const repositories = pgTable('repositories', {
   estimatedEffort: text('estimated_effort').default('medium'), // low | medium | high
   // Phase 27: Idea Graveyard
   abandonmentReason: text('abandonment_reason'),
+  // Phase 37: Stripe product mapping
+  stripeProductId: text('stripe_product_id'),
   // No demand | Too competitive | Too much maintenance | Lost interest | Merged | Pivoted,
   // Revenue & cost fields (Phase 3)
   mrr: numeric('mrr', { precision: 10, scale: 2 }).default('0'),

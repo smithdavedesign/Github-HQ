@@ -5,6 +5,7 @@ import { syncAllRepos } from '@/lib/github/sync'
 import { snapshotHealthScores } from '@/lib/health/history'
 import { snapshotPortfolioScore } from '@/lib/health/portfolio-snapshot'
 import { refreshGoalProgress } from '@/lib/actions/goals'
+import { syncStripeMrr } from '@/lib/actions/stripe'
 import { isNotNull } from 'drizzle-orm'
 
 function verifyCronSecret(request: Request): boolean {
@@ -29,6 +30,7 @@ export async function GET(request: Request) {
         snapshotHealthScores(user.id),
         snapshotPortfolioScore(user.id),
         refreshGoalProgress(user.id),
+        syncStripeMrr(),
       ])
       processed++
     } catch {

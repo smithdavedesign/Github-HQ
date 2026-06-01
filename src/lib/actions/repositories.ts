@@ -538,3 +538,74 @@ export async function getTimeAllocation(topN = 3) {
 
   return calculateTimeAllocation(inputs, topN)
 }
+
+export interface ConcentrationRisk {
+  totalMrr: number
+  topRevenueRepo: { id: number; name: string; mrr: number; healthScore: number; pct: number } | null
+  revenueRiskLevel: 'none' | 'low' | 'medium' | 'high'
+  revenueRepoCount: number
+  dominantStack: { framework: string; count: number; pct: number } | null
+}
+
+export async function getConcentrationRisk(): Promise<ConcentrationRisk> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const userId = session.user.id
+
+  const rows = await db.query.repositories.findMany({
+    where: eq(repositories.userId, userId),
+    with: {
+      metrics: { columns: { healthScore: true } },
+      techStack: { columns: { frontend: true } },
+    },
+    columns: { id: true, name: true, mrr: true, isArchived: true },
+  })
+
+  const active = rows.filter(r => !r.isArchived)
+  const totalMrr = active.reduce((sum, r) => sum + toNum(r.mrr), 0)
+
+  // Revenue concentration
+  const revenueRepos = active
+    .map(r => ({ ...r, mrrNum: toNum(r.mrr) }))
+    .filter(r => r.mrrNum > 0)
+    .sort((a, b) => b.mrrNum - a.mrrNum)
+
+  const top = revenueRepos[0] ?? null
+  const topPct = totalMrr > 0 && top ? Math.round((top.mrrNum / totalMrr) * 100) : 0
+
+  const revenueRiskLevel: ConcentrationRisk['revenueRiskLevel'] =
+    totalMrr === 0 ? 'none'
+    : topPct >= 80 ? 'high'
+    : topPct >= 60 ? 'medium'
+    : 'low'
+
+  const topRevenueRepo = top ? {
+    id: top.id,
+    name: top.name,
+    mrr: top.mrrNum,
+    healthScore: Math.round(top.metrics?.healthScore ?? 0),
+    pct: topPct,
+  } : null
+
+  // Stack concentration — dominant frontend framework across active repos
+  const frameworkCounts = new Map<string, number>()
+  for (const r of active) {
+    const fw = r.techStack?.frontend
+    if (fw) frameworkCounts.set(fw, (frameworkCounts.get(fw) ?? 0) + 1)
+  }
+  const topFramework = [...frameworkCounts.entries()].sort((a, b) => b[1] - a[1])[0]
+  const dominantStack = topFramework ? {
+    framework: topFramework[0],
+    count: topFramework[1],
+    pct: Math.round((topFramework[1] / active.length) * 100),
+  } : null
+
+  return {
+    totalMrr,
+    topRevenueRepo,
+    revenueRiskLevel,
+    revenueRepoCount: revenueRepos.length,
+    dominantStack,
+  }
+}

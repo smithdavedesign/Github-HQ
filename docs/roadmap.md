@@ -192,10 +192,10 @@
 - [ ] Shared deps shown as edge labels; more immediately useful than internal deps
 
 ### Phase 34 — Portfolio Concentration Risk
-- [ ] Compute revenue concentration: % of total MRR tied to single repo
-- [ ] Compute tech stack concentration: dominant framework/DB across portfolio
-- [ ] Risk card on dashboard — flags single-point-of-failure when one repo > 60% of revenue
-- [ ] Low effort: all data already exists, pure computation from existing metrics
+- [x] Revenue concentration: % of total MRR tied to top repo, risk level (low/medium/high)
+- [x] Stack concentration: dominant frontend framework across active repos
+- [x] `ConcentrationRiskCard` on dashboard — bar chart, color-coded risk, single-failure warning
+- [x] Pure computation from existing data — no new DB queries
 
 ### Phase 35 — One-Click Sunset Pipeline
 - [ ] "Sunset" button on graveyard/archive page that triggers a GitHub Actions workflow
@@ -204,24 +204,26 @@
 - [ ] Writes autopsy summary to `portfolio_events` automatically on completion
 
 ### Phase 36 — Portfolio Simulation Engine
-- [ ] "What if" planner: given N available hours + goal (max ARR / max health / launch beta), model expected outcomes
-- [ ] Uses existing opportunity score deltas + estimated effort per repo as inputs
-- [ ] Output: ranked weekly allocation table with projected portfolio score delta, ARR delta
-- [ ] Comparison view: Recommended vs Actual (tracked via commit activity after the week)
-- [ ] Upgrades the Advisor from "what to do" to "plan my week"
+- [x] "Plan My Week" card on dashboard — given N hours + goal type, models optimal allocation
+- [x] Goal types: max opportunity, max revenue, max health
+- [x] Uses pre-computed opportunity score deltas (same as Advisor) + effort estimates as inputs
+- [x] Output: ranked allocation table with estimated hours, opportunity delta, projected MRR
+- [x] Greedy algorithm: highest ROI-per-hour, one action per repo, fits within budget
+- [x] Portfolio score projection: estimated new score if all actions completed
 
 ### Phase 37 — Stripe / Revenue API Integration
-- [ ] OAuth or API key connection to Stripe (and optionally Lemon Squeezy, Gumroad)
-- [ ] Auto-populate MRR per repo by mapping Stripe Product metadata → repo ID
-- [ ] Real-time churn and LTV layered over git activity
-- [ ] Removes the biggest manual input in the current flow
+- [x] Stripe restricted API key stored on user record in Settings → Revenue Integration
+- [x] Fetches all active subscriptions, calculates MRR per product (handles yearly → monthly normalisation)
+- [x] Product → repo mapping UI in Settings
+- [x] "Sync MRR" button + runs automatically on every daily cron sync
+- [x] No SDK dependency — plain fetch against Stripe REST API with pagination
 
 ### Phase 38 — MCP Server (IDE Context Integration)
-- [ ] Expose RepoHQ portfolio state as a Model Context Protocol server
-- [ ] Endpoints: current repo lifecycle/health/focus/debt, portfolio advisor summary, active goals
-- [ ] Claude Code (and other MCP clients) can query portfolio context while coding
-- [ ] Prevents wasted effort on repos flagged for sunsetting; surfaces priorities in-editor
-- [ ] Architecturally the most significant phase — moves intelligence from dashboard to workflow
+- [x] `mcp/server.ts` — stdio MCP server, runs locally via `npx tsx`
+- [x] Tools: `get_portfolio_summary`, `get_repo_context`, `get_portfolio_warnings`, `get_top_opportunities`, `get_active_goals`
+- [x] Queries Neon DB directly with `DATABASE_URL` + `MCP_USER_ID` env vars
+- [x] `~/.claude/claude.json` configured and ready — restart Claude Code to activate
+- [x] `mcp/README.md` with setup instructions and usage examples
 
 ### Phase 39 — Opportunity Cost Tracker
 - [ ] Weekly report: "You spent time on Repo A. Repo B had 4x projected value this week."

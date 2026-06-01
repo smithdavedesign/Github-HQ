@@ -1,5 +1,5 @@
 import { toNum } from '@/lib/utils'
-import { getDashboardStats, getRepositories, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport } from '@/lib/actions/repositories'
+import { getDashboardStats, getRepositories, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk } from '@/lib/actions/repositories'
 import { getPortfolioScoreTrend } from '@/lib/health/portfolio-snapshot'
 import { getWeeklyDiff } from '@/lib/actions/weekly-diff'
 import { MetricCard } from '@/components/dashboard/metric-card'
@@ -15,6 +15,8 @@ import { CeoReportCard } from '@/components/dashboard/ceo-report-card'
 import { TimeAllocationCard } from '@/components/dashboard/time-allocation-card'
 import { PortfolioScoreCard } from '@/components/dashboard/portfolio-score-card'
 import { WeeklyDiffCard } from '@/components/dashboard/weekly-diff-card'
+import { ConcentrationRiskCard } from '@/components/dashboard/concentration-risk-card'
+import { SimulationCard } from '@/components/dashboard/simulation-card'
 import { getGoals } from '@/lib/actions/goals'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -27,7 +29,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, digest, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff] = await Promise.all([
+  const [stats, repos, digest, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk] = await Promise.all([
     getDashboardStats(),
     getRepositories(),
     getLatestDigest(session.user.id),
@@ -41,6 +43,7 @@ export default async function DashboardPage() {
     getLatestCeoReport(),
     getPortfolioScoreTrend(session.user.id),
     getWeeklyDiff(),
+    getConcentrationRisk(),
   ])
 
   const topRepos = repos
@@ -113,13 +116,14 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Portfolio Score (Phase 30) + Weekly Diff (Phase 31) */}
-      {scoreTrend.current && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Portfolio Score (30) + Weekly Diff (31) + Concentration Risk (34) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {scoreTrend.current && (
           <PortfolioScoreCard breakdown={scoreTrend.current} weekDelta={scoreTrend.weekDelta} />
-          <WeeklyDiffCard diff={weeklyDiff} />
-        </div>
-      )}
+        )}
+        <WeeklyDiffCard diff={weeklyDiff} />
+        <ConcentrationRiskCard risk={concentrationRisk} />
+      </div>
 
       {/* Portfolio Valuation (Phase 15) + Lifecycle Distribution (Phase 11) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -148,6 +152,9 @@ export default async function DashboardPage() {
       {archiveCandidates.length > 0 && (
         <ArchiveCandidatesCard candidates={archiveCandidates} />
       )}
+
+      {/* Plan My Week — Simulation Engine (Phase 36) */}
+      <SimulationCard defaultHours={10} />
 
       {/* Opportunity Scoring (Phase 4) */}
       <OpportunityPanel
