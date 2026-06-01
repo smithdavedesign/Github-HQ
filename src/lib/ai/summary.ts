@@ -87,6 +87,13 @@ export async function generateSummariesForUser(userId: string): Promise<void> {
   })
 
   for (const repo of userRepos) {
+    // Skip if summary is more recent than last push — content hasn't changed
+    if (repo.aiSummary && repo.aiSummaryGeneratedAt && repo.metrics?.lastPush) {
+      if (new Date(repo.aiSummaryGeneratedAt) >= new Date(repo.metrics.lastPush)) {
+        continue
+      }
+    }
+
     try {
       await generateRepoSummary(repo.id, {
         name: repo.name,

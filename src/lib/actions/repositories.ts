@@ -347,16 +347,23 @@ export async function togglePublicProfile(enabled: boolean) {
   await db.update(users).set({ publicProfile: enabled }).where(eq(users.id, session.user.id))
 }
 
-export async function analyzeRepo(repoId: number) {
+export async function analyzeRepo(repoId: number, force = false) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  // Verify ownership
   const repo = await db.query.repositories.findFirst({
     where: and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)),
-    columns: { id: true },
+    with: { metrics: { columns: { lastPush: true } } },
+    columns: { id: true, claudeAnalysisAt: true, claudeAnalysis: true },
   })
   if (!repo) throw new Error('Not found')
+
+  // Skip if analysis is more recent than the last push — nothing changed
+  if (!force && repo.claudeAnalysis && repo.claudeAnalysisAt && repo.metrics?.lastPush) {
+    if (repo.claudeAnalysisAt >= repo.metrics.lastPush) {
+      return { fromCache: true }
+    }
+  }
 
   const { after } = await import('next/server')
   const { analyzeRepository } = await import('@/lib/ai/analysis')
@@ -366,6 +373,8 @@ export async function analyzeRepo(repoId: number) {
     await analyzeRepository(repoId)
     revalidatePath(`/repos/${repoId}`)
   })
+
+  return { fromCache: false }
 }
 
 export async function resyncRepo(repoId: number) {

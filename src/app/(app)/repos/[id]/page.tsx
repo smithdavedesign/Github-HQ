@@ -45,6 +45,11 @@ export default async function RepoDetailPage({ params }: Props) {
 
   const weeklyCommitData = metrics?.weeklyCommitData as { week: number; total: number }[] | null
   const claudeAnalysis = repo.claudeAnalysis as ClaudeAnalysis | null
+  const analysisIsStale = !!(
+    repo.claudeAnalysisAt &&
+    metrics?.lastPush &&
+    new Date(metrics.lastPush) > new Date(repo.claudeAnalysisAt)
+  )
 
   function BuildStatusBadge({ status }: { status: string | null }) {
     if (!status) return <span className="text-muted-foreground text-xs">—</span>
@@ -90,7 +95,7 @@ export default async function RepoDetailPage({ params }: Props) {
 
         <div className="flex items-center gap-2 flex-wrap">
           {metrics?.activityStatus && <ActivityBadge status={metrics.activityStatus} />}
-          <AnalyzeButton repoId={repo.id} />
+          <AnalyzeButton repoId={repo.id} hasExistingAnalysis={!!claudeAnalysis} isStale={analysisIsStale} />
           <ResyncButton repoId={repo.id} />
         </div>
       </div>
