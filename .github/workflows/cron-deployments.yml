@@ -1,0 +1,23 @@
+name: Cron — Deployment Checks
+
+on:
+  schedule:
+    - cron: '0 */12 * * *'  # every 12 hours (00:00, 12:00 UTC)
+  workflow_dispatch:
+
+jobs:
+  deployments:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger deployment checks
+        run: |
+          HTTP_STATUS=$(curl -s -o body.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://repohq.vercel.app/api/cron/deployments)
+          echo "Status: $HTTP_STATUS"
+          cat body.json
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "Deployment check failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi

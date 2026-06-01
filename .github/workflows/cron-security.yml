@@ -1,0 +1,23 @@
+name: Cron — Security Scan
+
+on:
+  schedule:
+    - cron: '0 3 * * *'     # daily at 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger security scan
+        run: |
+          HTTP_STATUS=$(curl -s -o body.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://repohq.vercel.app/api/cron/security)
+          echo "Status: $HTTP_STATUS"
+          cat body.json
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "Security scan failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi

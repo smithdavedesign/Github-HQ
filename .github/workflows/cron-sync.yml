@@ -1,0 +1,23 @@
+name: Cron — Sync
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
+  workflow_dispatch:          # manual trigger from GitHub UI or CLI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger sync
+        run: |
+          HTTP_STATUS=$(curl -s -o body.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://repohq.vercel.app/api/cron/sync)
+          echo "Status: $HTTP_STATUS"
+          cat body.json
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "Sync failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi

@@ -1,0 +1,23 @@
+name: Cron — AI Summaries
+
+on:
+  schedule:
+    - cron: '0 5 * * 0'     # Sundays at 05:00 UTC
+  workflow_dispatch:
+
+jobs:
+  ai-summary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Regenerate AI repo summaries
+        run: |
+          HTTP_STATUS=$(curl -s -o body.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://repohq.vercel.app/api/cron/ai-summary)
+          echo "Status: $HTTP_STATUS"
+          cat body.json
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "AI summary failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi

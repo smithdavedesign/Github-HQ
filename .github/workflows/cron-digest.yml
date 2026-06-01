@@ -1,0 +1,23 @@
+name: Cron — Weekly Digest
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'     # Mondays at 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Generate weekly digest + advisor + CEO report
+        run: |
+          HTTP_STATUS=$(curl -s -o body.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://repohq.vercel.app/api/cron/digest)
+          echo "Status: $HTTP_STATUS"
+          cat body.json
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "Digest failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi
