@@ -33,6 +33,8 @@ export function calculateShowcaseScore(repo: ShowcaseInput): number {
   // Only public repos can be showcased on a GitHub profile
   if (repo.visibility !== 'public') return 0
   if (['archived', 'sunsetting'].includes(repo.lifecycleStatus ?? '')) return 0
+  // Reference repos are intentionally dormant snapshots — not for showcasing
+  if (repo.purpose === 'Reference') return 0
 
   const health    = repo.healthScore * 0.40
   const stars     = Math.min(40, Math.log2(repo.stars + 2) * 8) * 0.20   // log scale, 500+ stars ≈ 40

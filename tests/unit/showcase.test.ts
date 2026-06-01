@@ -72,6 +72,18 @@ describe('calculateShowcaseScore', () => {
   })
 })
 
+describe('calculateShowcaseScore — Reference purpose', () => {
+  it('returns 0 for Reference repos — not meant to be showcased', () => {
+    expect(calculateShowcaseScore(base({ purpose: 'Reference' }))).toBe(0)
+  })
+
+  it('Reference scores lower than any other active purpose', () => {
+    const reference = calculateShowcaseScore(base({ purpose: 'Reference' }))
+    const infra = calculateShowcaseScore(base({ purpose: 'Infrastructure' }))
+    expect(reference).toBeLessThanOrEqual(infra)
+  })
+})
+
 describe('getShowcaseRecommendations', () => {
   it('returns up to topN repos', () => {
     const repos = Array.from({ length: 10 }, (_, i) => base({ id: i, name: `repo-${i}`, stars: i * 10 }))

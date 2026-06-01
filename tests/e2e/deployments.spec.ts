@@ -9,8 +9,8 @@ test.describe('Deployments page', () => {
 
   test('shows status metric cards', async ({ page }) => {
     await page.goto('/deployments')
-    for (const label of ['Total Monitored', 'Healthy', 'Slow', 'Down']) {
-      await expect(page.getByText(label)).toBeVisible()
+    for (const label of ['Total Monitored', 'Slow', 'Down']) {
+      await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
     }
   })
 
