@@ -188,11 +188,52 @@
 - [ ] Dismissable per-repo with a snooze
 
 ### Phase 33 — Dependency Graph: Shared External Deps
-- [ ] Extend dep graph to show repos that share prominent external packages
-- [ ] E.g., two repos both using `drizzle-orm` or `openai` are visually linked
-- [ ] Shared deps shown as edge labels
-- [ ] More immediately useful than internal deps (shows up day one, not just for published packages)
+- [ ] Extend dep graph to show repos that share prominent external packages (drizzle-orm, openai, etc.)
+- [ ] Shared deps shown as edge labels; more immediately useful than internal deps
 
+### Phase 34 — Portfolio Concentration Risk
+- [ ] Compute revenue concentration: % of total MRR tied to single repo
+- [ ] Compute tech stack concentration: dominant framework/DB across portfolio
+- [ ] Risk card on dashboard — flags single-point-of-failure when one repo > 60% of revenue
+- [ ] Low effort: all data already exists, pure computation from existing metrics
+
+### Phase 35 — One-Click Sunset Pipeline
+- [ ] "Sunset" button on graveyard/archive page that triggers a GitHub Actions workflow
+- [ ] Workflow: sets GitHub repo to archived (read-only via API), updates lifecycle to `archived` in DB
+- [ ] Optionally pauses Vercel deployment (requires VERCEL_TOKEN)
+- [ ] Writes autopsy summary to `portfolio_events` automatically on completion
+
+### Phase 36 — Portfolio Simulation Engine
+- [ ] "What if" planner: given N available hours + goal (max ARR / max health / launch beta), model expected outcomes
+- [ ] Uses existing opportunity score deltas + estimated effort per repo as inputs
+- [ ] Output: ranked weekly allocation table with projected portfolio score delta, ARR delta
+- [ ] Comparison view: Recommended vs Actual (tracked via commit activity after the week)
+- [ ] Upgrades the Advisor from "what to do" to "plan my week"
+
+### Phase 37 — Stripe / Revenue API Integration
+- [ ] OAuth or API key connection to Stripe (and optionally Lemon Squeezy, Gumroad)
+- [ ] Auto-populate MRR per repo by mapping Stripe Product metadata → repo ID
+- [ ] Real-time churn and LTV layered over git activity
+- [ ] Removes the biggest manual input in the current flow
+
+### Phase 38 — MCP Server (IDE Context Integration)
+- [ ] Expose RepoHQ portfolio state as a Model Context Protocol server
+- [ ] Endpoints: current repo lifecycle/health/focus/debt, portfolio advisor summary, active goals
+- [ ] Claude Code (and other MCP clients) can query portfolio context while coding
+- [ ] Prevents wasted effort on repos flagged for sunsetting; surfaces priorities in-editor
+- [ ] Architecturally the most significant phase — moves intelligence from dashboard to workflow
+
+### Phase 39 — Opportunity Cost Tracker
+- [ ] Weekly report: "You spent time on Repo A. Repo B had 4x projected value this week."
+- [ ] Estimated opportunity cost in dollars (missed MRR potential) and score points
+- [ ] Requires approximate time tracking — inferred from commit timestamps across repos
+- [ ] Changes behavior more than any dashboard card
+
+### Phase 40 — Open-Source Template / Deploy-to-Vercel
+- [ ] Strip personal data, create a clean deploy-to-Vercel one-click template
+- [ ] README with full setup guide (GitHub OAuth, Neon, Anthropic API key)
+- [ ] "Spotify Wrapped for your GitHub portfolio" — strong indie hacker / open source appeal
+- [ ] Foundation for a hosted SaaS if desired (public portfolio page already built)
 
 ---
 
@@ -207,16 +248,25 @@
 | Incremental sync | Nice-to-have for portfolios > 200 repos |
 | Phase 16 trend lines | Accumulating automatically — will ship after ~30 daily syncs |
 | Slack / email digest delivery | Pipe Monday digest to Slack or email so it's seen without logging in |
+| Founder Memory Layer | Vector DB + retrieval pipeline — high complexity, years to pay off |
+| Codebase Cross-Pollinator | pgvector embeddings across repos — interesting but high noise-to-signal |
+| Burnout Predictor | Insufficient data for one person's commit history |
+| Auto PR Generation | Requires GitHub App (separate OAuth flow) |
+| Weekly CEO Conversation Mode | Interesting but requires real-time chat UI infrastructure |
+| Job Market / Tech Demand Scoring | Interesting career-angle feature; low priority for pure portfolio management |
 
 ---
 
 ## Infrastructure
 
-**Vercel Pro** unlocks better cron frequency (currently capped at once/day on Hobby):
-- GitHub Sync: every 6 hours
-- Deployment checks: every 12 hours
+**GitHub Actions (current — primary cron trigger):**
+- Sync: every 6 hours
+- Security: daily at 03:00 UTC
+- Deployments: every 12 hours
+- AI summaries: Sundays 05:00 UTC
+- Digest + Advisor + CEO Report: Mondays 06:00 UTC
 
-**Cron schedule (current — Hobby plan):**
+**Vercel crons (Sunday-only fallback):**
 
 | Endpoint | Time (UTC) | What it does |
 |----------|-----------|-------------|
