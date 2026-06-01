@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { runPortfolioSimulation } from '@/lib/actions/simulation'
-import type { SimulationResult, GoalType } from '@/lib/actions/simulation'
+import type { SimulationResult, GoalType } from '@/lib/health/simulation'
 import { Cpu, TrendingUp, DollarSign, Heart, Clock, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 

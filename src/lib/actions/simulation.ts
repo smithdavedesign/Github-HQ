@@ -10,8 +10,6 @@ import { runSimulation } from '@/lib/health/simulation'
 import type { SimulationInput, SimulationResult, GoalType } from '@/lib/health/simulation'
 import { getPortfolioScoreTrend } from '@/lib/health/portfolio-snapshot'
 
-export type { SimulationResult, GoalType }
-
 export async function runPortfolioSimulation(
   availableHours: number,
   goalType: GoalType,
