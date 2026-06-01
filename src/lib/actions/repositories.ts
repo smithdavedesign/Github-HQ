@@ -136,6 +136,53 @@ export async function updateLifecycleStatus(repoId: number, status: string) {
   revalidatePath('/')
 }
 
+export async function archiveRepoOnGitHub(repoId: number): Promise<{ alreadyArchived?: boolean }> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const { users: usersTable } = await import('@/lib/db/schema')
+  const { portfolioEvents: portfolioEventsTable } = await import('@/lib/db/schema')
+
+  const [repo, user] = await Promise.all([
+    db.query.repositories.findFirst({
+      where: and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)),
+      columns: { id: true, name: true, owner: true, isArchived: true },
+    }),
+    db.query.users.findFirst({
+      where: eq(usersTable.id, session.user.id),
+      columns: { githubToken: true },
+    }),
+  ])
+
+  if (!repo) throw new Error('Not found')
+  if (repo.isArchived) return { alreadyArchived: true }
+  if (!user?.githubToken) throw new Error('No GitHub token')
+
+  const { createOctokit } = await import('@/lib/github/client')
+  const octokit = createOctokit(user.githubToken)
+
+  await octokit.rest.repos.update({ owner: repo.owner, repo: repo.name, archived: true })
+
+  await Promise.all([
+    db.update(repositories)
+      .set({ isArchived: true, lifecycleStatus: 'archived' })
+      .where(eq(repositories.id, repoId)),
+    db.insert(portfolioEventsTable).values({
+      userId: session.user.id,
+      repoId,
+      eventType: 'repo_archived',
+      title: `${repo.name} archived on GitHub`,
+      description: 'Set to read-only via RepoHQ one-click pipeline',
+    }).onConflictDoNothing(),
+  ])
+
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath('/repos/graveyard')
+  revalidatePath('/repos')
+
+  return {}
+}
+
 /** Lightweight lifecycle update for triage mode — no revalidatePath to avoid resetting triage state */
 export async function triageSetLifecycle(repoId: number, status: string) {
   const session = await auth()

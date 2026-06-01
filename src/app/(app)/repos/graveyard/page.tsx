@@ -7,8 +7,9 @@ import { HealthBadge } from '@/components/repos/health-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatDistanceToNow } from '@/lib/utils'
-import { Skull, ExternalLink } from 'lucide-react'
+import { Skull, ExternalLink, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
+import { ArchiveOnGitHubButton } from '@/components/repos/archive-on-github-button'
 
 export default async function GraveyardPage() {
   const session = await auth()
@@ -23,7 +24,7 @@ export default async function GraveyardPage() {
     columns: {
       id: true, name: true, description: true, language: true,
       lifecycleStatus: true, abandonmentReason: true, updatedAt: true,
-      homepage: true, stars: true,
+      homepage: true, stars: true, isArchived: true,
     },
     orderBy: (r, { desc }) => [desc(r.updatedAt)],
   })
@@ -96,9 +97,19 @@ export default async function GraveyardPage() {
                     )}
                   </div>
 
-                  {repo.metrics?.healthScore != null && (
-                    <HealthBadge score={Math.round(repo.metrics.healthScore)} />
-                  )}
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    {repo.metrics?.healthScore != null && (
+                      <HealthBadge score={Math.round(repo.metrics.healthScore)} />
+                    )}
+                    {repo.isArchived ? (
+                      <div className="flex items-center gap-1 text-xs text-emerald-600">
+                        <CheckCircle className="w-3 h-3" />
+                        On GitHub
+                      </div>
+                    ) : (
+                      <ArchiveOnGitHubButton repoId={repo.id} repoName={repo.name} />
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>

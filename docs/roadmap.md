@@ -224,11 +224,11 @@
 - [x] `ConcentrationRiskCard` on dashboard — bar chart, color-coded risk, single-failure warning
 - [x] Pure computation from existing data — no new DB queries
 
-### Phase 35 — One-Click Sunset Pipeline
-- [ ] "Sunset" button on graveyard/archive page that triggers a GitHub Actions workflow
-- [ ] Workflow: sets GitHub repo to archived (read-only via API), updates lifecycle to `archived` in DB
-- [ ] Optionally pauses Vercel deployment (requires VERCEL_TOKEN)
-- [ ] Writes autopsy summary to `portfolio_events` automatically on completion
+### Phase 35 — One-Click Archive Pipeline
+- [x] "Archive on GitHub" button on graveyard page for repos not yet archived on GitHub
+- [x] `archiveRepoOnGitHub()` calls `PATCH /repos/{owner}/{repo}` via Octokit, sets read-only
+- [x] Updates `isArchived` + `lifecycleStatus = 'archived'` in DB, writes `portfolio_events` entry
+- [x] Shows "✓ On GitHub" badge for repos already archived; button collapses to confirmation on success
 
 ### Phase 36 — Portfolio Simulation Engine
 - [x] "Plan My Week" card on dashboard — given N hours + goal type, models optimal allocation
