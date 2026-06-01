@@ -21,11 +21,11 @@ test.describe('Dashboard', () => {
 
   test('sidebar navigation is present', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Repositories' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Security' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Deployments' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Analytics' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Repositories', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Security', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Deployments', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Analytics', exact: true })).toBeVisible()
   })
 
   test('sync button is visible in topbar', async ({ page }) => {
