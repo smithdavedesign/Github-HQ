@@ -205,10 +205,26 @@ export async function syncSingleRepo(
 
   const stackData = await scanRepository(octokit, owner, name, repoId)
 
+  // Fetch existing security score (set by the security cron) before calculating health.
+  // If we use the hardcoded 100 here, health scores ignore real Dependabot alerts.
+  const [repoRecord, existingMetrics] = await Promise.all([
+    db.query.repositories.findFirst({
+      where: eq(repositories.id, repoId),
+      with: { deployments: { columns: { status: true } } },
+      columns: { mrr: true, stars: true, isRevenueGenerating: true },
+    }),
+    db.query.repositoryMetrics.findFirst({
+      where: eq(repositoryMetrics.repoId, repoId),
+      columns: { securityScore: true },
+    }),
+  ])
+
+  const currentSecurityScore = existingMetrics?.securityScore ?? 100
+
   const metrics: InsertRepositoryMetrics = {
     repoId,
     activityScore,
-    securityScore: 100,
+    securityScore: 100,   // preserved from security cron via onConflictDoUpdate (not in set)
     documentationScore: stackData.documentationScore,
     testingScore: stackData.testingScore,
     dependencyScore: calculateDependencyScore(lastPush),
@@ -228,19 +244,13 @@ export async function syncSingleRepo(
 
   metrics.healthScore = calculateHealthScore({
     activityScore: metrics.activityScore ?? 0,
-    securityScore: metrics.securityScore ?? 100,
+    securityScore: currentSecurityScore,
     documentationScore: metrics.documentationScore ?? 0,
     testingScore: metrics.testingScore ?? 0,
     dependencyScore: metrics.dependencyScore ?? 50,
     qualityScore: metrics.qualityScore ?? 70,
   })
 
-  // Opportunity score — needs repo-level data (mrr, stars, deployments)
-  const repoRecord = await db.query.repositories.findFirst({
-    where: eq(repositories.id, repoId),
-    with: { deployments: { columns: { status: true } } },
-    columns: { mrr: true, stars: true, isRevenueGenerating: true },
-  })
   const hasLiveDeployment = repoRecord?.deployments.some(d => d.status === 'healthy' || d.status === 'slow') ?? false
   const mrrNum = toNum(repoRecord?.mrr)
   const stars = githubRepo.stargazers_count ?? 0
