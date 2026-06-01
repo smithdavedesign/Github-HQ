@@ -9,12 +9,14 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { formatDistanceToNow } from '@/lib/utils'
-import { Shield, Clock, GitFork, Cpu, Target, CreditCard, FileCode } from 'lucide-react'
+import { Shield, Clock, GitFork, Cpu, Target, CreditCard, FileCode, Sparkles } from 'lucide-react'
 import { PublicProfileToggle } from '@/components/settings/public-profile-toggle'
 import { GoalManager } from '@/components/settings/goal-manager'
 import { HoursInput } from '@/components/settings/hours-input'
 import { StripeConnect } from '@/components/settings/stripe-connect'
 import { ProfileReadmeGenerator } from '@/components/settings/profile-readme-generator'
+import { LLMSettings } from '@/components/settings/llm-settings'
+import { getLLMSettings } from '@/lib/actions/llm'
 import { getGoals } from '@/lib/actions/goals'
 import { hasStripeKey, stripeKeySource } from '@/lib/actions/stripe'
 import { repositories } from '@/lib/db/schema'
@@ -23,7 +25,7 @@ export default async function SettingsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [user, recentScans, activeGoals, stripeConnected, stripeSource, repoList] = await Promise.all([
+  const [user, recentScans, activeGoals, stripeConnected, stripeSource, repoList, llmSettings] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, session.user.id),
       columns: { id: true, name: true, email: true, image: true, githubLogin: true, lastSyncedAt: true, createdAt: true, publicProfile: true, hoursPerWeek: true },
@@ -41,6 +43,7 @@ export default async function SettingsPage() {
       columns: { id: true, name: true, stripeProductId: true },
       orderBy: (r, { asc }) => [asc(r.name)],
     }),
+    getLLMSettings(),
   ])
 
   const initials = session.user.name?.split(' ').map((n) => n[0]).join('').toUpperCase() ?? '?'
@@ -51,6 +54,22 @@ export default async function SettingsPage() {
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground text-sm mt-1">Account and sync configuration</p>
       </div>
+
+      {/* AI Provider */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Sparkles className="w-4 h-4" />
+            AI Provider
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <LLMSettings
+            initialProvider={llmSettings.provider}
+            keySource={llmSettings.keySource}
+          />
+        </CardContent>
+      </Card>
 
       {/* Profile */}
       <Card>

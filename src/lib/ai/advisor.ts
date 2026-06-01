@@ -1,5 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { toNum } from '@/lib/utils'
+import { getLLMAdapter } from './adapter'
 import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, securityFindings, deployments, digests } from '@/lib/db/schema'
 import { eq, inArray, and } from 'drizzle-orm'
@@ -10,7 +10,6 @@ import {
 } from '@/lib/health/scoring'
 import { formatValuation } from '@/lib/health/valuation'
 
-const client = new Anthropic()
 
 export interface AdvisorAction {
   repoId: number
@@ -193,17 +192,14 @@ Rules:
 - Pick the 5 highest-delta actions across all repos
 - If a recommended action resembles a graveyard idea, add a caveat in the reasoning field`
 
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1500,
-    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-    messages: [{
-      role: 'user',
-      content: `Portfolio: ${repoAnalysis.length} repos, avg opp score ${avgOpp}, estimated total value ${formatValuation(totalValue)}\n\n${repoLines}`,
-    }],
+  const adapter = await getLLMAdapter(userId)
+  const text = await adapter.generate({
+    system: SYSTEM_PROMPT,
+    user: `Portfolio: ${repoAnalysis.length} repos, avg opp score ${avgOpp}, estimated total value ${formatValuation(totalValue)}\n\n${repoLines}`,
+    fast: false,
+    maxTokens: 1500,
+    cacheSystem: true,
   })
-
-  const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '{}'
   const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
   let parsed: Omit<AdvisorContent, 'generatedAt'>
   try {

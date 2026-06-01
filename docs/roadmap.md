@@ -267,6 +267,15 @@
 - [x] Progress bar + "X remaining" counter
 - [x] End screen: summary of kept / sunsetted / archived / skipped counts
 
+### Phase 44 — Bring Your Own LLM Key
+- [x] `llmProvider` + `llmApiKey` columns on users table
+- [x] `LLMAdapter` interface with `generate({ system, user, fast, maxTokens, cacheSystem })`
+- [x] Anthropic adapter (preserves prompt caching) + OpenAI adapter (gpt-4o-mini / gpt-4o)
+- [x] `getLLMAdapter(userId)` factory — user key → app env var fallback → error if neither
+- [x] All 5 AI modules (digest, advisor, ceo-report, analysis, summary) + NL query updated
+- [x] Settings → AI Provider: Claude/OpenAI selector, key input, test-on-save, remove button
+- [x] Prompts unchanged — transfer cleanly between providers
+
 ### Phase 39 — Opportunity Cost Tracker
 - [x] `computeOpportunityCost()` — compares repos with weeklyCommits > 0 vs highest-value untouched repos
 - [x] `OpportunityCostCard` on dashboard — shows what you worked on, what you missed, score delta

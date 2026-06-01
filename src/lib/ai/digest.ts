@@ -1,9 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { digests, repositories, repositoryMetrics, securityFindings } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-
-const client = new Anthropic()
+import { getLLMAdapter } from './adapter'
 
 export interface DigestPriority {
   rank: 1 | 2 | 3
@@ -93,20 +91,16 @@ export async function generateDigest(userId: string): Promise<DigestContent> {
 
   const prompt = `Portfolio: ${userRepos.length} repos, avg health ${avgHealth.toFixed(0)}/100\n\n${repoLines}`
 
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: prompt }],
+  const adapter = await getLLMAdapter(userId)
+  const text = await adapter.generate({
+    system: SYSTEM_PROMPT, user: prompt, fast: false, maxTokens: 1024, cacheSystem: true,
   })
-
-  const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '{}'
   const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
   let parsed: Omit<DigestContent, 'generatedAt'>
   try {
     parsed = JSON.parse(jsonStr)
   } catch {
-    console.error('[digest] failed to parse Claude response:', text.slice(0, 200))
+    console.error('[digest] failed to parse LLM response:', text.slice(0, 200))
     throw new Error('Digest: Claude returned non-JSON response')
   }
 

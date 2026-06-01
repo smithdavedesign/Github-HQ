@@ -1,9 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { getLLMAdapter } from './adapter'
 import { db } from '@/lib/db'
 import { repositories } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
-const client = new Anthropic()
 
 const SYSTEM_PROMPT = `You are a senior software engineer performing a concise repository analysis.
 Given repository metadata, return a structured JSON summary with exactly these fields:
@@ -38,9 +37,12 @@ interface RepoContext {
   readmeExcerpt?: string
 }
 
+import type { LLMAdapter } from './adapter'
+
 export async function generateRepoSummary(
   repoId: number,
   context: RepoContext,
+  adapter: LLMAdapter,
 ): Promise<RepoSummary> {
   const prompt = `Repository: ${context.name}
 Description: ${context.description ?? 'None'}
@@ -50,20 +52,9 @@ Activity: ${context.activityStatus}, ${context.openIssues} open issues, ${contex
 Health Score: ${context.healthScore}/100
 ${context.readmeExcerpt ? `README (excerpt): ${context.readmeExcerpt.slice(0, 800)}` : ''}`
 
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 512,
-    system: [
-      {
-        type: 'text',
-        text: SYSTEM_PROMPT,
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
-    messages: [{ role: 'user', content: prompt }],
+  const text = await adapter.generate({
+    system: SYSTEM_PROMPT, user: prompt, fast: false, maxTokens: 512, cacheSystem: true,
   })
-
-  const text = message.content[0].type === 'text' ? message.content[0].text : '{}'
   let summary: RepoSummary
   try {
     summary = JSON.parse(text)
@@ -81,6 +72,7 @@ ${context.readmeExcerpt ? `README (excerpt): ${context.readmeExcerpt.slice(0, 80
 }
 
 export async function generateSummariesForUser(userId: string): Promise<void> {
+  const adapter = await getLLMAdapter(userId)
   const userRepos = await db.query.repositories.findMany({
     where: eq(repositories.userId, userId),
     with: { metrics: true, techStack: true },
@@ -108,7 +100,7 @@ export async function generateSummariesForUser(userId: string): Promise<void> {
         openPrs: repo.metrics?.openPrs ?? 0,
         healthScore: repo.metrics?.healthScore ?? 0,
         activityStatus: repo.metrics?.activityStatus ?? 'unknown',
-      })
+      }, adapter)
       // Respect rate limits between repos
       await new Promise((r) => setTimeout(r, 500))
     } catch {

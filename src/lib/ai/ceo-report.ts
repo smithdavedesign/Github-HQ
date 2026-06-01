@@ -1,10 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { toNum } from '@/lib/utils'
 import { db } from '@/lib/db'
 import { digests, repositories, repositoryMetrics, securityFindings, deployments } from '@/lib/db/schema'
 import { eq, desc } from 'drizzle-orm'
-
-const client = new Anthropic()
+import { getLLMAdapter } from './adapter'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -131,14 +129,10 @@ export async function generateCeoReport(userId: string): Promise<CeoReportConten
 
   const prompt = `Portfolio: ${userRepos.length} repos · MRR $${totalMrr.toFixed(0)} · avg health ${avgHealth.toFixed(0)}/100 · total value $${totalValue.toLocaleString()}\n\n${repoLines}`
 
-  const message = await client.messages.create({
-    model: 'claude-haiku-4-5',
-    max_tokens: 1024,
-    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: prompt }],
+  const adapter = await getLLMAdapter(userId)
+  const text = await adapter.generate({
+    system: SYSTEM_PROMPT, user: prompt, fast: true, maxTokens: 1024, cacheSystem: true,
   })
-
-  const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '{}'
   const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
 
   type ClaudeOutput = {

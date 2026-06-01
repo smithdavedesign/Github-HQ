@@ -72,6 +72,9 @@ export const users = pgTable('users', {
   hoursPerWeek: integer('hours_per_week').default(10),
   // Phase 37: Stripe integration
   stripeApiKey: text('stripe_api_key'),
+  // Phase 44: Bring Your Own LLM Key
+  llmProvider: text('llm_provider').default('anthropic'), // anthropic | openai
+  llmApiKey: text('llm_api_key'),
 })
 
 // ─── Repositories ─────────────────────────────────────────────────────────────

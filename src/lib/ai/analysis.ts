@@ -1,9 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, techStack, securityFindings } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-
-const client = new Anthropic()
+import { getLLMAdapter } from './adapter'
 
 export interface ClaudeAnalysis {
   architecture: {
@@ -136,20 +134,10 @@ Revenue generating: ${repo.isRevenueGenerating ? 'Yes' : 'No'}
 MRR: $${repo.mrr ?? 0}
 Tags: ${(repo.tags ?? []).join(', ') || 'None'}`
 
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2048,
-    system: [
-      {
-        type: 'text',
-        text: SYSTEM_PROMPT,
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
-    messages: [{ role: 'user', content: prompt }],
+  const adapter = await getLLMAdapter(repo.userId)
+  const text = await adapter.generate({
+    system: SYSTEM_PROMPT, user: prompt, fast: false, maxTokens: 2048, cacheSystem: true,
   })
-
-  const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '{}'
 
   // Strip any markdown code fences if present
   const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')

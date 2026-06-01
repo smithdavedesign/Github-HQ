@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import Anthropic from '@anthropic-ai/sdk'
-
-const client = new Anthropic()
+import { getLLMAdapter } from '@/lib/ai/adapter'
 
 export interface NLQueryFilters {
   healthMin?: number
@@ -79,16 +77,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Question too long' }, { status: 400 })
   }
 
-  const message = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',  // fast + cheap for this interactive use case
-    max_tokens: 256,
-    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: question }],
+  const adapter = await getLLMAdapter(session.user.id)
+  const text = await adapter.generate({
+    system: SYSTEM_PROMPT, user: question, fast: true, maxTokens: 256, cacheSystem: true,
   })
-
-  const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '{}'
   const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-
   const result: NLQueryResult = JSON.parse(jsonStr)
 
   return NextResponse.json(result)
