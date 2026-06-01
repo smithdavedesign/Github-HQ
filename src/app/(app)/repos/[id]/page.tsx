@@ -16,6 +16,8 @@ import { AnalyzeButton } from '@/components/repos/analyze-button'
 import { AnalysisTab } from '@/components/repos/analysis-tab'
 import { DeploymentManager } from '@/components/repos/deployment-manager'
 import { LifecycleSelector } from '@/components/repos/lifecycle-selector'
+import { EffortSelector } from '@/components/repos/effort-selector'
+import { RepoPL } from '@/components/repos/repo-pl'
 import { PurposeSelector } from '@/components/repos/purpose-selector'
 import { FocusToggle } from '@/components/repos/focus-toggle'
 import type { ClaudeAnalysis } from '@/lib/ai/analysis'
@@ -167,24 +169,26 @@ export default async function RepoDetailPage({ params }: Props) {
             <CommitActivityChart data={weeklyCommitData} />
           )}
 
-          {/* Lifecycle + Purpose + Focus + Tags */}
+          {/* Lifecycle + Purpose + Effort + Focus + Tags */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-muted-foreground mb-2">Lifecycle Stage</p>
-              <LifecycleSelector repoId={repo.id} current={repo.lifecycleStatus} />
+              <LifecycleSelector repoId={repo.id} repoName={repo.name} current={repo.lifecycleStatus} />
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-2">Purpose</p>
               <PurposeSelector repoId={repo.id} current={repo.purpose} />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground mb-2">Focus</p>
-              <FocusToggle repoId={repo.id} initialFocused={repo.isFocused ?? false} />
-              <p className="text-xs text-muted-foreground mt-1">
-                Focused repos are prioritised by the Advisor and CEO Report.
-              </p>
+              <p className="text-xs text-muted-foreground mb-2">Effort to Improve</p>
+              <EffortSelector repoId={repo.id} current={repo.estimatedEffort} />
             </div>
             <div>
+              <p className="text-xs text-muted-foreground mb-2">Focus</p>
+              <FocusToggle repoId={repo.id} initialFocused={repo.isFocused ?? false} />
+              <p className="text-xs text-muted-foreground mt-1">Prioritised by Advisor and CEO Report.</p>
+            </div>
+            <div className="sm:col-span-2">
               <p className="text-xs text-muted-foreground mb-2">Tags</p>
               <TagEditor repoId={repo.id} initialTags={repo.tags ?? []} />
             </div>
@@ -274,6 +278,11 @@ export default async function RepoDetailPage({ params }: Props) {
 
         {/* Revenue */}
         <TabsContent value="revenue" className="pt-4 space-y-6">
+          <RepoPL
+            mrr={repo.mrr}
+            monthlyCost={repo.monthlyCost}
+            costItems={repo.costItems as CostItem[] | null}
+          />
           <RevenueEditor
             repoId={repo.id}
             initialMrr={String(repo.mrr ?? '0')}

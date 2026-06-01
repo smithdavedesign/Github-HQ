@@ -68,6 +68,8 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
   // Phase 7: public portfolio
   publicProfile: boolean('public_profile').default(false),
+  // Phase 25: hours available per week for time allocation
+  hoursPerWeek: integer('hours_per_week').default(10),
 })
 
 // ─── Repositories ─────────────────────────────────────────────────────────────
@@ -99,6 +101,11 @@ export const repositories = pgTable('repositories', {
   isFocused: boolean('is_focused').default(false),
   // Phase 23: Itemized cost tracking
   costItems: jsonb('cost_items').$type<Array<{ label: string; amount: number }>>(),
+  // Phase 26: Opportunity vs Effort Matrix
+  estimatedEffort: text('estimated_effort').default('medium'), // low | medium | high
+  // Phase 27: Idea Graveyard
+  abandonmentReason: text('abandonment_reason'),
+  // No demand | Too competitive | Too much maintenance | Lost interest | Merged | Pivoted,
   // Revenue & cost fields (Phase 3)
   mrr: numeric('mrr', { precision: 10, scale: 2 }).default('0'),
   arr: numeric('arr', { precision: 10, scale: 2 }).default('0'),

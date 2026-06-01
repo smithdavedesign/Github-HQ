@@ -135,6 +135,13 @@ export async function updateLifecycleStatus(repoId: number, status: string) {
   revalidatePath('/')
 }
 
+export async function updateAbandonmentReason(repoId: number, reason: string) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+  await db.update(repositories).set({ abandonmentReason: reason })
+    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+}
+
 export async function updateRepoTags(repoId: number, tags: string[]) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
@@ -143,6 +150,42 @@ export async function updateRepoTags(repoId: number, tags: string[]) {
     .update(repositories)
     .set({ tags })
     .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+}
+
+export async function getPortfolioCostBreakdown() {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const repos = await db.query.repositories.findMany({
+    where: eq(repositories.userId, session.user.id),
+    columns: { costItems: true, monthlyCost: true, name: true },
+  })
+
+  // Aggregate cost_items labels across all repos
+  const breakdown: Record<string, number> = {}
+  let totalFromItems = 0
+
+  for (const repo of repos) {
+    const items = repo.costItems as Array<{ label: string; amount: number }> | null
+    if (items && items.length > 0) {
+      for (const item of items) {
+        breakdown[item.label] = (breakdown[item.label] ?? 0) + item.amount
+        totalFromItems += item.amount
+      }
+    } else if (repo.monthlyCost && parseFloat(String(repo.monthlyCost)) > 0) {
+      // Fall back to unlabelled cost
+      const amt = parseFloat(String(repo.monthlyCost))
+      breakdown['Other'] = (breakdown['Other'] ?? 0) + amt
+      totalFromItems += amt
+    }
+  }
+
+  return {
+    breakdown: Object.entries(breakdown)
+      .map(([label, amount]) => ({ label, amount: Math.round(amount * 100) / 100 }))
+      .sort((a, b) => b.amount - a.amount),
+    total: Math.round(totalFromItems * 100) / 100,
+  }
 }
 
 export async function getPortfolioValuation() {
@@ -263,6 +306,23 @@ export async function getOpportunityData() {
     .slice(0, 5)
 
   return { needsAttention, highPotentialDormant }
+}
+
+export async function updateRepoEffort(repoId: number, effort: string) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+  await db.update(repositories).set({ estimatedEffort: effort })
+    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath(`/repos/${repoId}`)
+  revalidatePath('/analytics')
+}
+
+export async function updateHoursPerWeek(hours: number) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+  const { users } = await import('@/lib/db/schema')
+  await db.update(users).set({ hoursPerWeek: hours }).where(eq(users.id, session.user.id))
 }
 
 export async function togglePublicProfile(enabled: boolean) {

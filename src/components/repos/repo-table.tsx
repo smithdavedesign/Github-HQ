@@ -25,7 +25,7 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { ArrowUpDown, ChevronDown, Download, ExternalLink, CheckCircle, XCircle, DollarSign, Bookmark, Trash2 } from 'lucide-react'
+import { ArrowUpDown, ChevronDown, Download, ExternalLink, CheckCircle, XCircle, DollarSign, Bookmark, Trash2, Star } from 'lucide-react'
 import Link from 'next/link'
 import { formatDistanceToNow } from '@/lib/utils'
 import { toggleRevenueGenerating } from '@/lib/actions/repositories'
@@ -152,7 +152,10 @@ export function RepoTable({ data, nlFilters, nlExplanation }: {
 }) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'healthScore', desc: true }])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ tags: false, buildStatus: false, mrr: false, techDebt: false, valuation: false })
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+    tags: false, buildStatus: false, mrr: false, techDebt: false, valuation: false,
+    purpose: false, focus: false, archiveScore: false,
+  })
   const [globalFilter, setGlobalFilter] = useState('')
   const [savedViews, setSavedViews] = useState<Record<string, SavedView>>(loadSavedViews)
   const [viewNameInput, setViewNameInput] = useState('')
@@ -380,6 +383,43 @@ export function RepoTable({ data, nlFilters, nlExplanation }: {
             {formatValuation(value)}
           </span>
         )
+      },
+      sortDescFirst: true,
+    },
+    {
+      id: 'purpose',
+      accessorKey: 'purpose',
+      header: 'Purpose',
+      cell: ({ getValue }) => {
+        const v = getValue<string | null>()
+        return v
+          ? <Badge variant="secondary" className="text-xs">{v}</Badge>
+          : <span className="text-xs text-muted-foreground">—</span>
+      },
+    },
+    {
+      id: 'focus',
+      accessorKey: 'isFocused',
+      header: 'Focus',
+      cell: ({ getValue }) => (
+        <Star className={`w-3.5 h-3.5 ${getValue<boolean>() ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30'}`} />
+      ),
+    },
+    {
+      id: 'archiveScore',
+      accessorFn: (row) => row.metrics?.archiveScore ?? 0,
+      header: ({ column }) => (
+        <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}>
+          Archive <ArrowUpDown className="w-3 h-3" />
+        </Button>
+      ),
+      cell: ({ getValue }) => {
+        const score = Math.round(getValue<number>())
+        if (score === 0) return <span className="text-xs text-muted-foreground">—</span>
+        const color = score >= 70 ? 'text-red-600 bg-red-50 border-red-200'
+          : score >= 45 ? 'text-amber-600 bg-amber-50 border-amber-200'
+          : 'text-slate-500 bg-slate-50 border-slate-200'
+        return <Badge variant="outline" className={`text-xs tabular-nums ${color}`}>{score}</Badge>
       },
       sortDescFirst: true,
     },

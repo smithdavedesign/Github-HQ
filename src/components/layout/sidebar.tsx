@@ -4,13 +4,14 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, GitFork, Shield, Rocket,
-  BarChart3, Activity, Settings, GitBranch,
+  BarChart3, Activity, Settings, GitBranch, Skull,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/repos', icon: GitFork, label: 'Repositories' },
+  { href: '/repos/graveyard', icon: Skull, label: 'Graveyard' },
   { href: '/feed', icon: Activity, label: 'Feed' },
   { href: '/security', icon: Shield, label: 'Security' },
   { href: '/deployments', icon: Rocket, label: 'Deployments' },
@@ -40,7 +41,7 @@ export function Sidebar() {
           Overview
         </p>
         {navItems.map(({ href, icon: Icon, label }) => {
-          const active = href === '/' ? pathname === '/' : pathname.startsWith(href)
+          const active = href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/')
           return (
             <Link
               key={href}

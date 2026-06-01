@@ -120,17 +120,17 @@
 - [x] `purpose` enum: Revenue / Learning / Consulting / Experiment / Open Source / Client Work / Portfolio / Infrastructure
 - [x] Purpose selector on repo detail Overview tab
 - [x] `is_focused` boolean — focus toggle on repo detail
-- [ ] Purpose + focus columns in repos table
+- [x] Purpose, Focus, Archive Score columns in repos table (hidden by default, toggle via Columns menu)
 
 ### Phase 22 — Archive Candidates
 - [x] `archive_score` (0–100) — inactivity, zero revenue, no deployment, low health, low opportunity
 - [x] Archive Candidates card on dashboard — one-click lifecycle transition to Sunsetting
-- [ ] Archive score column in repos table
+
 
 ### Phase 23 — Itemized Cost Tracking
 - [x] `cost_items` jsonb on repositories — `[{ label, amount }]` line items
 - [x] Cost line-item editor on Revenue tab — add/remove/edit, total auto-summed
-- [ ] Per-repo P&L: revenue − itemized costs
+- [x] Per-repo P&L summary on Revenue tab: revenue, itemized costs, monthly + annual profit, margin
 - [ ] Portfolio cost breakdown on dashboard (by label)
 
 ### Phase 24 — Weekly CEO Report
@@ -143,22 +143,23 @@
 - [x] Ranks repos by projected value delta — health gap × opportunity gap, revenue + focus multipliers
 - [x] "Best Use of Your Time" card on dashboard — top 3 repos with impact estimate
 - [x] Strong archive candidates (score ≥ 70) excluded from ranking
-- [ ] Hours-available setting in Settings (currently defaults to 10h/week)
+- [x] Hours-available input in Settings (Goals section) — configures time allocation
+
+### Phase 26 — Opportunity vs Effort Matrix
+- [x] `estimated_effort` enum on repositories: low / medium / high
+- [x] Effort selector on repo detail Overview tab
+- [x] 2×2 quadrant view on Analytics page: Quick Win / Invest / Fill-In / Deprioritize
+- [x] Repos listed by opportunity score within each quadrant
+
+### Phase 27 — Idea Graveyard
+- [x] `abandonment_reason` text field on repositories
+- [x] Prompt shown automatically when lifecycle → Sunsetting or Archived
+- [x] `/repos/graveyard` page in sidebar — archived repos with reason badges
+- [ ] Digest references graveyard when similar ideas resurface
 
 ---
 
 ## Up Next
-
-### Phase 26 — Opportunity vs Effort Matrix
-- [ ] `estimated_effort` enum on repositories: low / medium / high (user-set)
-- [ ] Effort selector on repo detail
-- [ ] Quadrant view on Analytics: Quick Wins / Invest / Fill-In / Deprioritize
-- [ ] "Quick Wins" in advisor output filtered to top-right quadrant
-
-### Phase 27 — Idea Graveyard
-- [ ] `abandonment_reason` enum on repositories — prompt shown on Sunsetting / Archived
-- [ ] Graveyard view — archived repos with reason + date
-- [ ] Digest references graveyard when similar ideas resurface
 
 ### Phase 28 — Personal Changelog
 - [ ] `portfolio_events` table — repo created, archived, MRR changed, health milestone, first revenue

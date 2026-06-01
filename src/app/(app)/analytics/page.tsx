@@ -4,6 +4,7 @@ import { repositories, repositoryMetrics } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { HealthTrendChart } from '@/components/dashboard/health-trend-chart'
+import { EffortMatrix } from '@/components/dashboard/effort-matrix'
 
 export default async function AnalyticsPage() {
   const session = await auth()
@@ -12,7 +13,7 @@ export default async function AnalyticsPage() {
   const reposWithMetrics = await db.query.repositories.findMany({
     where: eq(repositories.userId, session.user.id),
     with: { metrics: true },
-    columns: { id: true, name: true },
+    columns: { id: true, name: true, estimatedEffort: true },
   })
 
   const chartData = reposWithMetrics
@@ -26,16 +27,26 @@ export default async function AnalyticsPage() {
       security: Math.round(r.metrics!.securityScore ?? 100),
     }))
 
+  const matrixRepos = reposWithMetrics
+    .filter(r => r.metrics?.opportunityScore != null)
+    .map(r => ({
+      id: r.id,
+      name: r.name,
+      opportunityScore: r.metrics!.opportunityScore ?? 0,
+      estimatedEffort: r.estimatedEffort,
+    }))
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Portfolio health trends and score breakdowns
+          Portfolio health trends, score breakdowns, and effort planning
         </p>
       </div>
 
       <HealthTrendChart data={chartData} />
+      <EffortMatrix repos={matrixRepos} />
     </div>
   )
 }

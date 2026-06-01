@@ -12,6 +12,7 @@ import { formatDistanceToNow } from '@/lib/utils'
 import { Shield, Clock, GitFork, Cpu, Target } from 'lucide-react'
 import { PublicProfileToggle } from '@/components/settings/public-profile-toggle'
 import { GoalManager } from '@/components/settings/goal-manager'
+import { HoursInput } from '@/components/settings/hours-input'
 import { getGoals } from '@/lib/actions/goals'
 
 export default async function SettingsPage() {
@@ -21,7 +22,7 @@ export default async function SettingsPage() {
   const [user, recentScans, activeGoals] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, session.user.id),
-      columns: { id: true, name: true, email: true, image: true, githubLogin: true, lastSyncedAt: true, createdAt: true, publicProfile: true },
+      columns: { id: true, name: true, email: true, image: true, githubLogin: true, lastSyncedAt: true, createdAt: true, publicProfile: true, hoursPerWeek: true },
     }),
     db.query.scans.findMany({
       where: eq(scans.userId, session.user.id),
@@ -165,7 +166,9 @@ export default async function SettingsPage() {
             Goals
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-5">
+          <HoursInput initialHours={user?.hoursPerWeek ?? 10} />
+          <div className="h-px bg-border/40" />
           <GoalManager initialGoals={activeGoals} />
         </CardContent>
       </Card>
