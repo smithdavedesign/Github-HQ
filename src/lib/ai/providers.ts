@@ -9,7 +9,7 @@ export const PROVIDER_LABELS: Record<LLMProvider, string> = {
 export const PROVIDER_MODELS: Record<LLMProvider, { fast: string; capable: string }> = {
   anthropic: { fast: 'claude-haiku-4-5-20251001', capable: 'claude-sonnet-4-6' },
   openai:    { fast: 'gpt-4o-mini',               capable: 'gpt-4o' },
-  gemini:    { fast: 'gemini-2.0-flash',           capable: 'gemini-2.5-pro-preview-05-06' },
+  gemini:    { fast: 'gemini-2.0-flash',           capable: 'gemini-1.5-pro' },
 }
 
 export const PROVIDER_KEY_HINTS: Record<LLMProvider, string> = {

@@ -1,10 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
-import OpenAI from 'openai'
-import { GoogleGenAI } from '@google/genai'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-
 export type { LLMProvider } from './providers'
 export { PROVIDER_LABELS, PROVIDER_MODELS, PROVIDER_KEY_HINTS } from './providers'
 import type { LLMProvider } from './providers'
@@ -23,12 +19,16 @@ export interface LLMAdapter {
   generate(params: GenerateParams): Promise<string>
 }
 
+// Lazy imports — each SDK is loaded only when that provider is actually used.
+// This prevents a broken Gemini or OpenAI SDK from crashing the whole module
+// and taking down Claude/other providers with it.
 
 function createAnthropicAdapter(apiKey: string): LLMAdapter {
-  const client = new Anthropic({ apiKey })
   return {
     provider: 'anthropic',
     async generate({ system, user, fast = false, maxTokens = 1000, cacheSystem = false }) {
+      const Anthropic = (await import('@anthropic-ai/sdk')).default
+      const client = new Anthropic({ apiKey })
       const model = fast ? PROVIDER_MODELS.anthropic.fast : PROVIDER_MODELS.anthropic.capable
       const message = await client.messages.create({
         model,
@@ -44,10 +44,11 @@ function createAnthropicAdapter(apiKey: string): LLMAdapter {
 }
 
 function createOpenAIAdapter(apiKey: string): LLMAdapter {
-  const client = new OpenAI({ apiKey })
   return {
     provider: 'openai',
     async generate({ system, user, fast = false, maxTokens = 1000 }) {
+      const OpenAI = (await import('openai')).default
+      const client = new OpenAI({ apiKey })
       const model = fast ? PROVIDER_MODELS.openai.fast : PROVIDER_MODELS.openai.capable
       const response = await client.chat.completions.create({
         model,
@@ -63,10 +64,11 @@ function createOpenAIAdapter(apiKey: string): LLMAdapter {
 }
 
 function createGeminiAdapter(apiKey: string): LLMAdapter {
-  const client = new GoogleGenAI({ apiKey })
   return {
     provider: 'gemini',
     async generate({ system, user, fast = false, maxTokens = 1000 }) {
+      const { GoogleGenAI } = await import('@google/genai')
+      const client = new GoogleGenAI({ apiKey })
       const model = fast ? PROVIDER_MODELS.gemini.fast : PROVIDER_MODELS.gemini.capable
       const response = await client.models.generateContent({
         model,
@@ -76,16 +78,13 @@ function createGeminiAdapter(apiKey: string): LLMAdapter {
           maxOutputTokens: maxTokens,
         },
       })
-      return response.text?.trim() ?? '{}'
+      // response.text is a convenience getter in @google/genai
+      const text = response.text ?? response.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}'
+      return text.trim()
     },
   }
 }
 
-/**
- * Get an LLM adapter for a user.
- * User's saved key takes priority; falls back to app-level env var for Anthropic.
- * Throws if no key is available for the selected provider.
- */
 export async function getLLMAdapter(userId: string): Promise<LLMAdapter> {
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
@@ -111,12 +110,11 @@ export async function getLLMAdapter(userId: string): Promise<LLMAdapter> {
   return createAnthropicAdapter(apiKey)
 }
 
-/** Quick validation call — sends a minimal prompt to confirm the key works. */
 export async function testLLMKey(provider: LLMProvider, apiKey: string): Promise<void> {
   let adapter: LLMAdapter
-  if (provider === 'openai')  adapter = createOpenAIAdapter(apiKey)
+  if (provider === 'openai')      adapter = createOpenAIAdapter(apiKey)
   else if (provider === 'gemini') adapter = createGeminiAdapter(apiKey)
-  else adapter = createAnthropicAdapter(apiKey)
+  else                            adapter = createAnthropicAdapter(apiKey)
 
   await adapter.generate({ system: 'Reply with OK.', user: 'OK?', fast: true, maxTokens: 5 })
 }
