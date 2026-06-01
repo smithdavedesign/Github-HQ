@@ -507,13 +507,14 @@ export async function getArchiveCandidates(threshold = 70) {
   const rows = await db.query.repositories.findMany({
     where: eq(repositories.userId, session.user.id),
     with: { metrics: true },
-    columns: { id: true, name: true, description: true, lifecycleStatus: true, mrr: true },
+    columns: { id: true, name: true, description: true, lifecycleStatus: true, mrr: true, purpose: true },
   })
 
   return rows
     .filter(r =>
       (r.metrics?.archiveScore ?? 0) >= threshold &&
-      r.lifecycleStatus !== 'archived',
+      r.lifecycleStatus !== 'archived' &&
+      r.purpose !== 'Reference',   // Reference repos are intentionally dormant
     )
     .map(r => ({
       id: r.id,
@@ -735,11 +736,11 @@ export async function getOpportunityCost() {
   const rows = await db.query.repositories.findMany({
     where: eq(repositories.userId, session.user.id),
     with: { metrics: { columns: { opportunityScore: true, weeklyCommits: true } } },
-    columns: { id: true, name: true, mrr: true, isFocused: true, lifecycleStatus: true },
+    columns: { id: true, name: true, mrr: true, isFocused: true, lifecycleStatus: true, purpose: true },
   })
 
   const inputs = rows
-    .filter(r => r.metrics != null)
+    .filter(r => r.metrics != null && r.purpose !== 'Reference')
     .map(r => ({
       id: r.id,
       name: r.name,

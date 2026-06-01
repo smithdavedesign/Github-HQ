@@ -88,7 +88,7 @@ export async function generateAdvisor(userId: string): Promise<AdvisorContent> {
     },
     columns: {
       id: true, name: true, description: true, stars: true,
-      mrr: true, isRevenueGenerating: true, isArchived: true, lifecycleStatus: true,
+      mrr: true, isRevenueGenerating: true, isArchived: true, lifecycleStatus: true, purpose: true,
     },
   })
 
@@ -101,7 +101,7 @@ export async function generateAdvisor(userId: string): Promise<AdvisorContent> {
   })
 
   const repoAnalysis = userRepos
-    .filter(r => !r.isArchived && r.metrics)
+    .filter(r => !r.isArchived && r.metrics && r.purpose !== 'Reference')
     .map(r => {
       const m = r.metrics!
       const mrrNum = toNum(r.mrr)

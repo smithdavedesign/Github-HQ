@@ -30,14 +30,14 @@ export async function runPortfolioSimulation(
       columns: {
         id: true, name: true, mrr: true, isRevenueGenerating: true,
         isArchived: true, lifecycleStatus: true, isFocused: true,
-        estimatedEffort: true,
+        estimatedEffort: true, purpose: true,
       },
     }),
     getPortfolioScoreTrend(userId),
   ])
 
   const inputs: SimulationInput[] = repos
-    .filter(r => r.metrics != null && !r.isArchived)
+    .filter(r => r.metrics != null && !r.isArchived && r.purpose !== 'Reference')
     .map(r => {
       const m = r.metrics!
       const mrr = toNum(r.mrr)

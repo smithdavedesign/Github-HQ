@@ -15,6 +15,7 @@ import type { RepoPurpose } from '@/lib/db/schema'
 export const PURPOSES: RepoPurpose[] = [
   'Revenue',
   'Learning',
+  'Reference',
   'Consulting',
   'Experiment',
   'Open Source',
@@ -24,14 +25,15 @@ export const PURPOSES: RepoPurpose[] = [
 ]
 
 const PURPOSE_META: Record<RepoPurpose, { description: string; color: string }> = {
-  Revenue:        { description: 'Generates or targets MRR/ARR',      color: 'text-emerald-600' },
-  Learning:       { description: 'Built to learn a technology',        color: 'text-blue-600' },
-  Consulting:     { description: 'Client or contract work',            color: 'text-purple-600' },
-  Experiment:     { description: 'Proof of concept or spike',          color: 'text-amber-600' },
-  'Open Source':  { description: 'Community-facing, no direct income', color: 'text-cyan-600' },
-  'Client Work':  { description: 'Delivered to a specific client',     color: 'text-indigo-600' },
-  Portfolio:      { description: 'Showcase / demo project',            color: 'text-pink-600' },
-  Infrastructure: { description: 'Internal tooling or shared service', color: 'text-slate-600' },
+  Revenue:        { description: 'Generates or targets MRR/ARR',                          color: 'text-emerald-600' },
+  Learning:       { description: 'Actively building to learn a technology',               color: 'text-blue-600' },
+  Reference:      { description: 'Tutorial or course completed — kept as a snapshot',     color: 'text-orange-500' },
+  Consulting:     { description: 'Client or contract work',                               color: 'text-purple-600' },
+  Experiment:     { description: 'Proof of concept or spike',                             color: 'text-amber-600' },
+  'Open Source':  { description: 'Community-facing, no direct income',                   color: 'text-cyan-600' },
+  'Client Work':  { description: 'Delivered to a specific client',                       color: 'text-indigo-600' },
+  Portfolio:      { description: 'Showcase / demo project',                               color: 'text-pink-600' },
+  Infrastructure: { description: 'Internal tooling or shared service',                   color: 'text-slate-600' },
 }
 
 interface PurposeSelectorProps {

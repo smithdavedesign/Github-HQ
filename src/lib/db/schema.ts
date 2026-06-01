@@ -405,6 +405,7 @@ export type RepoPurpose =
   | 'Client Work'
   | 'Portfolio'
   | 'Infrastructure'
+  | 'Reference'
 
 export type CostItem = { label: string; amount: number }
 export type PortfolioScoreHistory = typeof portfolioScoreHistory.$inferSelect

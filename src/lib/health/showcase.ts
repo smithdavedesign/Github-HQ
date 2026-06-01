@@ -26,6 +26,7 @@ const PURPOSE_BONUS: Record<string, number> = {
   'Learning':        40,
   'Experiment':      30,
   'Infrastructure':  20,
+  'Reference':        0,   // not meant to be showcased
 }
 
 export function calculateShowcaseScore(repo: ShowcaseInput): number {
