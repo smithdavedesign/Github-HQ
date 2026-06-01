@@ -68,10 +68,13 @@ export function LLMSettings({ initialProvider, keySource }: Props) {
     if (p === provider) return  // no-op — prevent wiping key when clicking active provider
     setProvider(p)
     setApiKey('')
+    // Update local UI state immediately — no router.refresh() here.
+    // A stale router.refresh() from the provider switch racing with the
+    // save's router.refresh() was overwriting "Your key active" with null
+    // on Vercel (network latency made the deferred refresh arrive last).
+    setCurrentKeySource(null)
     startTransition(async () => {
       await setLLMProvider(p)
-      setCurrentKeySource(null)
-      router.refresh()
     })
   }
 
