@@ -289,10 +289,12 @@ export const portfolioEvents = pgTable('portfolio_events', {
   title: text('title').notNull(),
   description: text('description'),
   metadata: jsonb('metadata'), // e.g. { from: 0, to: 50 } for mrr_changed, { threshold: 80 } for health_milestone
+  dedupKey: text('dedup_key'), // nullable — unique per (userId, dedupKey) to prevent duplicate one-time events
   occurredAt: timestamp('occurred_at', { mode: 'date' }).defaultNow().notNull(),
 }, (table) => [
   index('events_user_id_idx').on(table.userId),
   index('events_occurred_at_idx').on(table.occurredAt),
+  uniqueIndex('events_user_dedup_idx').on(table.userId, table.dedupKey),
 ])
 
 // ─── Relations ────────────────────────────────────────────────────────────────

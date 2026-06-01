@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useMemo } from 'react'
 import { createMilestone, deleteEvent } from '@/lib/actions/changelog'
 import type { PortfolioEvent as BasePortfolioEvent } from '@/lib/db/schema'
 
@@ -57,6 +57,17 @@ export function MilestonesTab({ events, exportYear }: Props) {
   const [adding, setAdding] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)
+
+  const years = useMemo(() => {
+    const seen = new Set<number>()
+    for (const e of events) seen.add(new Date(e.occurredAt).getFullYear())
+    return Array.from(seen).sort((a, b) => b - a)
+  }, [events])
+
+  const filteredEvents = useMemo(() =>
+    selectedYear ? events.filter(e => new Date(e.occurredAt).getFullYear() === selectedYear) : events,
+  [events, selectedYear])
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -88,21 +99,42 @@ export function MilestonesTab({ events, exportYear }: Props) {
     })
   }
 
-  const grouped = groupByMonth(events)
+  const grouped = groupByMonth(filteredEvents)
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {events.length} event{events.length !== 1 ? 's' : ''} recorded
-        </p>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-muted-foreground">
+            {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
+          </p>
+          {years.length > 1 && (
+            <div className="flex gap-1">
+              <button
+                onClick={() => setSelectedYear(null)}
+                className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${!selectedYear ? 'bg-foreground text-background border-foreground' : 'border-border text-muted-foreground hover:text-foreground'}`}
+              >
+                All
+              </button>
+              {years.map(y => (
+                <button
+                  key={y}
+                  onClick={() => setSelectedYear(y)}
+                  className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${selectedYear === y ? 'bg-foreground text-background border-foreground' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                >
+                  {y}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex gap-2">
           <a
-            href={`/api/changelog/export?year=${exportYear}`}
+            href={`/api/changelog/export?year=${selectedYear ?? exportYear}`}
             download
             className="text-xs text-muted-foreground hover:text-foreground underline"
           >
-            Export {exportYear} →
+            Export {selectedYear ?? exportYear} →
           </a>
           <Button size="sm" variant="outline" onClick={() => setShowForm(v => !v)}>
             <PlusCircle className="w-3.5 h-3.5 mr-1.5" />
@@ -141,7 +173,7 @@ export function MilestonesTab({ events, exportYear }: Props) {
         </Card>
       )}
 
-      {events.length === 0 ? (
+      {filteredEvents.length === 0 ? (
         <div className="py-16 text-center text-muted-foreground text-sm">
           <TrendingUp className="w-8 h-8 mx-auto mb-3 opacity-30" />
           <p className="font-medium">No events yet</p>

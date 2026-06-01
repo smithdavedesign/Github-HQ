@@ -7,14 +7,16 @@ import { createOctokit } from './client'
 import { scanRepository } from './scanner'
 import { calculateHealthScore, calculateOpportunityScore, calculateArchiveScore } from '@/lib/health/scoring'
 import { calculateValuation } from '@/lib/health/valuation'
-import { eq, and, inArray } from 'drizzle-orm'
+import { computePortfolioEvents, computeInternalDeps } from '@/lib/health/events'
+import type { RepoDepInfo } from '@/lib/health/events'
+import { eq, and } from 'drizzle-orm'
 
-interface RepoDepInfo {
-  repoId: number
-  repoName: string
-  packageName: string | null
-  depNames: string[]
-}
+type ExistingRepoState = {
+  id: number
+  mrr: string | null
+  isArchived: boolean | null
+  metrics: { healthScore: number | null } | null
+} | null | undefined
 
 // Pause between repos if GitHub rate limit is getting low
 async function respectRateLimit(octokit: Awaited<ReturnType<typeof createOctokit>>) {
@@ -53,12 +55,23 @@ export async function syncAllRepos(userId: string): Promise<void> {
 
     await db.update(scans).set({ totalRepos: repos.length }).where(eq(scans.id, scan.id))
 
+    // Batch pre-fetch all existing repo states — 1 query instead of N
+    const existingRepos = await db.query.repositories.findMany({
+      where: eq(repositories.userId, userId),
+      with: { metrics: { columns: { healthScore: true } } },
+      columns: { id: true, githubId: true, mrr: true, isArchived: true },
+    })
+    const existingByGithubId = new Map(existingRepos.map(r => [r.githubId, r]))
+
     let processed = 0
     const depInfos: RepoDepInfo[] = []
     for (const repo of repos) {
       try {
         await respectRateLimit(octokit)
-        const depInfo = await syncSingleRepo(userId, user.githubToken, repo)
+        const depInfo = await syncSingleRepo(
+          userId, user.githubToken, repo,
+          existingByGithubId.get(repo.id) ?? null,
+        )
         if (depInfo) depInfos.push(depInfo)
         processed++
         await db.update(scans).set({ processedRepos: processed }).where(eq(scans.id, scan.id))
@@ -67,7 +80,7 @@ export async function syncAllRepos(userId: string): Promise<void> {
       }
     }
 
-    // Phase 29: cross-reference internal deps
+    // Phase 29: cross-reference internal deps using pure function
     if (depInfos.length > 1) {
       await resolveInternalDeps(depInfos)
     }
@@ -89,17 +102,20 @@ export async function syncSingleRepo(
   token: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   githubRepo: any,
+  existingState: ExistingRepoState = undefined,
 ): Promise<RepoDepInfo | null> {
   const octokit = createOctokit(token)
   const owner = githubRepo.owner.login
   const name = githubRepo.name
 
-  // Pre-fetch existing state to detect changes for event capture
-  const existingRepo = await db.query.repositories.findFirst({
-    where: and(eq(repositories.githubId, githubRepo.id), eq(repositories.userId, userId)),
-    with: { metrics: { columns: { healthScore: true } } },
-    columns: { id: true, mrr: true, isArchived: true },
-  })
+  // When called standalone (not from syncAllRepos), fetch existing state individually
+  const existingRepo = existingState !== undefined
+    ? existingState
+    : await db.query.repositories.findFirst({
+        where: and(eq(repositories.githubId, githubRepo.id), eq(repositories.userId, userId)),
+        with: { metrics: { columns: { healthScore: true } } },
+        columns: { id: true, mrr: true, isArchived: true },
+      })
   const isNew = !existingRepo
 
   const repoData: InsertRepository = {
@@ -296,98 +312,38 @@ export async function syncSingleRepo(
       },
     })
 
-  // Phase 28: capture portfolio events
-  await capturePortfolioEvents(userId, repoId, githubRepo, {
-    isNew,
-    existingMrr: parseFloat(String(existingRepo?.mrr ?? '0')),
-    newMrr: mrrNum,
-    existingIsArchived: existingRepo?.isArchived ?? false,
-    oldHealthScore: existingRepo?.metrics?.healthScore ?? 0,
-    newHealthScore: metrics.healthScore ?? 0,
-  })
+  // Phase 28: capture portfolio events using pure function + onConflictDoNothing for dedup
+  const eventsToInsert = computePortfolioEvents(
+    repoId,
+    githubRepo.name,
+    githubRepo.description ?? null,
+    githubRepo.archived ?? false,
+    {
+      isNew,
+      existingMrr: parseFloat(String(existingRepo?.mrr ?? '0')),
+      newMrr: mrrNum,
+      existingIsArchived: existingRepo?.isArchived ?? false,
+      oldHealthScore: existingRepo?.metrics?.healthScore ?? 0,
+      newHealthScore: metrics.healthScore ?? 0,
+    },
+  )
+
+  if (eventsToInsert.length > 0) {
+    await db.insert(portfolioEvents)
+      .values(eventsToInsert.map(e => ({ userId, repoId, ...e })))
+      .onConflictDoNothing()
+  }
 
   return { repoId, repoName: githubRepo.name, packageName: stackData.packageName, depNames: stackData.allDepNames }
 }
 
-async function capturePortfolioEvents(
-  userId: string,
-  repoId: number,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  githubRepo: any,
-  state: {
-    isNew: boolean
-    existingMrr: number
-    newMrr: number
-    existingIsArchived: boolean
-    oldHealthScore: number
-    newHealthScore: number
-  },
-) {
-  const events: Array<{ eventType: string; title: string; description?: string; metadata?: object }> = []
-
-  if (state.isNew) {
-    events.push({
-      eventType: 'repo_created',
-      title: `Added ${githubRepo.name} to portfolio`,
-      description: githubRepo.description ?? undefined,
-    })
-  }
-
-  if (!state.existingIsArchived && githubRepo.archived) {
-    events.push({
-      eventType: 'repo_archived',
-      title: `Archived ${githubRepo.name}`,
-    })
-  }
-
-  if (state.existingMrr === 0 && state.newMrr > 0) {
-    events.push({
-      eventType: 'first_revenue',
-      title: `${githubRepo.name} earned its first revenue`,
-      description: `MRR: $${state.newMrr.toFixed(2)}/mo`,
-      metadata: { mrr: state.newMrr },
-    })
-  } else if (!state.isNew && Math.abs(state.newMrr - state.existingMrr) >= 10) {
-    events.push({
-      eventType: 'mrr_changed',
-      title: `${githubRepo.name} MRR ${state.newMrr > state.existingMrr ? 'increased' : 'decreased'} to $${state.newMrr.toFixed(0)}/mo`,
-      metadata: { from: state.existingMrr, to: state.newMrr },
-    })
-  }
-
-  for (const threshold of [90, 80, 70] as const) {
-    if (state.oldHealthScore < threshold && state.newHealthScore >= threshold) {
-      events.push({
-        eventType: 'health_milestone',
-        title: `${githubRepo.name} reached ${threshold} health score`,
-        description: `Score improved from ${Math.round(state.oldHealthScore)} to ${Math.round(state.newHealthScore)}`,
-        metadata: { threshold, from: Math.round(state.oldHealthScore), to: Math.round(state.newHealthScore) },
-      })
-    }
-  }
-
-  if (events.length === 0) return
-
-  await db.insert(portfolioEvents).values(
-    events.map(e => ({ userId, repoId, ...e }))
-  )
-}
-
 async function resolveInternalDeps(depInfos: RepoDepInfo[]) {
-  // Build map: packageName → repoId for all repos that have a package.json name
-  const pkgNameToRepoId = new Map<string, number>()
-  for (const info of depInfos) {
-    if (info.packageName) pkgNameToRepoId.set(info.packageName, info.repoId)
-  }
-
-  for (const info of depInfos) {
-    const internalDeps = info.depNames.filter(dep => pkgNameToRepoId.has(dep) && pkgNameToRepoId.get(dep) !== info.repoId)
-    if (internalDeps.length === 0) continue
-
+  const depsMap = computeInternalDeps(depInfos)
+  for (const [repoId, internalDeps] of depsMap) {
     await db
       .update(repositoryMetrics)
-      .set({ internalDeps })
-      .where(eq(repositoryMetrics.repoId, info.repoId))
+      .set({ internalDeps: internalDeps.length > 0 ? internalDeps : null })
+      .where(eq(repositoryMetrics.repoId, repoId))
   }
 }
 

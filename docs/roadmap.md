@@ -170,9 +170,28 @@
 - [x] Force-directed SVG graph on Analytics page — hover to highlight connections
 - [x] Cascade risk alert in Feed: warns when a depended-upon repo has health < 60
 
----
+### Phase 30 — Portfolio Score
+- [ ] Single 0–100 score for the whole portfolio (weighted: health avg + revenue + momentum)
+- [ ] Shown prominently on dashboard alongside metric cards
+- [ ] Tracked over time — stored in a `portfolio_score_history` table (daily snapshot)
+- [ ] Score change badge (↑/↓ since last week)
 
-## All phases shipped ✓
+### Phase 31 — Weekly Diff Card
+- [ ] "What changed this week" card on dashboard
+- [ ] Repos that improved most vs dropped most (health delta)
+- [ ] New security alerts, MRR movement, lifecycle changes
+- [ ] Computed from `health_score_history` + `portfolio_events` diff
+
+### Phase 32 — Ship It Nudge
+- [ ] If a focused repo (`is_focused = true`) has no commits in N days, surface a card on the dashboard
+- [ ] User-configurable threshold (default 7 days) via Settings
+- [ ] Dismissable per-repo with a snooze
+
+### Phase 33 — Dependency Graph: Shared External Deps
+- [ ] Extend dep graph to show repos that share prominent external packages
+- [ ] E.g., two repos both using `drizzle-orm` or `openai` are visually linked
+- [ ] Shared deps shown as edge labels
+- [ ] More immediately useful than internal deps (shows up day one, not just for published packages)
 
 
 ---
@@ -187,6 +206,7 @@
 | GitHub Webhook real-time sync | Requires GitHub App (separate from OAuth App) |
 | Incremental sync | Nice-to-have for portfolios > 200 repos |
 | Phase 16 trend lines | Accumulating automatically — will ship after ~30 daily syncs |
+| Slack / email digest delivery | Pipe Monday digest to Slack or email so it's seen without logging in |
 
 ---
 
