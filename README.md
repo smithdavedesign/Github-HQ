@@ -2,7 +2,7 @@
 
 **Live:** https://repohq.vercel.app
 
-Personal GitHub portfolio health dashboard. Connect your GitHub account and get a single-pane-of-glass view of every repository — public and private — with health scores, lifecycle tracking, opportunity scoring, security alerts, deployment monitoring, revenue tracking, and AI-powered analysis.
+Personal GitHub portfolio health dashboard — a single-pane-of-glass view of every repository (public and private) with health scoring, AI analysis, revenue tracking, lifecycle management, and automated weekly intelligence reports.
 
 → [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
 
@@ -11,76 +11,57 @@ Personal GitHub portfolio health dashboard. Connect your GitHub account and get 
 ## Features
 
 **Dashboard**
-- Portfolio overview with metric cards: total repos, healthy/at-risk/dead counts, security issues, average health score
-- Portfolio P&L row: MRR, ARR, monthly cost, profit and margin (when revenue data is set)
+- Portfolio metric cards: total repos, healthy/at-risk/dead, security issues, average health
+- Portfolio P&L row: MRR, ARR, monthly cost, profit, margin
+- **Portfolio Valuation** — estimated portfolio value (SaaS multiples for revenue repos, signal-based for non-revenue)
 - **Lifecycle Distribution** — counts by stage: Idea / Building / Beta / Production / Growing / Maintaining / Sunsetting / Archived
-- **Opportunity scoring** cards: "Needs Attention" (high opportunity + poor health) and "Dormant but Promising" (high opportunity + low activity)
-- **Weekly AI Briefing** — top 3 portfolio priorities from Claude, regenerated every Monday
-- **Weekly CEO Report** — structured Monday summary: portfolio value/MRR snapshot, biggest wins, biggest risks, and recommended focus repos; collapasible card with regenerate button
-- **Archive Candidates** — repos with archive score ≥ 70 surfaced as a dashboard card with one-click lifecycle transition to Sunsetting
-- **Time Allocation** — "Best use of your next hours" card ranking top 3 repos by projected value delta (health gap × opportunity gap, with focus and revenue multipliers)
-- Top repositories table with health scores and tech stack
+- **Goals** — progress bars toward MRR, health, production, or custom targets; auto-updated each sync
+- **AI Portfolio Advisor** — top 5 quantified actions (pre-computed opportunity score deltas, not guesses)
+- **Weekly CEO Report** — portfolio summary, biggest wins, biggest risks, focus recommendations
+- **Weekly AI Briefing** — top 3 portfolio priorities with urgency, reason, and concrete action
+- **Archive Candidates** — repos with archive score ≥ 70; one-click transition to Sunsetting
+- **Time Allocation** — "Best use of your next hours" — top 3 repos ranked by projected value delta
+- **Opportunity Scoring** — "Needs Attention" and "Dormant but Promising" cards
+- Top repositories table
 
-**Repository Health Matrix**
-- Sortable, filterable TanStack Table across all repos
-- Columns: opportunity score, health, activity, security, build status, lifecycle, tech debt, last push, production URL, issues, PRs, framework, database, hosting, AI tools, MRR, revenue flag, tags
-- Global search, column visibility toggle, CSV export
-- Saved views — persist column layout and sort order to localStorage
-- **Natural language query** — ask in plain English: *"repos not updated in 6 months"* or *"show my Next.js projects with security issues"*
-
-**Health Score Engine**
-- Weighted formula: 20% activity · 20% security · 15% deployment · 15% docs · 10% testing · 10% dependency · 10% quality
-- Color coded: green ≥ 90, yellow 70–89, red < 70
-
-**Repository Intelligence**
-- Auto-detects framework, language, database, hosting, CI/CD, analytics, and AI tools from `package.json`, Prisma schema, Docker Compose, and config files
+**Repository Matrix**
+- Sortable, filterable TanStack Table
+- Columns: opportunity, health, activity, security, lifecycle, build status, tech debt, valuation, MRR, last push, framework, database, hosting, AI tools, tags
+- **Natural language query** — `"repos not updated in 6 months"` or `"show my Next.js projects with security issues"`
+- Saved views, global search, column visibility, CSV export
 
 **Repository Detail**
 - 13-week commit activity chart
 - GitHub Actions build status
-- **Lifecycle selector** — set stage (Idea → Production → Archived) per repo
-- Tags editor — add/remove chip tags
-- Revenue tab — set MRR, ARR, monthly cost; see live profit and margin
-- **Cost Breakdown** — itemized cost line items (add/remove/edit label + amount per repo); total auto-summed into monthly cost
-- **Purpose field** — classify each repo: Revenue / Learning / Consulting / Experiment / Open Source / Client Work / Portfolio / Infrastructure
-- **Focus toggle** — star a repo as actively focused; CEO report and time allocation prioritize focused repos
+- **Lifecycle selector** — 8 stages from Idea to Archived
+- **Purpose field** — why does this repo exist? (Revenue / Learning / Consulting / etc.)
+- **Focus toggle** — star a repo to prioritise it in the CEO report and advisor
+- Tags editor, per-repo re-sync, Claude Analyze button
+- **Itemized costs** — line-item cost editor (Vercel: $20, domain: $15, etc.); total auto-summed
+- Revenue tab — MRR, ARR, monthly cost, live profit and margin
+- Analysis tab — architecture, security, code quality, tech debt, action plan
+- Deployments tab — add/remove/check/auto-discover production URLs
 
-**Portfolio Feed**
-- Chronological activity feed at `/feed` — health drops, down deployments, security alerts, dormant repos, build failures
-- Sorted by severity: critical → warning → info → positive
-- Every event links directly to the relevant repo
-
-**Claude Analysis** *(Phase 5)*
-- Per-repo deep analysis: architecture pattern, security rating, code quality rating, tech debt level
-- Prioritised action plan (High/Medium/Low) with rationale
-- Overall Claude score 0–100, stored in DB and shown in Analysis tab
+**Portfolio Feed** (`/feed`)
+- Health drops, down deployments, security alerts, dormant repos, failing builds
+- Sorted by severity (critical → warning → info → positive)
 
 **Security Dashboard**
-- Dependabot alerts and secret scanning results across all repos
-- Grouped by severity: critical, high, medium, low
+- Dependabot alerts + secret scanning across all repos, grouped by severity
 
-**Deployment Monitoring** *(Phase 6)*
-- Auto-discover URLs from GitHub Environments and GitHub Pages
-- Manual URL entry with provider auto-detection (Vercel, Netlify, Render, Railway, Fly, GitHub Pages, AWS, Azure)
-- Per-URL uptime check: response time, HTTP status, SSL validation
-- Add/remove/check individual deployment URLs from repo detail page
+**Deployment Monitoring**
+- Auto-discover from GitHub Environments + GitHub Pages
+- Provider detection (Vercel, Netlify, Render, Railway, Fly, GitHub Pages, AWS, Azure)
+- Uptime, response time, SSL validation
 
-**Sync**
-- Full GitHub sync (public + private repos) with real-time progress bar
-- Per-repo manual re-sync button
-- Rate limit guard — backs off when GitHub API limit is running low
-- Vercel Cron jobs keep data fresh automatically
-
-**Shareable Portfolio View**
-- Public URL at `/u/[github-username]` — no auth required
-- Enable in Settings → Portfolio toggle
-- Shows public repos with health badges, tech stack, AI summary, deployment dots
+**Shareable Portfolio**
+- `/u/[github-username]` — public portfolio (enable in Settings)
+- `/u/[username]/resume` — print-friendly engineering portfolio
+- `/u/[username]/report/2026-q2` — quarterly report with AI commentary
+- Dynamic OG image for social sharing
 
 **Settings**
-- GitHub OAuth scopes overview
-- Sync history with repo counts
-- Cron schedule reference
-- Public portfolio toggle
+- Goals manager, public portfolio toggle, sync history, cron schedule, OAuth scopes
 
 ---
 
@@ -97,7 +78,7 @@ Personal GitHub portfolio health dashboard. Connect your GitHub account and get 
 | Database | PostgreSQL (Neon serverless) |
 | ORM | Drizzle ORM |
 | Auth | Auth.js v5 (GitHub OAuth) |
-| AI | Anthropic Claude API (`claude-sonnet-4-6`) |
+| AI | Anthropic Claude API (Sonnet 4.6 + Haiku 4.5) |
 | Hosting | Vercel (Cron) |
 
 ---
@@ -105,13 +86,11 @@ Personal GitHub portfolio health dashboard. Connect your GitHub account and get 
 ## Getting Started
 
 ### Prerequisites
-
 - [Neon](https://neon.tech) — PostgreSQL database
 - [GitHub Developer Settings](https://github.com/settings/developers) — OAuth App
 - [Anthropic Console](https://console.anthropic.com) — Claude API key
 
 ### Clone and install
-
 ```bash
 git clone https://github.com/smithdavedesign/Github-HQ.git
 cd Github-HQ
@@ -119,7 +98,6 @@ npm install
 ```
 
 ### Environment variables
-
 ```bash
 cp .env.example .env.local
 ```
@@ -139,13 +117,11 @@ cp .env.example .env.local
 - Callback URL: `http://localhost:3000/api/auth/callback/github`
 
 ### Push database schema
-
 ```bash
 DATABASE_URL=your_connection_string npx drizzle-kit push --config=drizzle.config.ts
 ```
 
 ### Run locally
-
 ```bash
 npm run dev
 ```
@@ -157,34 +133,35 @@ Open [localhost:3000](http://localhost:3000), sign in with GitHub, click **Sync*
 ## Testing
 
 ```bash
-npm test              # 54 Vitest unit tests
+npm test              # 142 Vitest unit tests
 npm run test:e2e      # 38 Playwright e2e tests (requires dev server)
 npm run test:all      # both
 ```
 
-Unit tests cover: health scoring formula, repository intelligence scanner, uptime classification, date utilities.
+Unit tests cover: health scoring, opportunity scoring, archive scoring, valuation engine, NL query filters, scanner detection, uptime classification, date utilities.
 
-E2e tests cover: auth flows, all pages, repos table interactions, repo detail tabs.
+E2e tests cover: auth flows, all pages, repos table, repo detail tabs.
 
 ---
 
 ## Deployment
 
-1. Push to GitHub (repo must be public for Vercel Hobby plan)
+1. Push to GitHub (public repo required for Vercel Hobby plan)
 2. Import in Vercel, set all env vars from `.env.example`
 3. Set `NEXTAUTH_URL` to your production domain
 4. Update GitHub OAuth App callback to `https://yourdomain.com/api/auth/callback/github`
 
-Vercel picks up `vercel.json` automatically and registers cron jobs.
+Vercel picks up `vercel.json` and registers cron jobs automatically.
 
-**Cron schedule (Vercel Hobby — daily limit):**
+**Cron schedule (Hobby plan — daily limit):**
 
 | Job | Time (UTC) | Action |
 |-----|-----------|--------|
-| `/api/cron/sync` | 02:00 daily | Full GitHub repo sync |
+| `/api/cron/sync` | 02:00 daily | Full GitHub sync + health snapshot + goal refresh |
 | `/api/cron/security` | 03:00 daily | Dependabot + secret scanning |
 | `/api/cron/deployments` | 04:00 daily | Uptime checks |
 | `/api/cron/ai-summary` | 05:00 Sunday | Claude AI summaries |
+| `/api/cron/digest` | 06:00 Monday | Digest + Advisor + CEO Report |
 
 All cron routes require `Authorization: Bearer $CRON_SECRET`.
 
@@ -192,5 +169,5 @@ All cron routes require `Authorization: Bearer $CRON_SECRET`.
 
 ## Docs
 
-- [Architecture](docs/architecture.md) — system design, data flow, key decisions
+- [Architecture](docs/architecture.md) — system design, scoring formulas, DB schema, design decisions
 - [Roadmap](docs/roadmap.md) — shipped phases and what's next
