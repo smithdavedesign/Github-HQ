@@ -1,13 +1,20 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { repositories, repositoryMetrics, scans, users } from '@/lib/db/schema'
+import { repositories, repositoryMetrics, scans, users, portfolioEvents } from '@/lib/db/schema'
 import type { InsertRepository, InsertRepositoryMetrics } from '@/lib/db/schema'
 import { createOctokit } from './client'
 import { scanRepository } from './scanner'
 import { calculateHealthScore, calculateOpportunityScore, calculateArchiveScore } from '@/lib/health/scoring'
 import { calculateValuation } from '@/lib/health/valuation'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
+
+interface RepoDepInfo {
+  repoId: number
+  repoName: string
+  packageName: string | null
+  depNames: string[]
+}
 
 // Pause between repos if GitHub rate limit is getting low
 async function respectRateLimit(octokit: Awaited<ReturnType<typeof createOctokit>>) {
@@ -47,15 +54,22 @@ export async function syncAllRepos(userId: string): Promise<void> {
     await db.update(scans).set({ totalRepos: repos.length }).where(eq(scans.id, scan.id))
 
     let processed = 0
+    const depInfos: RepoDepInfo[] = []
     for (const repo of repos) {
       try {
         await respectRateLimit(octokit)
-        await syncSingleRepo(userId, user.githubToken, repo)
+        const depInfo = await syncSingleRepo(userId, user.githubToken, repo)
+        if (depInfo) depInfos.push(depInfo)
         processed++
         await db.update(scans).set({ processedRepos: processed }).where(eq(scans.id, scan.id))
       } catch (err) {
         console.error(`[sync] failed ${repo.full_name}:`, err instanceof Error ? err.message : err)
       }
+    }
+
+    // Phase 29: cross-reference internal deps
+    if (depInfos.length > 1) {
+      await resolveInternalDeps(depInfos)
     }
 
     await db.update(users).set({ lastSyncedAt: new Date() }).where(eq(users.id, userId))
@@ -75,10 +89,18 @@ export async function syncSingleRepo(
   token: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   githubRepo: any,
-): Promise<void> {
+): Promise<RepoDepInfo | null> {
   const octokit = createOctokit(token)
   const owner = githubRepo.owner.login
   const name = githubRepo.name
+
+  // Pre-fetch existing state to detect changes for event capture
+  const existingRepo = await db.query.repositories.findFirst({
+    where: and(eq(repositories.githubId, githubRepo.id), eq(repositories.userId, userId)),
+    with: { metrics: { columns: { healthScore: true } } },
+    columns: { id: true, mrr: true, isArchived: true },
+  })
+  const isNew = !existingRepo
 
   const repoData: InsertRepository = {
     userId,
@@ -273,6 +295,100 @@ export async function syncSingleRepo(
         calculatedAt: metrics.calculatedAt,
       },
     })
+
+  // Phase 28: capture portfolio events
+  await capturePortfolioEvents(userId, repoId, githubRepo, {
+    isNew,
+    existingMrr: parseFloat(String(existingRepo?.mrr ?? '0')),
+    newMrr: mrrNum,
+    existingIsArchived: existingRepo?.isArchived ?? false,
+    oldHealthScore: existingRepo?.metrics?.healthScore ?? 0,
+    newHealthScore: metrics.healthScore ?? 0,
+  })
+
+  return { repoId, repoName: githubRepo.name, packageName: stackData.packageName, depNames: stackData.allDepNames }
+}
+
+async function capturePortfolioEvents(
+  userId: string,
+  repoId: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  githubRepo: any,
+  state: {
+    isNew: boolean
+    existingMrr: number
+    newMrr: number
+    existingIsArchived: boolean
+    oldHealthScore: number
+    newHealthScore: number
+  },
+) {
+  const events: Array<{ eventType: string; title: string; description?: string; metadata?: object }> = []
+
+  if (state.isNew) {
+    events.push({
+      eventType: 'repo_created',
+      title: `Added ${githubRepo.name} to portfolio`,
+      description: githubRepo.description ?? undefined,
+    })
+  }
+
+  if (!state.existingIsArchived && githubRepo.archived) {
+    events.push({
+      eventType: 'repo_archived',
+      title: `Archived ${githubRepo.name}`,
+    })
+  }
+
+  if (state.existingMrr === 0 && state.newMrr > 0) {
+    events.push({
+      eventType: 'first_revenue',
+      title: `${githubRepo.name} earned its first revenue`,
+      description: `MRR: $${state.newMrr.toFixed(2)}/mo`,
+      metadata: { mrr: state.newMrr },
+    })
+  } else if (!state.isNew && Math.abs(state.newMrr - state.existingMrr) >= 10) {
+    events.push({
+      eventType: 'mrr_changed',
+      title: `${githubRepo.name} MRR ${state.newMrr > state.existingMrr ? 'increased' : 'decreased'} to $${state.newMrr.toFixed(0)}/mo`,
+      metadata: { from: state.existingMrr, to: state.newMrr },
+    })
+  }
+
+  for (const threshold of [90, 80, 70] as const) {
+    if (state.oldHealthScore < threshold && state.newHealthScore >= threshold) {
+      events.push({
+        eventType: 'health_milestone',
+        title: `${githubRepo.name} reached ${threshold} health score`,
+        description: `Score improved from ${Math.round(state.oldHealthScore)} to ${Math.round(state.newHealthScore)}`,
+        metadata: { threshold, from: Math.round(state.oldHealthScore), to: Math.round(state.newHealthScore) },
+      })
+    }
+  }
+
+  if (events.length === 0) return
+
+  await db.insert(portfolioEvents).values(
+    events.map(e => ({ userId, repoId, ...e }))
+  )
+}
+
+async function resolveInternalDeps(depInfos: RepoDepInfo[]) {
+  // Build map: packageName → repoId for all repos that have a package.json name
+  const pkgNameToRepoId = new Map<string, number>()
+  for (const info of depInfos) {
+    if (info.packageName) pkgNameToRepoId.set(info.packageName, info.repoId)
+  }
+
+  for (const info of depInfos) {
+    const internalDeps = info.depNames.filter(dep => pkgNameToRepoId.has(dep) && pkgNameToRepoId.get(dep) !== info.repoId)
+    if (internalDeps.length === 0) continue
+
+    await db
+      .update(repositoryMetrics)
+      .set({ internalDeps })
+      .where(eq(repositoryMetrics.repoId, info.repoId))
+  }
 }
 
 function calculateActivityScore(monthlyCommits: number, quarterlyCommits: number, openPRs: number, hasReleases: boolean): number {

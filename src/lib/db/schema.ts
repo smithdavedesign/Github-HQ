@@ -150,6 +150,8 @@ export const repositoryMetrics = pgTable('repository_metrics', {
   archiveScore: real('archive_score').default(0), // 0-100: higher = stronger archive candidate
   // Phase 15: Repository Valuation
   estimatedValue: integer('estimated_value').default(0),   // USD
+  // Phase 29: internal deps — names of repos in this portfolio that this repo depends on
+  internalDeps: jsonb('internal_deps').$type<string[]>(),
   valuationConfidence: text('valuation_confidence').default('none'), // none|very_low|low|medium|high
   valuationMethod: text('valuation_method').default('signal_based'), // saas_multiple|signal_based|archived
   calculatedAt: timestamp('calculated_at', { mode: 'date' }).defaultNow(),
@@ -276,11 +278,29 @@ export const goals = pgTable('goals', {
   index('goals_user_id_idx').on(table.userId),
 ])
 
+// ─── Portfolio Events (Phase 28 — Personal Changelog) ────────────────────────
+
+export const portfolioEvents = pgTable('portfolio_events', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  repoId: integer('repo_id').references(() => repositories.id, { onDelete: 'set null' }),
+  eventType: text('event_type').notNull(),
+  // repo_created | repo_archived | mrr_changed | health_milestone | first_revenue | manual_milestone
+  title: text('title').notNull(),
+  description: text('description'),
+  metadata: jsonb('metadata'), // e.g. { from: 0, to: 50 } for mrr_changed, { threshold: 80 } for health_milestone
+  occurredAt: timestamp('occurred_at', { mode: 'date' }).defaultNow().notNull(),
+}, (table) => [
+  index('events_user_id_idx').on(table.userId),
+  index('events_occurred_at_idx').on(table.occurredAt),
+])
+
 // ─── Relations ────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
   repositories: many(repositories),
   scans: many(scans),
+  portfolioEvents: many(portfolioEvents),
 }))
 
 export const repositoriesRelations = relations(repositories, ({ one, many }) => ({
@@ -323,6 +343,11 @@ export const goalsRelations = relations(goals, ({ one }) => ({
   user: one(users, { fields: [goals.userId], references: [users.id] }),
 }))
 
+export const portfolioEventsRelations = relations(portfolioEvents, ({ one }) => ({
+  user: one(users, { fields: [portfolioEvents.userId], references: [users.id] }),
+  repository: one(repositories, { fields: [portfolioEvents.repoId], references: [repositories.id] }),
+}))
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type User = typeof users.$inferSelect
@@ -354,3 +379,5 @@ export type RepoPurpose =
   | 'Infrastructure'
 
 export type CostItem = { label: string; amount: number }
+export type PortfolioEvent = typeof portfolioEvents.$inferSelect
+export type InsertPortfolioEvent = typeof portfolioEvents.$inferInsert

@@ -155,22 +155,25 @@
 - [x] `abandonment_reason` text field on repositories
 - [x] Prompt shown automatically when lifecycle → Sunsetting or Archived
 - [x] `/repos/graveyard` page in sidebar — archived repos with reason badges
-- [ ] Digest references graveyard when similar ideas resurface
+- [x] Advisor prompt includes graveyard context — warns when new action resembles abandoned idea
+
+### Phase 28 — Personal Changelog
+- [x] `portfolio_events` table — repo created, archived, MRR changed, health milestone, first revenue
+- [x] Events auto-captured during sync: new repos, archives, MRR changes ≥$10, health milestones (70/80/90)
+- [x] Manual milestone entries (free-text) via `/feed` Milestones tab
+- [x] `/feed` Milestones tab with timeline view, month grouping, delete for manual entries
+- [x] Annual markdown export — `/api/changelog/export?year=YYYY`
+
+### Phase 29 — Portfolio Dependency Map
+- [x] Scanner returns `packageName` + all dep names from `package.json`
+- [x] `internal_deps` jsonb on `repository_metrics` — synced after full portfolio scan
+- [x] Force-directed SVG graph on Analytics page — hover to highlight connections
+- [x] Cascade risk alert in Feed: warns when a depended-upon repo has health < 60
 
 ---
 
-## Up Next
+## All phases shipped ✓
 
-### Phase 28 — Personal Changelog
-- [ ] `portfolio_events` table — repo created, archived, MRR changed, health milestone, first revenue
-- [ ] Manual milestone entries (free-text)
-- [ ] `/feed` Milestones tab, annual markdown export
-
-### Phase 29 — Portfolio Dependency Map
-- [ ] Cross-reference `package.json` deps across repos
-- [ ] `internal_deps` jsonb on repository\_metrics
-- [ ] Force-directed graph on Analytics page
-- [ ] Cascade risk alert: shared-dep repo health drop flags affected repos in feed
 
 ---
 

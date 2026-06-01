@@ -13,7 +13,8 @@ export type FeedEventSeverity = 'critical' | 'warning' | 'info' | 'positive'
 export interface FeedEvent {
   id: string
   type: 'health_drop' | 'health_improved' | 'deployment_down' | 'deployment_slow' |
-        'security_critical' | 'security_high' | 'dormant' | 'no_tests' | 'build_failing'
+        'security_critical' | 'security_high' | 'dormant' | 'no_tests' | 'build_failing' |
+        'dep_cascade_risk'
   repoId: number
   repoName: string
   description: string
@@ -177,6 +178,32 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
         severity: 'warning',
         date: repo.metrics.calculatedAt ?? new Date(),
       })
+    }
+  }
+
+  // ── Dependency cascade risk (Phase 29) ────────────────────────────────────
+  // If a repo that other portfolio repos depend on has a health drop, warn dependents
+  for (const repo of userRepos) {
+    const internalDeps = repo.metrics?.internalDeps as string[] | null | undefined
+    if (!internalDeps || internalDeps.length === 0) continue
+
+    for (const depName of internalDeps) {
+      const depRepo = userRepos.find(r => r.name === depName)
+      if (!depRepo?.metrics) continue
+
+      const depHealth = depRepo.metrics.healthScore ?? 100
+      if (depHealth < 60) {
+        events.push({
+          id: `dep_cascade_${repo.id}_${depRepo.id}`,
+          type: 'dep_cascade_risk',
+          repoId: repo.id,
+          repoName: repo.name,
+          description: `Depends on ${depName} which has low health (${Math.round(depHealth)})`,
+          detail: `If ${depName} breaks, ${repo.name} may be affected`,
+          severity: depHealth < 40 ? 'warning' : 'info',
+          date: depRepo.metrics.calculatedAt ?? new Date(),
+        })
+      }
     }
   }
 

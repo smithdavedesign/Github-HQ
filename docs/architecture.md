@@ -91,14 +91,22 @@ All scoring is pure functions in `src/lib/health/scoring.ts` and `src/lib/health
 All stored as jsonb columns on the `digests` row. Dashboard cards show the most recent if < 8 days old.
 
 ### Portfolio Feed
-`/feed` computes events from existing tables on each page load (no dedicated events table):
+`/feed` has two tabs:
+
+**Feed tab** — computed from existing tables on each page load:
 - Health drops/improvements (from `health_score_history`)
 - Down/slow deployments (from `deployments.status`)
 - Critical/high security alerts (from `security_findings`)
 - Dormant repos (`last_push` > 90 days)
 - Failing builds (`build_status = 'failure'`)
+- Dependency cascade risk (Phase 29 — if a dep repo has health < 60, warn dependent repos)
 
 Sorted: critical → warning → info → positive, then date descending.
+
+**Milestones tab** — from `portfolio_events` table:
+- Auto-captured during sync: new repos, archives, MRR changes ≥$10, health milestones at 70/80/90
+- Manual free-text milestones added by the user
+- Timeline view grouped by month; annual markdown export at `/api/changelog/export?year=YYYY`
 
 ### Public Portfolio
 `/u/[githubLogin]` — no auth, ISR 1h. Only shows public repos for users with `publicProfile = true`.
@@ -159,6 +167,7 @@ repository_metrics        (one-to-one with repositories)
   estimated_value         USD integer
   valuation_confidence    none | very_low | low | medium
   valuation_method        saas_multiple | signal_based | archived
+  internal_deps           jsonb  string[] — names of other portfolio repos this repo depends on
 
 tech_stack                (one-to-one with repositories)
   frontend, backend, database, hosting, language, testing, analytics, ai_tools, ci_cd
@@ -181,6 +190,10 @@ digests                   weekly AI content per user
 
 goals                     user-set portfolio targets
   user_id, type, name, target_value, current_value, unit, deadline, is_active, completed_at
+
+portfolio_events          personal changelog (Phase 28)
+  user_id, repo_id FK (nullable), event_type, title, description, metadata jsonb, occurred_at
+  event_type: repo_created | repo_archived | mrr_changed | health_milestone | first_revenue | manual_milestone
 ```
 
 ---

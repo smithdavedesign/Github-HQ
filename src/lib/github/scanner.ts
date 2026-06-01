@@ -5,6 +5,8 @@ import type { OctokitClient } from './client'
 interface ScanResult {
   documentationScore: number
   testingScore: number
+  packageName: string | null  // name field from package.json — used to cross-ref internal deps
+  allDepNames: string[]       // all dependency + devDependency names
 }
 
 export async function scanRepository(
@@ -58,8 +60,10 @@ export async function scanRepository(
 
   const documentationScore = scoreReadme(readmeContent)
   const testingScore = testing ? (hasTestFiles(allDeps) ? 100 : 50) : 0
+  const packageName = typeof pkg?.name === 'string' ? pkg.name : null
+  const allDepNames = Object.keys(allDeps)
 
-  return { documentationScore, testingScore }
+  return { documentationScore, testingScore, packageName, allDepNames }
 }
 
 async function fetchFileContent(

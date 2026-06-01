@@ -5,6 +5,8 @@ import { eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { HealthTrendChart } from '@/components/dashboard/health-trend-chart'
 import { EffortMatrix } from '@/components/dashboard/effort-matrix'
+import { DepGraphCard } from '@/components/dashboard/dep-graph'
+import type { DepNode, DepEdge } from '@/components/dashboard/dep-graph'
 
 export default async function AnalyticsPage() {
   const session = await auth()
@@ -36,6 +38,28 @@ export default async function AnalyticsPage() {
       estimatedEffort: r.estimatedEffort,
     }))
 
+  // Phase 29: dependency graph data
+  const depNodes: DepNode[] = reposWithMetrics
+    .filter(r => r.metrics?.healthScore != null)
+    .map(r => ({
+      id: r.id,
+      name: r.name,
+      health: Math.round(r.metrics!.healthScore!),
+    }))
+
+  const repoNameToId = new Map(reposWithMetrics.map(r => [r.name, r.id]))
+  const depEdges: DepEdge[] = []
+  for (const r of reposWithMetrics) {
+    const internalDeps = r.metrics?.internalDeps as string[] | null | undefined
+    if (!internalDeps || internalDeps.length === 0) continue
+    for (const depName of internalDeps) {
+      const targetId = repoNameToId.get(depName)
+      if (targetId && targetId !== r.id) {
+        depEdges.push({ source: r.id, target: targetId })
+      }
+    }
+  }
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div>
@@ -47,6 +71,7 @@ export default async function AnalyticsPage() {
 
       <HealthTrendChart data={chartData} />
       <EffortMatrix repos={matrixRepos} />
+      <DepGraphCard nodes={depNodes} edges={depEdges} />
     </div>
   )
 }

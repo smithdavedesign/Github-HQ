@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, securityFindings, deployments, digests } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, inArray, and } from 'drizzle-orm'
 import {
   calculateOpportunityScore,
   calculateRevenuePotential,
@@ -94,6 +94,11 @@ export async function generateAdvisor(userId: string): Promise<AdvisorContent> {
   if (userRepos.length === 0) throw new Error('No repos to advise on')
 
   // Pre-compute opportunity deltas for each non-archived repo
+  const graveyardRepos = await db.query.repositories.findMany({
+    where: and(eq(repositories.userId, userId), inArray(repositories.lifecycleStatus, ['archived', 'sunsetting'])),
+    columns: { name: true, abandonmentReason: true, description: true },
+  })
+
   const repoAnalysis = userRepos
     .filter(r => !r.isArchived && r.metrics)
     .map(r => {
@@ -153,9 +158,13 @@ export async function generateAdvisor(userId: string): Promise<AdvisorContent> {
     ].join('\n')
   }).join('\n\n')
 
+  const graveyardSection = graveyardRepos.length > 0
+    ? `\n\nGRAVEYARD — ideas already abandoned (avoid recommending the same direction):\n${graveyardRepos.map(r => `- ${r.name}${r.abandonmentReason ? ` (reason: ${r.abandonmentReason})` : ''}${r.description ? ` — ${r.description}` : ''}`).join('\n')}`
+    : ''
+
   const SYSTEM_PROMPT = `You are a senior portfolio advisor for a solo developer. Given pre-computed opportunity score data for their repos, identify the top 5 specific actions to take to maximize portfolio value.
 
-Each action must reference the EXACT opportunity score gain shown in the GAINS field — do not invent numbers. Use the repo ID and name from the data.
+Each action must reference the EXACT opportunity score gain shown in the GAINS field — do not invent numbers. Use the repo ID and name from the data.${graveyardSection}
 
 Return ONLY valid JSON (no markdown):
 {
@@ -180,7 +189,8 @@ Rules:
 - Prioritise: revenue additions > security fixes > deployment > activity
 - effort: quick = <30min, medium = 1-4h, substantial = 1+ days
 - Skip repos with no GAINS lines
-- Pick the 5 highest-delta actions across all repos`
+- Pick the 5 highest-delta actions across all repos
+- If a recommended action resembles a graveyard idea, add a caveat in the reasoning field`
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',
