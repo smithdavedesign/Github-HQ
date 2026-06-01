@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { saveLLMSettings, removeLLMKey, setLLMProvider } from '@/lib/actions/llm'
-import type { LLMProvider } from '@/lib/ai/adapter'
+import type { LLMProvider } from '@/lib/ai/providers'
+import { PROVIDER_KEY_HINTS } from '@/lib/ai/providers'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { Sparkles, Trash2, CheckCircle, AlertCircle } from 'lucide-react'
@@ -14,12 +15,17 @@ const PROVIDERS: { value: LLMProvider; label: string; hint: string }[] = [
   {
     value: 'anthropic',
     label: 'Claude (Anthropic)',
-    hint: 'Recommended. Best at structured JSON, prompt caching reduces cost. Get key at console.anthropic.com',
+    hint: 'Recommended. Best at structured JSON output, prompt caching reduces cost. Get key at console.anthropic.com',
   },
   {
     value: 'openai',
     label: 'GPT-4o (OpenAI)',
     hint: 'Uses gpt-4o for deep analysis and gpt-4o-mini for fast tasks. Get key at platform.openai.com',
+  },
+  {
+    value: 'gemini',
+    label: 'Gemini (Google)',
+    hint: 'Uses Gemini 2.5 Pro for analysis and Gemini 2.0 Flash for fast tasks. Get key at aistudio.google.com',
   },
 ]
 
@@ -138,7 +144,7 @@ export function LLMSettings({ initialProvider, keySource }: Props) {
         <form onSubmit={handleSave} className="space-y-2">
           <Input
             type="password"
-            placeholder={provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
+            placeholder={PROVIDER_KEY_HINTS[provider]}
             value={apiKey}
             onChange={e => setApiKey(e.target.value)}
             className="text-sm font-mono"

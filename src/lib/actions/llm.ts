@@ -7,7 +7,11 @@ import { eq } from 'drizzle-orm'
 import { testLLMKey } from '@/lib/ai/adapter'
 import type { LLMProvider } from '@/lib/ai/adapter'
 
-export async function getLLMSettings(): Promise<{ provider: LLMProvider; hasKey: boolean; keySource: 'user' | 'env' | null }> {
+export async function getLLMSettings(): Promise<{
+  provider: LLMProvider
+  hasKey: boolean
+  keySource: 'user' | 'env' | null
+}> {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
@@ -17,8 +21,12 @@ export async function getLLMSettings(): Promise<{ provider: LLMProvider; hasKey:
   })
 
   const provider = (user?.llmProvider ?? 'anthropic') as LLMProvider
-  const hasUserKey = !!user?.llmApiKey
-  const hasEnvKey = provider === 'anthropic' && !!process.env.ANTHROPIC_API_KEY
+  const hasUserKey = !!(user?.llmApiKey && user.llmApiKey.length > 0)
+  const hasEnvKey  = (
+    (provider === 'anthropic' && !!process.env.ANTHROPIC_API_KEY) ||
+    (provider === 'openai'    && !!process.env.OPENAI_API_KEY) ||
+    (provider === 'gemini'    && !!process.env.GEMINI_API_KEY)
+  )
 
   return {
     provider,
@@ -31,12 +39,21 @@ export async function saveLLMSettings(provider: LLMProvider, apiKey: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  // Validate before saving
+  // Validate key before touching the DB
   await testLLMKey(provider, apiKey)
 
-  await db.update(users)
+  // .returning() surfaces silent failures (0 rows updated = user row not found)
+  const [updated] = await db.update(users)
     .set({ llmProvider: provider, llmApiKey: apiKey })
     .where(eq(users.id, session.user.id))
+    .returning({ id: users.id, llmApiKey: users.llmApiKey })
+
+  if (!updated) {
+    throw new Error('Failed to save — could not find your user account')
+  }
+  if (updated.llmApiKey !== apiKey) {
+    throw new Error('Key was not persisted correctly — please try again')
+  }
 
   const { revalidatePath } = await import('next/cache')
   revalidatePath('/settings')
@@ -46,9 +63,12 @@ export async function removeLLMKey() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  await db.update(users)
+  const [updated] = await db.update(users)
     .set({ llmApiKey: null })
     .where(eq(users.id, session.user.id))
+    .returning({ id: users.id })
+
+  if (!updated) throw new Error('Failed to remove key — user not found')
 
   const { revalidatePath } = await import('next/cache')
   revalidatePath('/settings')
@@ -58,9 +78,12 @@ export async function setLLMProvider(provider: LLMProvider) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  await db.update(users)
+  const [updated] = await db.update(users)
     .set({ llmProvider: provider, llmApiKey: null })
     .where(eq(users.id, session.user.id))
+    .returning({ id: users.id })
+
+  if (!updated) throw new Error('Failed to update provider — user not found')
 
   const { revalidatePath } = await import('next/cache')
   revalidatePath('/settings')
