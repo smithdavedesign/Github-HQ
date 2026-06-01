@@ -241,16 +241,17 @@
 - [x] End screen: summary of kept / sunsetted / archived / skipped counts
 
 ### Phase 39 — Opportunity Cost Tracker
-- [ ] Weekly report: "You spent time on Repo A. Repo B had 4x projected value this week."
-- [ ] Estimated opportunity cost in dollars (missed MRR potential) and score points
-- [ ] Requires approximate time tracking — inferred from commit timestamps across repos
-- [ ] Changes behavior more than any dashboard card
+- [x] `computeOpportunityCost()` — compares repos with weeklyCommits > 0 vs highest-value untouched repos
+- [x] `OpportunityCostCard` on dashboard — shows what you worked on, what you missed, score delta
+- [x] Only surfaces when delta ≥ 10 pts (suppressed when the gap is noise)
+- [x] Infers time investment from `weeklyCommits` field synced from GitHub
 
 ### Phase 40 — Open-Source Template / Deploy-to-Vercel
-- [ ] Strip personal data, create a clean deploy-to-Vercel one-click template
-- [ ] README with full setup guide (GitHub OAuth, Neon, Anthropic API key)
-- [ ] "Spotify Wrapped for your GitHub portfolio" — strong indie hacker / open source appeal
-- [ ] Foundation for a hosted SaaS if desired (public portfolio page already built)
+- [x] README rewritten — Deploy to Vercel button, full setup guide (8 steps), all services documented
+- [x] Local dev OAuth app separation documented (production vs localhost)
+- [x] MCP server setup instructions in mcp/README.md
+- [x] Stripe restricted key setup guide included
+- [x] `.env.example` complete with all 7 required variables
 
 ---
 

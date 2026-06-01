@@ -610,6 +610,33 @@ export async function getConcentrationRisk(): Promise<ConcentrationRisk> {
   }
 }
 
+export async function getOpportunityCost() {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const { computeOpportunityCost } = await import('@/lib/health/opportunity-cost')
+
+  const rows = await db.query.repositories.findMany({
+    where: eq(repositories.userId, session.user.id),
+    with: { metrics: { columns: { opportunityScore: true, weeklyCommits: true } } },
+    columns: { id: true, name: true, mrr: true, isFocused: true, lifecycleStatus: true },
+  })
+
+  const inputs = rows
+    .filter(r => r.metrics != null)
+    .map(r => ({
+      id: r.id,
+      name: r.name,
+      opportunityScore: r.metrics!.opportunityScore ?? 0,
+      weeklyCommits: r.metrics!.weeklyCommits ?? 0,
+      mrr: toNum(r.mrr),
+      isFocused: r.isFocused ?? false,
+      lifecycleStatus: r.lifecycleStatus,
+    }))
+
+  return computeOpportunityCost(inputs)
+}
+
 export async function getProfileRecommendations() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')

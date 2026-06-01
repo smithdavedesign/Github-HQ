@@ -192,9 +192,35 @@ goals                     user-set portfolio targets
   user_id, type, name, target_value, current_value, unit, deadline, is_active, completed_at
 
 portfolio_events          personal changelog (Phase 28)
-  user_id, repo_id FK (nullable), event_type, title, description, metadata jsonb, occurred_at
+  user_id, repo_id FK (nullable), event_type, title, description, metadata jsonb, dedup_key, occurred_at
   event_type: repo_created | repo_archived | mrr_changed | health_milestone | first_revenue | manual_milestone
+  dedup_key: unique per (userId, dedupKey) — onConflictDoNothing prevents duplicate one-time events
+
+portfolio_score_history   daily composite score per user (Phase 30)
+  user_id, score, avg_health, activity_ratio, revenue_score, diversity_score, recorded_date
+  unique on (userId, recordedDate)
 ```
+
+---
+
+## Scoring Functions (pure, testable)
+
+All live in `src/lib/health/` with full Vitest coverage:
+
+```
+calculateHealthScore()        7-factor weighted: activity, security, deployment, docs, testing, dependency, quality
+calculateOpportunityScore()   4-factor: revenue 30%, activity 25%, health 25%, stars 20%
+calculateArchiveScore()       5-factor: inactivity, no revenue, no deployment, low health, low opportunity
+calculateValuation()          SaaS multiple (MRR repos) or signal-based (non-revenue)
+calculatePortfolioScore()     4-factor composite: health 40%, activity 25%, revenue 25%, diversity 10%
+calculateShowcaseScore()      Rates public repos for GitHub profile pinning: health 40%, stars 20%, focus 15%, deployment 15%, purpose 10%
+runSimulation()               Greedy ROI-per-hour allocation given N hours and a goal type
+computeOpportunityCost()      Compares repos worked on vs highest-value untouched repos
+computePortfolioEvents()      Pure event derivation from repo state changes (dedup via dedup_key)
+computeInternalDeps()         Cross-references package.json deps across portfolio repos
+```
+
+208 unit tests as of Phase 42. Zero DB calls in any scoring function.
 
 ---
 
@@ -217,3 +243,11 @@ portfolio_events          personal changelog (Phase 28)
 **No client-side secrets** — GitHub tokens stored in `users` table (written by Auth.js adapter), only read server-side. Never sent to the browser.
 
 **Claude model selection** — `claude-sonnet-4-6` for deep repo analysis (quality matters). `claude-haiku-4-5` for digest, advisor, CEO report, NL query, and quarterly reports (speed + cost).
+
+**Stripe integration** — Plain fetch against Stripe REST API (no SDK). Restricted key with Subscriptions + Products read-only. MRR auto-syncs alongside daily GitHub sync. `resolveApiKey()` checks DB-stored key first, falls back to `STRIPE_API_KEY` env var for local dev.
+
+**MCP Server** — `mcp/server.ts` is a stdio MCP server using `@modelcontextprotocol/sdk`. Queries Neon directly via `DATABASE_URL` + `MCP_USER_ID` env vars. Exposes 5 tools: `get_portfolio_summary`, `get_repo_context`, `get_portfolio_warnings`, `get_top_opportunities`, `get_active_goals`. Configured in `~/.claude/claude.json`.
+
+**GitHub Actions crons** — Primary cron trigger (replaces Vercel Hobby once-per-day limit). 5 workflows in `.github/workflows/` call existing API endpoints with `CRON_SECRET`. Vercel crons remain as once-per-Sunday fallback. `CRON_SECRET` stored as GitHub repo secret.
+
+**Pure function extraction** — All scoring, simulation, event derivation, and dep-analysis logic lives in plain `.ts` files with no DB imports. Server actions and sync code call these functions. This pattern makes everything testable without DB mocks and keeps server action files thin.
