@@ -16,6 +16,9 @@ Personal GitHub portfolio health dashboard. Connect your GitHub account and get 
 - **Lifecycle Distribution** — counts by stage: Idea / Building / Beta / Production / Growing / Maintaining / Sunsetting / Archived
 - **Opportunity scoring** cards: "Needs Attention" (high opportunity + poor health) and "Dormant but Promising" (high opportunity + low activity)
 - **Weekly AI Briefing** — top 3 portfolio priorities from Claude, regenerated every Monday
+- **Weekly CEO Report** — structured Monday summary: portfolio value/MRR snapshot, biggest wins, biggest risks, and recommended focus repos; collapasible card with regenerate button
+- **Archive Candidates** — repos with archive score ≥ 70 surfaced as a dashboard card with one-click lifecycle transition to Sunsetting
+- **Time Allocation** — "Best use of your next hours" card ranking top 3 repos by projected value delta (health gap × opportunity gap, with focus and revenue multipliers)
 - Top repositories table with health scores and tech stack
 
 **Repository Health Matrix**
@@ -38,6 +41,9 @@ Personal GitHub portfolio health dashboard. Connect your GitHub account and get 
 - **Lifecycle selector** — set stage (Idea → Production → Archived) per repo
 - Tags editor — add/remove chip tags
 - Revenue tab — set MRR, ARR, monthly cost; see live profit and margin
+- **Cost Breakdown** — itemized cost line items (add/remove/edit label + amount per repo); total auto-summed into monthly cost
+- **Purpose field** — classify each repo: Revenue / Learning / Consulting / Experiment / Open Source / Client Work / Portfolio / Infrastructure
+- **Focus toggle** — star a repo as actively focused; CEO report and time allocation prioritize focused repos
 
 **Portfolio Feed**
 - Chronological activity feed at `/feed` — health drops, down deployments, security alerts, dormant repos, build failures

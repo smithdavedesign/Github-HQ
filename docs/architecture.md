@@ -119,7 +119,7 @@ Vercel Cron hits each endpoint (`Authorization: Bearer $CRON_SECRET`):
 | `/api/cron/security` | 03:00 daily | Dependabot + secret scanning, recalculates health |
 | `/api/cron/deployments` | 04:00 daily | Uptime check for all deployment URLs |
 | `/api/cron/ai-summary` | 05:00 Sunday | Regenerates Claude AI summaries |
-| `/api/cron/digest` | 06:00 Monday | Weekly AI triage digest per user |
+| `/api/cron/digest` | 06:00 Monday | Weekly AI digest + advisor + CEO report per user |
 
 ---
 
@@ -153,13 +153,19 @@ src/
 │   │   └── theme-provider.tsx    # useTheme hook + CSS class toggle
 │   ├── dashboard/
 │   │   ├── metric-card.tsx
-│   │   └── health-trend-chart.tsx
-│   └── repos/
-│       ├── repo-table.tsx        # Full TanStack Table with saved views
-│       ├── health-badge.tsx
-│       ├── commit-activity-chart.tsx
-│       ├── tag-editor.tsx
-│       ├── revenue-editor.tsx
+   │   ├── health-trend-chart.tsx
+   │   ├── archive-candidates-card.tsx  ← Phase 22: repos with archive_score ≥ 70
+   │   ├── ceo-report-card.tsx          ← Phase 24: weekly CEO report card
+   │   └── time-allocation-card.tsx     ← Phase 25: top-N repos by value delta
+   └── repos/
+       ├── repo-table.tsx        # Full TanStack Table with saved views
+       ├── health-badge.tsx
+       ├── commit-activity-chart.tsx
+       ├── tag-editor.tsx
+       ├── revenue-editor.tsx
+       ├── cost-items-editor.tsx        ← Phase 23: itemized cost line items
+       ├── purpose-selector.tsx         ← Phase 21: purpose enum selector
+       ├── focus-toggle.tsx             ← Phase 21: is_focused star button
 │       ├── resync-button.tsx
 │       ├── analyze-button.tsx
 │       ├── analysis-tab.tsx
@@ -180,7 +186,10 @@ src/
 │   │   └── uptime.ts             # fetch-based URL checker
 │   ├── ai/
 │   │   ├── summary.ts            # Claude AI repo summaries
-│   │   └── analysis.ts           # Claude deep analysis (Phase 5)
+   │   ├── analysis.ts           # Claude deep analysis (Phase 5)
+   │   ├── digest.ts             # Weekly briefing generation (Phase 8)
+   │   ├── advisor.ts            # Advisor card (Phase 14)
+   │   └── ceo-report.ts         # Weekly CEO report generation (Phase 24)
 │   └── actions/
 │       ├── sync.ts               # triggerSync (uses after())
 │       ├── repositories.ts       # getRepositories, getDashboardStats, analyzeRepo, etc.
@@ -211,6 +220,9 @@ repositories
   is_revenue_generating, tags[]
   lifecycle_status                ← idea|building|beta|production|growing|maintaining|sunsetting|archived
   mrr, arr, monthly_cost          ← Phase 3 revenue fields
+  purpose                         ← Phase 21: Revenue|Learning|Consulting|Experiment|Open Source|Client Work|Portfolio|Infrastructure
+  is_focused                      ← Phase 21: boolean, default false
+  cost_items jsonb                ← Phase 23: [{ label, amount }]; sum stored in monthly_cost
   ai_summary jsonb                ← { what_it_does, maturity, risk, recommendations[] }
   claude_analysis jsonb           ← { architecture, security, codeQuality, techDebt, recommendations[], overallScore }
   claude_analysis_at
@@ -224,6 +236,14 @@ repository_metrics      (one-to-one with repositories)
   activity_status                 ← Actively Maintained | Low Activity | Dormant | Abandoned
   build_status                    ← success | failure | cancelled | in_progress
   opportunity_score               ← 0-100 weighted score (Phase 4)
+  archive_score                   ← Phase 22: 0-100; ≥70 = strong archive candidate; capped at 30 for revenue repos
+  estimated_value, valuation_confidence, valuation_method  ← Phase 15
+
+digests
+  user_id FK, content jsonb       ← weekly briefing text
+  advisor_content jsonb           ← advisor card (Phase 14)
+  ceo_report jsonb                ← Phase 24: { portfolioSummary, biggestWins[], biggestRisks[], recommendedFocus[], closingLine, generatedAt }
+  created_at
 
 tech_stack              (one-to-one with repositories)
   frontend, backend, database, hosting, language

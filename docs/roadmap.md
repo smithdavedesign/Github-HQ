@@ -173,48 +173,48 @@ Move from daily cron to event-driven updates.
 ### Phase 21 — Purpose Field & Focus Projects
 Simple high-value metadata: why does this repo exist, and are you actively working on it?
 
-- [ ] `purpose` enum on `repositories`: Revenue | Learning | Consulting | Experiment | Open Source | Client Work | Portfolio | Infrastructure
-- [ ] Purpose selector on repo detail Overview tab (inline, persists to DB)
+- [x] `purpose` enum on `repositories`: Revenue | Learning | Consulting | Experiment | Open Source | Client Work | Portfolio | Infrastructure
+- [x] Purpose selector on repo detail Overview tab (inline, persists to DB)
 - [ ] Purpose column in repos table (filterable, hidden by default)
-- [ ] `is_focused` boolean on `repositories` — toggle directly from table row or detail page
+- [x] `is_focused` boolean on `repositories` — toggle directly from table row or detail page
 - [ ] Focus badge in repos table; unfocused repos show "Not Focused" indicator
 - [ ] Advisor (Phase 14) and digest (Phase 8) filter recommendations to focused repos by default
 
 ### Phase 22 — Archive Candidates
 Automated scoring surfaces repos you should stop maintaining.
 
-- [ ] Archive score (0–100) derived from: commit inactivity, zero revenue, no active deployment, low health, low opportunity
-- [ ] "Strong Archive Candidates" card on dashboard — repos scoring above threshold
-- [ ] One-click lifecycle transition to Sunsetting/Archived from the card
+- [x] Archive score (0–100) derived from: commit inactivity, zero revenue, no active deployment, low health, low opportunity
+- [x] "Strong Archive Candidates" card on dashboard — repos scoring above threshold
+- [x] One-click lifecycle transition to Sunsetting/Archived from the card
 - [ ] Archive score column in repos table (hidden by default)
 
 ### Phase 23 — Itemized Cost Tracking
 Break the existing monthly cost field (Phase 3) into named line items per repo.
 
-- [ ] `cost_items` jsonb on `repository_metrics`: `[{ label: "Vercel", amount: 20 }, ...]`
-- [ ] Cost line-item editor on Revenue tab (add/remove rows, label + amount)
-- [ ] Total auto-summed, replaces existing single-field monthly cost
+- [x] `cost_items` jsonb on `repository_metrics`: `[{ label: "Vercel", amount: 20 }, ...]`
+- [x] Cost line-item editor on Revenue tab (add/remove rows, label + amount)
+- [x] Total auto-summed, replaces existing single-field monthly cost
 - [ ] Per-repo P&L: Revenue − itemized costs → net profit / loss
 - [ ] Portfolio cost breakdown on dashboard (group by label across all repos)
 
 ### Phase 24 — Weekly CEO Report
 Structured Monday briefing that replaces reading dashboards — portfolio state at a glance.
 
-- [ ] Extends `digests` table with `ceo_report` jsonb field
-- [ ] Generated alongside existing briefing + advisor in Monday cron
-- [ ] Sections: Portfolio Summary (value, MRR delta, avg health delta), Biggest Wins, Biggest Risks, Recommended Focus This Week
-- [ ] Wins/risks derived from sync deltas: stars gained, uptime streaks, health jumps, failing builds, dormant repos
-- [ ] "CEO Report" card on dashboard — collapsible, replaces or sits alongside WeeklyBriefing card
-- [ ] Uses claude-haiku with cached system prompt; structured JSON output
+- [x] Extends `digests` table with `ceo_report` jsonb field
+- [x] Generated alongside existing briefing + advisor in Monday cron
+- [x] Sections: Portfolio Summary (value, MRR delta, avg health delta), Biggest Wins, Biggest Risks, Recommended Focus This Week
+- [x] Wins/risks derived from sync deltas: stars gained, uptime streaks, health jumps, failing builds, dormant repos
+- [x] "CEO Report" card on dashboard — collapsible, replaces or sits alongside WeeklyBriefing card
+- [x] Uses claude-haiku with cached system prompt; structured JSON output
 
 ### Phase 25 — Time Allocation Recommendations
 Answer "where should my next N hours go?" using existing opportunity and value data.
 
 - [ ] Input: hours available (user-configurable in Settings, default 10h/week)
-- [ ] Output: ranked repo list with projected value delta per hour invested
-- [ ] Derived from: opportunity score delta potential, health improvement ceiling, revenue proximity
-- [ ] "Best Use of Your Time" card on dashboard — top 3 repos with impact estimate
-- [ ] Focused repos (Phase 21) get priority weighting; advisor-ignored repos excluded
+- [x] Output: ranked repo list with projected value delta per hour invested
+- [x] Derived from: opportunity score delta potential, health improvement ceiling, revenue proximity
+- [x] "Best Use of Your Time" card on dashboard — top 3 repos with impact estimate
+- [x] Focused repos (Phase 21) get priority weighting; advisor-ignored repos excluded
 
 ### Phase 26 — Opportunity vs Effort Matrix
 Add effort dimension to opportunity scoring and surface the quick-win quadrant.
