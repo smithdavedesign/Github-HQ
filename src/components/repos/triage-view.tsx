@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { HealthBadge } from '@/components/repos/health-badge'
-import { updateLifecycleStatus } from '@/lib/actions/repositories'
+import { triageSetLifecycle } from '@/lib/actions/repositories'
 import { formatDistanceToNow } from '@/lib/utils'
 import { toast } from 'sonner'
 import { CheckCircle, Archive, Skull, SkipForward, ChevronLeft, ChevronRight, Trophy } from 'lucide-react'
@@ -58,12 +58,17 @@ export function TriageView({ repos }: Props) {
     const lifecycle = ACTION_MAP[action].lifecycle
     if (lifecycle) {
       try {
-        await updateLifecycleStatus(current.id, lifecycle)
-      } catch {
+        await triageSetLifecycle(current.id, lifecycle)
+      } catch (err) {
+        console.error('[triage] lifecycle update failed:', err)
         toast.error('Failed to save — try again')
         setSaving(false)
         return
       }
+    }
+
+    if (action !== 'skip') {
+      toast.success(`${current.name} → ${ACTION_MAP[action].label}`, { duration: 1500 })
     }
 
     setDecisions(d => [...d, { repoId: current.id, action }])

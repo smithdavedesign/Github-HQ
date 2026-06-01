@@ -136,6 +136,17 @@ export async function updateLifecycleStatus(repoId: number, status: string) {
   revalidatePath('/')
 }
 
+/** Lightweight lifecycle update for triage mode — no revalidatePath to avoid resetting triage state */
+export async function triageSetLifecycle(repoId: number, status: string) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  await db
+    .update(repositories)
+    .set({ lifecycleStatus: status })
+    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+}
+
 export async function updateAbandonmentReason(repoId: number, reason: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
