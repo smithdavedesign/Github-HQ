@@ -1,4 +1,6 @@
 import { getDashboardStats, getRepositories, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport } from '@/lib/actions/repositories'
+import { getPortfolioScoreTrend } from '@/lib/health/portfolio-snapshot'
+import { getWeeklyDiff } from '@/lib/actions/weekly-diff'
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { HealthBadge } from '@/components/repos/health-badge'
 import { WeeklyBriefing } from '@/components/dashboard/weekly-briefing'
@@ -10,6 +12,8 @@ import { GoalsCard } from '@/components/dashboard/goals-card'
 import { ArchiveCandidatesCard } from '@/components/dashboard/archive-candidates-card'
 import { CeoReportCard } from '@/components/dashboard/ceo-report-card'
 import { TimeAllocationCard } from '@/components/dashboard/time-allocation-card'
+import { PortfolioScoreCard } from '@/components/dashboard/portfolio-score-card'
+import { WeeklyDiffCard } from '@/components/dashboard/weekly-diff-card'
 import { getGoals } from '@/lib/actions/goals'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,7 +26,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, digest, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport] = await Promise.all([
+  const [stats, repos, digest, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff] = await Promise.all([
     getDashboardStats(),
     getRepositories(),
     getLatestDigest(session.user.id),
@@ -34,6 +38,8 @@ export default async function DashboardPage() {
     getArchiveCandidates(),
     getTimeAllocation(),
     getLatestCeoReport(),
+    getPortfolioScoreTrend(session.user.id),
+    getWeeklyDiff(),
   ])
 
   const topRepos = repos
@@ -103,6 +109,14 @@ export default async function DashboardPage() {
               description={stats.totalMrr > 0 ? `${Math.round((stats.monthlyProfit / stats.totalMrr) * 100)}% margin` : undefined}
             />
           </div>
+        </div>
+      )}
+
+      {/* Portfolio Score (Phase 30) + Weekly Diff (Phase 31) */}
+      {scoreTrend.current && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <PortfolioScoreCard breakdown={scoreTrend.current} weekDelta={scoreTrend.weekDelta} />
+          <WeeklyDiffCard diff={weeklyDiff} />
         </div>
       )}
 

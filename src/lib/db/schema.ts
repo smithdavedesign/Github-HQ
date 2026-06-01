@@ -278,6 +278,22 @@ export const goals = pgTable('goals', {
   index('goals_user_id_idx').on(table.userId),
 ])
 
+// ─── Portfolio Score History (Phase 30) ──────────────────────────────────────
+
+export const portfolioScoreHistory = pgTable('portfolio_score_history', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  score: real('score').notNull(),            // 0-100 composite
+  avgHealth: real('avg_health'),
+  activityRatio: real('activity_ratio'),     // % of repos Actively Maintained
+  revenueScore: real('revenue_score'),
+  diversityScore: real('diversity_score'),
+  recordedDate: date('recorded_date').notNull(),
+}, (table) => [
+  uniqueIndex('psh_user_date_idx').on(table.userId, table.recordedDate),
+  index('psh_user_id_idx').on(table.userId),
+])
+
 // ─── Portfolio Events (Phase 28 — Personal Changelog) ────────────────────────
 
 export const portfolioEvents = pgTable('portfolio_events', {
@@ -303,6 +319,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   repositories: many(repositories),
   scans: many(scans),
   portfolioEvents: many(portfolioEvents),
+  portfolioScoreHistory: many(portfolioScoreHistory),
 }))
 
 export const repositoriesRelations = relations(repositories, ({ one, many }) => ({
@@ -345,6 +362,10 @@ export const goalsRelations = relations(goals, ({ one }) => ({
   user: one(users, { fields: [goals.userId], references: [users.id] }),
 }))
 
+export const portfolioScoreHistoryRelations = relations(portfolioScoreHistory, ({ one }) => ({
+  user: one(users, { fields: [portfolioScoreHistory.userId], references: [users.id] }),
+}))
+
 export const portfolioEventsRelations = relations(portfolioEvents, ({ one }) => ({
   user: one(users, { fields: [portfolioEvents.userId], references: [users.id] }),
   repository: one(repositories, { fields: [portfolioEvents.repoId], references: [repositories.id] }),
@@ -381,5 +402,6 @@ export type RepoPurpose =
   | 'Infrastructure'
 
 export type CostItem = { label: string; amount: number }
+export type PortfolioScoreHistory = typeof portfolioScoreHistory.$inferSelect
 export type PortfolioEvent = typeof portfolioEvents.$inferSelect
 export type InsertPortfolioEvent = typeof portfolioEvents.$inferInsert

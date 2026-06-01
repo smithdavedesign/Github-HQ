@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { syncAllRepos } from '@/lib/github/sync'
 import { snapshotHealthScores } from '@/lib/health/history'
+import { snapshotPortfolioScore } from '@/lib/health/portfolio-snapshot'
 import { refreshGoalProgress } from '@/lib/actions/goals'
 import { isNotNull } from 'drizzle-orm'
 
@@ -26,6 +27,7 @@ export async function GET(request: Request) {
       await syncAllRepos(user.id)
       await Promise.allSettled([
         snapshotHealthScores(user.id),
+        snapshotPortfolioScore(user.id),
         refreshGoalProgress(user.id),
       ])
       processed++

@@ -171,16 +171,16 @@
 - [x] Cascade risk alert in Feed: warns when a depended-upon repo has health < 60
 
 ### Phase 30 — Portfolio Score
-- [ ] Single 0–100 score for the whole portfolio (weighted: health avg + revenue + momentum)
-- [ ] Shown prominently on dashboard alongside metric cards
-- [ ] Tracked over time — stored in a `portfolio_score_history` table (daily snapshot)
-- [ ] Score change badge (↑/↓ since last week)
+- [x] `portfolio_score_history` table — daily snapshot, idempotent via unique `(userId, recordedDate)`
+- [x] `calculatePortfolioScore()` — 4-component formula: Health 40%, Activity 25%, Revenue 25%, Diversity 10%
+- [x] Snapshotted after every sync alongside `health_score_history`
+- [x] `PortfolioScoreCard` on dashboard — circular ring gauge, grade (A–F), component bars, weekly delta badge
 
 ### Phase 31 — Weekly Diff Card
-- [ ] "What changed this week" card on dashboard
-- [ ] Repos that improved most vs dropped most (health delta)
-- [ ] New security alerts, MRR movement, lifecycle changes
-- [ ] Computed from `health_score_history` + `portfolio_events` diff
+- [x] `getWeeklyDiff()` server action — computes from `health_score_history`, `portfolio_events`, `security_findings`
+- [x] Top health improver and top decliner (min ±3pt delta to avoid noise)
+- [x] New repos, archived repos, MRR changes, new critical/high security alerts
+- [x] `WeeklyDiffCard` on dashboard — hidden when nothing happened this week
 
 ### Phase 32 — Ship It Nudge
 - [ ] If a focused repo (`is_focused = true`) has no commits in N days, surface a card on the dashboard
