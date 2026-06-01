@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { TrendInfo } from '@/lib/health/history'
+import { HEALTH_THRESHOLD_HEALTHY, HEALTH_THRESHOLD_AT_RISK } from '@/lib/health/scoring'
 
 interface HealthBadgeProps {
   score: number
@@ -10,7 +11,7 @@ interface HealthBadgeProps {
 }
 
 export function HealthBadge({ score, showScore = true, trend, className }: HealthBadgeProps) {
-  const color = score >= 90 ? 'emerald' : score >= 70 ? 'amber' : 'red'
+  const color = score >= HEALTH_THRESHOLD_HEALTHY ? 'emerald' : score >= HEALTH_THRESHOLD_AT_RISK ? 'amber' : 'red'
 
   const colorClasses = {
     emerald: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400',
@@ -18,7 +19,7 @@ export function HealthBadge({ score, showScore = true, trend, className }: Healt
     red: 'bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-400',
   }
 
-  const label = score >= 90 ? 'Healthy' : score >= 70 ? 'At Risk' : 'Dead'
+  const label = score >= HEALTH_THRESHOLD_HEALTHY ? 'Healthy' : score >= HEALTH_THRESHOLD_AT_RISK ? 'At Risk' : 'Dead'
 
   const trendSymbol = trend
     ? trend.direction === 'up' ? '↑'

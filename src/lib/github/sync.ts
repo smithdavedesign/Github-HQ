@@ -242,6 +242,9 @@ export async function syncSingleRepo(
     calculatedAt: new Date(),
   }
 
+  const hasLiveDeployment = repoRecord?.deployments.some(d => d.status === 'healthy' || d.status === 'slow') ?? false
+  const deploymentScore = calculateDeploymentScore(repoRecord?.deployments ?? [])
+
   metrics.healthScore = calculateHealthScore({
     activityScore: metrics.activityScore ?? 0,
     securityScore: currentSecurityScore,
@@ -249,9 +252,8 @@ export async function syncSingleRepo(
     testingScore: metrics.testingScore ?? 0,
     dependencyScore: metrics.dependencyScore ?? 50,
     qualityScore: metrics.qualityScore ?? 70,
+    deploymentScore,
   })
-
-  const hasLiveDeployment = repoRecord?.deployments.some(d => d.status === 'healthy' || d.status === 'slow') ?? false
   const mrrNum = toNum(repoRecord?.mrr)
   const stars = githubRepo.stargazers_count ?? 0
 
@@ -356,6 +358,14 @@ async function resolveInternalDeps(depInfos: RepoDepInfo[]) {
       .set({ internalDeps: internalDeps.length > 0 ? internalDeps : null })
       .where(eq(repositoryMetrics.repoId, repoId))
   }
+}
+
+function calculateDeploymentScore(deployments: { status: string | null }[]): number {
+  if (deployments.length === 0) return 50  // no deployments configured — neutral, not penalised
+  if (deployments.some(d => d.status === 'healthy')) return 100
+  if (deployments.some(d => d.status === 'slow')) return 65
+  if (deployments.every(d => d.status === 'down')) return 0
+  return 50  // all unknown
 }
 
 function calculateActivityScore(monthlyCommits: number, quarterlyCommits: number, openPRs: number, hasReleases: boolean): number {

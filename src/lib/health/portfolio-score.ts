@@ -51,9 +51,9 @@ export function calculatePortfolioScore(repos: RepoScoreInput[]): PortfolioScore
 }
 
 export function portfolioGrade(score: number): { grade: string; label: string } {
-  if (score >= 90) return { grade: 'A', label: 'Excellent' }
-  if (score >= 80) return { grade: 'B', label: 'Great' }
-  if (score >= 70) return { grade: 'C', label: 'Good' }
-  if (score >= 60) return { grade: 'D', label: 'Fair' }
+  if (score >= 85) return { grade: 'A', label: 'Excellent' }
+  if (score >= 70) return { grade: 'B', label: 'Great' }
+  if (score >= 55) return { grade: 'C', label: 'Good' }
+  if (score >= 40) return { grade: 'D', label: 'Fair' }
   return { grade: 'F', label: 'Needs Work' }
 }

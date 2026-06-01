@@ -38,7 +38,7 @@ export default async function OGImage({ params }: { params: Promise<{ username: 
   const avgHealth = Math.round(parseFloat(String(avgHealthRows[0]?.avg ?? '0')))
   const displayName = user.name ?? username
 
-  const healthColor = avgHealth >= 90 ? '#10b981' : avgHealth >= 70 ? '#f59e0b' : '#ef4444'
+  const healthColor = avgHealth >= 75 ? '#10b981' : avgHealth >= 55 ? '#f59e0b' : '#ef4444'
 
   return new ImageResponse(
     <div

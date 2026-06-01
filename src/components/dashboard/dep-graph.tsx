@@ -98,8 +98,8 @@ function runForceLayout(
 }
 
 function healthColor(score: number): string {
-  if (score >= 90) return '#22c55e'
-  if (score >= 70) return '#f59e0b'
+  if (score >= 75) return '#22c55e'
+  if (score >= 55) return '#f59e0b'
   return '#ef4444'
 }
 

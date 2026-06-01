@@ -109,38 +109,38 @@ describe('calculateHealthScore', () => {
 })
 
 describe('healthColor', () => {
-  it('returns green for score >= 90', () => {
-    expect(healthColor(90)).toBe('green')
+  it('returns green for score >= 75', () => {
+    expect(healthColor(75)).toBe('green')
     expect(healthColor(100)).toBe('green')
-    expect(healthColor(95)).toBe('green')
+    expect(healthColor(80)).toBe('green')
   })
 
-  it('returns yellow for score 70-89', () => {
-    expect(healthColor(70)).toBe('yellow')
-    expect(healthColor(89)).toBe('yellow')
-    expect(healthColor(75)).toBe('yellow')
+  it('returns yellow for score 55-74', () => {
+    expect(healthColor(55)).toBe('yellow')
+    expect(healthColor(74)).toBe('yellow')
+    expect(healthColor(65)).toBe('yellow')
   })
 
-  it('returns red for score < 70', () => {
+  it('returns red for score < 55', () => {
     expect(healthColor(0)).toBe('red')
-    expect(healthColor(69)).toBe('red')
-    expect(healthColor(50)).toBe('red')
+    expect(healthColor(54)).toBe('red')
+    expect(healthColor(30)).toBe('red')
   })
 })
 
 describe('healthLabel', () => {
   it('labels healthy repos correctly', () => {
-    expect(healthLabel(90)).toBe('Healthy')
+    expect(healthLabel(75)).toBe('Healthy')
     expect(healthLabel(100)).toBe('Healthy')
   })
 
   it('labels at-risk repos correctly', () => {
-    expect(healthLabel(70)).toBe('At Risk')
-    expect(healthLabel(89)).toBe('At Risk')
+    expect(healthLabel(55)).toBe('At Risk')
+    expect(healthLabel(74)).toBe('At Risk')
   })
 
   it('labels dead repos correctly', () => {
     expect(healthLabel(0)).toBe('Dead')
-    expect(healthLabel(69)).toBe('Dead')
+    expect(healthLabel(54)).toBe('Dead')
   })
 })

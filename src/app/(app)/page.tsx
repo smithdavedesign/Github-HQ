@@ -84,15 +84,15 @@ export default async function DashboardPage() {
         <MetricCard title="Total Repos" value={stats.total} icon={GitFork} />
         <MetricCard title="Private" value={stats.private} icon={Lock} />
         <MetricCard title="Public" value={stats.public} icon={Globe} />
-        <MetricCard title="Healthy" value={stats.healthy} icon={Smile} variant="success" description="Score ≥ 90" />
-        <MetricCard title="At Risk" value={stats.atRisk} icon={AlertTriangle} variant="warning" description="Score 70–89" />
-        <MetricCard title="Dead" value={stats.dead} icon={Skull} variant="danger" description="Score < 70" />
+        <MetricCard title="Healthy" value={stats.healthy} icon={Smile} variant="success" description="Score ≥ 75" />
+        <MetricCard title="At Risk" value={stats.atRisk} icon={AlertTriangle} variant="warning" description="Score 55–74" />
+        <MetricCard title="Dead" value={stats.dead} icon={Skull} variant="danger" description="Score < 55" />
         <MetricCard title="Security Issues" value={stats.securityIssues} icon={Shield} variant={stats.securityIssues > 0 ? 'danger' : 'default'} description="Critical + High" />
         <MetricCard
           title="Avg Health"
           value={stats.avgHealth ? `${Math.round(stats.avgHealth)}` : '—'}
           icon={Rocket}
-          variant={stats.avgHealth >= 90 ? 'success' : stats.avgHealth >= 70 ? 'warning' : 'danger'}
+          variant={stats.avgHealth >= 75 ? 'success' : stats.avgHealth >= 55 ? 'warning' : 'danger'}
         />
       </div>
 

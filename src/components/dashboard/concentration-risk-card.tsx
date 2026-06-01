@@ -58,7 +58,7 @@ export function ConcentrationRiskCard({ risk }: Props) {
               {risk.revenueRiskLevel === 'high' && (
                 <p className="text-xs text-red-500/80">
                   Single-point-of-failure — {risk.topRevenueRepo.pct}% of MRR from one repo.
-                  {risk.topRevenueRepo.healthScore < 70 && ' Health is below safe threshold.'}
+                  {risk.topRevenueRepo.healthScore < 75 && ' Health is below safe threshold.'}
                 </p>
               )}
               {risk.revenueRiskLevel === 'medium' && (

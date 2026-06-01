@@ -205,15 +205,21 @@ function hasTestFiles(deps: Record<string, unknown>): boolean {
 }
 
 function scoreReadme(content: string | null): number {
-  if (!content) return 0
-  let score = 0
+  if (!content || content.trim().length < 50) return 0
+
+  let score = 20  // base: README exists with meaningful content
   const lower = content.toLowerCase()
 
-  if (lower.includes('## installation') || lower.includes('## getting started') || lower.includes('## setup')) score += 25
-  if (lower.includes('.env') || lower.includes('environment variable') || lower.includes('env.example')) score += 20
-  if (lower.includes('screenshot') || lower.includes('![') || lower.includes('<img')) score += 20
-  if (lower.includes('## architecture') || lower.includes('## how it works') || lower.includes('## design')) score += 20
-  if (lower.includes('## contributing') || lower.includes('## contribute') || lower.includes('pull request')) score += 15
+  // Length bonus — longer READMEs tend to document more
+  if (content.length > 500)  score += 5
+  if (content.length > 2000) score += 5
 
-  return score
+  // Section bonuses (personal projects rarely have all of these)
+  if (lower.includes('## installation') || lower.includes('## getting started') || lower.includes('## setup') || lower.includes('## usage')) score += 20
+  if (lower.includes('.env') || lower.includes('environment variable') || lower.includes('env.example')) score += 15
+  if (lower.includes('screenshot') || lower.includes('![') || lower.includes('<img')) score += 15
+  if (lower.includes('## architecture') || lower.includes('## how it works') || lower.includes('## design')) score += 10
+  if (lower.includes('## contributing') || lower.includes('## contribute') || lower.includes('pull request')) score += 10
+
+  return Math.min(100, score)
 }

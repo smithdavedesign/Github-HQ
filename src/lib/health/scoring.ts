@@ -27,15 +27,18 @@ export function calculateHealthScore(
   return Math.round(activity + security + deployment + documentation + testing + dependency + quality)
 }
 
+export const HEALTH_THRESHOLD_HEALTHY = 75
+export const HEALTH_THRESHOLD_AT_RISK = 55
+
 export function healthColor(score: number): 'green' | 'yellow' | 'red' {
-  if (score >= 90) return 'green'
-  if (score >= 70) return 'yellow'
+  if (score >= HEALTH_THRESHOLD_HEALTHY) return 'green'
+  if (score >= HEALTH_THRESHOLD_AT_RISK) return 'yellow'
   return 'red'
 }
 
 export function healthLabel(score: number): 'Healthy' | 'At Risk' | 'Dead' {
-  if (score >= 90) return 'Healthy'
-  if (score >= 70) return 'At Risk'
+  if (score >= HEALTH_THRESHOLD_HEALTHY) return 'Healthy'
+  if (score >= HEALTH_THRESHOLD_AT_RISK) return 'At Risk'
   return 'Dead'
 }
 

@@ -54,9 +54,9 @@ export async function getDashboardStats() {
         total: sql<number>`count(*)`.mapWith(Number),
         private: sql<number>`count(*) filter (where ${repositories.visibility} = 'private')`.mapWith(Number),
         public: sql<number>`count(*) filter (where ${repositories.visibility} = 'public')`.mapWith(Number),
-        healthy: sql<number>`count(*) filter (where ${repositoryMetrics.healthScore} >= 90)`.mapWith(Number),
-        atRisk: sql<number>`count(*) filter (where ${repositoryMetrics.healthScore} >= 70 and ${repositoryMetrics.healthScore} < 90)`.mapWith(Number),
-        dead: sql<number>`count(*) filter (where ${repositoryMetrics.healthScore} < 70)`.mapWith(Number),
+        healthy: sql<number>`count(*) filter (where ${repositoryMetrics.healthScore} >= 75)`.mapWith(Number),
+        atRisk: sql<number>`count(*) filter (where ${repositoryMetrics.healthScore} >= 55 and ${repositoryMetrics.healthScore} < 75)`.mapWith(Number),
+        dead: sql<number>`count(*) filter (where ${repositoryMetrics.healthScore} < 55)`.mapWith(Number),
         avgHealth: sql<number>`avg(${repositoryMetrics.healthScore})`.mapWith(Number),
       })
       .from(repositories)
@@ -351,7 +351,7 @@ export async function getOpportunityData() {
   const threshold = Math.max(OPPORTUNITY_THRESHOLD, top25pctScore)
 
   const needsAttention = withScores
-    .filter(r => r.opportunityScore >= threshold && r.healthScore < 70)
+    .filter(r => r.opportunityScore >= threshold && r.healthScore < 75)
     .sort((a, b) => b.opportunityScore - a.opportunityScore)
     .slice(0, 5)
 
