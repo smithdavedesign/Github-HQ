@@ -27,7 +27,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { ArrowUpDown, ChevronDown, Download, ExternalLink, CheckCircle, XCircle, DollarSign, Bookmark, Trash2, Star } from 'lucide-react'
 import Link from 'next/link'
-import { formatDistanceToNow } from '@/lib/utils'
+import { formatDistanceToNow, toNum } from '@/lib/utils'
 import { toggleRevenueGenerating } from '@/lib/actions/repositories'
 import { toast } from 'sonner'
 import type { Repository, RepositoryMetrics, TechStack, Deployment } from '@/lib/db/schema'
@@ -115,7 +115,7 @@ function applyNLFilters(rows: RepoRow[], filters: NLQueryFilters): RepoRow[] {
 
     if (filters.starsMin != null && (row.stars ?? 0) < filters.starsMin) return false
 
-    if (filters.mrrMin != null && parseFloat(String(row.mrr ?? '0')) < filters.mrrMin) return false
+    if (filters.mrrMin != null && toNum(row.mrr) < filters.mrrMin) return false
 
     return true
   })
@@ -135,7 +135,7 @@ function applyNLFilters(rows: RepoRow[], filters: NLQueryFilters): RepoRow[] {
           return (bT - aT) * dir
         }
         case 'stars': return ((b.stars ?? 0) - (a.stars ?? 0)) * dir
-        case 'mrr': return (parseFloat(String(b.mrr ?? '0')) - parseFloat(String(a.mrr ?? '0'))) * dir
+        case 'mrr': return (toNum(b.mrr) - toNum(a.mrr)) * dir
         case 'name': return a.name.localeCompare(b.name) * dir
         default: return 0
       }
@@ -329,7 +329,7 @@ export function RepoTable({ data, nlFilters, nlExplanation }: {
     },
     {
       id: 'mrr',
-      accessorFn: (row) => parseFloat(String(row.mrr ?? '0')),
+      accessorFn: (row) => toNum(row.mrr),
       header: ({ column }) => (
         <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}>
           MRR <ArrowUpDown className="w-3 h-3" />

@@ -5,6 +5,13 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/** Convert Drizzle's numeric/string DB values to a JS number. Returns 0 for null/undefined. */
+export function toNum(value: unknown): number {
+  if (value == null) return 0
+  const n = parseFloat(String(value))
+  return isNaN(n) ? 0 : n
+}
+
 export function formatDistanceToNow(date: Date | string | null): string {
   if (!date) return '—'
   const d = date instanceof Date ? date : new Date(date)

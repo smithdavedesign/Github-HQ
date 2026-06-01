@@ -1,6 +1,7 @@
 'use server'
 
 import { auth } from '@/lib/auth'
+import { toNum } from '@/lib/utils'
 import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, techStack, deployments, securityFindings } from '@/lib/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
@@ -296,12 +297,14 @@ export async function getOpportunityData() {
     .sort((a, b) => b.opportunityScore - a.opportunityScore)
     .slice(0, 5)
 
+  const needsAttentionIds = new Set(needsAttention.map(r => r.id))
+
   const highPotentialDormant = withScores
     .filter(r =>
       r.opportunityScore >= threshold &&
-      (r.activityStatus === 'Dormant' || r.activityStatus === 'Abandoned' || r.activityStatus === 'Low Activity')
+      (r.activityStatus === 'Dormant' || r.activityStatus === 'Abandoned' || r.activityStatus === 'Low Activity') &&
+      !needsAttentionIds.has(r.id)
     )
-    .filter(r => !needsAttention.find(n => n.id === r.id))  // no duplicates
     .sort((a, b) => b.opportunityScore - a.opportunityScore)
     .slice(0, 5)
 
@@ -527,7 +530,7 @@ export async function getTimeAllocation(topN = 3) {
       healthScore: r.metrics!.healthScore ?? 0,
       estimatedValue: r.metrics!.estimatedValue ?? 0,
       isFocused: r.isFocused ?? false,
-      mrr: parseFloat(String(r.mrr ?? '0')),
+      mrr: toNum(r.mrr),
       hasLiveDeployment: r.deployments.some(d => d.status !== 'down'),
       activityScore: r.metrics!.activityScore ?? 0,
       archiveScore: r.metrics!.archiveScore ?? 0,

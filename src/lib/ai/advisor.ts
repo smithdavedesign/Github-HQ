@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { toNum } from '@/lib/utils'
 import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, securityFindings, deployments, digests } from '@/lib/db/schema'
 import { eq, inArray, and } from 'drizzle-orm'
@@ -103,7 +104,7 @@ export async function generateAdvisor(userId: string): Promise<AdvisorContent> {
     .filter(r => !r.isArchived && r.metrics)
     .map(r => {
       const m = r.metrics!
-      const mrrNum = parseFloat(String(r.mrr ?? '0'))
+      const mrrNum = toNum(r.mrr)
       const hasLiveDeploy = r.deployments.some(d => d.status === 'healthy' || d.status === 'slow')
       const openCritical = r.securityFindings.filter(f => f.severity === 'critical' || f.severity === 'high').length
 
@@ -204,7 +205,13 @@ Rules:
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '{}'
   const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-  const parsed = JSON.parse(jsonStr) as Omit<AdvisorContent, 'generatedAt'>
+  let parsed: Omit<AdvisorContent, 'generatedAt'>
+  try {
+    parsed = JSON.parse(jsonStr)
+  } catch {
+    console.error('[advisor] failed to parse Claude response:', text.slice(0, 200))
+    throw new Error('Advisor: Claude returned non-JSON response')
+  }
 
   const result: AdvisorContent = { ...parsed, generatedAt: new Date().toISOString() }
 

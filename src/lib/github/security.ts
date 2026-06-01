@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { securityFindings, repositoryMetrics, repositories } from '@/lib/db/schema'
+import type { InsertSecurityFinding } from '@/lib/db/schema'
 import type { OctokitClient } from './client'
 import { eq, and } from 'drizzle-orm'
 import { calculateHealthScore } from '@/lib/health/scoring'
@@ -51,20 +52,20 @@ async function syncRepoSecurity(
   )
 
   let penaltyTotal = 0
+  const rows: InsertSecurityFinding[] = []
 
   if (dependabotAlerts.status === 'fulfilled') {
     for (const alert of dependabotAlerts.value) {
       const severity = (alert.security_advisory?.severity ?? 'medium').toLowerCase()
       penaltyTotal += SEVERITY_PENALTY[severity] ?? 2
-
-      await db.insert(securityFindings).values({
+      rows.push({
         repoId,
         githubAlertId: alert.number,
         type: 'dependabot',
         severity,
         title: alert.security_advisory?.summary ?? alert.dependency?.package?.name ?? 'Dependency alert',
-        description: alert.security_advisory?.description,
-        packageName: alert.dependency?.package?.name,
+        description: alert.security_advisory?.description ?? undefined,
+        packageName: alert.dependency?.package?.name ?? undefined,
         state: 'open',
         createdAt: new Date(alert.created_at),
       })
@@ -73,9 +74,8 @@ async function syncRepoSecurity(
 
   if (secretAlerts.status === 'fulfilled') {
     for (const alert of secretAlerts.value) {
-      penaltyTotal += SEVERITY_PENALTY['high'] // secret leaks are always high severity
-
-      await db.insert(securityFindings).values({
+      penaltyTotal += SEVERITY_PENALTY['high']
+      rows.push({
         repoId,
         githubAlertId: alert.number,
         type: 'secret',
@@ -85,6 +85,10 @@ async function syncRepoSecurity(
         createdAt: new Date(alert.created_at ?? Date.now()),
       })
     }
+  }
+
+  if (rows.length > 0) {
+    await db.insert(securityFindings).values(rows)
   }
 
   const securityScore = Math.max(0, 100 - penaltyTotal)

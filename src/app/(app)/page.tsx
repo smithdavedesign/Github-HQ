@@ -1,3 +1,4 @@
+import { toNum } from '@/lib/utils'
 import { getDashboardStats, getRepositories, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport } from '@/lib/actions/repositories'
 import { getPortfolioScoreTrend } from '@/lib/health/portfolio-snapshot'
 import { getWeeklyDiff } from '@/lib/actions/weekly-diff'
@@ -202,7 +203,7 @@ export default async function DashboardPage() {
                     </td>
                     {hasRevenue && (
                       <td className="px-3 py-3 text-xs">
-                        {parseFloat(String(repo.mrr ?? '0')) > 0
+                        {toNum(repo.mrr) > 0
                           ? <span className="text-emerald-600 font-medium">${parseFloat(String(repo.mrr)).toFixed(0)}</span>
                           : <span className="text-muted-foreground">—</span>}
                       </td>

@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { healthScoreHistory, repositoryMetrics, repositories } from '@/lib/db/schema'
+import { healthScoreHistory, repositories } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
 /**
@@ -16,55 +16,25 @@ export async function snapshotHealthScores(userId: string): Promise<number> {
     columns: { id: true },
   })
 
-  let written = 0
-  for (const repo of userRepos) {
-    if (!repo.metrics?.healthScore) continue
+  const rows = userRepos
+    .filter(r => r.metrics?.healthScore != null)
+    .map(r => ({
+      repoId: r.id,
+      healthScore: r.metrics!.healthScore!,
+      activityScore: r.metrics!.activityScore,
+      securityScore: r.metrics!.securityScore,
+      recordedDate: today,
+    }))
 
-    await db
-      .insert(healthScoreHistory)
-      .values({
-        repoId: repo.id,
-        healthScore: repo.metrics.healthScore,
-        activityScore: repo.metrics.activityScore,
-        securityScore: repo.metrics.securityScore,
-        recordedDate: today,
-      })
-      .onConflictDoNothing()  // one snapshot per repo per day
+  if (rows.length === 0) return 0
 
-    written++
-  }
-  return written
+  await db.insert(healthScoreHistory).values(rows).onConflictDoNothing()
+  return rows.length
 }
 
 export interface TrendInfo {
   direction: 'up' | 'down' | 'flat' | 'new'
-  delta: number   // score points, positive = improved
-  days: number    // how far back the comparison goes
+  delta: number
+  days: number
 }
 
-/**
- * Compute week-over-week health trend for a single repo.
- * Returns null if not enough history (< 7 days).
- */
-export async function getHealthTrend(repoId: number, currentScore: number): Promise<TrendInfo | null> {
-  // Get the oldest record in the last 7-14 days to compare against
-  const history = await db.query.healthScoreHistory.findMany({
-    where: eq(healthScoreHistory.repoId, repoId),
-    orderBy: (h, { asc }) => [asc(h.recordedDate)],
-    limit: 30,
-  })
-
-  if (history.length < 2) return null
-
-  const oldest = history[0]
-  const oldDate = new Date(oldest.recordedDate)
-  const days = Math.round((Date.now() - oldDate.getTime()) / (1000 * 60 * 60 * 24))
-
-  if (days < 5) return null  // not enough time elapsed
-
-  const delta = Math.round(currentScore - oldest.healthScore)
-  const direction: TrendInfo['direction'] =
-    delta > 2 ? 'up' : delta < -2 ? 'down' : 'flat'
-
-  return { direction, delta, days }
-}

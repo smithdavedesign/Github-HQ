@@ -153,7 +153,13 @@ Tags: ${(repo.tags ?? []).join(', ') || 'None'}`
 
   // Strip any markdown code fences if present
   const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-  const analysis: Omit<ClaudeAnalysis, 'generatedAt'> = JSON.parse(jsonStr)
+  let analysis: Omit<ClaudeAnalysis, 'generatedAt'>
+  try {
+    analysis = JSON.parse(jsonStr)
+  } catch {
+    console.error('[analysis] failed to parse Claude response:', text.slice(0, 200))
+    throw new Error('Analysis: Claude returned non-JSON response')
+  }
 
   const result: ClaudeAnalysis = { ...analysis, generatedAt: new Date().toISOString() }
 

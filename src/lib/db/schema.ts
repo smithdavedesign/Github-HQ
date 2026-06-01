@@ -213,6 +213,7 @@ export const securityFindings = pgTable('security_findings', {
 }, (table) => [
   index('security_repo_id_idx').on(table.repoId),
   index('security_severity_idx').on(table.severity),
+  index('security_state_idx').on(table.state),
 ])
 
 // ─── Scans ────────────────────────────────────────────────────────────────────

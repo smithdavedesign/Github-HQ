@@ -1,3 +1,4 @@
+import { toNum } from '@/lib/utils'
 import { DollarSign, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 
 interface CostItem { label: string; amount: number }
@@ -9,7 +10,7 @@ interface RepoPLProps {
 }
 
 export function RepoPL({ mrr, monthlyCost, costItems }: RepoPLProps) {
-  const mrrNum = parseFloat(String(mrr ?? '0'))
+  const mrrNum = toNum(mrr)
   const costs = costItems && costItems.length > 0
     ? costItems
     : monthlyCost && parseFloat(String(monthlyCost)) > 0

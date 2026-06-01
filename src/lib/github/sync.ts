@@ -1,6 +1,7 @@
 'use server'
 
 import { db } from '@/lib/db'
+import { toNum } from '@/lib/utils'
 import { repositories, repositoryMetrics, scans, users, portfolioEvents } from '@/lib/db/schema'
 import type { InsertRepository, InsertRepositoryMetrics } from '@/lib/db/schema'
 import { createOctokit } from './client'
@@ -241,7 +242,7 @@ export async function syncSingleRepo(
     columns: { mrr: true, stars: true, isRevenueGenerating: true },
   })
   const hasLiveDeployment = repoRecord?.deployments.some(d => d.status === 'healthy' || d.status === 'slow') ?? false
-  const mrrNum = parseFloat(String(repoRecord?.mrr ?? '0'))
+  const mrrNum = toNum(repoRecord?.mrr)
   const stars = githubRepo.stargazers_count ?? 0
 
   metrics.opportunityScore = calculateOpportunityScore({
@@ -320,7 +321,7 @@ export async function syncSingleRepo(
     githubRepo.archived ?? false,
     {
       isNew,
-      existingMrr: parseFloat(String(existingRepo?.mrr ?? '0')),
+      existingMrr: toNum(existingRepo?.mrr),
       newMrr: mrrNum,
       existingIsArchived: existingRepo?.isArchived ?? false,
       oldHealthScore: existingRepo?.metrics?.healthScore ?? 0,

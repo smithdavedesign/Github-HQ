@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { toNum } from '@/lib/utils'
 import { db } from '@/lib/db'
 import { digests, repositories, repositoryMetrics, securityFindings, deployments } from '@/lib/db/schema'
 import { eq, desc } from 'drizzle-orm'
@@ -88,7 +89,7 @@ export async function generateCeoReport(userId: string): Promise<CeoReportConten
   if (userRepos.length === 0) throw new Error('No repositories to analyse')
 
   // ── Portfolio summary (computed from DB, not Claude) ──────────────────────
-  const totalMrr = userRepos.reduce((s, r) => s + parseFloat(String(r.mrr ?? '0')), 0)
+  const totalMrr = userRepos.reduce((s, r) => s + toNum(r.mrr), 0)
   const healthScores = userRepos.map(r => r.metrics?.healthScore ?? 0).filter(Boolean)
   const avgHealth = healthScores.length
     ? healthScores.reduce((s, h) => s + h, 0) / healthScores.length
@@ -120,7 +121,7 @@ export async function generateCeoReport(userId: string): Promise<CeoReportConten
       `build=${m?.buildStatus ?? 'unknown'}`,
       `deploy=${deployStatus}`,
       `security=${criticalSec} critical/high`,
-      `mrr=$${parseFloat(String(r.mrr ?? '0')).toFixed(0)}`,
+      `mrr=$${toNum(r.mrr).toFixed(0)}`,
       `stars=${r.stars ?? 0}`,
       `days_since_push=${daysSincePush}`,
       `lifecycle=${r.lifecycleStatus ?? 'maintaining'}`,
@@ -146,7 +147,13 @@ export async function generateCeoReport(userId: string): Promise<CeoReportConten
     recommendedFocus: CeoReportFocus[]
     closingLine: string
   }
-  const parsed = JSON.parse(jsonStr) as ClaudeOutput
+  let parsed: ClaudeOutput
+  try {
+    parsed = JSON.parse(jsonStr)
+  } catch {
+    console.error('[ceo-report] failed to parse Claude response:', text.slice(0, 200))
+    throw new Error('CEO report: Claude returned non-JSON response')
+  }
 
   const result: CeoReportContent = {
     portfolioSummary: {

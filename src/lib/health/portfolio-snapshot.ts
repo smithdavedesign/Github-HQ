@@ -1,3 +1,4 @@
+import { toNum } from '@/lib/utils'
 import { db } from '@/lib/db'
 import { repositories, portfolioScoreHistory } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -18,7 +19,7 @@ export async function snapshotPortfolioScore(userId: string): Promise<PortfolioS
   const inputs = userRepos.map(r => ({
     healthScore: r.metrics?.healthScore ?? 0,
     activityStatus: r.metrics?.activityStatus ?? null,
-    mrr: parseFloat(String(r.mrr ?? '0')),
+    mrr: toNum(r.mrr),
     isArchived: r.isArchived ?? false,
     lifecycleStatus: r.lifecycleStatus,
   }))

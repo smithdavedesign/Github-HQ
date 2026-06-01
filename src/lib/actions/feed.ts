@@ -183,12 +183,13 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
 
   // ── Dependency cascade risk (Phase 29) ────────────────────────────────────
   // If a repo that other portfolio repos depend on has a health drop, warn dependents
+  const repoByName = new Map(userRepos.map(r => [r.name, r]))
   for (const repo of userRepos) {
     const internalDeps = repo.metrics?.internalDeps as string[] | null | undefined
     if (!internalDeps || internalDeps.length === 0) continue
 
     for (const depName of internalDeps) {
-      const depRepo = userRepos.find(r => r.name === depName)
+      const depRepo = repoByName.get(depName)
       if (!depRepo?.metrics) continue
 
       const depHealth = depRepo.metrics.healthScore ?? 100

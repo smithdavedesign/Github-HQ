@@ -64,7 +64,13 @@ ${context.readmeExcerpt ? `README (excerpt): ${context.readmeExcerpt.slice(0, 80
   })
 
   const text = message.content[0].type === 'text' ? message.content[0].text : '{}'
-  const summary: RepoSummary = JSON.parse(text)
+  let summary: RepoSummary
+  try {
+    summary = JSON.parse(text)
+  } catch {
+    console.error('[summary] failed to parse Claude response:', text.slice(0, 200))
+    throw new Error('Summary: Claude returned non-JSON response')
+  }
 
   await db
     .update(repositories)

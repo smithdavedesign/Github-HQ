@@ -102,7 +102,13 @@ export async function generateDigest(userId: string): Promise<DigestContent> {
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '{}'
   const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-  const parsed = JSON.parse(jsonStr) as Omit<DigestContent, 'generatedAt'>
+  let parsed: Omit<DigestContent, 'generatedAt'>
+  try {
+    parsed = JSON.parse(jsonStr)
+  } catch {
+    console.error('[digest] failed to parse Claude response:', text.slice(0, 200))
+    throw new Error('Digest: Claude returned non-JSON response')
+  }
 
   const result: DigestContent = { ...parsed, generatedAt: new Date().toISOString() }
 
