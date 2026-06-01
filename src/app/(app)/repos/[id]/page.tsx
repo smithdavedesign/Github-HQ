@@ -10,12 +10,16 @@ import { formatDistanceToNow } from '@/lib/utils'
 import { CommitActivityChart } from '@/components/repos/commit-activity-chart'
 import { TagEditor } from '@/components/repos/tag-editor'
 import { RevenueEditor } from '@/components/repos/revenue-editor'
+import { CostItemsEditor } from '@/components/repos/cost-items-editor'
 import { ResyncButton } from '@/components/repos/resync-button'
 import { AnalyzeButton } from '@/components/repos/analyze-button'
 import { AnalysisTab } from '@/components/repos/analysis-tab'
 import { DeploymentManager } from '@/components/repos/deployment-manager'
 import { LifecycleSelector } from '@/components/repos/lifecycle-selector'
+import { PurposeSelector } from '@/components/repos/purpose-selector'
+import { FocusToggle } from '@/components/repos/focus-toggle'
 import type { ClaudeAnalysis } from '@/lib/ai/analysis'
+import type { CostItem } from '@/lib/db/schema'
 
 type Props = { params: Promise<{ id: string }> }
 
@@ -163,11 +167,22 @@ export default async function RepoDetailPage({ params }: Props) {
             <CommitActivityChart data={weeklyCommitData} />
           )}
 
-          {/* Lifecycle + Tags */}
+          {/* Lifecycle + Purpose + Focus + Tags */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-muted-foreground mb-2">Lifecycle Stage</p>
               <LifecycleSelector repoId={repo.id} current={repo.lifecycleStatus} />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Purpose</p>
+              <PurposeSelector repoId={repo.id} current={repo.purpose} />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Focus</p>
+              <FocusToggle repoId={repo.id} initialFocused={repo.isFocused ?? false} />
+              <p className="text-xs text-muted-foreground mt-1">
+                Focused repos are prioritised by the Advisor and CEO Report.
+              </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-2">Tags</p>
@@ -258,13 +273,20 @@ export default async function RepoDetailPage({ params }: Props) {
         </TabsContent>
 
         {/* Revenue */}
-        <TabsContent value="revenue" className="pt-4">
+        <TabsContent value="revenue" className="pt-4 space-y-6">
           <RevenueEditor
             repoId={repo.id}
             initialMrr={String(repo.mrr ?? '0')}
             initialArr={String(repo.arr ?? '0')}
             initialMonthlyCost={String(repo.monthlyCost ?? '0')}
           />
+          <div>
+            <p className="text-sm font-medium mb-3">Cost Breakdown</p>
+            <CostItemsEditor
+              repoId={repo.id}
+              initialItems={repo.costItems as CostItem[] | null}
+            />
+          </div>
         </TabsContent>
 
         {/* AI Summary */}

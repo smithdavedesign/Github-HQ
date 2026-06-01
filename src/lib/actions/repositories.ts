@@ -336,3 +336,142 @@ export async function resyncRepo(repoId: number) {
     revalidatePath(`/repos/${repoId}`)
   })
 }
+
+// ─── Phase 21: Purpose & Focus ────────────────────────────────────────────────
+
+export async function updateRepoPurpose(repoId: number, purpose: string | null) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  await db
+    .update(repositories)
+    .set({ purpose })
+    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath(`/repos/${repoId}`)
+  revalidatePath('/repos')
+}
+
+export async function toggleFocused(repoId: number, isFocused: boolean) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  await db
+    .update(repositories)
+    .set({ isFocused })
+    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath(`/repos/${repoId}`)
+  revalidatePath('/repos')
+  revalidatePath('/')
+}
+
+// ─── Phase 22: Archive Candidates ────────────────────────────────────────────
+
+export async function getArchiveCandidates(threshold = 70) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const rows = await db.query.repositories.findMany({
+    where: eq(repositories.userId, session.user.id),
+    with: { metrics: true },
+    columns: { id: true, name: true, description: true, lifecycleStatus: true, mrr: true },
+  })
+
+  return rows
+    .filter(r =>
+      (r.metrics?.archiveScore ?? 0) >= threshold &&
+      r.lifecycleStatus !== 'archived',
+    )
+    .map(r => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      archiveScore: Math.round(r.metrics?.archiveScore ?? 0),
+      lifecycleStatus: r.lifecycleStatus,
+    }))
+    .sort((a, b) => b.archiveScore - a.archiveScore)
+    .slice(0, 8)
+}
+
+// ─── Phase 23: Itemised Cost Tracking ────────────────────────────────────────
+
+export async function updateCostItems(
+  repoId: number,
+  costItems: Array<{ label: string; amount: number }>,
+) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  // Derive totalMonthlyCost from line items
+  const total = costItems.reduce((sum, item) => sum + item.amount, 0)
+
+  await db
+    .update(repositories)
+    .set({ costItems, monthlyCost: String(total) })
+    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath(`/repos/${repoId}`)
+  revalidatePath('/')
+}
+
+// ─── Phase 24: CEO Report ────────────────────────────────────────────────────
+
+export async function triggerCeoReport() {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const { after } = await import('next/server')
+  const { generateCeoReport } = await import('@/lib/ai/ceo-report')
+  const { revalidatePath } = await import('next/cache')
+  const userId = session.user.id
+
+  after(async () => {
+    await generateCeoReport(userId)
+    revalidatePath('/')
+  })
+}
+
+export async function getLatestCeoReport() {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+  const { getLatestCeoReport: fetchLatest } = await import('@/lib/ai/ceo-report')
+  return fetchLatest(session.user.id)
+}
+
+// ─── Phase 25: Time Allocation ────────────────────────────────────────────────
+
+export async function getTimeAllocation(topN = 3) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const { calculateTimeAllocation } = await import('@/lib/health/scoring')
+
+  const rows = await db.query.repositories.findMany({
+    where: eq(repositories.userId, session.user.id),
+    with: { metrics: true, deployments: true },
+    columns: {
+      id: true, name: true, mrr: true, isFocused: true,
+    },
+  })
+
+  const inputs = rows
+    .filter(r => r.metrics != null)
+    .map(r => ({
+      repoId: r.id,
+      repoName: r.name,
+      opportunityScore: r.metrics!.opportunityScore ?? 0,
+      healthScore: r.metrics!.healthScore ?? 0,
+      estimatedValue: r.metrics!.estimatedValue ?? 0,
+      isFocused: r.isFocused ?? false,
+      mrr: parseFloat(String(r.mrr ?? '0')),
+      hasLiveDeployment: r.deployments.some(d => d.status !== 'down'),
+      activityScore: r.metrics!.activityScore ?? 0,
+      archiveScore: r.metrics!.archiveScore ?? 0,
+    }))
+
+  return calculateTimeAllocation(inputs, topN)
+}

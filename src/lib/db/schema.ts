@@ -93,6 +93,12 @@ export const repositories = pgTable('repositories', {
   // Phase 11: Repository lifecycle status
   lifecycleStatus: text('lifecycle_status').default('maintaining'),
   // idea | building | beta | production | growing | maintaining | sunsetting | archived
+  // Phase 21: Purpose field + Focus flag
+  purpose: text('purpose'),
+  // Revenue | Learning | Consulting | Experiment | Open Source | Client Work | Portfolio | Infrastructure
+  isFocused: boolean('is_focused').default(false),
+  // Phase 23: Itemized cost tracking
+  costItems: jsonb('cost_items').$type<Array<{ label: string; amount: number }>>(),
   // Revenue & cost fields (Phase 3)
   mrr: numeric('mrr', { precision: 10, scale: 2 }).default('0'),
   arr: numeric('arr', { precision: 10, scale: 2 }).default('0'),
@@ -133,6 +139,8 @@ export const repositoryMetrics = pgTable('repository_metrics', {
   buildStatus: text('build_status'), // success | failure | cancelled | in_progress | null
   opportunityScore: real('opportunity_score').default(0), // Phase 4: 0-100 weighted score
   weeklyCommitData: jsonb('weekly_commit_data'), // last 13 weeks: [{ week: timestamp, total: number }]
+  // Phase 22: Archive candidate score
+  archiveScore: real('archive_score').default(0), // 0-100: higher = stronger archive candidate
   // Phase 15: Repository Valuation
   estimatedValue: integer('estimated_value').default(0),   // USD
   valuationConfidence: text('valuation_confidence').default('none'), // none|very_low|low|medium|high
@@ -236,6 +244,7 @@ export const digests = pgTable('digests', {
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   content: jsonb('content').notNull(),         // DigestContent: { summary, priorities[], generatedAt }
   advisorContent: jsonb('advisor_content'),    // AdvisorContent: { headline, actions[], portfolioInsight }
+  ceoReport: jsonb('ceo_report'),              // Phase 24: CeoReportContent
   generatedAt: timestamp('generated_at', { mode: 'date' }).defaultNow(),
 }, (table) => [
   index('digests_user_id_idx').on(table.userId),
@@ -325,3 +334,16 @@ export type HealthScoreHistory = typeof healthScoreHistory.$inferSelect
 export type Digest = typeof digests.$inferSelect
 export type Goal = typeof goals.$inferSelect
 export type InsertGoal = typeof goals.$inferInsert
+
+// Phase 21/22/23/24 convenience types
+export type RepoPurpose =
+  | 'Revenue'
+  | 'Learning'
+  | 'Consulting'
+  | 'Experiment'
+  | 'Open Source'
+  | 'Client Work'
+  | 'Portfolio'
+  | 'Infrastructure'
+
+export type CostItem = { label: string; amount: number }

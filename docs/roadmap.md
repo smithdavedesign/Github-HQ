@@ -170,6 +170,89 @@ Move from daily cron to event-driven updates.
 - [ ] PR event → update open PR count
 - [ ] Security alert event → update security findings
 
+### Phase 21 — Purpose Field & Focus Projects
+Simple high-value metadata: why does this repo exist, and are you actively working on it?
+
+- [ ] `purpose` enum on `repositories`: Revenue | Learning | Consulting | Experiment | Open Source | Client Work | Portfolio | Infrastructure
+- [ ] Purpose selector on repo detail Overview tab (inline, persists to DB)
+- [ ] Purpose column in repos table (filterable, hidden by default)
+- [ ] `is_focused` boolean on `repositories` — toggle directly from table row or detail page
+- [ ] Focus badge in repos table; unfocused repos show "Not Focused" indicator
+- [ ] Advisor (Phase 14) and digest (Phase 8) filter recommendations to focused repos by default
+
+### Phase 22 — Archive Candidates
+Automated scoring surfaces repos you should stop maintaining.
+
+- [ ] Archive score (0–100) derived from: commit inactivity, zero revenue, no active deployment, low health, low opportunity
+- [ ] "Strong Archive Candidates" card on dashboard — repos scoring above threshold
+- [ ] One-click lifecycle transition to Sunsetting/Archived from the card
+- [ ] Archive score column in repos table (hidden by default)
+
+### Phase 23 — Itemized Cost Tracking
+Break the existing monthly cost field (Phase 3) into named line items per repo.
+
+- [ ] `cost_items` jsonb on `repository_metrics`: `[{ label: "Vercel", amount: 20 }, ...]`
+- [ ] Cost line-item editor on Revenue tab (add/remove rows, label + amount)
+- [ ] Total auto-summed, replaces existing single-field monthly cost
+- [ ] Per-repo P&L: Revenue − itemized costs → net profit / loss
+- [ ] Portfolio cost breakdown on dashboard (group by label across all repos)
+
+### Phase 24 — Weekly CEO Report
+Structured Monday briefing that replaces reading dashboards — portfolio state at a glance.
+
+- [ ] Extends `digests` table with `ceo_report` jsonb field
+- [ ] Generated alongside existing briefing + advisor in Monday cron
+- [ ] Sections: Portfolio Summary (value, MRR delta, avg health delta), Biggest Wins, Biggest Risks, Recommended Focus This Week
+- [ ] Wins/risks derived from sync deltas: stars gained, uptime streaks, health jumps, failing builds, dormant repos
+- [ ] "CEO Report" card on dashboard — collapsible, replaces or sits alongside WeeklyBriefing card
+- [ ] Uses claude-haiku with cached system prompt; structured JSON output
+
+### Phase 25 — Time Allocation Recommendations
+Answer "where should my next N hours go?" using existing opportunity and value data.
+
+- [ ] Input: hours available (user-configurable in Settings, default 10h/week)
+- [ ] Output: ranked repo list with projected value delta per hour invested
+- [ ] Derived from: opportunity score delta potential, health improvement ceiling, revenue proximity
+- [ ] "Best Use of Your Time" card on dashboard — top 3 repos with impact estimate
+- [ ] Focused repos (Phase 21) get priority weighting; advisor-ignored repos excluded
+
+### Phase 26 — Opportunity vs Effort Matrix
+Add effort dimension to opportunity scoring and surface the quick-win quadrant.
+
+- [ ] `estimated_effort` enum on `repositories`: low | medium | high (user-set, defaults to medium)
+- [ ] Effort selector on repo detail Overview tab
+- [ ] Opportunity vs Effort quadrant view on Analytics page: Quick Wins (high opp / low effort), Invest (high opp / high effort), Fill-In (low opp / low effort), Deprioritize (low opp / high effort)
+- [ ] "Quick Wins" section in advisor output (Phase 14) filtered to top-right quadrant
+- [ ] Effort column in repos table (hidden by default)
+
+### Phase 27 — Idea Graveyard
+Capture why repos were abandoned so you stop rebuilding the same ideas.
+
+- [ ] `abandonment_reason` enum on `repositories`: No demand | Too competitive | Too much maintenance | Lost interest | Merged into another project | Pivoted
+- [ ] Reason prompt shown when lifecycle is set to Sunsetting or Archived
+- [ ] Graveyard view — filtered repos table showing only archived repos with reason + date
+- [ ] Personal knowledge base: searchable, exportable
+- [ ] Digest (Phase 8) references graveyard when suggesting similar new ideas
+
+### Phase 28 — Personal Changelog
+Auto-generated timeline of portfolio events — an automatic work journal.
+
+- [ ] `portfolio_events` table: event_type, repo_id, description, occurred_at
+- [ ] Events captured by sync cron: repo created, repo archived, MRR changed, health milestone crossed, deployment added, first revenue
+- [ ] Manual milestone support: free-text entries attached to a repo or portfolio-wide
+- [ ] `/feed` page extended with a "Milestones" tab (chronological, per-repo or portfolio)
+- [ ] Annual review export: markdown summary of the year's events
+
+### Phase 29 — Portfolio Dependency Map
+Visualize which repos depend on each other and surface cascading risk.
+
+- [ ] Fetch `package.json` from each repo via GitHub API during sync
+- [ ] Cross-reference `dependencies` keys against known repo package names (fuzzy match on repo name + `name` field in package.json)
+- [ ] Dependency graph stored as `internal_deps` jsonb on `repository_metrics`
+- [ ] Dependency map view on Analytics page — tree or force-directed graph
+- [ ] Cascade risk alert: when a shared-dependency repo drops in health, affected repos flagged in feed and digest
+- [ ] "Shared by N projects" badge on repo detail for library-type repos
+
 ---
 
 ## Enterprise Direction *(future)*

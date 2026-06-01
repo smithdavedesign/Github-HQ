@@ -5,7 +5,7 @@ import { repositories, repositoryMetrics, scans, users } from '@/lib/db/schema'
 import type { InsertRepository, InsertRepositoryMetrics } from '@/lib/db/schema'
 import { createOctokit } from './client'
 import { scanRepository } from './scanner'
-import { calculateHealthScore, calculateOpportunityScore } from '@/lib/health/scoring'
+import { calculateHealthScore, calculateOpportunityScore, calculateArchiveScore } from '@/lib/health/scoring'
 import { calculateValuation } from '@/lib/health/valuation'
 import { eq, and } from 'drizzle-orm'
 
@@ -215,6 +215,20 @@ export async function syncSingleRepo(
     hasLiveDeployment,
   })
 
+  // Phase 22: Archive score
+  const daysSinceLastPush = lastPush
+    ? (Date.now() - lastPush.getTime()) / (1000 * 60 * 60 * 24)
+    : 9999
+  metrics.archiveScore = calculateArchiveScore({
+    quarterlyCommits,
+    mrr: mrrNum,
+    hasLiveDeployment,
+    healthScore: metrics.healthScore ?? 0,
+    opportunityScore: metrics.opportunityScore ?? 0,
+    daysSinceLastPush,
+    isArchived: githubRepo.archived ?? false,
+  })
+
   // Phase 15: Valuation
   const valuation = calculateValuation({
     mrr: mrrNum,
@@ -255,6 +269,7 @@ export async function syncSingleRepo(
         activityStatus: metrics.activityStatus,
         buildStatus: metrics.buildStatus,
         weeklyCommitData: metrics.weeklyCommitData,
+        archiveScore: metrics.archiveScore,
         calculatedAt: metrics.calculatedAt,
       },
     })

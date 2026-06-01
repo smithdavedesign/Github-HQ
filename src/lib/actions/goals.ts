@@ -9,8 +9,6 @@ import { revalidatePath } from 'next/cache'
 import type { GoalType } from '@/lib/goals'
 import { GOAL_PRESETS } from '@/lib/goals'
 
-export type { GoalType }  // re-export for convenience
-
 /** Compute current value for auto-tracked goal types */
 async function computeCurrentValue(userId: string, type: GoalType): Promise<number> {
   const userRepoIds = (await db

@@ -117,3 +117,140 @@ export function opportunityLabel(score: number): string {
   if (score >= 55) return 'Medium'
   return 'Low'
 }
+
+// ─── Archive Score (Phase 22) ─────────────────────────────────────────────────
+
+export interface ArchiveInputs {
+  quarterlyCommits: number      // commits in last 90 days
+  mrr: number                   // monthly revenue ($ )
+  hasLiveDeployment: boolean    // any deployment configured
+  healthScore: number           // 0-100
+  opportunityScore: number      // 0-100
+  daysSinceLastPush: number     // days since last git push
+  isArchived: boolean           // already archived on GitHub
+}
+
+/**
+ * Archive Score — how strongly should this repo be archived?
+ *
+ *   Inactivity       × 35%   (commits + days since push)
+ *   No revenue       × 25%   (zero MRR is a strong signal)
+ *   No deployment    × 20%   (not shipped = low stakes)
+ *   Low health       × 10%   (poor quality, not worth saving)
+ *   Low opportunity  × 10%   (little upside)
+ *
+ * Score 0-100; > 70 = strong archive candidate.
+ * Repos with MRR > 0 are capped at 30 (never strong candidates).
+ */
+export function calculateArchiveScore(inputs: ArchiveInputs): number {
+  if (inputs.isArchived) return 0  // already archived — don't surface again
+
+  // Inactivity sub-score (0-100): no commits in 90 days = full score
+  const commitInactivity = inputs.quarterlyCommits === 0 ? 100 : Math.max(0, 100 - inputs.quarterlyCommits * 5)
+  const pushInactivity = Math.min(100, (inputs.daysSinceLastPush / 365) * 100)
+  const inactivityScore = (commitInactivity * 0.6 + pushInactivity * 0.4)
+
+  // Revenue signal (0-100): no revenue = 100, revenue drops score sharply
+  const revenueScore = inputs.mrr > 0 ? 0 : 100
+
+  // No deployment (0 or 100)
+  const noDeployScore = inputs.hasLiveDeployment ? 0 : 100
+
+  // Low health inverted (0-100)
+  const lowHealthScore = Math.max(0, 100 - inputs.healthScore)
+
+  // Low opportunity inverted (0-100)
+  const lowOppScore = Math.max(0, 100 - inputs.opportunityScore)
+
+  const raw = Math.round(
+    inactivityScore * 0.35 +
+    revenueScore    * 0.25 +
+    noDeployScore   * 0.20 +
+    lowHealthScore  * 0.10 +
+    lowOppScore     * 0.10,
+  )
+
+  // Revenue repos are never strong archive candidates
+  if (inputs.mrr > 0) return Math.min(30, raw)
+
+  return Math.min(100, raw)
+}
+
+export function archiveLabel(score: number): 'Strong' | 'Moderate' | 'Unlikely' {
+  if (score >= 70) return 'Strong'
+  if (score >= 45) return 'Moderate'
+  return 'Unlikely'
+}
+
+// ─── Time Allocation (Phase 25) ──────────────────────────────────────────────
+
+export interface TimeAllocationInput {
+  repoId: number
+  repoName: string
+  opportunityScore: number
+  healthScore: number
+  estimatedValue: number        // current USD valuation
+  isFocused: boolean
+  mrr: number
+  hasLiveDeployment: boolean
+  activityScore: number
+  archiveScore: number
+}
+
+export interface TimeAllocationItem {
+  repoId: number
+  repoName: string
+  projectedValueDelta: number   // USD
+  rationale: string             // short human-readable reason
+  priorityScore: number         // internal sort key
+}
+
+/**
+ * Rank repos by expected value-per-hour of attention.
+ * Returns the top N repos, excluding strong archive candidates (score ≥ 70).
+ */
+export function calculateTimeAllocation(
+  repos: TimeAllocationInput[],
+  topN = 3,
+): TimeAllocationItem[] {
+  return repos
+    .filter(r => r.archiveScore < 70)  // skip dead-end repos
+    .map(r => {
+      // How much health improvement headroom is there?
+      const healthGap = Math.max(0, 90 - r.healthScore)
+      // Health improvement proxy: $50 per point of health gap (rough signal)
+      const healthUplift = healthGap * 50
+
+      // Opportunity gap: for non-revenue repos, each opp point ≈ $200 value potential
+      const oppGap = Math.max(0, 80 - r.opportunityScore)
+      const oppUplift = r.mrr === 0 ? oppGap * 200 : oppGap * 100
+
+      // Revenue repos get a multiplier because the downside of neglect is real
+      const revenueMultiplier = r.mrr > 0 ? 2.5 : 1
+
+      // Focused repos get a small boost so the advisor confirms their priority
+      const focusBonus = r.isFocused ? 1.2 : 1
+
+      const projectedValueDelta = Math.round(
+        (healthUplift + oppUplift) * revenueMultiplier * focusBonus,
+      )
+
+      // Build rationale
+      let rationale = ''
+      if (r.mrr > 0) rationale = `$${r.mrr}/mo revenue — protect and grow`
+      else if (healthGap > 20) rationale = `Health ${r.healthScore} → potential 90+ with attention`
+      else if (oppGap > 20) rationale = `Opportunity gap — ${r.opportunityScore} now, 80+ possible`
+      else if (r.isFocused) rationale = 'Marked as focus project'
+      else rationale = 'High upside relative to current state'
+
+      return {
+        repoId: r.repoId,
+        repoName: r.repoName,
+        projectedValueDelta,
+        rationale,
+        priorityScore: projectedValueDelta,
+      }
+    })
+    .sort((a, b) => b.priorityScore - a.priorityScore)
+    .slice(0, topN)
+}
