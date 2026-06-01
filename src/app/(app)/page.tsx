@@ -1,10 +1,9 @@
 import { toNum } from '@/lib/utils'
-import { getDashboardStats, getRepositories, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk, getProfileRecommendations, getOpportunityCost } from '@/lib/actions/repositories'
+import { getDashboardStats, getRepositories, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk, getProfileRecommendations, getShipItWarnings } from '@/lib/actions/repositories'
 import { getPortfolioScoreTrend } from '@/lib/health/portfolio-snapshot'
 import { getWeeklyDiff } from '@/lib/actions/weekly-diff'
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { HealthBadge } from '@/components/repos/health-badge'
-import { WeeklyBriefing } from '@/components/dashboard/weekly-briefing'
 import { OpportunityPanel } from '@/components/dashboard/opportunity-panel'
 import { LifecycleDistribution } from '@/components/dashboard/lifecycle-distribution'
 import { AdvisorCard } from '@/components/dashboard/advisor-card'
@@ -12,13 +11,12 @@ import { PortfolioValuation } from '@/components/dashboard/portfolio-valuation'
 import { GoalsCard } from '@/components/dashboard/goals-card'
 import { ArchiveCandidatesCard } from '@/components/dashboard/archive-candidates-card'
 import { CeoReportCard } from '@/components/dashboard/ceo-report-card'
-import { TimeAllocationCard } from '@/components/dashboard/time-allocation-card'
 import { PortfolioScoreCard } from '@/components/dashboard/portfolio-score-card'
 import { WeeklyDiffCard } from '@/components/dashboard/weekly-diff-card'
 import { ConcentrationRiskCard } from '@/components/dashboard/concentration-risk-card'
 import { SimulationCard } from '@/components/dashboard/simulation-card'
 import { ProfileOptimizerCard } from '@/components/dashboard/profile-optimizer-card'
-import { OpportunityCostCard } from '@/components/dashboard/opportunity-cost-card'
+import { ShipItCard } from '@/components/dashboard/ship-it-card'
 import { getGoals } from '@/lib/actions/goals'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,16 +26,25 @@ import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { getLatestDigest } from '@/lib/ai/digest'
+
+function SectionLabel({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 pt-2">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50 shrink-0">
+        {label}
+      </p>
+      <div className="flex-1 h-px bg-border/30" />
+    </div>
+  )
+}
 
 export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, digest, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, opportunityCost] = await Promise.all([
+  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings] = await Promise.all([
     getDashboardStats(),
     getRepositories(),
-    getLatestDigest(session.user.id),
     getOpportunityData(),
     getLifecycleDistribution(),
     getPortfolioValuation(),
@@ -50,8 +57,8 @@ export default async function DashboardPage() {
     getWeeklyDiff(),
     getConcentrationRisk(),
     getProfileRecommendations(),
-    db.query.users.findFirst({ where: eq(users.id, session.user.id), columns: { githubLogin: true } }),
-    getOpportunityCost(),
+    db.query.users.findFirst({ where: eq(users.id, session.user.id), columns: { githubLogin: true, hoursPerWeek: true } }),
+    getShipItWarnings(),
   ])
 
   const topRepos = repos
@@ -70,7 +77,9 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {/* Health metric cards */}
+      {/* ── STATUS ────────────────────────────────────────────────── */}
+      <SectionLabel label="Status" />
+
       <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-4">
         <MetricCard title="Total Repos" value={stats.total} icon={GitFork} />
         <MetricCard title="Private" value={stats.private} icon={Lock} />
@@ -87,44 +96,24 @@ export default async function DashboardPage() {
         />
       </div>
 
-      {/* P&L cards (Phase 3) — only shown when revenue data exists */}
       {hasRevenue && (
         <div>
           <h2 className="text-sm font-medium text-muted-foreground mb-3">Portfolio P&amp;L</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <MetricCard
-              title="Monthly Revenue"
-              value={`$${stats.totalMrr.toFixed(0)}`}
-              icon={DollarSign}
-              variant="success"
-              description={`${stats.revenueCount} revenue-generating repos`}
-            />
-            <MetricCard
-              title="ARR"
-              value={`$${stats.totalArr.toFixed(0)}`}
-              icon={TrendingUp}
-              variant="success"
-              description="Annual recurring revenue"
-            />
-            <MetricCard
-              title="Monthly Cost"
-              value={`$${stats.totalCost.toFixed(0)}`}
-              icon={Banknote}
-              variant={stats.totalCost > 0 ? 'warning' : 'default'}
-              description="Total infrastructure cost"
-            />
-            <MetricCard
-              title="Monthly Profit"
-              value={`$${stats.monthlyProfit.toFixed(0)}`}
-              icon={stats.monthlyProfit >= 0 ? TrendingUp : TrendingDown}
-              variant={stats.monthlyProfit >= 0 ? 'success' : 'danger'}
-              description={stats.totalMrr > 0 ? `${Math.round((stats.monthlyProfit / stats.totalMrr) * 100)}% margin` : undefined}
-            />
+            <MetricCard title="Monthly Revenue" value={`$${stats.totalMrr.toFixed(0)}`} icon={DollarSign} variant="success" description={`${stats.revenueCount} revenue-generating repos`} />
+            <MetricCard title="ARR" value={`$${stats.totalArr.toFixed(0)}`} icon={TrendingUp} variant="success" description="Annual recurring revenue" />
+            <MetricCard title="Monthly Cost" value={`$${stats.totalCost.toFixed(0)}`} icon={Banknote} variant={stats.totalCost > 0 ? 'warning' : 'default'} description="Total infrastructure cost" />
+            <MetricCard title="Monthly Profit" value={`$${stats.monthlyProfit.toFixed(0)}`} icon={stats.monthlyProfit >= 0 ? TrendingUp : TrendingDown} variant={stats.monthlyProfit >= 0 ? 'success' : 'danger'} description={stats.totalMrr > 0 ? `${Math.round((stats.monthlyProfit / stats.totalMrr) * 100)}% margin` : undefined} />
           </div>
         </div>
       )}
 
-      {/* Portfolio Score (30) + Weekly Diff (31) + Concentration Risk (34) */}
+      {/* Ship It — alert, belongs in status zone */}
+      <ShipItCard warnings={shipItWarnings} />
+
+      {/* ── INTELLIGENCE ──────────────────────────────────────────── */}
+      <SectionLabel label="Intelligence" />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {scoreTrend.current && (
           <PortfolioScoreCard breakdown={scoreTrend.current} weekDelta={scoreTrend.weekDelta} />
@@ -133,53 +122,32 @@ export default async function DashboardPage() {
         <ConcentrationRiskCard risk={concentrationRisk} />
       </div>
 
-      {/* Opportunity Cost (39) + GitHub Profile (41) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <OpportunityCostCard result={opportunityCost} />
-        {profileRecommendations.length > 0 && (
-          <ProfileOptimizerCard repos={profileRecommendations} githubLogin={userRecord?.githubLogin} />
-        )}
-      </div>
-
-      {/* Portfolio Valuation (Phase 15) + Lifecycle Distribution (Phase 11) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <PortfolioValuation
-          totalValue={valuation.totalValue}
-          valuedRepos={valuation.valuedRepos}
-          revenueValue={valuation.revenueValue}
-          totalRepos={stats.total}
-        />
+        <PortfolioValuation totalValue={valuation.totalValue} valuedRepos={valuation.valuedRepos} revenueValue={valuation.revenueValue} totalRepos={stats.total} />
         <LifecycleDistribution distribution={lifecycleDistribution} />
       </div>
 
-      {/* Goals (Phase 17) + Advisor (Phase 14) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <GoalsCard goals={activeGoals} />
-        <AdvisorCard advisor={advisor} />
+        <AdvisorCard advisor={advisor} timeAllocation={timeAllocation} hoursPerWeek={userRecord?.hoursPerWeek ?? 10} />
       </div>
 
-      {/* CEO Report (Phase 24) + Time Allocation (Phase 25) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <CeoReportCard report={ceoReport} />
-        <TimeAllocationCard items={timeAllocation} />
-      </div>
+      <CeoReportCard report={ceoReport} />
 
-      {/* Archive Candidates (Phase 22) */}
+      {profileRecommendations.length > 0 && (
+        <ProfileOptimizerCard repos={profileRecommendations} githubLogin={userRecord?.githubLogin} />
+      )}
+
+      {/* ── PLANNING ──────────────────────────────────────────────── */}
+      <SectionLabel label="Planning" />
+
+      <SimulationCard defaultHours={userRecord?.hoursPerWeek ?? 10} />
+
+      <OpportunityPanel needsAttention={opportunity.needsAttention} highPotentialDormant={opportunity.highPotentialDormant} />
+
       {archiveCandidates.length > 0 && (
         <ArchiveCandidatesCard candidates={archiveCandidates} />
       )}
-
-      {/* Plan My Week — Simulation Engine (Phase 36) */}
-      <SimulationCard defaultHours={10} />
-
-      {/* Opportunity Scoring (Phase 4) */}
-      <OpportunityPanel
-        needsAttention={opportunity.needsAttention}
-        highPotentialDormant={opportunity.highPotentialDormant}
-      />
-
-      {/* Weekly AI Briefing (Phase 8) */}
-      {digest && <WeeklyBriefing digest={digest} />}
 
       {/* Top repos */}
       <Card>

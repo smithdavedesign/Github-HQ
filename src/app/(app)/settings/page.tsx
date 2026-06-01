@@ -9,11 +9,12 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { formatDistanceToNow } from '@/lib/utils'
-import { Shield, Clock, GitFork, Cpu, Target, CreditCard } from 'lucide-react'
+import { Shield, Clock, GitFork, Cpu, Target, CreditCard, FileCode } from 'lucide-react'
 import { PublicProfileToggle } from '@/components/settings/public-profile-toggle'
 import { GoalManager } from '@/components/settings/goal-manager'
 import { HoursInput } from '@/components/settings/hours-input'
 import { StripeConnect } from '@/components/settings/stripe-connect'
+import { ProfileReadmeGenerator } from '@/components/settings/profile-readme-generator'
 import { getGoals } from '@/lib/actions/goals'
 import { hasStripeKey, stripeKeySource } from '@/lib/actions/stripe'
 import { repositories } from '@/lib/db/schema'
@@ -211,6 +212,24 @@ export default async function SettingsPage() {
           />
         </CardContent>
       </Card>
+
+      {/* GitHub Profile README — only shown when public profile is enabled */}
+      {user?.publicProfile && user?.githubLogin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileCode className="w-4 h-4" />
+              GitHub Profile README
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ProfileReadmeGenerator
+              username={user.githubLogin}
+              previewMarkdown=""
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <Separator />
 

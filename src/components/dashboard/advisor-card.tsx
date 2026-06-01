@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Sparkles, Loader2, Zap, Shield, TrendingUp, Heart, ArrowRight } from 'lucide-react'
+import { Sparkles, Loader2, Zap, Shield, TrendingUp, Heart, ArrowRight, Clock } from 'lucide-react'
 import type { AdvisorContent, AdvisorAction } from '@/lib/ai/advisor'
+import type { TimeAllocationItem } from '@/lib/health/scoring'
 import { triggerAdvisor } from '@/lib/actions/repositories'
 import { formatDistanceToNow } from '@/lib/utils'
 import Link from 'next/link'
@@ -35,9 +36,11 @@ const EFFORT_LABEL = { quick: '< 30 min', medium: '1–4 h', substantial: '1+ da
 
 interface AdvisorCardProps {
   advisor: AdvisorContent | null
+  timeAllocation?: TimeAllocationItem[]
+  hoursPerWeek?: number
 }
 
-export function AdvisorCard({ advisor: initialAdvisor }: AdvisorCardProps) {
+export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10 }: AdvisorCardProps) {
   const [advisor, setAdvisor] = useState(initialAdvisor)
   const [generating, setGenerating] = useState(false)
 
@@ -145,6 +148,23 @@ export function AdvisorCard({ advisor: initialAdvisor }: AdvisorCardProps) {
             </div>
           )
         })}
+
+        {/* Time allocation sub-section */}
+        {timeAllocation && timeAllocation.length > 0 && (
+          <div className="pt-2 border-t border-border/40 space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5" />
+              Best use of your next {hoursPerWeek}h
+            </p>
+            {timeAllocation.slice(0, 3).map((item, i) => (
+              <div key={item.repoId} className="flex items-center gap-2 text-xs">
+                <span className="text-muted-foreground w-4 shrink-0">{i + 1}.</span>
+                <Link href={`/repos/${item.repoId}`} className="font-medium hover:underline flex-1 truncate">{item.repoName}</Link>
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold shrink-0">+${item.projectedValueDelta.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Footer insight */}
         {advisor.portfolioInsight && (

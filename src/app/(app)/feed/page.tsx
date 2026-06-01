@@ -1,5 +1,7 @@
 import { getPortfolioFeed } from '@/lib/actions/feed'
 import { getPortfolioEvents } from '@/lib/actions/changelog'
+import { getOpportunityCost } from '@/lib/actions/repositories'
+import { OpportunityCostCard } from '@/components/dashboard/opportunity-cost-card'
 
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
@@ -52,9 +54,10 @@ export default async function FeedPage({ searchParams }: PageProps) {
   const activeTab = tab === 'milestones' ? 'milestones' : 'feed'
   const currentYear = new Date().getFullYear()
 
-  const [events, milestones] = await Promise.all([
+  const [events, milestones, opportunityCost] = await Promise.all([
     getPortfolioFeed(),
     getPortfolioEvents(),
+    getOpportunityCost(),
   ])
 
   return (
@@ -67,6 +70,9 @@ export default async function FeedPage({ searchParams }: PageProps) {
       </div>
 
       <FeedTabSwitcher activeTab={activeTab} />
+
+      {/* Opportunity Cost — weekly retrospective belongs here, not the main dashboard */}
+      {activeTab === 'feed' && <OpportunityCostCard result={opportunityCost} />}
 
       {activeTab === 'feed' ? (
         events.length === 0 ? (

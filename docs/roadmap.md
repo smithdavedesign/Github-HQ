@@ -182,10 +182,37 @@
 - [x] New repos, archived repos, MRR changes, new critical/high security alerts
 - [x] `WeeklyDiffCard` on dashboard — hidden when nothing happened this week
 
+### Phase 43 — Ruthless Polish
+
+#### 43a — AI Card Consolidation
+- [x] Removed `WeeklyBriefingCard` from dashboard — superseded by CEO Report
+- [x] Merged `TimeAllocationCard` into `AdvisorCard` as "Best use of your time" sub-section
+- [x] Moved `OpportunityCostCard` off dashboard → Feed page (weekly retrospective, not persistent signal)
+- [x] Net: 5 AI cards → 2 core cards (Advisor + CEO Report) + standalone Simulation
+
+#### 43b — Phase 16: Portfolio Health Trend Line Chart
+- [x] `getPortfolioHealthTrend(userId)` in `history.ts` — groups health_score_history by date, avg across all user repos
+- [x] `HealthTrendLineChart` Recharts line chart — 3 lines (health/security/activity), 30-day window
+- [x] Added to Analytics page above existing snapshot bar chart
+- [x] Graceful empty state when < 3 data points ("Collecting data...")
+
+#### 43c — Ship It Nudge (Phase 32)
+- [x] `getShipItWarnings()` — focused repos with weeklyCommits = 0 and lastPush > 7 days
+- [x] `ShipItCard` in Status zone — shows repo, days since commit, opp score, "Ship it →" link
+- [x] Snooze stored in localStorage, expires after 3 days; max 3 warnings shown
+
+#### 43d — GitHub Profile README Generator
+- [x] `/api/profile-readme/[username]` — returns raw markdown using showcase scoring + portfolio stats
+- [x] `ProfileReadmeGenerator` in Settings (visible when public profile enabled)
+- [x] Live preview (fetched client-side on mount), copy button, refresh, GitHub link
+
+#### 43e — Dashboard Hierarchy
+- [x] Three visual zones with `SectionLabel` dividers: STATUS / INTELLIGENCE / PLANNING
+- [x] Ship It Nudge in Status zone; Simulation + Opportunity + Archive in Planning zone
+- [x] CEO Report full-width in Intelligence zone (was crammed into 2-col grid)
+
 ### Phase 32 — Ship It Nudge
-- [ ] If a focused repo (`is_focused = true`) has no commits in N days, surface a card on the dashboard
-- [ ] User-configurable threshold (default 7 days) via Settings
-- [ ] Dismissable per-repo with a snooze
+- [x] Shipped in Phase 43c
 
 ### Phase 33 — Dependency Graph: Shared External Deps
 - [ ] Extend dep graph to show repos that share prominent external packages (drizzle-orm, openai, etc.)

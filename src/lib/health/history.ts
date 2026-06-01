@@ -1,6 +1,40 @@
 import { db } from '@/lib/db'
 import { healthScoreHistory, repositories } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, and, gte, sql } from 'drizzle-orm'
+
+export interface HealthTrendPoint {
+  date: string        // YYYY-MM-DD
+  avgHealth: number
+  avgSecurity: number
+  avgActivity: number
+}
+
+export async function getPortfolioHealthTrend(userId: string, days = 30): Promise<HealthTrendPoint[]> {
+  const since = new Date(Date.now() - days * 86400_000)
+
+  const rows = await db
+    .select({
+      date: healthScoreHistory.recordedDate,
+      avgHealth:   sql<number>`round(avg(${healthScoreHistory.healthScore})::numeric, 1)`.mapWith(Number),
+      avgSecurity: sql<number>`round(avg(${healthScoreHistory.securityScore})::numeric, 1)`.mapWith(Number),
+      avgActivity: sql<number>`round(avg(${healthScoreHistory.activityScore})::numeric, 1)`.mapWith(Number),
+    })
+    .from(healthScoreHistory)
+    .innerJoin(repositories, eq(healthScoreHistory.repoId, repositories.id))
+    .where(and(
+      eq(repositories.userId, userId),
+      gte(healthScoreHistory.recordedAt, since),
+    ))
+    .groupBy(healthScoreHistory.recordedDate)
+    .orderBy(healthScoreHistory.recordedDate)
+
+  return rows.map(r => ({
+    date: r.date,
+    avgHealth: r.avgHealth ?? 0,
+    avgSecurity: r.avgSecurity ?? 0,
+    avgActivity: r.avgActivity ?? 0,
+  }))
+}
 
 /**
  * Snapshot today's health scores for every repo belonging to a user.

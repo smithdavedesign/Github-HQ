@@ -4,19 +4,24 @@ import { repositories, repositoryMetrics } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { HealthTrendChart } from '@/components/dashboard/health-trend-chart'
+import { HealthTrendLineChart } from '@/components/dashboard/health-trend-line-chart'
 import { EffortMatrix } from '@/components/dashboard/effort-matrix'
 import { DepGraphCard } from '@/components/dashboard/dep-graph'
 import type { DepNode, DepEdge } from '@/components/dashboard/dep-graph'
+import { getPortfolioHealthTrend } from '@/lib/health/history'
 
 export default async function AnalyticsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const reposWithMetrics = await db.query.repositories.findMany({
-    where: eq(repositories.userId, session.user.id),
-    with: { metrics: true },
-    columns: { id: true, name: true, estimatedEffort: true },
-  })
+  const [reposWithMetrics, healthTrend] = await Promise.all([
+    db.query.repositories.findMany({
+      where: eq(repositories.userId, session.user.id),
+      with: { metrics: true },
+      columns: { id: true, name: true, estimatedEffort: true },
+    }),
+    getPortfolioHealthTrend(session.user.id),
+  ])
 
   const chartData = reposWithMetrics
     .filter((r) => r.metrics?.healthScore != null)
@@ -69,6 +74,7 @@ export default async function AnalyticsPage() {
         </p>
       </div>
 
+      <HealthTrendLineChart data={healthTrend} />
       <HealthTrendChart data={chartData} />
       <EffortMatrix repos={matrixRepos} />
       <DepGraphCard nodes={depNodes} edges={depEdges} />

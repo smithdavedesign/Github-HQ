@@ -610,6 +610,55 @@ export async function getConcentrationRisk(): Promise<ConcentrationRisk> {
   }
 }
 
+export interface ShipItWarning {
+  repoId: number
+  repoName: string
+  daysSinceCommit: number
+  opportunityScore: number
+  lifecycleStatus: string | null
+}
+
+export async function getShipItWarnings(thresholdDays = 7): Promise<ShipItWarning[]> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const cutoff = new Date(Date.now() - thresholdDays * 86400_000)
+
+  const rows = await db.query.repositories.findMany({
+    where: and(
+      eq(repositories.userId, session.user.id),
+      eq(repositories.isFocused, true),
+    ),
+    with: { metrics: { columns: { weeklyCommits: true, lastPush: true, opportunityScore: true } } },
+    columns: { id: true, name: true, lifecycleStatus: true, isArchived: true },
+  })
+
+  return rows
+    .filter(r => {
+      if (r.isArchived) return false
+      if (['archived', 'sunsetting'].includes(r.lifecycleStatus ?? '')) return false
+      if ((r.metrics?.weeklyCommits ?? 0) > 0) return false
+      const lastPush = r.metrics?.lastPush
+      if (!lastPush) return true
+      return new Date(lastPush) < cutoff
+    })
+    .map(r => {
+      const lastPush = r.metrics?.lastPush
+      const daysSince = lastPush
+        ? Math.floor((Date.now() - new Date(lastPush).getTime()) / 86400_000)
+        : 999
+      return {
+        repoId: r.id,
+        repoName: r.name,
+        daysSinceCommit: daysSince,
+        opportunityScore: Math.round(r.metrics?.opportunityScore ?? 0),
+        lifecycleStatus: r.lifecycleStatus,
+      }
+    })
+    .sort((a, b) => b.daysSinceCommit - a.daysSinceCommit)
+    .slice(0, 3)
+}
+
 export async function getOpportunityCost() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
