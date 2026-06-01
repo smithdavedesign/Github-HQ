@@ -245,8 +245,19 @@ export async function syncSingleRepo(
   const hasLiveDeployment = repoRecord?.deployments.some(d => d.status === 'healthy' || d.status === 'slow') ?? false
   const deploymentScore = calculateDeploymentScore(repoRecord?.deployments ?? [])
 
+  // Repos in stable/completed lifecycles or passive purposes aren't expected
+  // to have frequent commits — floor activity at 40 so they aren't penalised.
+  const STABLE_LIFECYCLES = new Set(['maintaining', 'sunsetting', 'archived'])
+  const STABLE_PURPOSES   = new Set(['Reference', 'Client Work', 'Consulting', 'Infrastructure'])
+  const isStableRepo =
+    STABLE_LIFECYCLES.has(upsertedRepo.lifecycleStatus ?? '') ||
+    STABLE_PURPOSES.has(upsertedRepo.purpose ?? '')
+  const effectiveActivity = isStableRepo
+    ? Math.max(metrics.activityScore ?? 0, 40)
+    : (metrics.activityScore ?? 0)
+
   metrics.healthScore = calculateHealthScore({
-    activityScore: metrics.activityScore ?? 0,
+    activityScore: effectiveActivity,
     securityScore: currentSecurityScore,
     documentationScore: metrics.documentationScore ?? 0,
     testingScore: metrics.testingScore ?? 0,
