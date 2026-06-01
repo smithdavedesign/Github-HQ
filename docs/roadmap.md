@@ -225,6 +225,21 @@
 - [x] `~/.claude/claude.json` configured and ready — restart Claude Code to activate
 - [x] `mcp/README.md` with setup instructions and usage examples
 
+### Phase 41 — GitHub Profile Optimizer
+- [x] `calculateShowcaseScore()` — health (40%), stars (20%), focus (15%), deployment (15%), purpose (10%)
+- [x] "GitHub Profile" card on dashboard — top 6 repos to pin, ranked by showcase score
+- [x] Skips private/archived/sunsetting repos; purpose bonus for Portfolio/Open Source/Revenue
+- [x] Links to each repo + direct link to GitHub profile
+
+### Phase 42 — Bulk Triage Mode
+- [x] `/repos/triage` in sidebar — work through all active repos systematically
+- [x] Repos ordered by archive score DESC (most archive-worthy first)
+- [x] Per-repo card: name, health badge, description, last push, archive risk level
+- [x] One-click actions: Keep / Sunset / Archive / Skip with immediate DB save
+- [x] Keyboard shortcuts: K = Keep, S = Sunset, A = Archive, Space = Skip, ← = Previous
+- [x] Progress bar + "X remaining" counter
+- [x] End screen: summary of kept / sunsetted / archived / skipped counts
+
 ### Phase 39 — Opportunity Cost Tracker
 - [ ] Weekly report: "You spent time on Repo A. Repo B had 4x projected value this week."
 - [ ] Estimated opportunity cost in dollars (missed MRR potential) and score points

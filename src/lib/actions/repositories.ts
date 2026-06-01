@@ -609,3 +609,40 @@ export async function getConcentrationRisk(): Promise<ConcentrationRisk> {
     dominantStack,
   }
 }
+
+export async function getProfileRecommendations() {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const { getShowcaseRecommendations } = await import('@/lib/health/showcase')
+
+  const rows = await db.query.repositories.findMany({
+    where: eq(repositories.userId, session.user.id),
+    with: {
+      metrics: { columns: { healthScore: true, activityStatus: true } },
+      deployments: { columns: { status: true } },
+    },
+    columns: {
+      id: true, name: true, description: true, visibility: true,
+      stars: true, isFocused: true, purpose: true,
+      lifecycleStatus: true, language: true,
+    },
+  })
+
+  const inputs = rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    visibility: r.visibility,
+    stars: r.stars ?? 0,
+    healthScore: r.metrics?.healthScore ?? 0,
+    isFocused: r.isFocused ?? false,
+    hasDeployment: r.deployments.some(d => d.status === 'healthy' || d.status === 'slow'),
+    purpose: r.purpose,
+    lifecycleStatus: r.lifecycleStatus,
+    activityStatus: r.metrics?.activityStatus ?? null,
+    language: r.language,
+  }))
+
+  return getShowcaseRecommendations(inputs, 6)
+}

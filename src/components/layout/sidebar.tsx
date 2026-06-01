@@ -4,13 +4,14 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, GitFork, Shield, Rocket,
-  BarChart3, Activity, Settings, GitBranch, Skull,
+  BarChart3, Activity, Settings, GitBranch, Skull, ListChecks,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/repos', icon: GitFork, label: 'Repositories' },
+  { href: '/repos/triage', icon: ListChecks, label: 'Triage' },
   { href: '/repos/graveyard', icon: Skull, label: 'Graveyard' },
   { href: '/feed', icon: Activity, label: 'Feed' },
   { href: '/security', icon: Shield, label: 'Security' },
