@@ -39,8 +39,14 @@ export async function saveLLMSettings(provider: LLMProvider, apiKey: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  // Validate key before touching the DB
-  await testLLMKey(provider, apiKey)
+  // Validate key before touching the DB — wrap in serializable error so
+  // non-serializable SDK errors don't cause the "Server Components render" crash
+  try {
+    await testLLMKey(provider, apiKey)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`${provider === 'gemini' ? 'Gemini' : provider === 'openai' ? 'OpenAI' : 'Anthropic'} key invalid: ${msg.slice(0, 200)}`)
+  }
 
   // .returning() surfaces silent failures (0 rows updated = user row not found)
   const [updated] = await db.update(users)

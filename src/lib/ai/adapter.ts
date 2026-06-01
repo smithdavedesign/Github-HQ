@@ -67,20 +67,29 @@ function createGeminiAdapter(apiKey: string): LLMAdapter {
   return {
     provider: 'gemini',
     async generate({ system, user, fast = false, maxTokens = 1000 }) {
-      const { GoogleGenAI } = await import('@google/genai')
-      const client = new GoogleGenAI({ apiKey })
-      const model = fast ? PROVIDER_MODELS.gemini.fast : PROVIDER_MODELS.gemini.capable
-      const response = await client.models.generateContent({
-        model,
-        contents: user,
-        config: {
-          systemInstruction: system,
-          maxOutputTokens: maxTokens,
-        },
-      })
-      // response.text is a convenience getter in @google/genai
-      const text = response.text ?? response.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}'
-      return text.trim()
+      try {
+        const { GoogleGenAI } = await import('@google/genai')
+        const client = new GoogleGenAI({ apiKey })
+        const model = fast ? PROVIDER_MODELS.gemini.fast : PROVIDER_MODELS.gemini.capable
+        const response = await client.models.generateContent({
+          model,
+          contents: user,
+          config: {
+            systemInstruction: system,
+            maxOutputTokens: maxTokens,
+          },
+        })
+        // response.text is a convenience getter — defensively fallback through candidate parts
+        const text: string =
+          (typeof response.text === 'string' ? response.text : null) ??
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (response as any).candidates?.[0]?.content?.parts?.[0]?.text ??
+          '{}'
+        return text.trim()
+      } catch (err) {
+        // Re-throw as a plain Error so it serializes correctly through Next.js
+        throw new Error(err instanceof Error ? err.message : `Gemini error: ${String(err)}`)
+      }
     },
   }
 }
