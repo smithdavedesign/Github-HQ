@@ -129,7 +129,7 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <GoalsCard goals={activeGoals} />
-        <AdvisorCard advisor={advisor} timeAllocation={timeAllocation} hoursPerWeek={userRecord?.hoursPerWeek ?? 10} />
+        <AdvisorCard advisor={advisor} timeAllocation={timeAllocation} hoursPerWeek={userRecord?.hoursPerWeek ?? 10} nexusEnabled={!!process.env.NEXUS_API_URL && !!process.env.NEXUS_API_TOKEN} />
       </div>
 
       <CeoReportCard report={ceoReport} />

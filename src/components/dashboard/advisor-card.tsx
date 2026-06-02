@@ -9,6 +9,7 @@ import type { AdvisorContent, AdvisorAction } from '@/lib/ai/advisor'
 import type { TimeAllocationItem } from '@/lib/health/scoring'
 import { triggerAdvisor } from '@/lib/actions/repositories'
 import { formatDistanceToNow } from '@/lib/utils'
+import { QueueButton } from './queue-button'
 import Link from 'next/link'
 import { toast } from 'sonner'
 
@@ -38,9 +39,10 @@ interface AdvisorCardProps {
   advisor: AdvisorContent | null
   timeAllocation?: TimeAllocationItem[]
   hoursPerWeek?: number
+  nexusEnabled?: boolean
 }
 
-export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10 }: AdvisorCardProps) {
+export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10, nexusEnabled = false }: AdvisorCardProps) {
   const [advisor, setAdvisor] = useState(initialAdvisor)
   const [generating, setGenerating] = useState(false)
 
@@ -138,13 +140,16 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
                 </div>
               </div>
 
-              {/* Repo link */}
-              <Link
-                href={`/repos/${action.repoId}`}
-                className="text-muted-foreground hover:text-foreground shrink-0 mt-0.5"
-              >
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
+              {/* Actions */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {nexusEnabled && <QueueButton action={action} />}
+                <Link
+                  href={`/repos/${action.repoId}`}
+                  className="text-muted-foreground hover:text-foreground mt-0.5"
+                >
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
             </div>
           )
         })}

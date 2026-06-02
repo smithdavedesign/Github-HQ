@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, GitFork, Shield, Rocket,
-  BarChart3, Activity, Settings, GitBranch, Skull, ListChecks,
+  BarChart3, Activity, Settings, GitBranch, Skull, ListChecks, Workflow,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -17,6 +17,7 @@ const navItems = [
   { href: '/security', icon: Shield, label: 'Security' },
   { href: '/deployments', icon: Rocket, label: 'Deployments' },
   { href: '/analytics', icon: BarChart3, label: 'Analytics' },
+  { href: '/agent-performance', icon: Workflow, label: 'Agents' },
 ]
 
 export function Sidebar() {

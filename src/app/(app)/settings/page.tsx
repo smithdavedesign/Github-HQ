@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { formatDistanceToNow } from '@/lib/utils'
-import { Shield, Clock, GitFork, Cpu, Target, CreditCard, FileCode, Sparkles } from 'lucide-react'
+import { Shield, Clock, GitFork, Cpu, Target, CreditCard, FileCode, Sparkles, Workflow } from 'lucide-react'
 import { PublicProfileToggle } from '@/components/settings/public-profile-toggle'
 import { GoalManager } from '@/components/settings/goal-manager'
 import { HoursInput } from '@/components/settings/hours-input'
@@ -250,6 +250,42 @@ export default async function SettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      <Separator />
+
+      {/* Agent Execution — Nexus connection */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Workflow className="w-4 h-4" />
+            Agent Execution
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Connect to AI-DevOps Nexus to queue advisor actions for agent execution.
+            When configured, a "Queue →" button appears on each advisor action.
+          </p>
+          <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-2 text-xs font-mono">
+            <p className="text-muted-foreground font-sans text-xs font-medium mb-2">Add to your environment variables:</p>
+            <p><span className="text-indigo-400">NEXUS_API_URL</span>=https://your-nexus-instance.onrender.com</p>
+            <p><span className="text-indigo-400">NEXUS_API_TOKEN</span>=nexus-your-service-token</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {process.env.NEXUS_API_URL ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span className="text-xs text-emerald-600 font-medium">Connected — {process.env.NEXUS_API_URL}</span>
+              </>
+            ) : (
+              <>
+                <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />
+                <span className="text-xs text-muted-foreground">Not configured</span>
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <Separator />
 
