@@ -7,6 +7,7 @@ import { snapshotPortfolioScore } from '@/lib/health/portfolio-snapshot'
 import { refreshGoalProgress } from '@/lib/actions/goals'
 import { syncStripeMrr } from '@/lib/actions/stripe'
 import { checkMergedAgentPRs, resolveActualDeltas } from '@/lib/agents/pr-merge-checker'
+import { checkHealthThresholdAlerts } from '@/lib/notifications/dispatcher'
 import { isNotNull } from 'drizzle-orm'
 
 function verifyCronSecret(request: Request): boolean {
@@ -39,6 +40,7 @@ export async function GET(request: Request) {
         refreshGoalProgress(user.id),
         syncStripeMrr(),
         resolveActualDeltas(user.id),
+        checkHealthThresholdAlerts(user.id),
       ])
       processed++
     } catch {

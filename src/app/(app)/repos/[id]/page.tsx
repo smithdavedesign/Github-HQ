@@ -36,7 +36,7 @@ export default async function RepoDetailPage({ params }: Props) {
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.repoId, repoId),
-        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_execution_failed']),
+        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_execution_failed', 'agent_attempt']),
       ),
       orderBy: [desc(portfolioEvents.occurredAt)],
       limit: 30,
@@ -391,21 +391,37 @@ export default async function RepoDetailPage({ params }: Props) {
                 const predictedDelta = meta?.predictedDelta as string | undefined
                 const actualDelta = meta?.actualDelta as number | undefined
 
-                const isQueued  = event.eventType === 'agent_task_queued'
-                const isCreated = event.eventType === 'agent_pr_created'
-                const isMerged  = event.eventType === 'agent_pr_merged'
-                const isFailed  = event.eventType === 'agent_execution_failed'
+                const isQueued   = event.eventType === 'agent_task_queued'
+                const isCreated  = event.eventType === 'agent_pr_created'
+                const isMerged   = event.eventType === 'agent_pr_merged'
+                const isFailed   = event.eventType === 'agent_execution_failed'
+                const isAttempt  = event.eventType === 'agent_attempt'
+                const attemptOutcome = isAttempt ? (meta?.outcome as string | undefined) : undefined
 
                 const Icon = isMerged ? GitMerge : isCreated ? GitPullRequest : isQueued ? Clock : Bot
-                const iconColor = isMerged ? 'text-emerald-500' : isCreated ? 'text-blue-500' : isFailed ? 'text-red-400' : 'text-muted-foreground'
-                const label = isQueued ? 'Queued' : isCreated ? 'PR Created' : isMerged ? 'Merged' : 'Failed'
+                const iconColor = isMerged ? 'text-emerald-500'
+                  : isCreated ? 'text-blue-500'
+                  : isFailed ? 'text-red-400'
+                  : isAttempt && attemptOutcome === 'success' ? 'text-emerald-500'
+                  : isAttempt && attemptOutcome === 'failed' ? 'text-red-400'
+                  : isAttempt ? 'text-amber-500'
+                  : 'text-muted-foreground'
+                const label = isQueued ? 'Queued'
+                  : isCreated ? 'PR Created'
+                  : isMerged ? 'Merged'
+                  : isAttempt ? `Attempt: ${attemptOutcome ?? '?'}`
+                  : 'Failed'
                 const labelColor = isMerged
                   ? 'bg-emerald-500/10 text-emerald-600 border-emerald-200'
                   : isCreated
                     ? 'bg-blue-500/10 text-blue-600 border-blue-200'
-                    : isFailed
+                    : isFailed || attemptOutcome === 'failed'
                       ? 'bg-red-500/10 text-red-600 border-red-200'
-                      : 'bg-muted text-muted-foreground border-border/60'
+                      : isAttempt && attemptOutcome === 'success'
+                        ? 'bg-emerald-500/10 text-emerald-600 border-emerald-200'
+                        : isAttempt
+                          ? 'bg-amber-500/10 text-amber-600 border-amber-200'
+                          : 'bg-muted text-muted-foreground border-border/60'
 
                 return (
                   <div key={event.id} className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-muted/10">

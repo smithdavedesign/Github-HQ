@@ -2,6 +2,7 @@
 
 import { signOut } from 'next-auth/react'
 import { RefreshCw, LogOut, Moon, Sun } from 'lucide-react'
+import { NotificationBell } from './notification-bell'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -74,6 +75,7 @@ export function Topbar({ user, lastSyncedAt }: TopbarProps) {
 
       {/* Right — actions */}
       <div className="flex items-center gap-1.5">
+        <NotificationBell />
         <Button
           variant="outline"
           size="sm"

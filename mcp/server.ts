@@ -116,6 +116,35 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['repo_name', 'summary'],
       },
     },
+
+    // ── Phase 50: Active work signal ────────────────────────────────────
+    {
+      name: 'get_active_work',
+      description: 'Check what agent work is currently in flight for a repo (or the whole portfolio). Returns open agent PRs, their stage, and whether it is safe to start a new session. Always call this before starting automated work on a repo to avoid collisions.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          repo_name: { type: 'string', description: 'Repo to check (omit for portfolio-wide view)' },
+        },
+      },
+    },
+
+    // ── Phase 51: Attempt log ────────────────────────────────────────────
+    {
+      name: 'log_attempt',
+      description: 'Record that an agent tried an action on a repo and what happened. Call this whenever an automated attempt finishes — success, failure, or partial. This feeds back to the advisor so it stops recommending approaches that do not work.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          repo_name:  { type: 'string', description: 'Repository the attempt was made on' },
+          action:     { type: 'string', description: 'What was attempted (e.g. "add unit tests", "fix CVE-2024-1234")' },
+          outcome:    { type: 'string', enum: ['success', 'failed', 'partial'], description: 'Result of the attempt' },
+          reason:     { type: 'string', description: 'Why it failed or what was partial (omit for success)' },
+          agent_name: { type: 'string', description: 'Agent that made the attempt' },
+        },
+        required: ['repo_name', 'action', 'outcome'],
+      },
+    },
   ],
 }))
 
@@ -354,16 +383,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return { content: [{ type: 'text', text: `Repo "${repoName}" not found. Make sure it's synced.` }] }
         }
 
-        // Fetch last 3 session logs for this repo
-        const recentSessions = await db.query.portfolioEvents.findMany({
-          where: and(
-            eq(schema.portfolioEvents.userId, USER_ID),
-            eq(schema.portfolioEvents.repoId, repo.id),
-            eq(schema.portfolioEvents.eventType, 'session_complete'),
-          ),
-          orderBy: [desc(schema.portfolioEvents.occurredAt)],
-          limit: 3,
-        })
+        // Fetch sessions, attempts, and open PRs in parallel
+        const [recentSessions, recentAttempts, openPRMap] = await Promise.all([
+          db.query.portfolioEvents.findMany({
+            where: and(
+              eq(schema.portfolioEvents.userId, USER_ID),
+              eq(schema.portfolioEvents.repoId, repo.id),
+              eq(schema.portfolioEvents.eventType, 'session_complete'),
+            ),
+            orderBy: [desc(schema.portfolioEvents.occurredAt)],
+            limit: 3,
+          }),
+          db.query.portfolioEvents.findMany({
+            where: and(
+              eq(schema.portfolioEvents.userId, USER_ID),
+              eq(schema.portfolioEvents.repoId, repo.id),
+              eq(schema.portfolioEvents.eventType, 'agent_attempt'),
+            ),
+            orderBy: [desc(schema.portfolioEvents.occurredAt)],
+            limit: 5,
+          }),
+          getOpenAgentPRMap(),
+        ])
 
         const m = repo.metrics
         const criticalAlerts = repo.securityFindings.filter(f => f.severity === 'critical' || f.severity === 'high')
@@ -437,6 +478,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           lines.push(``)
         }
 
+        // In Flight — open agent PRs (Phase 50)
+        const openPR = openPRMap.get(repo.id)
+        if (openPR) {
+          lines.push(
+            `## ⚠ Agent PR In Flight`,
+            `An agent PR is currently open for this repo. Review it before starting new work.`,
+            `- PR: ${openPR.prUrl || 'URL pending'}`,
+            `- Task ID: \`${openPR.taskId}\``,
+            `- Queued: ${openPR.queuedAt.toLocaleDateString()}`,
+            ``,
+          )
+        }
+
+        // Attempt history (Phase 51)
+        if (recentAttempts.length > 0) {
+          lines.push(`## Recent Attempts`)
+          for (const a of recentAttempts) {
+            const meta = a.metadata as { action?: string; outcome?: string; reason?: string; agent?: string } | null
+            const emoji = meta?.outcome === 'success' ? '✅' : meta?.outcome === 'partial' ? '⚠️' : '❌'
+            const date = new Date(a.occurredAt).toLocaleDateString()
+            lines.push(`- ${emoji} **${date}**: ${meta?.action ?? a.title}${meta?.reason ? ` — ${meta.reason}` : ''}`)
+          }
+          const failCount = recentAttempts.filter(a => {
+            const m = a.metadata as { outcome?: string } | null
+            return m?.outcome === 'failed'
+          }).length
+          if (failCount >= 2) {
+            lines.push(`> ⚠ ${failCount} recent failures — approach with fresh context or escalate to human review.`)
+          }
+          lines.push(``)
+        }
+
         // Recent session history (agent meta-awareness)
         if (recentSessions.length > 0) {
           lines.push(`## Recent Sessions`)
@@ -449,13 +522,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           lines.push(``)
         }
 
-        lines.push(`_Use \`log_session_complete\` when done to record what you accomplished._`)
+        lines.push(`_Use \`log_attempt\` after each automated action and \`log_session_complete\` when done._`)
 
         return { content: [{ type: 'text', text: lines.join('\n') }] }
       }
 
       case 'get_next_action': {
-        const [repos, latestDigest] = await Promise.all([
+        const [repos, latestDigest, openPRMap, deadEnds] = await Promise.all([
           db.query.repositories.findMany({
             where: eq(schema.repositories.userId, USER_ID),
             with: { metrics: true },
@@ -469,6 +542,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             orderBy: [desc(schema.digests.generatedAt)],
             columns: { advisorContent: true, generatedAt: true },
           }),
+          getOpenAgentPRMap(),
+          getDeadEndActions(),
         ])
 
         const advisor = latestDigest?.advisorContent as {
@@ -476,13 +551,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           actions?: Array<{ repoId: number; repoName: string; action: string; estimatedImpact: string; effort: string; reasoning: string }>
         } | null
 
-        // Pick the top advisor action on an active, non-Reference repo
+        // Pick the top advisor action: active, non-Reference, no open PR, not a dead end
         const SKIP_PURPOSES = new Set(['Reference', 'Infrastructure'])
         const topAction = advisor?.actions?.find(a => {
           const repo = repos.find(r => r.id === a.repoId)
           if (!repo) return false
           if (repo.isArchived || ['archived', 'sunsetting'].includes(repo.lifecycleStatus ?? '')) return false
           if (SKIP_PURPOSES.has(repo.purpose ?? '')) return false
+          if (openPRMap.has(repo.id)) return false  // Phase 50: skip repos with open PRs
+          const deadEndKey = `${repo.id}::${a.action.toLowerCase().slice(0, 60)}`
+          if (deadEnds.has(deadEndKey)) return false  // Phase 51: skip known dead ends
           return true
         })
 
@@ -550,6 +628,95 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
 
+      case 'get_active_work': {
+        const repoName = (args as { repo_name?: string }).repo_name
+
+        // Get all repos for context
+        const allRepos = await db.query.repositories.findMany({
+          where: eq(schema.repositories.userId, USER_ID),
+          columns: { id: true, name: true },
+        })
+        const repoById = new Map(allRepos.map(r => [r.id, r.name]))
+
+        const openPRMap = await getOpenAgentPRMap()
+
+        // Filter to specific repo if requested
+        let relevantEntries: Array<{ repoId: number; repoName: string; prUrl: string; taskId: string; queuedAt: Date }>
+        if (repoName) {
+          const repo = allRepos.find(r => r.name === repoName)
+          relevantEntries = repo && openPRMap.has(repo.id)
+            ? [{ repoId: repo.id, repoName: repo.name, ...openPRMap.get(repo.id)! }]
+            : []
+        } else {
+          relevantEntries = Array.from(openPRMap.entries()).map(([repoId, data]) => ({
+            repoId, repoName: repoById.get(repoId) ?? `repo-${repoId}`, ...data,
+          }))
+        }
+
+        if (relevantEntries.length === 0) {
+          const scope = repoName ? `**${repoName}**` : 'your portfolio'
+          return { content: [{ type: 'text', text: `✅ No active agent work in ${scope}. Safe to start a new session.` }] }
+        }
+
+        const lines = [`# Active Agent Work`, ``]
+        for (const e of relevantEntries) {
+          const age = Math.round((Date.now() - e.queuedAt.getTime()) / 3600_000)
+          lines.push(
+            `**${e.repoName}** — PR open (${age}h ago)`,
+            `- PR: ${e.prUrl || 'URL pending'}`,
+            `- Task ID: \`${e.taskId}\``,
+            `- ⚠ Do not start a new agent session on this repo until the PR is reviewed.`,
+            ``,
+          )
+        }
+
+        return { content: [{ type: 'text', text: lines.join('\n') }] }
+      }
+
+      case 'log_attempt': {
+        const { repo_name, action, outcome, reason, agent_name } = args as {
+          repo_name: string; action: string; outcome: 'success' | 'failed' | 'partial'; reason?: string; agent_name?: string
+        }
+
+        const repo = await db.query.repositories.findFirst({
+          where: and(eq(schema.repositories.userId, USER_ID), eq(schema.repositories.name, repo_name)),
+          columns: { id: true, name: true },
+        })
+
+        if (!repo) {
+          return { content: [{ type: 'text', text: `Repo "${repo_name}" not found — attempt not logged.` }] }
+        }
+
+        const outcomeEmoji = outcome === 'success' ? '✅' : outcome === 'partial' ? '⚠️' : '❌'
+        const title = `${outcomeEmoji} Attempt: ${action.slice(0, 80)}${action.length > 80 ? '…' : ''}`
+
+        await db.insert(schema.portfolioEvents).values({
+          userId: USER_ID,
+          repoId: repo.id,
+          eventType: 'agent_attempt',
+          title,
+          description: reason ?? null,
+          metadata: {
+            action,
+            outcome,
+            reason: reason ?? null,
+            agent: agent_name ?? 'Unknown agent',
+            loggedAt: new Date().toISOString(),
+          },
+        })
+
+        const feedbackMsg = outcome === 'failed'
+          ? ` Logged as a dead end — the advisor will de-prioritise this action type for ${repo.name} after 2 failures.`
+          : ''
+
+        return {
+          content: [{
+            type: 'text',
+            text: `${outcomeEmoji} Attempt logged for **${repo.name}**\nAction: ${action}\nOutcome: ${outcome}${reason ? `\nReason: ${reason}` : ''}${feedbackMsg}`,
+          }],
+        }
+      }
+
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
     }
@@ -558,6 +725,64 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: 'text', text: `Error: ${msg}` }], isError: true }
   }
 })
+
+/** Returns a map of repoId → { prUrl, taskId, queuedAt } for repos with open agent PRs */
+async function getOpenAgentPRMap(): Promise<Map<number, { prUrl: string; taskId: string; queuedAt: Date }>> {
+  const events = await db.query.portfolioEvents.findMany({
+    where: and(
+      eq(schema.portfolioEvents.userId, USER_ID!),
+      inArray(schema.portfolioEvents.eventType, ['agent_pr_created', 'agent_pr_merged', 'agent_task_queued']),
+    ),
+    columns: { repoId: true, eventType: true, metadata: true, occurredAt: true },
+    orderBy: [desc(schema.portfolioEvents.occurredAt)],
+  })
+
+  const mergedTaskIds = new Set<string>()
+  for (const e of events) {
+    if (e.eventType === 'agent_pr_merged') {
+      const meta = e.metadata as { taskId?: string } | null
+      if (meta?.taskId) mergedTaskIds.add(meta.taskId)
+    }
+  }
+
+  const result = new Map<number, { prUrl: string; taskId: string; queuedAt: Date }>()
+  for (const e of events) {
+    if (e.eventType === 'agent_pr_created' && e.repoId != null) {
+      const meta = e.metadata as { taskId?: string; prUrl?: string } | null
+      if (meta?.taskId && !mergedTaskIds.has(meta.taskId) && !result.has(e.repoId)) {
+        result.set(e.repoId, { prUrl: meta.prUrl ?? '', taskId: meta.taskId, queuedAt: e.occurredAt })
+      }
+    }
+  }
+  return result
+}
+
+/** Returns set of (repoId + actionKey) combos that have failed 2+ times */
+async function getDeadEndActions(): Promise<Set<string>> {
+  const attempts = await db.query.portfolioEvents.findMany({
+    where: and(
+      eq(schema.portfolioEvents.userId, USER_ID!),
+      eq(schema.portfolioEvents.eventType, 'agent_attempt'),
+    ),
+    columns: { repoId: true, metadata: true },
+  })
+
+  // Count failures per (repoId, action)
+  const failCounts = new Map<string, number>()
+  for (const a of attempts) {
+    const meta = a.metadata as { action?: string; outcome?: string } | null
+    if (meta?.outcome === 'failed' && a.repoId != null && meta.action) {
+      const key = `${a.repoId}::${meta.action.toLowerCase().slice(0, 60)}`
+      failCounts.set(key, (failCounts.get(key) ?? 0) + 1)
+    }
+  }
+
+  const deadEnds = new Set<string>()
+  for (const [key, count] of failCounts) {
+    if (count >= 2) deadEnds.add(key)
+  }
+  return deadEnds
+}
 
 function gradeLabel(score: number): string {
   if (score >= 90) return 'A — Excellent'

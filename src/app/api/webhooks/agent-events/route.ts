@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { portfolioEvents, repositories } from '@/lib/db/schema'
 import { eq, and, desc } from 'drizzle-orm'
 import { after } from 'next/server'
+import { dispatchNotification } from '@/lib/notifications/dispatcher'
 
 interface AgentEventPayload {
   eventType: 'agent_task_queued' | 'agent_pr_created' | 'agent_pr_merged' | 'agent_execution_failed'
@@ -71,6 +72,16 @@ export async function POST(request: Request) {
       description: summary ?? null,
       metadata: { taskId, prUrl, agentName, durationMs, filesChanged, costUsd },
     })
+    after(async () => {
+      await dispatchNotification({
+        userId,
+        eventType: 'agent_pr_ready',
+        title: `Agent PR ready for review${repoName ? ` — ${repoName}` : ''}`,
+        body: summary ?? undefined,
+        repoId: repoId ?? null,
+        metadata: { taskId, prUrl },
+      })
+    })
   }
 
   if (eventType === 'agent_pr_merged') {
@@ -134,6 +145,16 @@ export async function POST(request: Request) {
       title:    `Agent execution failed${repoName ? ` for ${repoName}` : ''}`,
       description: summary ?? null,
       metadata: { taskId, agentName, durationMs },
+    })
+    after(async () => {
+      await dispatchNotification({
+        userId,
+        eventType: 'agent_failed',
+        title: `Agent execution failed${repoName ? ` — ${repoName}` : ''}`,
+        body: summary ?? undefined,
+        repoId: repoId ?? null,
+        metadata: { taskId },
+      })
     })
   }
 

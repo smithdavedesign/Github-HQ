@@ -9,23 +9,25 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { formatDistanceToNow } from '@/lib/utils'
-import { Shield, Clock, GitFork, Cpu, Target, CreditCard, FileCode, Sparkles, Workflow } from 'lucide-react'
+import { Shield, Clock, GitFork, Cpu, Target, CreditCard, FileCode, Sparkles, Workflow, Bell } from 'lucide-react'
 import { PublicProfileToggle } from '@/components/settings/public-profile-toggle'
 import { GoalManager } from '@/components/settings/goal-manager'
 import { HoursInput } from '@/components/settings/hours-input'
 import { StripeConnect } from '@/components/settings/stripe-connect'
 import { ProfileReadmeGenerator } from '@/components/settings/profile-readme-generator'
 import { LLMSettings } from '@/components/settings/llm-settings'
+import { NotificationSettings } from '@/components/settings/notification-settings'
 import { getLLMSettings } from '@/lib/actions/llm'
 import { getGoals } from '@/lib/actions/goals'
 import { hasStripeKey, stripeKeySource } from '@/lib/actions/stripe'
+import { getNotificationSettings } from '@/lib/actions/notifications'
 import { repositories } from '@/lib/db/schema'
 
 export default async function SettingsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [user, recentScans, activeGoals, stripeConnected, stripeSource, repoList, llmSettings] = await Promise.all([
+  const [user, recentScans, activeGoals, stripeConnected, stripeSource, repoList, llmSettings, notifSettings] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, session.user.id),
       columns: { id: true, name: true, email: true, image: true, githubLogin: true, lastSyncedAt: true, createdAt: true, publicProfile: true, hoursPerWeek: true },
@@ -44,6 +46,7 @@ export default async function SettingsPage() {
       orderBy: (r, { asc }) => [asc(r.name)],
     }),
     getLLMSettings(),
+    getNotificationSettings(),
   ])
 
   const initials = session.user.name?.split(' ').map((n) => n[0]).join('').toUpperCase() ?? '?'
@@ -68,6 +71,22 @@ export default async function SettingsPage() {
             initialProvider={llmSettings.provider}
             keySource={llmSettings.keySource}
             savedProviders={llmSettings.savedProviders}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Notifications */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Bell className="w-4 h-4" />
+            Notifications
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <NotificationSettings
+            initialWebhookUrl={notifSettings?.webhookUrl ?? ''}
+            initialThreshold={notifSettings?.healthAlertThreshold ?? 55}
           />
         </CardContent>
       </Card>

@@ -76,6 +76,9 @@ export const users = pgTable('users', {
   llmProvider: text('llm_provider').default('anthropic'), // anthropic | openai | gemini
   llmApiKey: text('llm_api_key'),   // legacy single-key field (kept for migration safety)
   llmKeys: jsonb('llm_keys').$type<Partial<Record<string, string>>>(), // { anthropic?, openai?, gemini? }
+  // Phase 49: Push notifications
+  notificationWebhookUrl: text('notification_webhook_url'),
+  healthAlertThreshold: integer('health_alert_threshold').default(55),
 })
 
 // ─── Repositories ─────────────────────────────────────────────────────────────
@@ -322,6 +325,26 @@ export const portfolioEvents = pgTable('portfolio_events', {
   uniqueIndex('events_user_dedup_idx').on(table.userId, table.dedupKey),
 ])
 
+// ─── Notifications (Phase 49 — Push Notifications) ───────────────────────────
+
+export const notifications = pgTable('notifications', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  repoId: integer('repo_id').references(() => repositories.id, { onDelete: 'set null' }),
+  // health_alert | agent_pr_ready | agent_pr_merged | agent_failed | security_critical
+  eventType: text('event_type').notNull(),
+  title: text('title').notNull(),
+  body: text('body'),
+  metadata: jsonb('metadata'),
+  readAt: timestamp('read_at', { mode: 'date' }),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+}, (table) => [
+  index('notif_user_id_idx').on(table.userId),
+  index('notif_created_at_idx').on(table.createdAt),
+])
+
+export type Notification = typeof notifications.$inferSelect
+
 // ─── Relations ────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -329,6 +352,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   scans: many(scans),
   portfolioEvents: many(portfolioEvents),
   portfolioScoreHistory: many(portfolioScoreHistory),
+  notifications: many(notifications),
 }))
 
 export const repositoriesRelations = relations(repositories, ({ one, many }) => ({
@@ -378,6 +402,11 @@ export const portfolioScoreHistoryRelations = relations(portfolioScoreHistory, (
 export const portfolioEventsRelations = relations(portfolioEvents, ({ one }) => ({
   user: one(users, { fields: [portfolioEvents.userId], references: [users.id] }),
   repository: one(repositories, { fields: [portfolioEvents.repoId], references: [repositories.id] }),
+}))
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, { fields: [notifications.userId], references: [users.id] }),
+  repository: one(repositories, { fields: [notifications.repoId], references: [repositories.id] }),
 }))
 
 // ─── Types ────────────────────────────────────────────────────────────────────
