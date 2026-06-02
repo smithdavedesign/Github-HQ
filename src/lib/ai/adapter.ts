@@ -67,29 +67,31 @@ function createGeminiAdapter(apiKey: string): LLMAdapter {
   return {
     provider: 'gemini',
     async generate({ system, user, fast = false, maxTokens = 1000 }) {
-      try {
-        const { GoogleGenAI } = await import('@google/genai')
-        const client = new GoogleGenAI({ apiKey })
-        const model = fast ? PROVIDER_MODELS.gemini.fast : PROVIDER_MODELS.gemini.capable
-        const response = await client.models.generateContent({
-          model,
-          contents: user,
-          config: {
-            systemInstruction: system,
-            maxOutputTokens: maxTokens,
-          },
-        })
-        // response.text is a convenience getter — defensively fallback through candidate parts
-        const text: string =
-          (typeof response.text === 'string' ? response.text : null) ??
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (response as any).candidates?.[0]?.content?.parts?.[0]?.text ??
-          '{}'
-        return text.trim()
-      } catch (err) {
-        // Re-throw as a plain Error so it serializes correctly through Next.js
-        throw new Error(err instanceof Error ? err.message : `Gemini error: ${String(err)}`)
+      // Direct REST API — no SDK, no Node.js compatibility issues on Vercel
+      const model = fast ? PROVIDER_MODELS.gemini.fast : PROVIDER_MODELS.gemini.capable
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+
+      const body = {
+        contents: [{ role: 'user', parts: [{ text: user }] }],
+        systemInstruction: { parts: [{ text: system }] },
+        generationConfig: { maxOutputTokens: maxTokens },
       }
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: { message?: string } }
+        throw new Error(err.error?.message ?? `Gemini API error: ${res.status} ${res.statusText}`)
+      }
+
+      const data = await res.json() as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+      }
+      return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '{}'
     },
   }
 }
