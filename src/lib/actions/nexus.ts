@@ -87,6 +87,7 @@ async function _queueAdvisorAction(action: AdvisorAction): Promise<QueuedTask> {
         riskTier,
         predictedDelta:  action.estimatedImpact,
         source:          'repohq-advisor',
+        autoExecute:     true,
       }),
     }),
   })
