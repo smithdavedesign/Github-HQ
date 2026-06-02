@@ -508,7 +508,7 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 50 } },
+    initialState: { pagination: { pageSize: 10 } },
   })
 
   function saveView() {
@@ -666,14 +666,34 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
+      <div className="flex items-center justify-between text-sm text-muted-foreground flex-wrap gap-2">
         <span>
           {table.getFilteredRowModel().rows.length} of {data.length} repositories
           {nlFilters && filteredData.length !== data.length && ` (${filteredData.length} after AI filter)`}
         </span>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="h-7" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>Previous</Button>
-          <Button variant="outline" size="sm" className="h-7" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>Next</Button>
+        <div className="flex items-center gap-3">
+          {/* Rows per page */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs">Rows</span>
+            <select
+              value={table.getState().pagination.pageSize}
+              onChange={e => table.setPageSize(Number(e.target.value))}
+              className="h-7 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              {[10, 25, 50, 100].map(size => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+          </div>
+          {/* Page info */}
+          <span className="text-xs">
+            {table.getState().pagination.pageIndex + 1} / {Math.max(1, table.getPageCount())}
+          </span>
+          {/* Prev / Next */}
+          <div className="flex gap-1">
+            <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>←</Button>
+            <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>→</Button>
+          </div>
         </div>
       </div>
     </div>
