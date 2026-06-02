@@ -117,5 +117,8 @@ export async function setLLMProvider(provider: LLMProvider) {
     .returning({ id: users.id })
 
   if (!updated) throw new Error('Failed to update provider — user not found')
-  // No revalidatePath — provider switch is a local UI change; save triggers the refresh
+
+  // Revalidate repo pages so the "Analyze with X" button reflects the new provider
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath('/repos', 'layout')
 }
