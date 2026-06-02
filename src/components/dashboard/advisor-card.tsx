@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Sparkles, Loader2, Zap, Shield, TrendingUp, Heart, ArrowRight, Clock } from 'lucide-react'
+import { Sparkles, Loader2, Zap, Shield, TrendingUp, Heart, ArrowRight, Clock, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
 import type { AdvisorContent, AdvisorAction } from '@/lib/ai/advisor'
 import type { TimeAllocationItem } from '@/lib/health/scoring'
 import type { AccuracyStats } from '@/lib/actions/advisor-accuracy'
@@ -47,6 +47,16 @@ interface AdvisorCardProps {
 
 const DEFAULT_VISIBLE = 3
 
+/** Mirrors buildAcceptanceCriteria in nexus.ts — shown in expanded card preview */
+function getAcceptanceCriteria(action: AdvisorAction): string[] {
+  const criteria: string[] = []
+  if (action.impactType === 'security')    criteria.push('No new security alerts introduced')
+  if (action.impactType === 'health')      criteria.push('Health score does not decrease')
+  if (action.impactType === 'opportunity') criteria.push('Opportunity score improves or stays the same')
+  criteria.push('All existing tests continue to pass')
+  return criteria
+}
+
 function ConfidenceBadge({ impactType, accuracyStats }: { impactType: string; accuracyStats?: AccuracyStats[] }) {
   if (!accuracyStats) return null
   const stat = accuracyStats.find(s => s.impactType === impactType)
@@ -68,6 +78,15 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
   const [advisor, setAdvisor] = useState(initialAdvisor)
   const [generating, setGenerating] = useState(false)
   const [showAll, setShowAll] = useState(false)
+  const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set())
+
+  function toggleCard(i: number) {
+    setExpandedCards(prev => {
+      const next = new Set(prev)
+      next.has(i) ? next.delete(i) : next.add(i)
+      return next
+    })
+  }
 
   async function handleGenerate() {
     setGenerating(true)
@@ -139,44 +158,117 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
       <CardContent className="space-y-2.5">
         {advisor.actions.slice(0, showAll ? 5 : DEFAULT_VISIBLE).map((action, i) => {
           const ImpactIcon = IMPACT_ICON[action.impactType] ?? Zap
+          const isExpanded = expandedCards.has(i)
+          const criteria = getAcceptanceCriteria(action)
+
           return (
             <div
               key={i}
-              className="flex gap-3 p-3 rounded-lg border border-border/50 bg-muted/20 hover:bg-muted/40 transition-colors"
+              className="rounded-lg border border-border/50 bg-muted/20 hover:bg-muted/30 transition-colors"
             >
-              {/* Icon */}
-              <div className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${IMPACT_COLOR[action.impactType]}`}>
-                <ImpactIcon className="w-3.5 h-3.5" />
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 min-w-0 space-y-1">
-                <Link href={`/repos/${action.repoId}`} className="text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors block truncate">
-                  {action.repoName}
-                </Link>
-                <p className="text-sm font-medium leading-snug">{action.action}</p>
-                <p className="text-xs text-muted-foreground line-clamp-1">{action.reasoning}</p>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <Badge variant="outline" className={`text-[10px] h-4 px-1.5 font-medium ${EFFORT_BADGE[action.effort]}`}>
-                    {EFFORT_LABEL[action.effort]}
-                  </Badge>
-                  <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5">
-                    {action.estimatedImpact}
-                    <ConfidenceBadge impactType={action.impactType} accuracyStats={accuracyStats} />
-                  </span>
+              {/* Clickable summary row */}
+              <button
+                onClick={() => toggleCard(i)}
+                className="flex gap-3 p-3 w-full text-left"
+                aria-expanded={isExpanded}
+              >
+                {/* Impact icon */}
+                <div className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 ${IMPACT_COLOR[action.impactType]}`}>
+                  <ImpactIcon className="w-3.5 h-3.5" />
                 </div>
-              </div>
 
-              {/* Actions */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                {nexusEnabled && <QueueButton action={action} />}
-                <Link
-                  href={`/repos/${action.repoId}`}
-                  className="text-muted-foreground hover:text-foreground mt-0.5"
-                >
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
-              </div>
+                {/* Content */}
+                <div className="flex-1 min-w-0 space-y-0.5">
+                  <Link
+                    href={`/repos/${action.repoId}`}
+                    onClick={e => e.stopPropagation()}
+                    className="text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors block truncate"
+                  >
+                    {action.repoName}
+                  </Link>
+                  <p className="text-sm font-medium leading-snug">{action.action}</p>
+                  {!isExpanded && (
+                    <p className="text-xs text-muted-foreground line-clamp-1">{action.reasoning}</p>
+                  )}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    <Badge variant="outline" className={`text-[10px] h-4 px-1.5 font-medium ${EFFORT_BADGE[action.effort]}`}>
+                      {EFFORT_LABEL[action.effort]}
+                    </Badge>
+                    <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5">
+                      {action.estimatedImpact}
+                      <ConfidenceBadge impactType={action.impactType} accuracyStats={accuracyStats} />
+                    </span>
+                  </div>
+                </div>
+
+                {/* Expand indicator */}
+                <div className="shrink-0 mt-1 text-muted-foreground">
+                  {isExpanded
+                    ? <ChevronUp className="w-3.5 h-3.5" />
+                    : <ChevronDown className="w-3.5 h-3.5" />}
+                </div>
+              </button>
+
+              {/* Expanded detail panel */}
+              {isExpanded && (
+                <div className="px-3 pb-3 space-y-3 border-t border-border/40 pt-3 ml-10">
+                  {/* Full reasoning */}
+                  <p className="text-xs text-muted-foreground leading-relaxed">{action.reasoning}</p>
+
+                  {/* Acceptance criteria — what the agent will verify */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Agent will verify
+                    </p>
+                    <ul className="space-y-1">
+                      <li className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0 mt-0.5" />
+                        {action.action}
+                      </li>
+                      {criteria.map((c, ci) => (
+                        <li key={ci} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0 mt-0.5" />
+                          {c}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Run Agent button in expanded view */}
+                  {nexusEnabled && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <QueueButton action={action} />
+                      <Link
+                        href={`/repos/${action.repoId}`}
+                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                      >
+                        View repo <ArrowRight className="w-3 h-3" />
+                      </Link>
+                    </div>
+                  )}
+                  {!nexusEnabled && (
+                    <Link
+                      href={`/repos/${action.repoId}`}
+                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                    >
+                      View repo <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  )}
+                </div>
+              )}
+
+              {/* Collapsed: Run Agent lives in the header row */}
+              {!isExpanded && (
+                <div className="flex items-center gap-1.5 px-3 pb-3 -mt-1 ml-10">
+                  {nexusEnabled && <QueueButton action={action} />}
+                  <Link
+                    href={`/repos/${action.repoId}`}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              )}
             </div>
           )
         })}

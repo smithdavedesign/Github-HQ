@@ -1,6 +1,9 @@
 import { getRepositoryById } from '@/lib/actions/repositories'
 import { getLLMSettings } from '@/lib/actions/llm'
 import { PROVIDER_SHORT_NAME } from '@/lib/ai/providers'
+import { getLatestAdvisorContent } from '@/lib/actions/repositories'
+import { getMyAccuracyStats } from '@/lib/actions/advisor-accuracy'
+import { RepoAdvisorSection } from '@/components/repos/repo-advisor-section'
 import { db } from '@/lib/db'
 import { portfolioEvents } from '@/lib/db/schema'
 import { and, eq, inArray, desc } from 'drizzle-orm'
@@ -33,7 +36,7 @@ type Props = { params: Promise<{ id: string }> }
 export default async function RepoDetailPage({ params }: Props) {
   const { id } = await params
   const repoId = Number(id)
-  const [repo, agentHistory, llmSettings] = await Promise.all([
+  const [repo, agentHistory, llmSettings, advisor, accuracyStats] = await Promise.all([
     getRepositoryById(repoId),
     db.query.portfolioEvents.findMany({
       where: and(
@@ -44,6 +47,8 @@ export default async function RepoDetailPage({ params }: Props) {
       limit: 30,
     }),
     getLLMSettings(),
+    getLatestAdvisorContent().catch(() => null),
+    getMyAccuracyStats().catch(() => []),
   ])
   if (!repo) notFound()
 
@@ -383,13 +388,24 @@ export default async function RepoDetailPage({ params }: Props) {
           )}
         </TabsContent>
 
-        {/* Agent History */}
-        <TabsContent value="agent" className="pt-4">
+        {/* Agent tab — Advisory + History */}
+        <TabsContent value="agent" className="pt-4 space-y-6">
+          {/* AI Repo Advisory */}
+          <RepoAdvisorSection
+            actions={advisor?.actions?.filter(a => a.repoId === repoId) ?? []}
+            nexusEnabled={!!(process.env.NEXUS_API_URL && process.env.NEXUS_API_TOKEN)}
+            generatedAt={advisor?.generatedAt}
+            accuracyStats={accuracyStats}
+          />
+
+          {/* Activity history */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Agent History</p>
           {agentHistory.length === 0 ? (
-            <div className="py-12 text-center text-muted-foreground text-sm">
+            <div className="py-8 text-center text-muted-foreground text-sm">
               <Bot className="w-8 h-8 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No agent activity yet</p>
-              <p className="text-xs mt-1">Queue an advisor action to run the agent on this repo</p>
+              <p className="text-xs mt-1">Queue an advisor action above to run the agent on this repo</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -465,6 +481,7 @@ export default async function RepoDetailPage({ params }: Props) {
               })}
             </div>
           )}
+          </div>
         </TabsContent>
       </Tabs>
     </div>
