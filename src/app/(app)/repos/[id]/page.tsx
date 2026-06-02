@@ -1,4 +1,6 @@
 import { getRepositoryById } from '@/lib/actions/repositories'
+import { getLLMSettings } from '@/lib/actions/llm'
+import { PROVIDER_SHORT_NAME } from '@/lib/ai/providers'
 import { db } from '@/lib/db'
 import { portfolioEvents } from '@/lib/db/schema'
 import { and, eq, inArray, desc } from 'drizzle-orm'
@@ -31,7 +33,7 @@ type Props = { params: Promise<{ id: string }> }
 export default async function RepoDetailPage({ params }: Props) {
   const { id } = await params
   const repoId = Number(id)
-  const [repo, agentHistory] = await Promise.all([
+  const [repo, agentHistory, llmSettings] = await Promise.all([
     getRepositoryById(repoId),
     db.query.portfolioEvents.findMany({
       where: and(
@@ -41,6 +43,7 @@ export default async function RepoDetailPage({ params }: Props) {
       orderBy: [desc(portfolioEvents.occurredAt)],
       limit: 30,
     }),
+    getLLMSettings(),
   ])
   if (!repo) notFound()
 
@@ -118,7 +121,12 @@ export default async function RepoDetailPage({ params }: Props) {
 
         <div className="flex items-center gap-2 flex-wrap">
           {metrics?.activityStatus && <ActivityBadge status={metrics.activityStatus} />}
-          <AnalyzeButton repoId={repo.id} hasExistingAnalysis={!!claudeAnalysis} isStale={analysisIsStale} />
+          <AnalyzeButton
+            repoId={repo.id}
+            hasExistingAnalysis={!!claudeAnalysis}
+            isStale={analysisIsStale}
+            providerName={PROVIDER_SHORT_NAME[llmSettings.provider as keyof typeof PROVIDER_SHORT_NAME] ?? 'Claude'}
+          />
           <ResyncButton repoId={repo.id} />
         </div>
       </div>

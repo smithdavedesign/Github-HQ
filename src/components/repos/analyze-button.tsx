@@ -10,10 +10,11 @@ import { useRouter } from 'next/navigation'
 interface Props {
   repoId: number
   hasExistingAnalysis: boolean
-  isStale: boolean  // true when lastPush > claudeAnalysisAt (new commits since last analysis)
+  isStale: boolean
+  providerName?: string  // e.g. "Claude", "GPT-4o", "Gemini"
 }
 
-export function AnalyzeButton({ repoId, hasExistingAnalysis, isStale }: Props) {
+export function AnalyzeButton({ repoId, hasExistingAnalysis, isStale, providerName = 'Claude' }: Props) {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
@@ -38,7 +39,7 @@ export function AnalyzeButton({ repoId, hasExistingAnalysis, isStale }: Props) {
     return (
       <Button variant="outline" size="sm" onClick={() => handleAnalyze(false)} disabled={loading} className="gap-1.5">
         <Sparkles className={`w-3.5 h-3.5 ${loading ? 'animate-pulse' : ''}`} />
-        {loading ? 'Analyzing…' : 'Analyze with Claude'}
+        {loading ? 'Analyzing…' : `Analyze with ${providerName}`}
       </Button>
     )
   }

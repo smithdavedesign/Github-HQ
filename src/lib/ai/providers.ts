@@ -6,6 +6,13 @@ export const PROVIDER_LABELS: Record<LLMProvider, string> = {
   gemini:    'Gemini (Google)',
 }
 
+/** Short name for use in buttons and inline UI ("Analyze with Claude") */
+export const PROVIDER_SHORT_NAME: Record<LLMProvider, string> = {
+  anthropic: 'Claude',
+  openai:    'GPT-4o',
+  gemini:    'Gemini',
+}
+
 export const PROVIDER_MODELS: Record<LLMProvider, { fast: string; capable: string }> = {
   anthropic: { fast: 'claude-haiku-4-5-20251001', capable: 'claude-sonnet-4-6' },
   openai:    { fast: 'gpt-4o-mini',               capable: 'gpt-4o' },
