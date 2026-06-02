@@ -6,6 +6,7 @@ import { snapshotHealthScores } from '@/lib/health/history'
 import { snapshotPortfolioScore } from '@/lib/health/portfolio-snapshot'
 import { refreshGoalProgress } from '@/lib/actions/goals'
 import { syncStripeMrr } from '@/lib/actions/stripe'
+import { checkMergedAgentPRs, resolveActualDeltas } from '@/lib/agents/pr-merge-checker'
 import { isNotNull } from 'drizzle-orm'
 
 function verifyCronSecret(request: Request): boolean {
@@ -25,12 +26,19 @@ export async function GET(request: Request) {
   let processed = 0
   for (const user of allUsers) {
     try {
+      // Detect merged agent PRs and capture healthBefore — must run before sync
+      // so the pre-merge health score is recorded accurately
+      await checkMergedAgentPRs(user.id)
+
       await syncAllRepos(user.id)
+
+      // After sync, health scores are fresh — compute actualDelta for merged PRs
       await Promise.allSettled([
         snapshotHealthScores(user.id),
         snapshotPortfolioScore(user.id),
         refreshGoalProgress(user.id),
         syncStripeMrr(),
+        resolveActualDeltas(user.id),
       ])
       processed++
     } catch {

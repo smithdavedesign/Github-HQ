@@ -295,15 +295,21 @@
 - [x] Phase B: Nexus agent reads `get_coding_brief` via RepoHQ MCP before execution (brief-fetcher queries Neon directly)
 - [x] Phase C: gstack skills as `AGENT_EXECUTION_COMMAND` per risk tier — `scripts/gstack-ship.sh` (Tier 2), `scripts/gstack-investigate.sh` (Tier 3)
 - [x] Phase D-infra: Webhook loop — `agent_pr_created`, `agent_pr_merged`, `agent_execution_failed` events; auto-resync on merge via `after()`; status polling API
-- [ ] Phase D: Full agent observability — PR status badges on repo page + repo list, agent events in Portfolio Feed, analytics metrics, portfolio improvement attribution
+- [x] Phase D: Full agent observability — PR status badges on repo list, agent events in Portfolio Feed, Agent History tab on repo detail, AgentStatsBlock on Analytics, AgentImpactCard on Dashboard
 - [ ] Phase E: Auto-queue + batch approval (unlock after 6 months + 80% accuracy)
 
-### Phase 47 — Agent Observability & PR Tracking (next)
-- [ ] Repo list: "PR open →" badge on repos with an active agent PR (prevents double-queueing)
-- [ ] Repo detail: "Agent History" tab — all tasks queued, PR status + links, predicted vs actual delta per run
-- [ ] Portfolio Feed: agent events appear inline (PR opened, PR merged with actual delta, execution failed)
-- [ ] Analytics: agent summary block — tasks queued, PRs created, merged, success rate, avg time-to-PR, total score gained from agent merges
-- [ ] Dashboard: "Agent Impact" widget — X pts gained from agent PRs this month (portfolio improvement attribution)
+### Phase 47 — Agent Observability & PR Tracking ✅
+- [x] Repo list: "PR open →" badge on repos with an active agent PR (prevents double-queueing)
+- [x] Repo detail: "Agent" tab — all tasks queued, PR status + links, predicted vs actual delta per run
+- [x] Portfolio Feed: agent events appear inline (PR opened, PR merged with actual delta, execution failed)
+- [x] Analytics: AgentStatsBlock — tasks queued, PRs created/merged/failed, success rate, total score gained
+- [x] Dashboard: AgentImpactCard — pts gained from agent PRs this month (appears once ≥1 PR merged)
+
+### Phase 48 — PR Merge Detection via Cron Poll
+- [x] `checkMergedAgentPRs(userId)` — polls GitHub API for open agent PRs, detects merges, writes `agent_pr_merged` event with `healthBefore`
+- [x] `resolveActualDeltas(userId)` — after sync, computes `actualDelta = healthAfter - healthBefore` and updates event metadata
+- [x] Wired into `/api/cron/sync` — runs before full sync (detect + record healthBefore), resolves deltas after sync completes
+- [ ] Phase E: Upgrade to GitHub App real-time webhooks (see Distribution Roadmap below)
 
 See [docs/agentic-execution-prd.md](agentic-execution-prd.md) for full PRD, architecture, and risk analysis.
 
@@ -313,6 +319,39 @@ See [docs/agentic-execution-prd.md](agentic-execution-prd.md) for full PRD, arch
 - [x] MCP server setup instructions in mcp/README.md
 - [x] Stripe restricted key setup guide included
 - [x] `.env.example` complete with all 7 required variables
+
+---
+
+## Distribution Roadmap
+
+Features required to open RepoHQ to other users. Tracked separately because they each touch auth, data isolation, billing, or GitHub platform constraints.
+
+### D1 — GitHub App (real-time webhooks + PR merge detection)
+- Replace polling-based PR merge detection with real-time `pull_request` webhooks
+- GitHub App installation flow per user (separate from OAuth App)
+- Handles: PR merge events, push events for instant sync, security alerts
+- Required for: sub-minute merge detection, multi-user scale (each user installs the app)
+- **Blocker for open distribution**: OAuth App token approach doesn't scale; GitHub App is the right model for SaaS
+
+### D2 — Multi-tenant data isolation
+- Row-level security audit: every query scoped to `userId`; automated check in CI
+- Rate limiting per user on AI endpoints and sync crons
+- Webhook secret scoped per user (currently global env var)
+- Admin dashboard: user list, sync status, error rates
+
+### D3 — Self-serve onboarding
+- OAuth sign-up flow (already exists via Auth.js) → automated first sync → guided setup
+- Empty-state walk-through (no repos → sync button → first health score)
+- Email welcome + sync completion notification
+
+### D4 — Billing
+- Stripe subscription gate for AI features (advisor, MCP, BYOK settings)
+- Free tier: sync + health scores only; Paid: AI advisor, agent execution, BYOK
+- Usage metering for agent execution costs
+
+### D5 — BYOK for agent execution
+- Allow users to connect their own Nexus instance (or a hosted Nexus endpoint)
+- Currently hard-coded to owner's Render deployment; needs per-user `NEXUS_API_URL` + `NEXUS_API_TOKEN` in settings
 
 ---
 
