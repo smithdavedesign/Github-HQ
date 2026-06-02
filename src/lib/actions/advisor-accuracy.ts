@@ -28,13 +28,20 @@ export interface AccuracyStats {
  * Time-decay: events in the last 30 days count 2x.
  */
 export async function getAccuracyByImpactType(userId: string): Promise<AccuracyStats[]> {
-  const mergedEvents = await db.query.portfolioEvents.findMany({
-    where: and(
-      eq(portfolioEvents.userId, userId),
-      inArray(portfolioEvents.eventType, ['agent_pr_merged', 'agent_execution_failed']),
-    ),
-    columns: { eventType: true, metadata: true, occurredAt: true },
-  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mergedEvents: any[] = []
+  try {
+    mergedEvents = await db.query.portfolioEvents.findMany({
+      where: and(
+        eq(portfolioEvents.userId, userId),
+        inArray(portfolioEvents.eventType, ['agent_pr_merged', 'agent_execution_failed']),
+      ),
+      columns: { eventType: true, metadata: true, occurredAt: true },
+    })
+  } catch (err) {
+    console.warn('[advisor-accuracy] DB query failed:', err instanceof Error ? err.message : err)
+    return []
+  }
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000)
   const impactTypes: ImpactType[] = ['opportunity', 'revenue', 'security', 'health']

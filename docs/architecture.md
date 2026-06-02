@@ -225,7 +225,7 @@ computePortfolioEvents()      Pure event derivation from repo state changes (ded
 computeInternalDeps()         Cross-references package.json deps across portfolio repos
 ```
 
-316 unit tests as of Phase 51. Zero DB calls in any scoring function.
+360 unit tests as of Phase 52. Zero DB calls in any scoring function.
 
 **Agentic execution pipeline** — RepoHQ integrates with AI-Took-My-Job (Nexus) for automated portfolio improvement. See `docs/agentic-full-flow.md` for full architecture diagrams. Key components: `src/lib/actions/nexus.ts` (queue actions), `src/lib/agents/pr-merge-checker.ts` (detect merges via GitHub API), `src/lib/notifications/dispatcher.ts` + `webhook.ts` (push notifications).
 
@@ -255,13 +255,17 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 
 **MCP Server** — `mcp/server.ts` is a stdio MCP server using `@modelcontextprotocol/sdk`. Queries Neon directly via `DATABASE_URL` + `MCP_USER_ID` env vars. Configured in `~/.claude/claude.json`.
 
-10 tools across three tiers:
+11 tools across four tiers:
 
 *Diagnostic (read-only)*: `get_portfolio_summary`, `get_repo_context`, `get_portfolio_warnings`, `get_top_opportunities`, `get_active_goals`
 
-*Agentic (Phase 45)*: `get_coding_brief` — full session-start doc including In Flight PRs + attempt history; `get_next_action` — top ROI task, skips repos with open agent PRs and known dead-end actions; `log_session_complete` — writes `session_complete` portfolio_event.
+*Agentic (Phase 45)*: `get_coding_brief` — full session-start doc including In Flight PRs + attempt history; `get_next_action` — top ROI task, skips repos with open PRs and dead-end actions, includes confidence line; `log_session_complete` — writes `session_complete` portfolio_event.
 
-*Active Work + Feedback (Phase 50–51)*: `get_active_work(repo_name?)` — shows open agent PRs, safe-to-start flag; `log_attempt(repo_name, action, outcome, reason)` — writes `agent_attempt` event, feeds dead-end detection. See `docs/agentic-full-flow.md` for the complete MCP tool table and flow diagrams.
+*Active Work + Feedback (Phase 50–51)*: `get_active_work(repo_name?)` — shows open agent PRs, safe-to-start flag; `log_attempt(repo_name, action, outcome, reason)` — writes `agent_attempt` event, feeds dead-end detection.
+
+*Learning Loop (Phase 52)*: `get_accuracy_report()` — full calibration table (success rate, avg delta, signal strength per impactType) + downgraded repos. See `docs/agentic-full-flow.md` for complete tool table.
+
+**Advisor Learning Loop** — `src/lib/actions/advisor-accuracy.ts` + `advisor-accuracy-utils.ts` compute per-impactType accuracy from `portfolio_events` on-the-fly (no new table). Time-decay (30d × 2×), risk-adjusted suppress thresholds, `deltaConfidence` flag on resolved deltas. Accuracy table injected into the advisor's user message before each generation so Claude self-calibrates; never blocks advisor generation (try/catch wrapped). Accuracy shown as table on `/agent-performance` and inline confidence badges on the AdvisorCard.
 
 **GitHub Actions crons** — Primary cron trigger (replaces Vercel Hobby once-per-day limit). 5 workflows in `.github/workflows/` call existing API endpoints with `CRON_SECRET`. Vercel crons remain as once-per-Sunday fallback. `CRON_SECRET` stored as GitHub repo secret.
 

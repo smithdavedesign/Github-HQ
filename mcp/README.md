@@ -47,6 +47,12 @@ The server starts automatically when Claude Code launches.
 | `get_top_opportunities` | Repos ranked by opportunity score with health/activity breakdown |
 | `get_active_goals` | Current goals with progress and deadline status |
 
+### Learning loop (Phase 52)
+
+| Tool | Description |
+|------|-------------|
+| `get_accuracy_report` | Full advisor calibration table — success rate, avg health delta, and signal strength per action type (security/health/opportunity/revenue). Also lists repos that have been downgraded due to repeated failures. **Call this before queuing actions** to understand which types have a proven track record. |
+
 ### Agentic coding tools (Phase 45–51)
 
 | Tool | Description |

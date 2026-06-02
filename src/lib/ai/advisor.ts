@@ -163,11 +163,18 @@ export async function generateAdvisor(userId: string): Promise<AdvisorContent> {
     ? `\n\nGRAVEYARD — ideas already abandoned (avoid recommending the same direction):\n${graveyardRepos.map(r => `- ${r.name}${r.abandonmentReason ? ` (reason: ${r.abandonmentReason})` : ''}${r.description ? ` — ${r.description}` : ''}`).join('\n')}`
     : ''
 
-  // Fetch accuracy history — injected into user message to preserve prompt cache
-  const [accuracyStats, downgradedRepos] = await Promise.all([
-    getAccuracyByImpactType(userId),
-    getDowngradedRepos(userId),
-  ])
+  // Fetch accuracy history — injected into user message to preserve prompt cache.
+  // Never throw: a DB failure here must not block advisor generation.
+  let accuracyStats: Awaited<ReturnType<typeof getAccuracyByImpactType>> = []
+  let downgradedRepos: Awaited<ReturnType<typeof getDowngradedRepos>> = []
+  try {
+    ;[accuracyStats, downgradedRepos] = await Promise.all([
+      getAccuracyByImpactType(userId),
+      getDowngradedRepos(userId),
+    ])
+  } catch (err) {
+    console.warn('[advisor] accuracy fetch failed (continuing without):', err instanceof Error ? err.message : err)
+  }
 
   const accuracySection = buildAccuracySection(accuracyStats, downgradedRepos)
 

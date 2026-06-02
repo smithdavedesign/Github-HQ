@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge'
-import { Shield, Zap, TrendingUp, Heart, TrendingDown, TrendingUp as Up } from 'lucide-react'
+import { Shield, Zap, TrendingUp, Heart, TrendingDown, ArrowUp } from 'lucide-react'
 import type { AccuracyStats } from '@/lib/actions/advisor-accuracy'
 
 const IMPACT_ICONS = {
@@ -78,9 +78,10 @@ export function AccuracyTable({ stats }: { stats: AccuracyStats[] }) {
               : 'text-red-600 font-semibold'
 
             const trend = s.dataPoints > 0 && s.hasSignal
-              ? s.timeDecayedRate >= s.successRate + 8 ? <Up className="w-2.5 h-2.5 text-emerald-500 inline ml-1" />
+              ? s.timeDecayedRate >= s.successRate + 8 ? <ArrowUp className="w-2.5 h-2.5 text-emerald-500 inline ml-1" />
               : s.timeDecayedRate <= s.successRate - 8 ? <TrendingDown className="w-2.5 h-2.5 text-red-400 inline ml-1" />
               : null
+
               : null
 
             return (
