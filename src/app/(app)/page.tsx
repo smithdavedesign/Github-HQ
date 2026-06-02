@@ -152,7 +152,7 @@ export default async function DashboardPage() {
       )}
 
       {/* ── PLANNING (collapsible — collapsed by default) ─────────── */}
-      <CollapsibleSection label="Planning" storageKey="dashboard-planning-open" defaultOpen={false}>
+      <CollapsibleSection label="Planning" storageKey="dashboard-planning-open" defaultOpen={true}>
         <SimulationCard defaultHours={userRecord?.hoursPerWeek ?? 10} />
 
         <OpportunityPanel needsAttention={opportunity.needsAttention} highPotentialDormant={opportunity.highPotentialDormant} />
