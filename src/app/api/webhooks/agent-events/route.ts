@@ -144,7 +144,15 @@ export async function POST(request: Request) {
       eventType: 'agent_execution_failed',
       title:    `Agent execution failed${repoName ? ` for ${repoName}` : ''}`,
       description: summary ?? null,
-      metadata: { taskId, agentName, durationMs },
+      // Copy impactType and predictedDelta from the queued event so accuracy
+      // can be tracked per impactType even for failures
+      metadata: {
+        taskId,
+        agentName,
+        durationMs,
+        impactType:     meta?.impactType ?? null,
+        predictedDelta: meta?.predictedDelta ?? null,
+      },
     })
     after(async () => {
       await dispatchNotification({

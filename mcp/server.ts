@@ -117,6 +117,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
 
+    // ── Phase 52: Accuracy report ────────────────────────────────────────
+    {
+      name: 'get_accuracy_report',
+      description: 'Get the advisor accuracy calibration table — how well each action type (security, health, opportunity, revenue) has predicted actual portfolio improvements. Use this before queuing actions to understand which types have a strong track record vs which need more caution.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+
     // ── Phase 50: Active work signal ────────────────────────────────────
     {
       name: 'get_active_work',
@@ -528,7 +535,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'get_next_action': {
-        const [repos, latestDigest, openPRMap, deadEnds] = await Promise.all([
+        const [repos, latestDigest, openPRMap, deadEnds, accuracyStats] = await Promise.all([
           db.query.repositories.findMany({
             where: eq(schema.repositories.userId, USER_ID),
             with: { metrics: true },
@@ -544,11 +551,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }),
           getOpenAgentPRMap(),
           getDeadEndActions(),
+          getAccuracyStatsMCP(),
         ])
 
         const advisor = latestDigest?.advisorContent as {
           headline?: string
-          actions?: Array<{ repoId: number; repoName: string; action: string; estimatedImpact: string; effort: string; reasoning: string }>
+          actions?: Array<{ repoId: number; repoName: string; action: string; impactType: string; estimatedImpact: string; effort: string; reasoning: string }>
         } | null
 
         // Pick the top advisor action: active, non-Reference, no open PR, not a dead end
@@ -577,6 +585,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         const repo = repos.find(r => r.id === topAction.repoId)
+
+        // Include accuracy context for this impactType
+        const accuracyStat = accuracyStats.find(s => s.impactType === topAction.impactType)
+        let confidenceLine = ''
+        if (accuracyStat?.hasSignal) {
+          const rate = accuracyStat.successRate
+          const label = rate >= 75 ? '🟢 High confidence' : rate >= 50 ? '🟡 Mixed results' : '🔴 Low confidence'
+          confidenceLine = `**Confidence:** ${label} (${topAction.impactType} actions: ${rate}% success rate across ${accuracyStat.dataPoints} runs, avg +${accuracyStat.avgActualDelta} pts)`
+        } else if (accuracyStat && accuracyStat.dataPoints > 0) {
+          confidenceLine = `**Confidence:** ⚪ Building signal (${accuracyStat.dataPoints} run${accuracyStat.dataPoints !== 1 ? 's' : ''} — need ${MIN_DATA_POINTS_MAP[topAction.impactType] ?? 3}+ for reliable signal)`
+        } else {
+          confidenceLine = `**Confidence:** ⚪ No data yet for ${topAction.impactType} actions`
+        }
+
         const lines = [
           `# Next Action`,
           ``,
@@ -584,6 +606,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           `**Action:** ${topAction.action}`,
           `**Impact:** ${topAction.estimatedImpact}`,
           `**Effort:** ${topAction.effort}`,
+          confidenceLine,
           `**Why:** ${topAction.reasoning}`,
           ``,
           advisor?.headline ? `_Portfolio context: ${advisor.headline}_` : '',
@@ -626,6 +649,70 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             text: `✓ Session logged for **${repo.name}**\nAgent: ${agent}\nSummary: ${summary}`,
           }],
         }
+      }
+
+      case 'get_accuracy_report': {
+        const [accuracyStats, allEvents] = await Promise.all([
+          getAccuracyStatsMCP(),
+          db.query.portfolioEvents.findMany({
+            where: and(
+              eq(schema.portfolioEvents.userId, USER_ID),
+              inArray(schema.portfolioEvents.eventType, ['agent_pr_merged', 'agent_execution_failed']),
+            ),
+            columns: { repoId: true, eventType: true, metadata: true },
+            with: { repository: { columns: { name: true } } },
+          }),
+        ])
+
+        const lines = ['# Advisor Accuracy Report', '']
+
+        const withData = accuracyStats.filter(s => s.dataPoints > 0)
+        if (withData.length === 0) {
+          lines.push('No completed agent runs yet. Queue advisor actions to start building accuracy data.')
+          return { content: [{ type: 'text', text: lines.join('\n') }] }
+        }
+
+        lines.push('## Accuracy by Action Type', '')
+        lines.push('| Type | Success Rate | Runs | Avg Δ | Signal |')
+        lines.push('|------|-------------|------|-------|--------|')
+        for (const s of accuracyStats) {
+          const emoji = !s.dataPoints ? '⚪' : s.hasSignal && s.successRate >= 75 ? '🟢' : s.hasSignal && s.successRate >= 50 ? '🟡' : s.hasSignal ? '🔴' : '⚪'
+          const rate = s.dataPoints > 0 ? `${s.successRate}%` : '—'
+          const avg = s.avgActualDelta !== 0 ? `${s.avgActualDelta > 0 ? '+' : ''}${s.avgActualDelta} pts` : '—'
+          const signal = !s.dataPoints ? 'No data' : s.hasSignal ? 'Strong' : `Building (${s.dataPoints}/${MIN_DATA_POINTS_MAP[s.impactType] ?? 3})`
+          lines.push(`| ${emoji} ${s.impactType.padEnd(10)} | ${rate.padEnd(11)} | ${String(s.dataPoints || '—').padEnd(4)} | ${avg.padEnd(5)} | ${signal} |`)
+        }
+
+        // Find downgraded repos
+        type RepoKey = `${number}::${string}`
+        const repoCounters = new Map<RepoKey, { total: number; failures: number; name: string }>()
+        for (const e of allEvents) {
+          if (!e.repoId) continue
+          const m = e.metadata as { impactType?: string } | null
+          if (!m?.impactType) continue
+          const key = `${e.repoId}::${m.impactType}` as RepoKey
+          if (!repoCounters.has(key)) repoCounters.set(key, { total: 0, failures: 0, name: e.repository?.name ?? '?' })
+          const c = repoCounters.get(key)!
+          c.total++
+          if (e.eventType === 'agent_execution_failed') c.failures++
+        }
+        const downgraded = Array.from(repoCounters.entries())
+          .filter(([key, c]) => {
+            const impactType = key.split('::')[1]
+            const t = { security: 0.70, revenue: 0.65, health: 0.60, opportunity: 0.60 }[impactType] ?? 0.60
+            return c.total >= 3 && (c.failures / c.total) >= t
+          })
+
+        if (downgraded.length > 0) {
+          lines.push('', '## Downgraded Repos (repeated failures)')
+          for (const [key, c] of downgraded) {
+            const [, impactType] = key.split('::')
+            lines.push(`- **${c.name}** (${impactType}): ${c.failures}/${c.total} failures — advisor will caveat`)
+          }
+        }
+
+        lines.push('', `_Accuracy = directional (did health score improve?). Time-decayed: last 30d weighted 2×._`)
+        return { content: [{ type: 'text', text: lines.join('\n') }] }
       }
 
       case 'get_active_work': {
@@ -725,6 +812,54 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: 'text', text: `Error: ${msg}` }], isError: true }
   }
 })
+
+const MIN_DATA_POINTS_MAP: Record<string, number> = {
+  security: 5, health: 3, opportunity: 3, revenue: 8,
+}
+
+interface MCPAccuracyStat {
+  impactType: string
+  successRate: number
+  dataPoints: number
+  avgActualDelta: number
+  hasSignal: boolean
+  timeDecayedRate: number
+}
+
+/** Compute accuracy stats directly from portfolio_events (no server action import needed) */
+async function getAccuracyStatsMCP(): Promise<MCPAccuracyStat[]> {
+  const events = await db.query.portfolioEvents.findMany({
+    where: and(
+      eq(schema.portfolioEvents.userId, USER_ID!),
+      inArray(schema.portfolioEvents.eventType, ['agent_pr_merged', 'agent_execution_failed']),
+    ),
+    columns: { eventType: true, metadata: true, occurredAt: true },
+  })
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000)
+  const impactTypes = ['opportunity', 'revenue', 'security', 'health']
+  return impactTypes.map(impactType => {
+    const relevant = events.filter(e => (e.metadata as { impactType?: string } | null)?.impactType === impactType)
+    const merges = relevant.filter(e => e.eventType === 'agent_pr_merged')
+    const failures = relevant.filter(e => e.eventType === 'agent_execution_failed')
+    const highConf = merges.filter(e => {
+      const m = e.metadata as { deltaConfidence?: string; actualDelta?: number; actualDeltaPending?: boolean } | null
+      return m?.deltaConfidence !== 'low' && !m?.actualDeltaPending && m?.actualDelta != null
+    })
+    const dataPoints = highConf.length + failures.length
+    const successes = highConf.filter(e => ((e.metadata as { actualDelta?: number } | null)?.actualDelta ?? 0) > 0)
+    const successRate = dataPoints > 0 ? Math.round((successes.length / dataPoints) * 100) : 0
+    const avgActualDelta = highConf.length > 0
+      ? Math.round(highConf.reduce((s, e) => s + ((e.metadata as { actualDelta?: number } | null)?.actualDelta ?? 0), 0) / highConf.length)
+      : 0
+    const recentSuccesses = successes.filter(e => e.occurredAt >= thirtyDaysAgo).length
+    const recentTotal = relevant.filter(e => e.occurredAt >= thirtyDaysAgo).length
+    const weightedSuccesses = recentSuccesses * 2 + (successes.length - recentSuccesses)
+    const weightedTotal = recentTotal * 2 + (dataPoints - recentTotal)
+    const timeDecayedRate = weightedTotal > 0 ? Math.round((weightedSuccesses / weightedTotal) * 100) : 0
+    return { impactType, successRate, dataPoints, avgActualDelta, hasSignal: dataPoints >= (MIN_DATA_POINTS_MAP[impactType] ?? 3), timeDecayedRate }
+  })
+}
 
 /** Returns a map of repoId → { prUrl, taskId, queuedAt } for repos with open agent PRs */
 async function getOpenAgentPRMap(): Promise<Map<number, { prUrl: string; taskId: string; queuedAt: Date }>> {

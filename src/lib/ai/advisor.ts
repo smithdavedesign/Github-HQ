@@ -9,6 +9,7 @@ import {
   calculateTrafficScore,
 } from '@/lib/health/scoring'
 import { formatValuation } from '@/lib/health/valuation'
+import { getAccuracyByImpactType, getDowngradedRepos, MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy'
 
 
 export interface AdvisorAction {
@@ -162,6 +163,14 @@ export async function generateAdvisor(userId: string): Promise<AdvisorContent> {
     ? `\n\nGRAVEYARD — ideas already abandoned (avoid recommending the same direction):\n${graveyardRepos.map(r => `- ${r.name}${r.abandonmentReason ? ` (reason: ${r.abandonmentReason})` : ''}${r.description ? ` — ${r.description}` : ''}`).join('\n')}`
     : ''
 
+  // Fetch accuracy history — injected into user message to preserve prompt cache
+  const [accuracyStats, downgradedRepos] = await Promise.all([
+    getAccuracyByImpactType(userId),
+    getDowngradedRepos(userId),
+  ])
+
+  const accuracySection = buildAccuracySection(accuracyStats, downgradedRepos)
+
   const SYSTEM_PROMPT = `You are a senior portfolio advisor for a solo developer. Given pre-computed opportunity score data for their repos, identify the top 5 specific actions to take to maximize portfolio value.
 
 Each action must reference the EXACT opportunity score gain shown in the GAINS field — do not invent numbers. Use the repo ID and name from the data.${graveyardSection}
@@ -190,12 +199,14 @@ Rules:
 - effort: quick = <30min, medium = 1-4h, substantial = 1+ days
 - Skip repos with no GAINS lines
 - Pick the 5 highest-delta actions across all repos
-- If a recommended action resembles a graveyard idea, add a caveat in the reasoning field`
+- If a recommended action resembles a graveyard idea, add a caveat in the reasoning field
+- If the Historical Accuracy section shows <50% success rate with sufficient signal for an impactType, add a caveat in that action's reasoning field (e.g. "Note: documentation actions have 40% accuracy in your portfolio — review before queuing")
+- If a repo is listed in Downgraded Repos, add a caveat or deprioritise it`
 
   const adapter = await getLLMAdapter(userId)
   const text = await adapter.generate({
     system: SYSTEM_PROMPT,
-    user: `Portfolio: ${repoAnalysis.length} repos, avg opp score ${avgOpp}, estimated total value ${formatValuation(totalValue)}\n\n${repoLines}`,
+    user: `Portfolio: ${repoAnalysis.length} repos, avg opp score ${avgOpp}, estimated total value ${formatValuation(totalValue)}\n\n${repoLines}${accuracySection}`,
     fast: false,
     maxTokens: 1500,
     cacheSystem: true,
@@ -246,4 +257,41 @@ export async function getLatestAdvisor(userId: string): Promise<AdvisorContent |
   if (age > 8 * 24 * 60 * 60 * 1000) return null
 
   return latest.advisorContent as AdvisorContent
+}
+
+// ─── Accuracy section builder ─────────────────────────────────────────────────
+
+import type { AccuracyStats } from '@/lib/actions/advisor-accuracy'
+
+function buildAccuracySection(
+  stats: AccuracyStats[],
+  downgraded: { repoId: number; repoName: string; impactType: string; failureCount: number }[],
+): string {
+  const withSignal = stats.filter(s => s.hasSignal)
+  if (withSignal.length === 0 && downgraded.length === 0) return ''
+
+  const lines = ['\n\n## Historical Action Accuracy (from your portfolio outcomes)']
+
+  if (withSignal.length > 0) {
+    lines.push('| Action Type | Success Rate | Data Points | Avg Delta |')
+    lines.push('|-------------|-------------|-------------|-----------|')
+    for (const s of withSignal) {
+      const trend = s.timeDecayedRate >= s.successRate + 10 ? ' ↑' : s.timeDecayedRate <= s.successRate - 10 ? ' ↓' : ''
+      lines.push(`| ${s.impactType.padEnd(11)} | ${s.successRate}%${trend.padEnd(4)} | ${String(s.dataPoints).padEnd(11)} | ${s.avgActualDelta > 0 ? '+' : ''}${s.avgActualDelta} pts |`)
+    }
+  }
+
+  const noSignal = stats.filter(s => !s.hasSignal && s.dataPoints > 0)
+  if (noSignal.length > 0) {
+    lines.push(`\nBuilding signal (< min data): ${noSignal.map(s => `${s.impactType} (${s.dataPoints} pts)`).join(', ')}`)
+  }
+
+  if (downgraded.length > 0) {
+    lines.push(`\nDowngraded repos (repeated failures — caveat or deprioritise):`)
+    for (const d of downgraded.slice(0, 5)) {
+      lines.push(`- ${d.repoName} (${d.impactType}: ${d.failureCount} failures)`)
+    }
+  }
+
+  return lines.join('\n')
 }

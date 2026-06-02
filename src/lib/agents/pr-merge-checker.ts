@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { portfolioEvents, repositoryMetrics, users } from '@/lib/db/schema'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, gte, lte } from 'drizzle-orm'
 
 /**
  * Polls GitHub API for all open agent PRs (created but not yet merged in portfolio_events).
@@ -129,6 +129,10 @@ export async function resolveActualDeltas(userId: string): Promise<void> {
     const healthAfter = Math.round(Number(metrics.healthScore))
     const actualDelta = healthAfter - meta.healthBefore
 
+    // Flag low-confidence deltas: swings >20 pts likely have other contributing factors
+    // (concurrent commits, unrelated security alerts, etc.)
+    const deltaConfidence: 'high' | 'low' = Math.abs(actualDelta) > 20 ? 'low' : 'high'
+
     await db
       .update(portfolioEvents)
       .set({
@@ -137,6 +141,7 @@ export async function resolveActualDeltas(userId: string): Promise<void> {
           actualDelta,
           healthAfter,
           actualDeltaPending: false,
+          deltaConfidence,
         },
       })
       .where(eq(portfolioEvents.id, event.id))

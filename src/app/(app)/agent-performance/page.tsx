@@ -6,8 +6,10 @@ import { eq, and, inArray, desc } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDistanceToNow } from '@/lib/utils'
-import { CheckCircle, XCircle, Clock, TrendingUp, Target, Cpu, ExternalLink } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, TrendingUp, Target, Cpu, ExternalLink, BarChart2 } from 'lucide-react'
 import Link from 'next/link'
+import { getAccuracyByImpactType, getDowngradedRepos } from '@/lib/actions/advisor-accuracy'
+import { AccuracyTable } from '@/components/dashboard/accuracy-table'
 
 export default async function AgentPerformancePage() {
   const session = await auth()
@@ -15,14 +17,18 @@ export default async function AgentPerformancePage() {
 
   const userId = session.user.id
 
-  const events = await db.query.portfolioEvents.findMany({
-    where: and(
-      eq(portfolioEvents.userId, userId),
-      inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_execution_failed']),
-    ),
-    orderBy: [desc(portfolioEvents.occurredAt)],
-    with: { repository: { columns: { name: true } } },
-  })
+  const [events, accuracyStats, downgradedRepos] = await Promise.all([
+    db.query.portfolioEvents.findMany({
+      where: and(
+        eq(portfolioEvents.userId, userId),
+        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_execution_failed']),
+      ),
+      orderBy: [desc(portfolioEvents.occurredAt)],
+      with: { repository: { columns: { name: true } } },
+    }),
+    getAccuracyByImpactType(userId),
+    getDowngradedRepos(userId),
+  ])
 
   // Compute stats
   const queued  = events.filter(e => e.eventType === 'agent_task_queued').length
@@ -90,13 +96,23 @@ export default async function AgentPerformancePage() {
         />
       </div>
 
-      {/* Accuracy notice */}
-      {accuracyNote && (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 flex items-center gap-2 text-xs text-amber-600">
-          <Target className="w-3.5 h-3.5 shrink-0" />
-          <span>Advisor accuracy: {accuracyNote}. Each merged PR computes predicted vs actual delta.</span>
-        </div>
-      )}
+      {/* Accuracy breakdown by impact type */}
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold flex items-center gap-2">
+          <BarChart2 className="w-3.5 h-3.5 text-indigo-500" />
+          Advisor Accuracy by Action Type
+        </h2>
+        <AccuracyTable stats={accuracyStats} />
+        {downgradedRepos.length > 0 && (
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 flex items-start gap-2 text-xs text-amber-600">
+            <Target className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              <strong>Downgraded repos</strong> (repeated failures — advisor will caveat these):
+              {' '}{downgradedRepos.map(d => `${d.repoName} (${d.impactType})`).join(', ')}
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Cost */}
       {totalCostUsd > 0 && (

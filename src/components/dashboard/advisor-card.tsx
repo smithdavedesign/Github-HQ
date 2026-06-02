@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Sparkles, Loader2, Zap, Shield, TrendingUp, Heart, ArrowRight, Clock } from 'lucide-react'
 import type { AdvisorContent, AdvisorAction } from '@/lib/ai/advisor'
 import type { TimeAllocationItem } from '@/lib/health/scoring'
+import type { AccuracyStats } from '@/lib/actions/advisor-accuracy'
+import { MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy'
 import { triggerAdvisor } from '@/lib/actions/repositories'
 import { formatDistanceToNow } from '@/lib/utils'
 import { QueueButton } from './queue-button'
@@ -40,11 +42,29 @@ interface AdvisorCardProps {
   timeAllocation?: TimeAllocationItem[]
   hoursPerWeek?: number
   nexusEnabled?: boolean
+  accuracyStats?: AccuracyStats[]
 }
 
 const DEFAULT_VISIBLE = 3
 
-export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10, nexusEnabled = false }: AdvisorCardProps) {
+function ConfidenceBadge({ impactType, accuracyStats }: { impactType: string; accuracyStats?: AccuracyStats[] }) {
+  if (!accuracyStats) return null
+  const stat = accuracyStats.find(s => s.impactType === impactType)
+  if (!stat || stat.dataPoints === 0) return null
+
+  if (!stat.hasSignal) {
+    return <span className="text-[10px] text-muted-foreground ml-1" title={`${stat.dataPoints} run${stat.dataPoints !== 1 ? 's' : ''} — building signal`}>⚪</span>
+  }
+  if (stat.successRate >= 75) {
+    return <span className="text-[10px] ml-1" title={`${stat.successRate}% success rate (${stat.dataPoints} runs)`}>🟢</span>
+  }
+  if (stat.successRate >= 50) {
+    return <span className="text-[10px] ml-1" title={`${stat.successRate}% success rate (${stat.dataPoints} runs)`}>🟡</span>
+  }
+  return <span className="text-[10px] ml-1" title={`${stat.successRate}% success rate (${stat.dataPoints} runs) — low confidence`}>🔴</span>
+}
+
+export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10, nexusEnabled = false, accuracyStats }: AdvisorCardProps) {
   const [advisor, setAdvisor] = useState(initialAdvisor)
   const [generating, setGenerating] = useState(false)
   const [showAll, setShowAll] = useState(false)
@@ -137,8 +157,9 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
                   <Badge variant="outline" className={`text-[10px] h-4 px-1.5 font-medium ${EFFORT_BADGE[action.effort]}`}>
                     {EFFORT_LABEL[action.effort]}
                   </Badge>
-                  <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400">
+                  <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5">
                     {action.estimatedImpact}
+                    <ConfidenceBadge impactType={action.impactType} accuracyStats={accuracyStats} />
                   </span>
                 </div>
               </div>

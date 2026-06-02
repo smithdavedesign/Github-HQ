@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { digests, repositories, repositoryMetrics, securityFindings } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { getLLMAdapter } from './adapter'
+import { getAccuracyByImpactType, getDowngradedRepos } from '@/lib/actions/advisor-accuracy'
 
 export interface DigestPriority {
   rank: 1 | 2 | 3
@@ -106,8 +107,35 @@ export async function generateDigest(userId: string): Promise<DigestContent> {
 
   const result: DigestContent = { ...parsed, generatedAt: new Date().toISOString() }
 
-  // Store in DB
-  await db.insert(digests).values({ userId, content: result })
+  // On the first Monday of each month, include advisor accuracy in the digest
+  const now = new Date()
+  const isFirstMonday = now.getDay() === 1 && now.getDate() <= 7
+  let advisorAccuracy: object | null = null
+  if (isFirstMonday) {
+    const [accuracyStats, downgraded] = await Promise.all([
+      getAccuracyByImpactType(userId),
+      getDowngradedRepos(userId),
+    ])
+    const withData = accuracyStats.filter(s => s.dataPoints > 0)
+    if (withData.length > 0) {
+      advisorAccuracy = {
+        generatedAt: now.toISOString(),
+        stats: accuracyStats,
+        downgradedRepos: downgraded,
+        summary: withData.map(s =>
+          s.hasSignal
+            ? `${s.impactType}: ${s.successRate}% accuracy (${s.dataPoints} runs, avg +${s.avgActualDelta} pts)`
+            : `${s.impactType}: building signal (${s.dataPoints} runs)`
+        ).join('; '),
+      }
+    }
+  }
+
+  // Store in DB — advisorAccuracy is null unless first Monday of month
+  await db.insert(digests).values({
+    userId,
+    content: advisorAccuracy ? { ...result, advisorAccuracy } : result,
+  })
 
   return result
 }

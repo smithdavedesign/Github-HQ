@@ -344,13 +344,14 @@ The next layer of value: making the system smarter for both humans and agents th
 - [x] Agent History tab on repo detail now includes `agent_attempt` events with colour-coded outcome badges
 - [ ] Closed/rejected PR detection (future — needs GitHub webhook or polling for PR close events)
 
-### Phase 52 — Advisor Learning Loop
-The longer the system runs, the better its recommendations should get.
-- [ ] Per-action-type accuracy tracking: success rate broken out by `impactType` (security, docs, deps, activity) — visible on `/agent-performance`
-- [ ] Predicted vs actual delta accuracy score per action type: if "add docs" consistently predicts +8 but delivers +2, show the calibration gap
-- [ ] Advisor prompt injection: low-accuracy action types get a confidence caveat ("documentation tasks have 41% accuracy — review carefully before queuing")
-- [ ] Repo-level failure memory: advisor notes if a repo has had 2+ failed agent runs and downgrades its recommendation priority until a human intervenes
-- [ ] Monthly accuracy report: email/digest summary of advisor calibration, which task types are reliable, which aren't
+### Phase 52 — Advisor Learning Loop ✅
+The longer the system runs, the better its recommendations get. Every merged agent PR is a data point; the advisor now reads its own track record before generating recommendations.
+
+- [x] **52-A: Data fixes** — `impactType` now stored in `agent_execution_failed` events; `deltaConfidence: 'high'|'low'` flag on resolved deltas (|Δ| > 20 pts = low confidence, likely other factors)
+- [x] **52-B: Accuracy computation** — `src/lib/actions/advisor-accuracy.ts`: `getAccuracyByImpactType()`, `getRepoAccuracy()`, `getDowngradedRepos()` — computed from `portfolio_events`, no new table; time-decay (last 30d × 2); risk-adjusted suppress thresholds per impactType; `src/lib/actions/advisor-accuracy-utils.ts` — pure functions safe for unit tests
+- [x] **52-C: Advisor prompt injection** — accuracy summary table injected into user message (preserves system prompt cache); new rule: Claude adds confidence caveat to reasoning on <50% success rate actions; downgraded repos listed
+- [x] **52-D: UI** — `AccuracyTable` component on `/agent-performance` replacing "X of 5 needed" placeholder; per-row signal labels (Strong/Mixed/Weak/Building); trend arrows (↑↓) from time-decayed rate; confidence emoji badges (🟢🟡🔴⚪) on each AdvisorCard action
+- [x] **52-E: MCP + digest** — `get_accuracy_report()` MCP tool with full calibration table + downgraded repos; `get_next_action()` now includes confidence line per impactType; monthly digest (first Monday) auto-includes accuracy summary in stored content
 
 ### Phase 40 — Open-Source Template / Deploy-to-Vercel
 - [x] README rewritten — Deploy to Vercel button, full setup guide (8 steps), all services documented

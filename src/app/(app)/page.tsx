@@ -19,6 +19,7 @@ import { ProfileOptimizerCard } from '@/components/dashboard/profile-optimizer-c
 import { ShipItCard } from '@/components/dashboard/ship-it-card'
 import { AgentImpactCard } from '@/components/dashboard/agent-impact-card'
 import { CollapsibleSection } from '@/components/dashboard/collapsible-section'
+import { getMyAccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { getGoals } from '@/lib/actions/goals'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -44,7 +45,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats] = await Promise.all([
+  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats] = await Promise.all([
     getDashboardStats(),
     getRepositoriesSlim(),
     getOpportunityData(),
@@ -62,6 +63,7 @@ export default async function DashboardPage() {
     db.query.users.findFirst({ where: eq(users.id, session.user.id), columns: { githubLogin: true, hoursPerWeek: true } }),
     getShipItWarnings(),
     getAgentStats(),
+    getMyAccuracyStats(),
   ])
 
   const topRepos = repos
@@ -141,7 +143,7 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <GoalsCard goals={activeGoals} />
-        <AdvisorCard advisor={advisor} timeAllocation={timeAllocation} hoursPerWeek={userRecord?.hoursPerWeek ?? 10} nexusEnabled={!!process.env.NEXUS_API_URL && !!process.env.NEXUS_API_TOKEN} />
+        <AdvisorCard advisor={advisor} timeAllocation={timeAllocation} hoursPerWeek={userRecord?.hoursPerWeek ?? 10} nexusEnabled={!!process.env.NEXUS_API_URL && !!process.env.NEXUS_API_TOKEN} accuracyStats={accuracyStats} />
       </div>
 
       <CeoReportCard report={ceoReport} />
