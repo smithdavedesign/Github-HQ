@@ -362,6 +362,80 @@ The longer the system runs, the better its recommendations get. Every merged age
 
 ---
 
+## gstack Integration Roadmap
+
+[gstack](https://garryslist.org) is a Claude Code skill framework that provides specialised agent workflows (`/ship`, `/investigate`, `/qa`, etc.) with multi-turn planning, checkpoint mode, and a learnings system that persists institutional knowledge across sessions.
+
+### Current State — "gstack-inspired" wrappers ✅
+
+The agentic execution pipeline uses two shell scripts in the AI-Took-My-Job repo (`scripts/gstack-ship.sh`, `scripts/gstack-investigate.sh`) as the `AGENT_EXECUTION_COMMAND`. These:
+
+- Call **Claude Code CLI directly** (`npx claude --dangerously-skip-permissions --print`) — not gstack skills
+- Are named after gstack's `/ship` and `/investigate` skill concepts
+- Inject RepoHQ context (health, lifecycle, advisor brief) from `.nexus/context.json` into the agent prompt
+- Write `.nexus/output.json` in the format Nexus expects to promote the PR
+- Run in **non-interactive `--print` mode** — one-shot execution, no multi-turn planning
+
+The scripts are a functional bridge that proved the end-to-end flow works. True gstack integration replaces these with the full skill workflows.
+
+### G1 — True gstack Skill Invocation
+
+Replace the bare `claude --print` calls with actual gstack skill entry points:
+
+- `scripts/gstack-ship.sh` → invoke `/ship` skill with the RepoHQ brief pre-loaded as session context
+- `scripts/gstack-investigate.sh` → invoke `/investigate` skill with the RepoHQ brief + security findings
+- Switch from `--print` (non-interactive one-shot) to full interactive gstack session mode
+- gstack's multi-turn planning phase means the agent plans before executing — higher success rate on complex tasks
+
+### G2 — Task-Type Routing by impactType
+
+Currently `AGENT_EXECUTION_COMMAND` is a single env var — one script for all tasks. Route by `impactType` from the advisor action:
+
+| impactType | Script | gstack Skill |
+|------------|--------|-------------|
+| `security` | `gstack-investigate.sh` | `/investigate` |
+| `health` / `opportunity` | `gstack-ship.sh` | `/ship` |
+| `revenue` | `gstack-ship.sh` | `/ship` |
+
+The Nexus worker already passes `impactType` in `contextNotes` — routing just needs to read it before spawning the command.
+
+### G3 — gstack Learnings Persistence
+
+gstack's learnings system (`.gstack/projects/{slug}/learnings.jsonl`) captures operational discoveries across sessions:
+
+- Agent learns which patterns fail on specific repos (e.g. "this project uses bun, not npm — use bun install")
+- Learnings surface automatically in future sessions via `gstack-learnings-search`
+- Closes the loop with Phase 51's `log_attempt` — both systems feed failure memory, gstack at the session level, RepoHQ at the portfolio level
+
+### G4 — Checkpoint Mode Integration
+
+gstack's checkpoint mode auto-commits WIP with `WIP:` prefix so agent progress survives crashes:
+
+- Enable `checkpoint_mode: continuous` for all agent executions
+- On resume after a crash, agent reads the WIP commits and continues from last state
+- Reduces "agent timed out" events significantly
+
+### G5 — MCP + gstack Session Synergy
+
+The RepoHQ MCP server already provides `get_coding_brief` to agents. With gstack:
+
+- Brief output auto-injected as a gstack session context file (not manually appended to prompt)
+- `log_session_complete` and `log_attempt` called by gstack skill completion hooks, not manually by the agent
+- `get_accuracy_report()` surfaced in the gstack session start context so the agent knows which action types have high vs low confidence before starting
+
+### G6 — gstack Routing in Nexus Worker (Phase D full implementation)
+
+Complete the Phase 46D vision — the Nexus worker selects the execution command based on task metadata:
+
+```typescript
+const command = selectGstackCommand(task.contextNotes.impactType, task.contextNotes.effort)
+// 'substantial' effort always goes through /investigate regardless of impactType
+```
+
+This replaces the single `AGENT_EXECUTION_COMMAND` env var with dynamic routing.
+
+---
+
 ## Distribution Roadmap
 
 Features required to open RepoHQ to other users. Tracked separately because they each touch auth, data isolation, billing, or GitHub platform constraints.
