@@ -151,6 +151,9 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
 
               {/* Content */}
               <div className="flex-1 min-w-0 space-y-1">
+                <Link href={`/repos/${action.repoId}`} className="text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors block truncate">
+                  {action.repoName}
+                </Link>
                 <p className="text-sm font-medium leading-snug">{action.action}</p>
                 <p className="text-xs text-muted-foreground line-clamp-1">{action.reasoning}</p>
                 <div className="flex items-center gap-1.5 flex-wrap">
