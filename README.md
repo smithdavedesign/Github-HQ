@@ -232,6 +232,8 @@ RepoHQ integrates with **AI-Took-My-Job** (AI-DevOps Nexus) to automatically exe
 
 The Run Agent button hydrates from the database on mount — it always reflects the true current state even after navigation or page refresh. The server also blocks duplicate queuing server-side.
 
+**Auto-dispatch (Phase 53):** Enable in Settings → Agent Auto-Dispatch. Every Monday the advisor automatically queues eligible actions — you wake up with PRs ready to review. Controls: effort gate (quick / quick+medium / all), max tasks per week (1–10), skip security tasks, minimum accuracy threshold. The server-side lifecycle guard ensures no repo gets double-queued.
+
 To enable: add `NEXUS_API_URL`, `NEXUS_API_TOKEN`, and `NEXUS_WEBHOOK_SECRET` to your environment.
 
 See [docs/agentic-execution-prd.md](docs/agentic-execution-prd.md) and [docs/agentic-full-flow.md](docs/agentic-full-flow.md) for architecture diagrams.
@@ -276,13 +278,19 @@ See the [gstack Integration Roadmap](docs/roadmap.md#gstack-integration-roadmap)
 ## Testing
 
 ```bash
-npm test              # 379 Vitest unit tests
+npm test              # 423 Vitest unit tests
 npm run test:e2e      # Playwright e2e tests (requires dev server)
 npm run test:all      # both
 npm run typecheck     # TypeScript strict check
+
+# gstack integration tests (require ANTHROPIC_API_KEY, run from project root)
+bash tests/integration/gstack-security-check.sh   # security investigation
+bash tests/integration/gstack-health-check.sh     # code quality assessment
 ```
 
-Unit tests cover: health scoring, opportunity scoring, archive scoring, valuation, portfolio score, simulation engine, opportunity cost, event computation, NL query filters, LLM adapter, nexus integration, notifications, MCP tools, advisor accuracy, agent lifecycle, provider mapping.
+Unit tests cover: health scoring, opportunity scoring, archive scoring, valuation, portfolio score, simulation engine, opportunity cost, event computation, NL query filters, LLM adapter, nexus integration, notifications, MCP tools, advisor accuracy, agent lifecycle, provider mapping, auto-dispatch filter logic, cache TTL, Nexus output contract.
+
+**gstack integration scripts** (`tests/integration/`) run gstack-style skill workflows against the RepoHQ codebase itself — using the same Claude Code patterns as agent executions. They validate the Nexus output.json contract and surface real security or health findings.
 
 ---
 

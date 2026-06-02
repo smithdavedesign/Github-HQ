@@ -146,12 +146,15 @@ export async function generateAdvisor(userId: string): Promise<AdvisorContent> {
   const avgOpp = Math.round(repoAnalysis.reduce((sum, r) => sum + r.opportunityScore, 0) / repoAnalysis.length)
 
   // Phase 54-T2: Check for memoised repo snapshot to avoid recomputing deltas
-  const latestDigestForSnapshot = await db.query.digests.findFirst({
-    where: eq(digests.userId, userId),
-    orderBy: (d, { desc }) => [desc(d.generatedAt)],
-    columns: { advisorRepoSnapshot: true },
-  })
-  const snapshot = latestDigestForSnapshot?.advisorRepoSnapshot as { repoLines: string; generatedAt: string } | null
+  let snapshot: { repoLines: string; generatedAt: string } | null = null
+  try {
+    const latestDigestForSnapshot = await db.query.digests.findFirst({
+      where: eq(digests.userId, userId),
+      orderBy: (d, { desc }) => [desc(d.generatedAt)],
+      columns: { advisorRepoSnapshot: true },
+    })
+    snapshot = (latestDigestForSnapshot?.advisorRepoSnapshot as { repoLines: string; generatedAt: string } | null) ?? null
+  } catch { /* non-fatal — fall through to recompute */ }
   const snapshotAge = snapshot ? Date.now() - new Date(snapshot.generatedAt).getTime() : Infinity
   const SNAPSHOT_TTL_MS = 23 * 60 * 60 * 1000 // 23h — recompute at most once per day
 

@@ -1,6 +1,6 @@
-# RepoHQ — Full Agentic Flow (Phases 46–51)
+# RepoHQ — Full Agentic Flow (Phases 46–54)
 
-Complete visual reference for the automated portfolio improvement pipeline as of Phase 51.
+Complete visual reference for the automated portfolio improvement pipeline as of Phase 54.
 
 ---
 
@@ -186,3 +186,77 @@ flowchart TD
 | `log_session_complete` | 45 | Records what was done (human-authored session note) |
 | `get_active_work` | 50 | Open agent PRs per repo or portfolio-wide; safe-to-start flag |
 | `log_attempt` | 51 | Records attempt outcome; feeds dead-end detection |
+
+---
+
+## Auto-Dispatch Flow (Phase 53 — Monday Morning PRs)
+
+```mermaid
+sequenceDiagram
+    participant Cron as Monday Cron
+    participant Advisor as generateAdvisor()
+    participant Dispatch as autoDispatchAdvisorActions()
+    participant Guard as Lifecycle Guard
+    participant Nexus as AI-Took-My-Job
+    participant Human as Developer
+
+    Cron->>Advisor: Generate top 5 recommendations
+    Advisor-->>Cron: AdvisorContent (5 actions)
+    Cron->>Dispatch: if autoDispatchEnabled
+    
+    loop For each action (up to maxPerRun)
+        Dispatch->>Dispatch: Effort gate check (quick/medium/all)
+        Dispatch->>Dispatch: Security gate (skip if enabled)
+        Dispatch->>Dispatch: Accuracy gate (min success rate)
+        Dispatch->>Guard: getRepoLifecycle(userId, repoId)
+        Guard-->>Dispatch: stage (idle/queued/running/pr_ready/...)
+        alt stage is BLOCKING
+            Dispatch->>Dispatch: skip (task already in flight)
+        else stage is idle/terminal
+            Dispatch->>Nexus: queueAdvisorActionForUser()
+            Nexus-->>Dispatch: { taskId }
+            Dispatch->>Dispatch: write agent_task_queued event (autoDispatched: true)
+        end
+    end
+
+    Note over Human: Monday morning
+    Human->>Human: Notification bell shows N new PRs
+    Human->>Human: Reviews each PR
+    Human->>Human: Merges good ones, closes bad ones
+```
+
+## Token Efficiency (Phase 54)
+
+```mermaid
+flowchart LR
+    subgraph Before["Before Phase 54 (per agent call)"]
+        A1[7-8 DB queries] --> B1[277 tokens fresh]
+        A2[Recompute repo deltas] --> B2[2550 tokens rebuilt]
+    end
+    
+    subgraph After["After Phase 54 (per agent call)"]
+        C1{cached_brief\nfresh < 6h?} -->|Yes| D1[1 DB read\n0 compute]
+        C1 -->|No - stale/missing| D2[7-8 DB queries\nwrite to cache]
+        C2{advisorRepoSnapshot\nfresh < 23h?} -->|Yes| D3[Reuse repoLines\n0 tokens]
+        C2 -->|No - sync cleared it| D4[Recompute + store]
+    end
+    
+    E[Sync completes] --> F[Clear cached_brief\nClear advisorRepoSnapshot]
+    F --> G[Next call regenerates fresh]
+```
+
+## MCP Tool Summary (Phase 45–54)
+
+| Tool | Phase | Purpose |
+|------|-------|---------|
+| `get_portfolio_summary` | 45 | Overview: score, focused repos, top advisor actions |
+| `get_repo_context` | 45 | Deep context for a specific repo |
+| `get_portfolio_warnings` | 45 | Failing builds, security alerts, health drops |
+| `get_top_opportunities` | 45 | Repos by opportunity score |
+| `get_active_goals` | 45 | Goals with progress |
+| `get_coding_brief` | 45–54 | Full session-start doc; served from cache within 6h |
+| `get_next_action` | 45–54 | Top ROI action; skips open PRs + dead ends; confidence line |
+| `log_session_complete` | 45 | Records what was done |
+| `get_active_work` | 50 | Open agent PRs; safe-to-start flag |
+| `log_attempt` | 51 | Records attempt outcome; feeds dead-end detection |
+| `get_accuracy_report` | 52 | Advisor calibration table + downgraded repos |

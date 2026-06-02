@@ -225,7 +225,7 @@ computePortfolioEvents()      Pure event derivation from repo state changes (ded
 computeInternalDeps()         Cross-references package.json deps across portfolio repos
 ```
 
-360 unit tests as of Phase 52. Zero DB calls in any scoring function.
+423 unit tests as of Phase 54. Zero DB calls in any scoring function.
 
 **Agentic execution pipeline** — RepoHQ integrates with AI-Took-My-Job (Nexus) for automated portfolio improvement. See `docs/agentic-full-flow.md` for full architecture diagrams. Key components: `src/lib/actions/nexus.ts` (queue actions), `src/lib/agents/pr-merge-checker.ts` (detect merges via GitHub API), `src/lib/notifications/dispatcher.ts` + `webhook.ts` (push notifications).
 
@@ -266,6 +266,12 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 *Learning Loop (Phase 52)*: `get_accuracy_report()` — full calibration table (success rate, avg delta, signal strength per impactType) + downgraded repos. See `docs/agentic-full-flow.md` for complete tool table.
 
 **Advisor Learning Loop** — `src/lib/actions/advisor-accuracy.ts` + `advisor-accuracy-utils.ts` compute per-impactType accuracy from `portfolio_events` on-the-fly (no new table). Time-decay (30d × 2×), risk-adjusted suppress thresholds, `deltaConfidence` flag on resolved deltas. Accuracy table injected into the advisor's user message before each generation so Claude self-calibrates; never blocks advisor generation (try/catch wrapped). Accuracy shown as table on `/agent-performance` and inline confidence badges on the AdvisorCard.
+
+**Auto-Dispatch (Phase 53)** — `queueAdvisorActionForUser(userId, action)` is a session-less Nexus queue function called from the digest cron after `generateAdvisor()` completes. `autoDispatchAdvisorActions()` filters through 4 gates: effort gate → security gate → accuracy gate → lifecycle guard. Users configure via Settings → Agent Auto-Dispatch (5 fields on `users` table). `autoDispatched: true` tag on events for traceability.
+
+**Token Efficiency (Phase 54)** — Two caches reduce redundant token spend as agent volume grows: (1) `repositories.cached_brief JSONB` — written by `get_coding_brief` on first call, served from cache within 6h, cleared on sync; (2) `digests.advisor_repo_snapshot JSONB` — the compiled repoLines prompt text, reused for 23h, invalidated on sync. Saves ~25K tokens per 100 agents on briefs alone.
+
+**gstack Integration Tests** — `tests/integration/` contains shell scripts that run gstack-style investigation and health-check workflows against the RepoHQ codebase itself. `tests/unit/nexus-output-contract.test.ts` validates the Nexus agent output.json contract that all gstack scripts must produce.
 
 **GitHub Actions crons** — Primary cron trigger (replaces Vercel Hobby once-per-day limit). 5 workflows in `.github/workflows/` call existing API endpoints with `CRON_SECRET`. Vercel crons remain as once-per-Sunday fallback. `CRON_SECRET` stored as GitHub repo secret.
 

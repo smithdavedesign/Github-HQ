@@ -17,7 +17,14 @@ export async function saveAutoDispatch(settings: {
 
   const validGates = ['quick_only', 'quick_and_medium', 'all']
   if (!validGates.includes(settings.autoDispatchEffortGate)) {
-    throw new Error('Invalid effort gate')
+    throw new Error(`Invalid effort gate: must be one of ${validGates.join(', ')}`)
+  }
+  const validThresholds = [0, 50, 75, 80]
+  if (!validThresholds.includes(settings.autoDispatchAccuracyThreshold)) {
+    throw new Error(`Invalid accuracy threshold: must be one of ${validThresholds.join(', ')}`)
+  }
+  if (!Number.isInteger(settings.autoDispatchMaxPerRun) || settings.autoDispatchMaxPerRun < 1 || settings.autoDispatchMaxPerRun > 10) {
+    throw new Error('maxPerRun must be an integer between 1 and 10')
   }
 
   await db.update(users).set({

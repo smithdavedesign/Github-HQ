@@ -43,25 +43,35 @@ export async function GET(request: Request) {
       if (user.autoDispatchEnabled) {
         try {
           const [advisor, accuracyStats] = await Promise.all([
-            getLatestAdvisor(user.id),
-            getAccuracyByImpactType(user.id),
+            getLatestAdvisor(user.id).catch(() => null),
+            getAccuracyByImpactType(user.id).catch(() => []),
           ])
-          if (advisor) {
+
+          if (!advisor?.actions?.length) {
+            console.warn(`[digest-cron] auto-dispatch skipped for ${user.id}: no advisor content`)
+          } else {
             const dispatchResult = await autoDispatchAdvisorActions(
               user.id,
               advisor,
               {
                 autoDispatchEnabled:           user.autoDispatchEnabled ?? false,
                 autoDispatchEffortGate:        user.autoDispatchEffortGate ?? 'quick_only',
-                autoDispatchMaxPerRun:         user.autoDispatchMaxPerRun ?? 3,
+                autoDispatchMaxPerRun:         Math.min(10, Math.max(1, user.autoDispatchMaxPerRun ?? 3)),
                 autoDispatchSkipSecurity:      user.autoDispatchSkipSecurity ?? true,
                 autoDispatchAccuracyThreshold: user.autoDispatchAccuracyThreshold ?? 0,
               },
               accuracyStats,
             )
             totalAutoQueued += dispatchResult.queued
+            if (dispatchResult.queued > 0) {
+              console.log(`[digest-cron] auto-dispatched ${dispatchResult.queued} tasks for ${user.id}`)
+            }
+            if (dispatchResult.errors.length > 0) {
+              console.warn(`[digest-cron] auto-dispatch errors for ${user.id}:`, dispatchResult.errors)
+            }
           }
         } catch (dispatchErr) {
+          // Never let dispatch failures crash the digest run
           console.warn('[digest-cron] auto-dispatch failed:', dispatchErr instanceof Error ? dispatchErr.message : dispatchErr)
         }
       }
