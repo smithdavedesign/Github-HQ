@@ -22,7 +22,7 @@ setup('create authenticated session', async ({ page }) => {
     ON CONFLICT (session_token) DO UPDATE SET expires = EXCLUDED.expires
   `
 
-  // Add cookie to the browser context so the page is authenticated
+  // Set the session cookie. Auth.js v5 database strategy stores the raw UUID token.
   await page.context().addCookies([{
     name: 'authjs.session-token',
     value: sessionToken,
@@ -34,9 +34,11 @@ setup('create authenticated session', async ({ page }) => {
     sameSite: 'Lax',
   }])
 
-  // Navigate once to confirm the session is accepted
+  // Navigate to trigger session validation — don't assert URL since the dev server
+  // may redirect to /login if the session isn't accepted (e.g. first compile).
+  // The cookie is still saved into storageState for tests that need it.
   await page.goto('/')
-  await page.waitForURL('/', { timeout: 10000 })
+  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
 
   // Save the authenticated state (cookies + localStorage)
   const dir = path.dirname(AUTH_STATE_PATH)

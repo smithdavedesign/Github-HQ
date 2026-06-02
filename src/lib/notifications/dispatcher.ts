@@ -4,7 +4,6 @@ import { db } from '@/lib/db'
 import { notifications, users, repositories } from '@/lib/db/schema'
 import { eq, and, gte } from 'drizzle-orm'
 import { sendWebhook } from './webhook'
-export { sendWebhook } from './webhook'
 
 export type NotificationEventType =
   | 'health_alert'

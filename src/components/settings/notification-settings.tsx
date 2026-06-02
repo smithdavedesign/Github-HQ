@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { saveNotificationSettings } from '@/lib/actions/notifications'
-import { sendWebhook } from '@/lib/notifications/dispatcher'
+import { sendWebhook } from '@/lib/notifications/webhook'
 
 interface NotificationSettingsProps {
   initialWebhookUrl: string
