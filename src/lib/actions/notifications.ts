@@ -80,7 +80,9 @@ export async function saveNotificationSettings(webhookUrl: string, healthAlertTh
 
   const threshold = Math.min(100, Math.max(0, Math.round(healthAlertThreshold)))
   const url = webhookUrl.trim()
-  if (url && !url.startsWith('http')) throw new Error('Webhook URL must start with http/https')
+  if (url) {
+    try { new URL(url) } catch { throw new Error('Webhook URL is not a valid URL') }
+  }
 
   await db
     .update(users)

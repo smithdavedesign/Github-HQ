@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   // Validate webhook secret
   const secret = request.headers.get('x-nexus-webhook-secret')
   const expected = process.env.NEXUS_WEBHOOK_SECRET
-  if (expected && secret !== expected) {
+  if (!expected || secret !== expected) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

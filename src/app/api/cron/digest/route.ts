@@ -4,11 +4,8 @@ import { users } from '@/lib/db/schema'
 import { generateDigest } from '@/lib/ai/digest'
 import { generateAdvisor } from '@/lib/ai/advisor'
 import { generateCeoReport } from '@/lib/ai/ceo-report'
+import { verifyCronSecret } from '@/lib/cron-auth'
 import { isNotNull } from 'drizzle-orm'
-
-function verifyCronSecret(request: Request): boolean {
-  return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
-}
 
 export async function GET(request: Request) {
   if (!verifyCronSecret(request)) {

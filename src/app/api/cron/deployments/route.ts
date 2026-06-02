@@ -2,11 +2,8 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { deployments } from '@/lib/db/schema'
 import { checkAllDeployments } from '@/lib/monitoring/uptime'
+import { verifyCronSecret } from '@/lib/cron-auth'
 import { eq } from 'drizzle-orm'
-
-function verifyCronSecret(request: Request): boolean {
-  return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
-}
 
 export async function GET(request: Request) {
   if (!verifyCronSecret(request)) {

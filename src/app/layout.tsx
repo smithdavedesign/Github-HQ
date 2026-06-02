@@ -17,6 +17,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'RepoHQ — GitHub Portfolio Health Dashboard',
   description: 'Monitor, score, and prioritize all your GitHub repositories in one place.',
+  openGraph: {
+    title: 'RepoHQ — GitHub Portfolio Health Dashboard',
+    description: 'Monitor, score, and prioritize all your GitHub repositories in one place.',
+    type: 'website',
+  },
+  twitter: { card: 'summary' },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

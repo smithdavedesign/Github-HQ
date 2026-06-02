@@ -363,12 +363,15 @@ export async function syncSingleRepo(
 
 async function resolveInternalDeps(depInfos: RepoDepInfo[]) {
   const depsMap = computeInternalDeps(depInfos)
-  for (const [repoId, internalDeps] of depsMap) {
-    await db
-      .update(repositoryMetrics)
-      .set({ internalDeps: internalDeps.length > 0 ? internalDeps : null })
-      .where(eq(repositoryMetrics.repoId, repoId))
-  }
+  if (depsMap.size === 0) return
+  await Promise.all(
+    Array.from(depsMap.entries()).map(([repoId, internalDeps]) =>
+      db
+        .update(repositoryMetrics)
+        .set({ internalDeps: internalDeps.length > 0 ? internalDeps : null })
+        .where(eq(repositoryMetrics.repoId, repoId))
+    )
+  )
 }
 
 function calculateDeploymentScore(deployments: { status: string | null }[]): number {

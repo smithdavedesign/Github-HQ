@@ -1,5 +1,5 @@
 import { toNum } from '@/lib/utils'
-import { getDashboardStats, getRepositories, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk, getProfileRecommendations, getShipItWarnings, getAgentStats } from '@/lib/actions/repositories'
+import { getDashboardStats, getRepositories, getRepositoriesSlim, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk, getProfileRecommendations, getShipItWarnings, getAgentStats } from '@/lib/actions/repositories'
 import { getPortfolioScoreTrend } from '@/lib/health/portfolio-snapshot'
 import { getWeeklyDiff } from '@/lib/actions/weekly-diff'
 import { MetricCard } from '@/components/dashboard/metric-card'
@@ -46,7 +46,7 @@ export default async function DashboardPage() {
 
   const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats] = await Promise.all([
     getDashboardStats(),
-    getRepositories(),
+    getRepositoriesSlim(),
     getOpportunityData(),
     getLifecycleDistribution(),
     getPortfolioValuation(),

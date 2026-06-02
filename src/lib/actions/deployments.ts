@@ -11,6 +11,8 @@ export async function addDeploymentUrl(repoId: number, url: string, name?: strin
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
+  try { new URL(url) } catch { throw new Error('Deployment URL is not a valid URL') }
+
   const repo = await db.query.repositories.findFirst({
     where: and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)),
   })

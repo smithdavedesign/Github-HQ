@@ -8,11 +8,8 @@ import { refreshGoalProgress } from '@/lib/actions/goals'
 import { syncStripeMrr } from '@/lib/actions/stripe'
 import { checkMergedAgentPRs, resolveActualDeltas } from '@/lib/agents/pr-merge-checker'
 import { checkHealthThresholdAlerts } from '@/lib/notifications/dispatcher'
+import { verifyCronSecret } from '@/lib/cron-auth'
 import { isNotNull } from 'drizzle-orm'
-
-function verifyCronSecret(request: Request): boolean {
-  return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
-}
 
 export async function GET(request: Request) {
   if (!verifyCronSecret(request)) {

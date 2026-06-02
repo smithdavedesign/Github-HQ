@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { db } from '@/lib/db'
 import { users, repositories, repositoryMetrics, healthScoreHistory, securityFindings } from '@/lib/db/schema'
-import { eq, and, gte, lte, avg, count, sql } from 'drizzle-orm'
+import { eq, and, gte, lte, avg, count, inArray } from 'drizzle-orm'
 import { HealthBadge } from '@/components/repos/health-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -77,7 +77,7 @@ export default async function QuarterlyReportPage({ params }: Props) {
       .from(healthScoreHistory)
       .where(
         and(
-          sql`${healthScoreHistory.repoId} = ANY(ARRAY[${sql.raw(repoIds.join(','))}]::int[])`,
+          inArray(healthScoreHistory.repoId, repoIds),
           gte(healthScoreHistory.recordedDate, start.toISOString().split('T')[0]),
           lte(healthScoreHistory.recordedDate, new Date(start.getTime() + 7 * 86400_000).toISOString().split('T')[0]),
         )
@@ -87,7 +87,7 @@ export default async function QuarterlyReportPage({ params }: Props) {
       .from(healthScoreHistory)
       .where(
         and(
-          sql`${healthScoreHistory.repoId} = ANY(ARRAY[${sql.raw(repoIds.join(','))}]::int[])`,
+          inArray(healthScoreHistory.repoId, repoIds),
           gte(healthScoreHistory.recordedDate, new Date(end.getTime() - 7 * 86400_000).toISOString().split('T')[0]),
           lte(healthScoreHistory.recordedDate, end.toISOString().split('T')[0]),
         )
@@ -106,7 +106,7 @@ export default async function QuarterlyReportPage({ params }: Props) {
     .from(securityFindings)
     .where(
       and(
-        sql`${securityFindings.repoId} = ANY(ARRAY[${sql.raw(repoIds.join(','))}]::int[])`,
+        inArray(securityFindings.repoId, repoIds),
         gte(securityFindings.createdAt, start),
         lte(securityFindings.createdAt, end),
       )

@@ -1,5 +1,6 @@
 'use server'
 
+import { cache } from 'react'
 import { auth } from '@/lib/auth'
 import { toNum } from '@/lib/utils'
 import { db } from '@/lib/db'
@@ -7,7 +8,7 @@ import { repositories, repositoryMetrics, techStack, deployments, securityFindin
 import { eq, and, sql, inArray, desc } from 'drizzle-orm'
 import { portfolioEvents } from '@/lib/db/schema'
 
-export async function getRepositories() {
+export const getRepositories = cache(async function getRepositories() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
@@ -26,6 +27,23 @@ export async function getRepositories() {
   // Sort by health score descending (health score lives on the related metrics table,
   // not on repositories, so ORDER BY in the lateral-join query won't work)
   return rows.sort((a, b) => (b.metrics?.healthScore ?? -1) - (a.metrics?.healthScore ?? -1))
+})
+
+/** Lightweight version for the dashboard top-5 table — avoids overfetching deployments + security findings */
+export async function getRepositoriesSlim() {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const rows = await db.query.repositories.findMany({
+    where: eq(repositories.userId, session.user.id),
+    columns: { id: true, name: true, visibility: true, mrr: true },
+    with: {
+      metrics: { columns: { healthScore: true, activityStatus: true } },
+      techStack: { columns: { frontend: true, language: true } },
+    },
+  })
+
+  return rows.sort((a, b) => (b.metrics?.healthScore ?? -1) - (a.metrics?.healthScore ?? -1))
 }
 
 export async function getRepositoryById(id: number) {
@@ -43,7 +61,7 @@ export async function getRepositoryById(id: number) {
   })
 }
 
-export async function getDashboardStats() {
+export const getDashboardStats = cache(async function getDashboardStats() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
@@ -95,7 +113,7 @@ export async function getDashboardStats() {
     monthlyProfit: totalMrr - totalCost,
     revenueCount: revenueStats[0]?.revenueCount ?? 0,
   }
-}
+})
 
 export async function toggleRevenueGenerating(repoId: number, value: boolean) {
   const session = await auth()
