@@ -25,7 +25,7 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { ArrowUpDown, ChevronDown, Download, ExternalLink, CheckCircle, XCircle, DollarSign, Bookmark, Trash2, Star } from 'lucide-react'
+import { ArrowUpDown, ChevronDown, Download, ExternalLink, CheckCircle, XCircle, DollarSign, Bookmark, Trash2, Star, GitPullRequest } from 'lucide-react'
 import Link from 'next/link'
 import { formatDistanceToNow, toNum } from '@/lib/utils'
 import { toggleRevenueGenerating } from '@/lib/actions/repositories'
@@ -145,10 +145,11 @@ function applyNLFilters(rows: RepoRow[], filters: NLQueryFilters): RepoRow[] {
   return result
 }
 
-export function RepoTable({ data, nlFilters, nlExplanation }: {
+export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
   data: RepoRow[]
   nlFilters?: NLQueryFilters | null
   nlExplanation?: string | null
+  openAgentPRs?: Record<number, { prUrl: string; taskId: string }>
 }) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'healthScore', desc: true }])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
@@ -178,27 +179,42 @@ export function RepoTable({ data, nlFilters, nlExplanation }: {
       id: 'name',
       accessorKey: 'name',
       header: 'Repository',
-      cell: ({ row }) => (
-        <div>
-          <div className="flex items-center gap-1.5">
-            <Link href={`/repos/${row.original.id}`} className="font-medium hover:underline">
-              {row.original.name}
-            </Link>
-            <a
-              href={`https://github.com/${row.original.fullName}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="Open on GitHub"
-            >
-              <ExternalLink className="w-3 h-3" />
-            </a>
+      cell: ({ row }) => {
+        const openPR = openAgentPRs?.[row.original.id]
+        return (
+          <div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Link href={`/repos/${row.original.id}`} className="font-medium hover:underline">
+                {row.original.name}
+              </Link>
+              <a
+                href={`https://github.com/${row.original.fullName}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Open on GitHub"
+              >
+                <ExternalLink className="w-3 h-3" />
+              </a>
+              {openPR?.prUrl && (
+                <a
+                  href={openPR.prUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-200 hover:bg-blue-500/20 transition-colors"
+                  title="Agent PR open — click to review"
+                >
+                  <GitPullRequest className="w-2.5 h-2.5" />
+                  PR open
+                </a>
+              )}
+            </div>
+            {row.original.description && (
+              <p className="text-xs text-muted-foreground truncate max-w-48 mt-0.5">{row.original.description}</p>
+            )}
           </div>
-          {row.original.description && (
-            <p className="text-xs text-muted-foreground truncate max-w-48 mt-0.5">{row.original.description}</p>
-          )}
-        </div>
-      ),
+        )
+      },
     },
     {
       id: 'visibility',
@@ -475,7 +491,7 @@ export function RepoTable({ data, nlFilters, nlExplanation }: {
           : <span className="text-xs text-muted-foreground">—</span>
       },
     },
-  ], [revenueLoading, handleRevenueToggle])
+  ], [revenueLoading, handleRevenueToggle, openAgentPRs])
 
   // Apply NL filters first, then let TanStack handle the rest
   const filteredData = nlFilters ? applyNLFilters(data, nlFilters) : data

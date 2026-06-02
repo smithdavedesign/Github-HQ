@@ -9,18 +9,21 @@ import { EffortMatrix } from '@/components/dashboard/effort-matrix'
 import { DepGraphCard } from '@/components/dashboard/dep-graph'
 import type { DepNode, DepEdge } from '@/components/dashboard/dep-graph'
 import { getPortfolioHealthTrend } from '@/lib/health/history'
+import { getAgentStats } from '@/lib/actions/repositories'
+import { AgentStatsBlock } from '@/components/dashboard/agent-stats-block'
 
 export default async function AnalyticsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [reposWithMetrics, healthTrend] = await Promise.all([
+  const [reposWithMetrics, healthTrend, agentStats] = await Promise.all([
     db.query.repositories.findMany({
       where: eq(repositories.userId, session.user.id),
       with: { metrics: true },
       columns: { id: true, name: true, estimatedEffort: true },
     }),
     getPortfolioHealthTrend(session.user.id),
+    getAgentStats(),
   ])
 
   const chartData = reposWithMetrics
@@ -77,6 +80,7 @@ export default async function AnalyticsPage() {
       <HealthTrendLineChart data={healthTrend} />
       <HealthTrendChart data={chartData} />
       <EffortMatrix repos={matrixRepos} />
+      {agentStats && <AgentStatsBlock stats={agentStats} />}
       <DepGraphCard nodes={depNodes} edges={depEdges} />
     </div>
   )

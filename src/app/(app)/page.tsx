@@ -1,5 +1,5 @@
 import { toNum } from '@/lib/utils'
-import { getDashboardStats, getRepositories, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk, getProfileRecommendations, getShipItWarnings } from '@/lib/actions/repositories'
+import { getDashboardStats, getRepositories, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk, getProfileRecommendations, getShipItWarnings, getAgentStats } from '@/lib/actions/repositories'
 import { getPortfolioScoreTrend } from '@/lib/health/portfolio-snapshot'
 import { getWeeklyDiff } from '@/lib/actions/weekly-diff'
 import { MetricCard } from '@/components/dashboard/metric-card'
@@ -17,6 +17,7 @@ import { ConcentrationRiskCard } from '@/components/dashboard/concentration-risk
 import { SimulationCard } from '@/components/dashboard/simulation-card'
 import { ProfileOptimizerCard } from '@/components/dashboard/profile-optimizer-card'
 import { ShipItCard } from '@/components/dashboard/ship-it-card'
+import { AgentImpactCard } from '@/components/dashboard/agent-impact-card'
 import { getGoals } from '@/lib/actions/goals'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -42,7 +43,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings] = await Promise.all([
+  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats] = await Promise.all([
     getDashboardStats(),
     getRepositories(),
     getOpportunityData(),
@@ -59,6 +60,7 @@ export default async function DashboardPage() {
     getProfileRecommendations(),
     db.query.users.findFirst({ where: eq(users.id, session.user.id), columns: { githubLogin: true, hoursPerWeek: true } }),
     getShipItWarnings(),
+    getAgentStats(),
   ])
 
   const topRepos = repos
@@ -121,6 +123,15 @@ export default async function DashboardPage() {
         <WeeklyDiffCard diff={weeklyDiff} />
         <ConcentrationRiskCard risk={concentrationRisk} />
       </div>
+
+      {agentStats && agentStats.merged > 0 && (
+        <AgentImpactCard
+          merged={agentStats.merged}
+          totalScoreGained={agentStats.totalScoreGained}
+          recentMergeCount={agentStats.recentMergeCount}
+          successRate={agentStats.successRate}
+        />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <PortfolioValuation totalValue={valuation.totalValue} valuedRepos={valuation.valuedRepos} revenueValue={valuation.revenueValue} totalRepos={stats.total} />

@@ -290,12 +290,20 @@
 - [x] 22 unit tests covering health formatting, last-push display, actionable-repo filtering, action picking
 
 ### Phase 46 — RepoHQ × AI-DevOps Nexus Integration (Personal First)
-- [ ] Phase A: "Queue" button on advisor actions → POST to Nexus `/internal/agent-tasks` (1-week validation gate before proceeding)
-- [ ] Phase A.5: Agent ROI & Accuracy Tracking — predictedDelta vs actualDelta, `/agent-performance` page
-- [ ] Phase B: Nexus agent reads `get_coding_brief` via RepoHQ MCP before execution (unlock at 70% accuracy)
-- [ ] Phase C: gstack skills as `AGENT_EXECUTION_COMMAND` per risk tier (docs → deps → CI → security)
-- [ ] Phase D: Webhook depth — PR status badges, feed events, portfolio integration
+- [x] Phase A: "Queue" button on advisor actions → POST to Nexus `/internal/agent-tasks`; stage-based UI (queued → preparing → running → PR ready → merged/failed/timed_out); 15-min timeout; substantial effort security gate
+- [x] Phase A.5: Agent ROI & Accuracy Tracking — predictedDelta vs actualDelta, `/agent-performance` page, accuracy notice for <5 merges
+- [x] Phase B: Nexus agent reads `get_coding_brief` via RepoHQ MCP before execution (brief-fetcher queries Neon directly)
+- [x] Phase C: gstack skills as `AGENT_EXECUTION_COMMAND` per risk tier — `scripts/gstack-ship.sh` (Tier 2), `scripts/gstack-investigate.sh` (Tier 3)
+- [x] Phase D-infra: Webhook loop — `agent_pr_created`, `agent_pr_merged`, `agent_execution_failed` events; auto-resync on merge via `after()`; status polling API
+- [ ] Phase D: Full agent observability — PR status badges on repo page + repo list, agent events in Portfolio Feed, analytics metrics, portfolio improvement attribution
 - [ ] Phase E: Auto-queue + batch approval (unlock after 6 months + 80% accuracy)
+
+### Phase 47 — Agent Observability & PR Tracking (next)
+- [ ] Repo list: "PR open →" badge on repos with an active agent PR (prevents double-queueing)
+- [ ] Repo detail: "Agent History" tab — all tasks queued, PR status + links, predicted vs actual delta per run
+- [ ] Portfolio Feed: agent events appear inline (PR opened, PR merged with actual delta, execution failed)
+- [ ] Analytics: agent summary block — tasks queued, PRs created, merged, success rate, avg time-to-PR, total score gained from agent merges
+- [ ] Dashboard: "Agent Impact" widget — X pts gained from agent PRs this month (portfolio improvement attribution)
 
 See [docs/agentic-execution-prd.md](agentic-execution-prd.md) for full PRD, architecture, and risk analysis.
 

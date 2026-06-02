@@ -7,9 +7,10 @@ import type { NLQueryFilters } from '@/app/api/nl-query/route'
 
 interface ReposClientProps {
   repos: Parameters<typeof RepoTable>[0]['data']
+  openAgentPRs?: Record<number, { prUrl: string; taskId: string }>
 }
 
-export function ReposClient({ repos }: ReposClientProps) {
+export function ReposClient({ repos, openAgentPRs }: ReposClientProps) {
   const [nlFilters, setNlFilters] = useState<NLQueryFilters | null>(null)
   const [nlExplanation, setNlExplanation] = useState<string | null>(null)
 
@@ -27,7 +28,7 @@ export function ReposClient({ repos }: ReposClientProps) {
         </p>
       </div>
       <NLQueryBar onFilters={handleFilters} />
-      <RepoTable data={repos} nlFilters={nlFilters} nlExplanation={nlExplanation} />
+      <RepoTable data={repos} nlFilters={nlFilters} nlExplanation={nlExplanation} openAgentPRs={openAgentPRs} />
     </div>
   )
 }

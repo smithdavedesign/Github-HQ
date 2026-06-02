@@ -8,7 +8,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
   TrendingDown, TrendingUp, XCircle, AlertTriangle,
-  ShieldAlert, Shield, Clock, Wrench, Activity,
+  ShieldAlert, Shield, Clock, Wrench, Activity, Bot, GitPullRequest, ExternalLink,
 } from 'lucide-react'
 import { formatDistanceToNow } from '@/lib/utils'
 import type { FeedEvent, FeedEventSeverity } from '@/lib/actions/feed'
@@ -33,6 +33,9 @@ const EVENT_ICONS: Record<FeedEvent['type'], typeof TrendingDown> = {
   no_tests:            Wrench,
   build_failing:       Activity,
   dep_cascade_risk:    AlertTriangle,
+  agent_pr_opened:     GitPullRequest,
+  agent_pr_merged:     Bot,
+  agent_failed:        Bot,
 }
 
 const ICON_COLORS: Record<FeedEventSeverity, string> = {
@@ -94,17 +97,28 @@ export default async function FeedPage({ searchParams }: PageProps) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2 flex-wrap">
                       <div>
-                        <Link
-                          href={`/repos/${event.repoId}`}
-                          className="text-sm font-medium hover:underline"
-                        >
-                          {event.repoName}
-                        </Link>
+                        {event.repoId > 0 ? (
+                          <Link href={`/repos/${event.repoId}`} className="text-sm font-medium hover:underline">
+                            {event.repoName}
+                          </Link>
+                        ) : (
+                          <span className="text-sm font-medium">{event.repoName}</span>
+                        )}
                         <p className="text-sm text-foreground mt-0.5">{event.description}</p>
-                        {event.detail && (
+                        {event.detail && !event.detail.startsWith('http') && (
                           <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-sm">
                             {event.detail}
                           </p>
+                        )}
+                        {typeof event.meta?.prUrl === 'string' && (
+                          <a
+                            href={event.meta.prUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:underline mt-0.5 inline-flex items-center gap-1"
+                          >
+                            View PR <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
                         )}
                       </div>
                       <span className="text-xs text-muted-foreground shrink-0">

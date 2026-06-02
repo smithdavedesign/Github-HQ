@@ -1,10 +1,13 @@
 import { getRepositoryById } from '@/lib/actions/repositories'
+import { db } from '@/lib/db'
+import { portfolioEvents } from '@/lib/db/schema'
+import { and, eq, inArray, desc } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import { HealthBadge, ActivityBadge } from '@/components/repos/health-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ExternalLink, GitFork, Star, AlertTriangle, Lock, Globe, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { ExternalLink, GitFork, Star, AlertTriangle, Lock, Globe, CheckCircle, XCircle, Clock, Bot, GitPullRequest, GitMerge } from 'lucide-react'
 // ExternalLink used in header homepage link
 import { formatDistanceToNow } from '@/lib/utils'
 import { CommitActivityChart } from '@/components/repos/commit-activity-chart'
@@ -27,7 +30,18 @@ type Props = { params: Promise<{ id: string }> }
 
 export default async function RepoDetailPage({ params }: Props) {
   const { id } = await params
-  const repo = await getRepositoryById(Number(id))
+  const repoId = Number(id)
+  const [repo, agentHistory] = await Promise.all([
+    getRepositoryById(repoId),
+    db.query.portfolioEvents.findMany({
+      where: and(
+        eq(portfolioEvents.repoId, repoId),
+        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_execution_failed']),
+      ),
+      orderBy: [desc(portfolioEvents.occurredAt)],
+      limit: 30,
+    }),
+  ])
   if (!repo) notFound()
 
   const metrics = repo.metrics
@@ -147,6 +161,12 @@ export default async function RepoDetailPage({ params }: Props) {
           <TabsTrigger value="deployments">Deployments</TabsTrigger>
           <TabsTrigger value="revenue">Revenue</TabsTrigger>
           <TabsTrigger value="ai">AI Summary</TabsTrigger>
+          <TabsTrigger value="agent">
+            Agent
+            {agentHistory.length > 0 && (
+              <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-xs">{agentHistory.length}</Badge>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         {/* Overview */}
@@ -351,6 +371,74 @@ export default async function RepoDetailPage({ params }: Props) {
                   </ol>
                 </Card>
               )}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Agent History */}
+        <TabsContent value="agent" className="pt-4">
+          {agentHistory.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground text-sm">
+              <Bot className="w-8 h-8 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No agent activity yet</p>
+              <p className="text-xs mt-1">Queue an advisor action to run the agent on this repo</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {agentHistory.map(event => {
+                const meta = event.metadata as Record<string, unknown> | null
+                const prUrl = meta?.prUrl as string | undefined
+                const predictedDelta = meta?.predictedDelta as string | undefined
+                const actualDelta = meta?.actualDelta as number | undefined
+
+                const isQueued  = event.eventType === 'agent_task_queued'
+                const isCreated = event.eventType === 'agent_pr_created'
+                const isMerged  = event.eventType === 'agent_pr_merged'
+                const isFailed  = event.eventType === 'agent_execution_failed'
+
+                const Icon = isMerged ? GitMerge : isCreated ? GitPullRequest : isQueued ? Clock : Bot
+                const iconColor = isMerged ? 'text-emerald-500' : isCreated ? 'text-blue-500' : isFailed ? 'text-red-400' : 'text-muted-foreground'
+                const label = isQueued ? 'Queued' : isCreated ? 'PR Created' : isMerged ? 'Merged' : 'Failed'
+                const labelColor = isMerged
+                  ? 'bg-emerald-500/10 text-emerald-600 border-emerald-200'
+                  : isCreated
+                    ? 'bg-blue-500/10 text-blue-600 border-blue-200'
+                    : isFailed
+                      ? 'bg-red-500/10 text-red-600 border-red-200'
+                      : 'bg-muted text-muted-foreground border-border/60'
+
+                return (
+                  <div key={event.id} className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-muted/10">
+                    <Icon className={`w-4 h-4 shrink-0 mt-0.5 ${iconColor}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className={`text-[10px] px-1.5 ${labelColor}`}>{label}</Badge>
+                        <p className="text-sm font-medium truncate">{event.title}</p>
+                      </div>
+                      {event.description && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>
+                      )}
+                      <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground flex-wrap">
+                        {predictedDelta && <span>Predicted: {predictedDelta}</span>}
+                        {actualDelta != null && (
+                          <span className={actualDelta > 0 ? 'text-emerald-600' : 'text-muted-foreground'}>
+                            Actual: {actualDelta > 0 ? '+' : ''}{actualDelta} pts
+                          </span>
+                        )}
+                        {typeof meta?.agentName === 'string' && <span>{meta.agentName}</span>}
+                        {prUrl && (
+                          <a href={prUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground flex items-center gap-0.5">
+                            View PR <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      {formatDistanceToNow(event.occurredAt)}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           )}
         </TabsContent>

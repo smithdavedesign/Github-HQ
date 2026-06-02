@@ -6,7 +6,8 @@ import {
   repositories, repositoryMetrics, deployments,
   securityFindings, healthScoreHistory,
 } from '@/lib/db/schema'
-import { eq, and, lt, inArray, desc } from 'drizzle-orm'
+import { eq, and, lt, gte, inArray, desc } from 'drizzle-orm'
+import { portfolioEvents } from '@/lib/db/schema'
 
 export type FeedEventSeverity = 'critical' | 'warning' | 'info' | 'positive'
 
@@ -14,13 +15,14 @@ export interface FeedEvent {
   id: string
   type: 'health_drop' | 'health_improved' | 'deployment_down' | 'deployment_slow' |
         'security_critical' | 'security_high' | 'dormant' | 'no_tests' | 'build_failing' |
-        'dep_cascade_risk'
+        'dep_cascade_risk' | 'agent_pr_opened' | 'agent_pr_merged' | 'agent_failed'
   repoId: number
   repoName: string
   description: string
   detail?: string
   severity: FeedEventSeverity
   date: Date
+  meta?: Record<string, unknown>
 }
 
 export async function getPortfolioFeed(): Promise<FeedEvent[]> {
@@ -205,6 +207,69 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
           date: depRepo.metrics.calculatedAt ?? new Date(),
         })
       }
+    }
+  }
+
+  // ── Agent events (last 30 days) ───────────────────────────────────────────
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000)
+  const agentEvents = await db.query.portfolioEvents.findMany({
+    where: and(
+      eq(portfolioEvents.userId, userId),
+      inArray(portfolioEvents.eventType, ['agent_pr_created', 'agent_pr_merged', 'agent_execution_failed']),
+      gte(portfolioEvents.occurredAt, thirtyDaysAgo),
+    ),
+    orderBy: [desc(portfolioEvents.occurredAt)],
+    with: { repository: { columns: { name: true } } },
+    limit: 20,
+  })
+
+  const repoNamesById = new Map(userRepos.map(r => [r.id, r.name]))
+
+  for (const ae of agentEvents) {
+    const meta = ae.metadata as Record<string, unknown> | null
+    const repoName = ae.repository?.name ?? (meta?.repoHQRepoName as string) ?? (ae.repoId ? (repoNamesById.get(ae.repoId) ?? '—') : '—')
+    const repoId = ae.repoId ?? 0
+    const prUrl = meta?.prUrl as string | undefined
+
+    if (ae.eventType === 'agent_pr_created') {
+      events.push({
+        id: `agent_pr_created_${ae.id}`,
+        type: 'agent_pr_opened',
+        repoId,
+        repoName,
+        description: 'Agent PR opened',
+        detail: prUrl ?? (meta?.predictedDelta ? `Predicted: ${meta.predictedDelta}` : undefined),
+        severity: 'info',
+        date: ae.occurredAt,
+        meta: meta ?? undefined,
+      })
+    } else if (ae.eventType === 'agent_pr_merged') {
+      const actualDelta = meta?.actualDelta as number | undefined
+      events.push({
+        id: `agent_pr_merged_${ae.id}`,
+        type: 'agent_pr_merged',
+        repoId,
+        repoName,
+        description: actualDelta != null && actualDelta > 0
+          ? `Agent PR merged (+${actualDelta} pts)`
+          : 'Agent PR merged',
+        detail: prUrl ?? undefined,
+        severity: 'positive',
+        date: ae.occurredAt,
+        meta: meta ?? undefined,
+      })
+    } else if (ae.eventType === 'agent_execution_failed') {
+      events.push({
+        id: `agent_failed_${ae.id}`,
+        type: 'agent_failed',
+        repoId,
+        repoName,
+        description: 'Agent execution failed',
+        detail: meta?.error as string | undefined,
+        severity: 'warning',
+        date: ae.occurredAt,
+        meta: meta ?? undefined,
+      })
     }
   }
 
