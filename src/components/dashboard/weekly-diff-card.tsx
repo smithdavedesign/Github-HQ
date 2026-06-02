@@ -1,21 +1,27 @@
+'use client'
+
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { WeeklyDiff } from '@/lib/actions/weekly-diff'
 import {
   TrendingUp, TrendingDown, Rocket, Archive,
-  DollarSign, ShieldAlert, CalendarDays,
+  DollarSign, ShieldAlert, CalendarDays, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import Link from 'next/link'
 
-const MAX_ROWS = 5
+// Rows visible before the accordion expands
+const DEFAULT_VISIBLE = 3
 
 interface Props {
   diff: WeeklyDiff
 }
 
 export function WeeklyDiffCard({ diff }: Props) {
+  const [expanded, setExpanded] = useState(false)
+
   if (!diff.hasData) return null
 
-  // Build a flat ordered list: health movers first (highest signal), then new/archived, MRR, security
+  // Build a flat priority-ordered list
   type Row = { key: string; icon: React.ReactNode; label: string; detail: string; repoId: number; positive?: boolean }
   const rows: Row[] = []
 
@@ -61,8 +67,8 @@ export function WeeklyDiffCard({ diff }: Props) {
     label: r.repoName, detail: 'Archived', repoId: r.repoId,
   })
 
-  const visible = rows.slice(0, MAX_ROWS)
-  const overflow = rows.length - MAX_ROWS
+  const visible = expanded ? rows : rows.slice(0, DEFAULT_VISIBLE)
+  const hiddenCount = rows.length - DEFAULT_VISIBLE
 
   return (
     <Card className="card-elevated">
@@ -71,6 +77,11 @@ export function WeeklyDiffCard({ diff }: Props) {
           <div className="flex items-center gap-2">
             <CalendarDays className="w-4 h-4 text-muted-foreground" />
             <CardTitle className="text-sm font-semibold">This Week</CardTitle>
+            {rows.length > 0 && (
+              <span className="text-[10px] text-muted-foreground tabular-nums">
+                {rows.length} change{rows.length !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
           <Link href="/feed" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
             Feed →
@@ -81,16 +92,29 @@ export function WeeklyDiffCard({ diff }: Props) {
         {visible.map(row => (
           <DiffRow key={row.key} icon={row.icon} label={row.label} detail={row.detail} repoId={row.repoId} positive={row.positive} />
         ))}
-        {overflow > 0 && (
-          <p className="text-xs text-muted-foreground pt-0.5">
-            +{overflow} more —{' '}
-            <Link href="/feed" className="underline hover:text-foreground">
-              view in Feed
-            </Link>
-          </p>
-        )}
+
         {rows.length === 0 && (
           <p className="text-xs text-muted-foreground">No changes this week.</p>
+        )}
+
+        {/* Accordion toggle — only shown when there are hidden rows */}
+        {hiddenCount > 0 && (
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors pt-0.5 w-full"
+          >
+            {expanded ? (
+              <>
+                <ChevronUp className="w-3 h-3 shrink-0" />
+                Show less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-3 h-3 shrink-0" />
+                {hiddenCount} more change{hiddenCount !== 1 ? 's' : ''}
+              </>
+            )}
+          </button>
         )}
       </CardContent>
     </Card>
