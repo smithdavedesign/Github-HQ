@@ -79,6 +79,14 @@ export const users = pgTable('users', {
   // Phase 49: Push notifications
   notificationWebhookUrl: text('notification_webhook_url'),
   healthAlertThreshold: integer('health_alert_threshold').default(55),
+  // Phase 53: Auto-dispatch (agentic workforce)
+  autoDispatchEnabled:           boolean('auto_dispatch_enabled').default(false),
+  autoDispatchEffortGate:        text('auto_dispatch_effort_gate').default('quick_only'),
+  // 'quick_only' | 'quick_and_medium' | 'all'
+  autoDispatchMaxPerRun:         integer('auto_dispatch_max_per_run').default(3),
+  autoDispatchSkipSecurity:      boolean('auto_dispatch_skip_security').default(true),
+  autoDispatchAccuracyThreshold: integer('auto_dispatch_accuracy_threshold').default(0),
+  // 0 = disabled; 50/80 = min success rate required before auto-dispatching that impactType
 })
 
 // ─── Repositories ─────────────────────────────────────────────────────────────
@@ -126,6 +134,8 @@ export const repositories = pgTable('repositories', {
   // Phase 5: Deep Claude analysis
   claudeAnalysis: jsonb('claude_analysis'), // { architecture, security, quality, techDebt, recommendations, score }
   claudeAnalysisAt: timestamp('claude_analysis_at', { mode: 'date' }),
+  // Phase 54-T1: Cached coding brief — written after each sync, served to MCP + Nexus
+  cachedBrief: jsonb('cached_brief').$type<{ raw: string; generatedAt: string } | null>(),
   createdAt: timestamp('created_at', { mode: 'date' }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull(),
   syncedAt: timestamp('synced_at', { mode: 'date' }).defaultNow(),
@@ -266,6 +276,8 @@ export const digests = pgTable('digests', {
   content: jsonb('content').notNull(),         // DigestContent: { summary, priorities[], generatedAt }
   advisorContent: jsonb('advisor_content'),    // AdvisorContent: { headline, actions[], portfolioInsight }
   ceoReport: jsonb('ceo_report'),              // Phase 24: CeoReportContent
+  // Phase 54-T2: Memoised repo context passed to advisor prompt (invalidated on sync)
+  advisorRepoSnapshot: jsonb('advisor_repo_snapshot').$type<{ repoLines: string; generatedAt: string } | null>(),
   generatedAt: timestamp('generated_at', { mode: 'date' }).defaultNow(),
 }, (table) => [
   index('digests_user_id_idx').on(table.userId),

@@ -2,9 +2,11 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { generateDigest } from '@/lib/ai/digest'
-import { generateAdvisor } from '@/lib/ai/advisor'
+import { generateAdvisor, getLatestAdvisor } from '@/lib/ai/advisor'
 import { generateCeoReport } from '@/lib/ai/ceo-report'
 import { verifyCronSecret } from '@/lib/cron-auth'
+import { autoDispatchAdvisorActions } from '@/lib/actions/nexus'
+import { getAccuracyByImpactType } from '@/lib/actions/advisor-accuracy'
 import { isNotNull } from 'drizzle-orm'
 
 export async function GET(request: Request) {
@@ -14,11 +16,19 @@ export async function GET(request: Request) {
 
   const allUsers = await db.query.users.findMany({
     where: isNotNull(users.githubToken),
-    columns: { id: true },
+    columns: {
+      id: true,
+      autoDispatchEnabled: true,
+      autoDispatchEffortGate: true,
+      autoDispatchMaxPerRun: true,
+      autoDispatchSkipSecurity: true,
+      autoDispatchAccuracyThreshold: true,
+    },
   })
 
   let processed = 0
   const errors: string[] = []
+  let totalAutoQueued = 0
 
   for (const user of allUsers) {
     try {
@@ -28,11 +38,39 @@ export async function GET(request: Request) {
         generateAdvisor(user.id),
         generateCeoReport(user.id),
       ])
+
+      // Auto-dispatch eligible advisor actions if enabled
+      if (user.autoDispatchEnabled) {
+        try {
+          const [advisor, accuracyStats] = await Promise.all([
+            getLatestAdvisor(user.id),
+            getAccuracyByImpactType(user.id),
+          ])
+          if (advisor) {
+            const dispatchResult = await autoDispatchAdvisorActions(
+              user.id,
+              advisor,
+              {
+                autoDispatchEnabled:           user.autoDispatchEnabled ?? false,
+                autoDispatchEffortGate:        user.autoDispatchEffortGate ?? 'quick_only',
+                autoDispatchMaxPerRun:         user.autoDispatchMaxPerRun ?? 3,
+                autoDispatchSkipSecurity:      user.autoDispatchSkipSecurity ?? true,
+                autoDispatchAccuracyThreshold: user.autoDispatchAccuracyThreshold ?? 0,
+              },
+              accuracyStats,
+            )
+            totalAutoQueued += dispatchResult.queued
+          }
+        } catch (dispatchErr) {
+          console.warn('[digest-cron] auto-dispatch failed:', dispatchErr instanceof Error ? dispatchErr.message : dispatchErr)
+        }
+      }
+
       processed++
     } catch (err) {
       errors.push(err instanceof Error ? err.message : 'Unknown error')
     }
   }
 
-  return NextResponse.json({ ok: true, processed, errors })
+  return NextResponse.json({ ok: true, processed, errors, autoQueued: totalAutoQueued })
 }

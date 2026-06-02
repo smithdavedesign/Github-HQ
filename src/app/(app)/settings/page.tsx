@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { formatDistanceToNow } from '@/lib/utils'
-import { Shield, Clock, GitFork, Cpu, Target, CreditCard, FileCode, Sparkles, Workflow, Bell } from 'lucide-react'
+import { Shield, Clock, GitFork, Cpu, Target, CreditCard, FileCode, Sparkles, Workflow, Bell, Bot } from 'lucide-react'
 import { PublicProfileToggle } from '@/components/settings/public-profile-toggle'
 import { GoalManager } from '@/components/settings/goal-manager'
 import { HoursInput } from '@/components/settings/hours-input'
@@ -17,17 +17,19 @@ import { StripeConnect } from '@/components/settings/stripe-connect'
 import { ProfileReadmeGenerator } from '@/components/settings/profile-readme-generator'
 import { LLMSettings } from '@/components/settings/llm-settings'
 import { NotificationSettings } from '@/components/settings/notification-settings'
+import { AutoDispatchSettings } from '@/components/settings/auto-dispatch-settings'
 import { getLLMSettings } from '@/lib/actions/llm'
 import { getGoals } from '@/lib/actions/goals'
 import { hasStripeKey, stripeKeySource } from '@/lib/actions/stripe'
 import { getNotificationSettings } from '@/lib/actions/notifications'
+import { getAutoDispatchSettings } from '@/lib/actions/auto-dispatch-settings'
 import { repositories } from '@/lib/db/schema'
 
 export default async function SettingsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [user, recentScans, activeGoals, stripeConnected, stripeSource, repoList, llmSettings, notifSettings] = await Promise.all([
+  const [user, recentScans, activeGoals, stripeConnected, stripeSource, repoList, llmSettings, notifSettings, autoDispatchSettingsData] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, session.user.id),
       columns: { id: true, name: true, email: true, image: true, githubLogin: true, lastSyncedAt: true, createdAt: true, publicProfile: true, hoursPerWeek: true },
@@ -47,6 +49,7 @@ export default async function SettingsPage() {
     }),
     getLLMSettings(),
     getNotificationSettings(),
+    getAutoDispatchSettings(),
   ])
 
   const initials = session.user.name?.split(' ').map((n) => n[0]).join('').toUpperCase() ?? '?'
@@ -87,6 +90,28 @@ export default async function SettingsPage() {
           <NotificationSettings
             initialWebhookUrl={notifSettings?.webhookUrl ?? ''}
             initialThreshold={notifSettings?.healthAlertThreshold ?? 55}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Auto-dispatch */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Bot className="w-4 h-4 text-indigo-500" />
+            Agent Auto-Dispatch
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Automatically queue advisor actions on Monday morning. You wake up with PRs ready to review.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <AutoDispatchSettings
+            initialEnabled={autoDispatchSettingsData?.autoDispatchEnabled ?? false}
+            initialEffortGate={autoDispatchSettingsData?.autoDispatchEffortGate ?? 'quick_only'}
+            initialMaxPerRun={autoDispatchSettingsData?.autoDispatchMaxPerRun ?? 3}
+            initialSkipSecurity={autoDispatchSettingsData?.autoDispatchSkipSecurity ?? true}
+            initialAccuracyThreshold={autoDispatchSettingsData?.autoDispatchAccuracyThreshold ?? 0}
           />
         </CardContent>
       </Card>

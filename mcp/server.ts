@@ -376,6 +376,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'get_coding_brief': {
         const repoName = (args as { repo_name: string }).repo_name
+
+        // Phase 54-T1: Serve from cache if fresh (populated by sync, cleared on next sync)
+        const cachedRepo = await db.query.repositories.findFirst({
+          where: and(eq(schema.repositories.userId, USER_ID!), eq(schema.repositories.name, repoName)),
+          columns: { id: true, cachedBrief: true },
+        })
+        if (cachedRepo?.cachedBrief) {
+          const cached = cachedRepo.cachedBrief as { raw: string; generatedAt: string }
+          const ageMs = Date.now() - new Date(cached.generatedAt).getTime()
+          const SIX_HOURS = 6 * 60 * 60 * 1000
+          if (ageMs < SIX_HOURS && cached.raw) {
+            return { content: [{ type: 'text', text: cached.raw + '\n\n_[served from cache — regenerates on next sync]_' }] }
+          }
+        }
+
         const repo = await db.query.repositories.findFirst({
           where: and(eq(schema.repositories.userId, USER_ID), eq(schema.repositories.name, repoName)),
           with: {
@@ -531,7 +546,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         lines.push(`_Use \`log_attempt\` after each automated action and \`log_session_complete\` when done._`)
 
-        return { content: [{ type: 'text', text: lines.join('\n') }] }
+        const briefText = lines.join('\n')
+
+        // Write to cache (TTL enforced on read; sync invalidates by setting null)
+        if (repo.id) {
+          db.update(schema.repositories)
+            .set({ cachedBrief: { raw: briefText, generatedAt: new Date().toISOString() } })
+            .where(eq(schema.repositories.id, repo.id))
+            .catch(() => {}) // fire-and-forget, never fail the brief
+        }
+
+        return { content: [{ type: 'text', text: briefText }] }
       }
 
       case 'get_next_action': {

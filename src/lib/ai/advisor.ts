@@ -145,20 +145,32 @@ export async function generateAdvisor(userId: string): Promise<AdvisorContent> {
   const totalValue = userRepos.reduce((sum, r) => sum + (r.metrics?.estimatedValue ?? 0), 0)
   const avgOpp = Math.round(repoAnalysis.reduce((sum, r) => sum + r.opportunityScore, 0) / repoAnalysis.length)
 
-  const repoLines = repoAnalysis.slice(0, 20).map(r => {
-    const deltaLines: string[] = []
-    if (r.deltas.withDeploy !== null && r.deltas.withDeploy > 0) deltaLines.push(`+${r.deltas.withDeploy}pts if deployed`)
-    if (r.deltas.withSecurity !== null && r.deltas.withSecurity > 0) deltaLines.push(`+${r.deltas.withSecurity}pts if security fixed`)
-    if (r.deltas.withActivity !== null && r.deltas.withActivity > 0) deltaLines.push(`+${r.deltas.withActivity}pts if active`)
-    if (r.deltas.withRevenue !== null && r.deltas.withRevenue > 0) deltaLines.push(`+${r.deltas.withRevenue}pts if $100 MRR`)
+  // Phase 54-T2: Check for memoised repo snapshot to avoid recomputing deltas
+  const latestDigestForSnapshot = await db.query.digests.findFirst({
+    where: eq(digests.userId, userId),
+    orderBy: (d, { desc }) => [desc(d.generatedAt)],
+    columns: { advisorRepoSnapshot: true },
+  })
+  const snapshot = latestDigestForSnapshot?.advisorRepoSnapshot as { repoLines: string; generatedAt: string } | null
+  const snapshotAge = snapshot ? Date.now() - new Date(snapshot.generatedAt).getTime() : Infinity
+  const SNAPSHOT_TTL_MS = 23 * 60 * 60 * 1000 // 23h — recompute at most once per day
 
-    return [
-      `[${r.id}] ${r.name} (opp=${r.opportunityScore} health=${r.healthScore} act=${r.activityScore} sec=${r.securityScore})`,
-      `  mrr=$${r.mrr} stars=${r.stars} lifecycle=${r.lifecycle} build=${r.buildStatus ?? 'none'}`,
-      `  ${r.openCritical} critical/high security alerts  deployed=${r.hasLiveDeploy}`,
-      deltaLines.length ? `  GAINS: ${deltaLines.join(', ')}` : '  no easy gains detected',
-    ].join('\n')
-  }).join('\n\n')
+  const repoLines = (snapshot && snapshotAge < SNAPSHOT_TTL_MS)
+    ? snapshot.repoLines
+    : repoAnalysis.slice(0, 20).map(r => {
+        const deltaLines: string[] = []
+        if (r.deltas.withDeploy !== null && r.deltas.withDeploy > 0) deltaLines.push(`+${r.deltas.withDeploy}pts if deployed`)
+        if (r.deltas.withSecurity !== null && r.deltas.withSecurity > 0) deltaLines.push(`+${r.deltas.withSecurity}pts if security fixed`)
+        if (r.deltas.withActivity !== null && r.deltas.withActivity > 0) deltaLines.push(`+${r.deltas.withActivity}pts if active`)
+        if (r.deltas.withRevenue !== null && r.deltas.withRevenue > 0) deltaLines.push(`+${r.deltas.withRevenue}pts if $100 MRR`)
+
+        return [
+          `[${r.id}] ${r.name} (opp=${r.opportunityScore} health=${r.healthScore} act=${r.activityScore} sec=${r.securityScore})`,
+          `  mrr=$${r.mrr} stars=${r.stars} lifecycle=${r.lifecycle} build=${r.buildStatus ?? 'none'}`,
+          `  ${r.openCritical} critical/high security alerts  deployed=${r.hasLiveDeploy}`,
+          deltaLines.length ? `  GAINS: ${deltaLines.join(', ')}` : '  no easy gains detected',
+        ].join('\n')
+      }).join('\n\n')
 
   const graveyardSection = graveyardRepos.length > 0
     ? `\n\nGRAVEYARD — ideas already abandoned (avoid recommending the same direction):\n${graveyardRepos.map(r => `- ${r.name}${r.abandonmentReason ? ` (reason: ${r.abandonmentReason})` : ''}${r.description ? ` — ${r.description}` : ''}`).join('\n')}`
@@ -236,16 +248,19 @@ Rules:
     orderBy: (d, { desc }) => [desc(d.generatedAt)],
   })
 
+  // Store advisor content + fresh repo snapshot (invalidates after 23h or next sync)
+  const freshSnapshot = { repoLines, generatedAt: new Date().toISOString() }
+
   if (latestDigest) {
     await db.update(digests)
-      .set({ advisorContent: result })
+      .set({ advisorContent: result, advisorRepoSnapshot: freshSnapshot })
       .where(eq(digests.id, latestDigest.id))
   } else {
-    // No digest yet — create a stub record to hold the advisor content
     await db.insert(digests).values({
       userId,
       content: { summary: '', priorities: [], generatedAt: new Date().toISOString() },
       advisorContent: result,
+      advisorRepoSnapshot: freshSnapshot,
     })
   }
 

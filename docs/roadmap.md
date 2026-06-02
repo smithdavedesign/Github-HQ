@@ -353,6 +353,26 @@ The longer the system runs, the better its recommendations get. Every merged age
 - [x] **52-D: UI** — `AccuracyTable` component on `/agent-performance` replacing "X of 5 needed" placeholder; per-row signal labels (Strong/Mixed/Weak/Building); trend arrows (↑↓) from time-decayed rate; confidence emoji badges (🟢🟡🔴⚪) on each AdvisorCard action
 - [x] **52-E: MCP + digest** — `get_accuracy_report()` MCP tool with full calibration table + downgraded repos; `get_next_action()` now includes confidence line per impactType; monthly digest (first Monday) auto-includes accuracy summary in stored content
 
+### Phase 53 — Auto-Dispatch (Agentic Workforce) ✅
+Wake up Monday morning with PRs ready to review — no clicking required.
+
+- [x] Schema: `autoDispatchEnabled`, `autoDispatchEffortGate`, `autoDispatchMaxPerRun`, `autoDispatchSkipSecurity`, `autoDispatchAccuracyThreshold` on `users`
+- [x] `queueAdvisorActionForUser(userId, action)` — session-less queue function safe for cron context
+- [x] `autoDispatchAdvisorActions(userId, advisor, settings, accuracyStats)` — filter pipeline: effort gate → security gate → accuracy gate → lifecycle guard → queue up to max
+- [x] Digest cron hook: after `generateAdvisor()`, auto-dispatches eligible actions if `autoDispatchEnabled`
+- [x] Settings UI card: toggle, effort gate (quick / quick+medium / all), max per week, skip security, accuracy threshold
+- [x] `autoDispatchAccuracyThreshold`: only dispatches action types with ≥N% success rate (0 = always dispatch); skips if insufficient data (not enough signal yet)
+- [x] 14 unit tests for filter logic covering effort/security/accuracy/maxPerRun rules
+
+### Phase 54 — Token Efficiency ✅
+Prevents redundant DB queries and token spend as agent volume grows.
+
+- [x] **T1: `cachedBrief`** — `repositories.cached_brief JSONB`; written by `get_coding_brief` after generation, cleared on each sync; subsequent calls within 6h served from cache with 0 DB queries (saves ~25K tokens at 100 agents)
+- [x] **T2: `advisorRepoSnapshot`** — `digests.advisor_repo_snapshot JSONB`; stores the compiled repo lines sent to Claude; reused for 23h then recomputed; invalidated on sync (saves ~2,500 tokens per advisor run)
+- [ ] **T3: Brief freshness signal** (`briefStaleAt` timestamp, event-driven) — future
+- [ ] **T4: Context compression** (distil sessions+attempts weekly via Sunday cron) — future
+- [ ] **T5: pgvector** (semantic repo matching, outcome clustering) — future when 50+ repos with history
+
 ### Phase 40 — Open-Source Template / Deploy-to-Vercel
 - [x] README rewritten — Deploy to Vercel button, full setup guide (8 steps), all services documented
 - [x] Local dev OAuth app separation documented (production vs localhost)

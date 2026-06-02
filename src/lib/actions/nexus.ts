@@ -4,8 +4,10 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { portfolioEvents, repositories, users } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
-import type { AdvisorAction } from '@/lib/ai/advisor'
+import type { AdvisorAction, AdvisorContent } from '@/lib/ai/advisor'
 import { getRepoLifecycle, BLOCKING_STAGES } from '@/lib/agents/lifecycle'
+import type { AccuracyStats } from '@/lib/actions/advisor-accuracy'
+import { MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy-utils'
 
 export type NexusTaskStatus = 'queued' | 'preparing' | 'ready' | 'failed' | 'unknown'
 
@@ -130,6 +132,151 @@ async function _queueAdvisorAction(action: AdvisorAction): Promise<QueuedTask> {
     status:   (data.status ?? 'queued') as NexusTaskStatus,
     nexusUrl: `${config.url}/learn/review-queue`,
   }
+}
+
+// ─── Session-less queue function (for cron / auto-dispatch) ──────────────────
+
+/**
+ * Queues an advisor action for a known userId without requiring a browser session.
+ * Safe to call from cron routes — cron auth is verified upstream by verifyCronSecret().
+ * Returns null (and logs a warning) on lifecycle blocking or Nexus error rather than throwing.
+ */
+export async function queueAdvisorActionForUser(
+  userId: string,
+  action: AdvisorAction,
+): Promise<{ taskId: string; nexusUrl: string } | null> {
+  const config = getNexusConfig()
+  if (!config) return null
+
+  const lifecycle = await getRepoLifecycle(userId, action.repoId)
+  if (BLOCKING_STAGES.has(lifecycle.stage)) return null  // task already in flight
+
+  const repo = await db.query.repositories.findFirst({
+    where: and(eq(repositories.id, action.repoId), eq(repositories.userId, userId)),
+    columns: { fullName: true, name: true },
+  })
+  if (!repo) return null
+
+  const riskTier  = resolveRiskTier(action)
+  const objective = `${action.action}\n\nContext: ${action.reasoning}\nExpected impact: ${action.estimatedImpact}`
+
+  try {
+    const res = await fetch(`${config.url}/internal/agent-tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.token}` },
+      body: JSON.stringify({
+        objective,
+        targetRepository:   repo.fullName,
+        executionMode:      action.impactType === 'security' ? 'investigate' : 'fix',
+        acceptanceCriteria: buildAcceptanceCriteria(action),
+        contextNotes: JSON.stringify({
+          repoHQRepoId:    action.repoId,
+          repoHQRepoName:  action.repoName,
+          impactType:      action.impactType,
+          effort:          action.effort,
+          estimatedImpact: action.estimatedImpact,
+          riskTier,
+          predictedDelta:  action.estimatedImpact,
+          source:          'repohq-auto-dispatch',
+          autoExecute:     action.effort !== 'substantial',
+        }),
+      }),
+    })
+    if (!res.ok) {
+      console.warn(`[auto-dispatch] Nexus error for ${action.repoName}:`, res.status)
+      return null
+    }
+
+    const data = await res.json() as { agentTaskId: string; status: string }
+
+    await db.insert(portfolioEvents).values({
+      userId,
+      repoId:    action.repoId,
+      eventType: 'agent_task_queued',
+      title:     `Auto-queued: ${action.action.slice(0, 80)}`,
+      description: objective,
+      metadata: {
+        taskId:         data.agentTaskId,
+        nexusStatus:    data.status,
+        predictedDelta: action.estimatedImpact,
+        impactType:     action.impactType,
+        effort:         action.effort,
+        riskTier,
+        nexusUrl:       config.url,
+        autoDispatched: true,
+      },
+    })
+
+    return { taskId: data.agentTaskId, nexusUrl: `${config.url}/learn/review-queue` }
+  } catch (err) {
+    console.warn('[auto-dispatch] failed to queue:', err instanceof Error ? err.message : err)
+    return null
+  }
+}
+
+export interface AutoDispatchSettings {
+  autoDispatchEnabled:           boolean
+  autoDispatchEffortGate:        string   // 'quick_only' | 'quick_and_medium' | 'all'
+  autoDispatchMaxPerRun:         number
+  autoDispatchSkipSecurity:      boolean
+  autoDispatchAccuracyThreshold: number   // 0 = off; 50/80 = min success rate
+}
+
+/**
+ * Runs the auto-dispatch filter logic and queues eligible advisor actions.
+ * Called from the digest cron after generateAdvisor() completes.
+ */
+export async function autoDispatchAdvisorActions(
+  userId: string,
+  advisor: AdvisorContent,
+  settings: AutoDispatchSettings,
+  accuracyStats: AccuracyStats[],
+): Promise<{ queued: number; skipped: string[]; errors: string[] }> {
+  const result = { queued: 0, skipped: [] as string[], errors: [] as string[] }
+  if (!advisor.actions?.length) return result
+
+  const config = getNexusConfig()
+  if (!config) { result.errors.push('Nexus not configured'); return result }
+
+  for (const action of advisor.actions) {
+    if (result.queued >= settings.autoDispatchMaxPerRun) break
+
+    // 1. Effort gate
+    if (action.effort === 'substantial' && settings.autoDispatchEffortGate !== 'all') {
+      result.skipped.push(`${action.repoName}: substantial effort (gate=${settings.autoDispatchEffortGate})`)
+      continue
+    }
+    if (action.effort === 'medium' && settings.autoDispatchEffortGate === 'quick_only') {
+      result.skipped.push(`${action.repoName}: medium effort (gate=quick_only)`)
+      continue
+    }
+
+    // 2. Security gate
+    if (action.impactType === 'security' && settings.autoDispatchSkipSecurity) {
+      result.skipped.push(`${action.repoName}: security action (skip_security=true)`)
+      continue
+    }
+
+    // 3. Accuracy gate (only if threshold > 0 and sufficient data)
+    if (settings.autoDispatchAccuracyThreshold > 0) {
+      const stat = accuracyStats.find(s => s.impactType === action.impactType)
+      const minPts = MIN_DATA_POINTS[action.impactType as keyof typeof MIN_DATA_POINTS] ?? 3
+      if (stat && stat.dataPoints >= minPts && stat.successRate < settings.autoDispatchAccuracyThreshold) {
+        result.skipped.push(`${action.repoName}: ${action.impactType} accuracy ${stat.successRate}% < threshold ${settings.autoDispatchAccuracyThreshold}%`)
+        continue
+      }
+    }
+
+    // 4. Queue (lifecycle guard handled inside queueAdvisorActionForUser)
+    const queued = await queueAdvisorActionForUser(userId, action)
+    if (queued) {
+      result.queued++
+    } else {
+      result.skipped.push(`${action.repoName}: lifecycle blocked or error`)
+    }
+  }
+
+  return result
 }
 
 export async function getNexusTaskStatus(taskId: string): Promise<NexusTaskStatus> {

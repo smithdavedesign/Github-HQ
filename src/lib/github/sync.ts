@@ -2,7 +2,7 @@
 
 import { db } from '@/lib/db'
 import { toNum } from '@/lib/utils'
-import { repositories, repositoryMetrics, scans, users, portfolioEvents } from '@/lib/db/schema'
+import { repositories, repositoryMetrics, scans, users, portfolioEvents, digests } from '@/lib/db/schema'
 import type { InsertRepository, InsertRepositoryMetrics } from '@/lib/db/schema'
 import { createOctokit } from './client'
 import { scanRepository } from './scanner'
@@ -88,6 +88,10 @@ export async function syncAllRepos(userId: string): Promise<void> {
 
     await db.update(users).set({ lastSyncedAt: new Date() }).where(eq(users.id, userId))
     await db.update(scans).set({ status: 'complete', completedAt: new Date() }).where(eq(scans.id, scan.id))
+    // Invalidate advisor repo snapshot so next advisor generation recomputes deltas with fresh metrics
+    await db.update(digests)
+      .set({ advisorRepoSnapshot: null })
+      .where(eq(digests.userId, userId))
   } catch (error) {
     await db.update(scans).set({
       status: 'failed',
@@ -357,6 +361,11 @@ export async function syncSingleRepo(
       .values(eventsToInsert.map(e => ({ userId, repoId, ...e })))
       .onConflictDoNothing()
   }
+
+  // Invalidate the cached brief so the next get_coding_brief call regenerates fresh context
+  await db.update(repositories)
+    .set({ cachedBrief: null })
+    .where(eq(repositories.id, repoId))
 
   return { repoId, repoName: githubRepo.name, packageName: stackData.packageName, depNames: stackData.allDepNames }
 }
