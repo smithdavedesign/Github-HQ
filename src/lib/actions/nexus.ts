@@ -87,7 +87,7 @@ async function _queueAdvisorAction(action: AdvisorAction): Promise<QueuedTask> {
         riskTier,
         predictedDelta:  action.estimatedImpact,
         source:          'repohq-advisor',
-        autoExecute:     true,
+        autoExecute:     action.effort !== 'substantial', // tier3/substantial tasks queue for manual review
       }),
     }),
   })
