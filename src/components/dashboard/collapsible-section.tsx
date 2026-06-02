@@ -39,9 +39,15 @@ export function CollapsibleSection({ label, storageKey, defaultOpen = true, chil
         </p>
         <div className="flex-1 h-px bg-border/30" />
         {mounted && (
-          open
-            ? <ChevronDown className="w-3 h-3 text-muted-foreground/40 group-hover:text-muted-foreground/60 shrink-0 transition-colors" />
-            : <ChevronRight className="w-3 h-3 text-muted-foreground/40 group-hover:text-muted-foreground/60 shrink-0 transition-colors" />
+          open ? (
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground/50 group-hover:text-muted-foreground/70 transition-colors shrink-0">
+              Hide <ChevronDown className="w-3 h-3" />
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground/60 group-hover:text-muted-foreground/80 transition-colors shrink-0 font-medium">
+              Show {label.toLowerCase()} <ChevronRight className="w-3 h-3" />
+            </span>
+          )
         )}
       </button>
 
