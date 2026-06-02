@@ -18,6 +18,7 @@ import { SimulationCard } from '@/components/dashboard/simulation-card'
 import { ProfileOptimizerCard } from '@/components/dashboard/profile-optimizer-card'
 import { ShipItCard } from '@/components/dashboard/ship-it-card'
 import { AgentImpactCard } from '@/components/dashboard/agent-impact-card'
+import { CollapsibleSection } from '@/components/dashboard/collapsible-section'
 import { getGoals } from '@/lib/actions/goals'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -149,74 +150,74 @@ export default async function DashboardPage() {
         <ProfileOptimizerCard repos={profileRecommendations} githubLogin={userRecord?.githubLogin} />
       )}
 
-      {/* ── PLANNING ──────────────────────────────────────────────── */}
-      <SectionLabel label="Planning" />
+      {/* ── PLANNING (collapsible — collapsed by default) ─────────── */}
+      <CollapsibleSection label="Planning" storageKey="dashboard-planning-open" defaultOpen={false}>
+        <SimulationCard defaultHours={userRecord?.hoursPerWeek ?? 10} />
 
-      <SimulationCard defaultHours={userRecord?.hoursPerWeek ?? 10} />
+        <OpportunityPanel needsAttention={opportunity.needsAttention} highPotentialDormant={opportunity.highPotentialDormant} />
 
-      <OpportunityPanel needsAttention={opportunity.needsAttention} highPotentialDormant={opportunity.highPotentialDormant} />
+        {archiveCandidates.length > 0 && (
+          <ArchiveCandidatesCard candidates={archiveCandidates} />
+        )}
 
-      {archiveCandidates.length > 0 && (
-        <ArchiveCandidatesCard candidates={archiveCandidates} />
-      )}
-
-      {/* Top repos */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Top Repositories</CardTitle>
-            <Link href="/repos" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              View all →
-            </Link>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {topRepos.length === 0 ? (
-            <div className="px-6 pb-6 text-sm text-muted-foreground">
-              No repositories yet.{' '}
-              <span className="underline cursor-pointer">Sync to get started.</span>
+        {/* Top repos */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Top Repositories</CardTitle>
+              <Link href="/repos" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                View all →
+              </Link>
             </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left font-medium text-muted-foreground px-6 py-3">Repo</th>
-                  <th className="text-left font-medium text-muted-foreground px-3 py-3">Health</th>
-                  <th className="text-left font-medium text-muted-foreground px-3 py-3">Activity</th>
-                  <th className="text-left font-medium text-muted-foreground px-3 py-3">Stack</th>
-                  {hasRevenue && <th className="text-left font-medium text-muted-foreground px-3 py-3">MRR</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {topRepos.map((repo) => (
-                  <tr key={repo.id} className="border-b last:border-0 hover:bg-muted/50 transition-colors">
-                    <td className="px-6 py-3 font-medium">
-                      <Link href={`/repos/${repo.id}`} className="hover:underline">{repo.name}</Link>
-                      <span className="ml-2 text-xs text-muted-foreground">{repo.visibility}</span>
-                    </td>
-                    <td className="px-3 py-3">
-                      {repo.metrics?.healthScore != null && <HealthBadge score={repo.metrics.healthScore} />}
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground text-xs">
-                      {repo.metrics?.activityStatus ?? '—'}
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground text-xs">
-                      {repo.techStack?.frontend ?? repo.techStack?.language ?? '—'}
-                    </td>
-                    {hasRevenue && (
-                      <td className="px-3 py-3 text-xs">
-                        {toNum(repo.mrr) > 0
-                          ? <span className="text-emerald-600 font-medium">${parseFloat(String(repo.mrr)).toFixed(0)}</span>
-                          : <span className="text-muted-foreground">—</span>}
-                      </td>
-                    )}
+          </CardHeader>
+          <CardContent className="p-0">
+            {topRepos.length === 0 ? (
+              <div className="px-6 pb-6 text-sm text-muted-foreground">
+                No repositories yet.{' '}
+                <span className="underline cursor-pointer">Sync to get started.</span>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left font-medium text-muted-foreground px-6 py-3">Repo</th>
+                    <th className="text-left font-medium text-muted-foreground px-3 py-3">Health</th>
+                    <th className="text-left font-medium text-muted-foreground px-3 py-3">Activity</th>
+                    <th className="text-left font-medium text-muted-foreground px-3 py-3">Stack</th>
+                    {hasRevenue && <th className="text-left font-medium text-muted-foreground px-3 py-3">MRR</th>}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </CardContent>
-      </Card>
+                </thead>
+                <tbody>
+                  {topRepos.map((repo) => (
+                    <tr key={repo.id} className="border-b last:border-0 hover:bg-muted/50 transition-colors">
+                      <td className="px-6 py-3 font-medium">
+                        <Link href={`/repos/${repo.id}`} className="hover:underline">{repo.name}</Link>
+                        <span className="ml-2 text-xs text-muted-foreground">{repo.visibility}</span>
+                      </td>
+                      <td className="px-3 py-3">
+                        {repo.metrics?.healthScore != null && <HealthBadge score={repo.metrics.healthScore} />}
+                      </td>
+                      <td className="px-3 py-3 text-muted-foreground text-xs">
+                        {repo.metrics?.activityStatus ?? '—'}
+                      </td>
+                      <td className="px-3 py-3 text-muted-foreground text-xs">
+                        {repo.techStack?.frontend ?? repo.techStack?.language ?? '—'}
+                      </td>
+                      {hasRevenue && (
+                        <td className="px-3 py-3 text-xs">
+                          {toNum(repo.mrr) > 0
+                            ? <span className="text-emerald-600 font-medium">${parseFloat(String(repo.mrr)).toFixed(0)}</span>
+                            : <span className="text-muted-foreground">—</span>}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+      </CollapsibleSection>
     </div>
   )
 }

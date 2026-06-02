@@ -42,9 +42,12 @@ interface AdvisorCardProps {
   nexusEnabled?: boolean
 }
 
+const DEFAULT_VISIBLE = 3
+
 export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10, nexusEnabled = false }: AdvisorCardProps) {
   const [advisor, setAdvisor] = useState(initialAdvisor)
   const [generating, setGenerating] = useState(false)
+  const [showAll, setShowAll] = useState(false)
 
   async function handleGenerate() {
     setGenerating(true)
@@ -114,7 +117,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
       </CardHeader>
 
       <CardContent className="space-y-2.5">
-        {advisor.actions.slice(0, 5).map((action, i) => {
+        {advisor.actions.slice(0, showAll ? 5 : DEFAULT_VISIBLE).map((action, i) => {
           const ImpactIcon = IMPACT_ICON[action.impactType] ?? Zap
           return (
             <div
@@ -129,7 +132,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
               {/* Content */}
               <div className="flex-1 min-w-0 space-y-1">
                 <p className="text-sm font-medium leading-snug">{action.action}</p>
-                <p className="text-xs text-muted-foreground">{action.reasoning}</p>
+                <p className="text-xs text-muted-foreground line-clamp-1">{action.reasoning}</p>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <Badge variant="outline" className={`text-[10px] h-4 px-1.5 font-medium ${EFFORT_BADGE[action.effort]}`}>
                     {EFFORT_LABEL[action.effort]}
@@ -153,6 +156,18 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
             </div>
           )
         })}
+
+        {/* Expand / collapse toggle */}
+        {advisor.actions.length > DEFAULT_VISIBLE && (
+          <button
+            onClick={() => setShowAll(v => !v)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left pl-1"
+          >
+            {showAll
+              ? 'Show less ↑'
+              : `+${advisor.actions.length - DEFAULT_VISIBLE} more action${advisor.actions.length - DEFAULT_VISIBLE > 1 ? 's' : ''} ↓`}
+          </button>
+        )}
 
         {/* Time allocation sub-section */}
         {timeAllocation && timeAllocation.length > 0 && (
