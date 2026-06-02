@@ -289,6 +289,16 @@
 - [x] `mcp/brief.ts` — pure formatting helpers extracted for testability
 - [x] 22 unit tests covering health formatting, last-push display, actionable-repo filtering, action picking
 
+### Phase 46 — RepoHQ × AI-DevOps Nexus Integration (Personal First)
+- [ ] Phase A: "Queue" button on advisor actions → POST to Nexus `/internal/agent-tasks` (1-week validation gate before proceeding)
+- [ ] Phase A.5: Agent ROI & Accuracy Tracking — predictedDelta vs actualDelta, `/agent-performance` page
+- [ ] Phase B: Nexus agent reads `get_coding_brief` via RepoHQ MCP before execution (unlock at 70% accuracy)
+- [ ] Phase C: gstack skills as `AGENT_EXECUTION_COMMAND` per risk tier (docs → deps → CI → security)
+- [ ] Phase D: Webhook depth — PR status badges, feed events, portfolio integration
+- [ ] Phase E: Auto-queue + batch approval (unlock after 6 months + 80% accuracy)
+
+See [docs/agentic-execution-prd.md](agentic-execution-prd.md) for full PRD, architecture, and risk analysis.
+
 ### Phase 40 — Open-Source Template / Deploy-to-Vercel
 - [x] README rewritten — Deploy to Vercel button, full setup guide (8 steps), all services documented
 - [x] Local dev OAuth app separation documented (production vs localhost)

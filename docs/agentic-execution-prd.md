@@ -6,9 +6,23 @@
 
 ---
 
+## Scope: Personal Use First
+
+**This integration is built for one user (you) operating on your own repos.**
+
+AI-Took-My-Job is currently single-operator: one username/password per instance, service tokens for API access, no self-service signup flow. It is production-capable and easy to deploy (Render `render.yaml` or `docker-compose up`) but not yet multi-tenant. Building this integration for others requires ~3 months of auth work on Nexus's side (user registration, workspace RBAC, persistent sessions) that hasn't happened yet.
+
+**Do not design for multi-user in Phase A-D.** Validate the loop for yourself first. If advisor accuracy and agent success rates are good after 6-8 weeks, the multi-user question becomes worth answering.
+
+---
+
 ## Context
 
-RepoHQ is a portfolio intelligence layer that generates quantified, prioritised action recommendations ("deploy repo X for +14 opportunity points", "fix 2 security alerts in repo Y"). AI-Took-My-Job (AI-DevOps Nexus) is a feedback-to-engineering control plane with a review-gated queue, BullMQ async workers, and a contract-based Claude agent execution pipeline that clones repos, creates isolated branches, runs an agent, and promotes changes as PRs.
+RepoHQ is a portfolio intelligence layer that generates quantified, prioritised action recommendations ("deploy repo X for +14 opportunity points", "fix 2 security alerts in repo Y"). AI-Took-My-Job (AI-DevOps Nexus) is a self-hosted feedback-to-engineering control plane with a review-gated queue, BullMQ async workers, and a contract-based Claude agent execution pipeline that clones repos, creates isolated branches, runs an agent, and promotes changes as PRs.
+
+**Two complementary input channels into the same execution pipeline:**
+- **Chrome extension** — captures user-reported bugs from running web apps (page URL, console errors, severity) → feeds Nexus triage queue
+- **RepoHQ advisor** — generates portfolio-scored, quantified work items (health improvements, security fixes, opportunity gains) → feeds the same Nexus queue
 
 The integration closes the loop RepoHQ can't close alone: **insight → execution**. The advisor tells you what to do; the agent does it.
 
