@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { portfolioEvents, repositories, users } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import type { AdvisorAction } from '@/lib/ai/advisor'
+import { getRepoLifecycle, BLOCKING_STAGES } from '@/lib/agents/lifecycle'
 
 export type NexusTaskStatus = 'queued' | 'preparing' | 'ready' | 'failed' | 'unknown'
 
@@ -56,6 +57,13 @@ async function _queueAdvisorAction(action: AdvisorAction): Promise<QueuedTask> {
 
   const config = getNexusConfig()
   if (!config) throw new Error('Nexus not configured. Add NEXUS_API_URL and NEXUS_API_TOKEN to your environment.')
+
+  // Server-side lifecycle guard — prevent duplicate jobs regardless of which UI triggered the queue
+  const lifecycle = await getRepoLifecycle(session.user.id, action.repoId)
+  if (BLOCKING_STAGES.has(lifecycle.stage)) {
+    const detail = lifecycle.prUrl ? ` — PR: ${lifecycle.prUrl}` : ` (stage: ${lifecycle.stage})`
+    throw new Error(`An agent task is already active for ${action.repoName}${detail}. Wait for it to complete before queuing another.`)
+  }
 
   // Look up the repo's full name for Nexus (owner/repo format)
   const repo = await db.query.repositories.findFirst({

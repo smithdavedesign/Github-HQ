@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { portfolioEvents } from '@/lib/db/schema'
 import { eq, and, inArray, desc } from 'drizzle-orm'
+import { getRepoLifecycle } from '@/lib/agents/lifecycle'
 
 export type AgentTaskStage =
   | 'queued'
@@ -13,7 +14,8 @@ export type AgentTaskStage =
   | 'failed'
   | 'timed_out'
 
-const STAGE_LABELS: Record<AgentTaskStage, string> = {
+const STAGE_LABELS: Record<string, string> = {
+  idle:      'Idle',
   queued:    'Queued',
   preparing: 'Preparing context…',
   running:   'Agent running…',
@@ -29,7 +31,23 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url)
   const taskId = url.searchParams.get('taskId')
-  if (!taskId) return NextResponse.json({ error: 'taskId required' }, { status: 400 })
+  const repoIdParam = url.searchParams.get('repoId')
+
+  // ── repoId path: lifecycle lookup by repo (used by QueueButton mount hydration) ──
+  if (repoIdParam && !taskId) {
+    const repoId = parseInt(repoIdParam, 10)
+    if (isNaN(repoId)) return NextResponse.json({ error: 'invalid repoId' }, { status: 400 })
+    const lifecycle = await getRepoLifecycle(session.user.id, repoId)
+    return NextResponse.json({
+      status:  lifecycle.stage,
+      stage:   STAGE_LABELS[lifecycle.stage as keyof typeof STAGE_LABELS] ?? lifecycle.stage,
+      taskId:  lifecycle.taskId,
+      prUrl:   lifecycle.prUrl,
+      nexusUrl: process.env.NEXUS_API_URL?.replace(/\/$/, '') ?? null,
+    })
+  }
+
+  if (!taskId) return NextResponse.json({ error: 'taskId or repoId required' }, { status: 400 })
 
   const nexusUrl   = process.env.NEXUS_API_URL?.replace(/\/$/, '')
   const nexusToken = process.env.NEXUS_API_TOKEN

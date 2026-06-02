@@ -27,7 +27,35 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const polls = useRef(0)
 
+  // Cleanup on unmount
   useEffect(() => () => { if (intervalRef.current) clearInterval(intervalRef.current) }, [])
+
+  // On mount: check if there's already an active task for this repo and hydrate stage.
+  // Prevents duplicate queuing when the user navigates away and back mid-run.
+  useEffect(() => {
+    let cancelled = false
+    async function hydrate() {
+      try {
+        const res = await fetch(`/api/agent-task-status?repoId=${action.repoId}`)
+        if (!res.ok || cancelled) return
+        const data = await res.json() as StatusPayload & { taskId?: string | null }
+        if (cancelled) return
+        // Only hydrate if there's a real in-flight state (not idle/unknown)
+        if (!data.status || data.status === ('idle' as Stage)) return
+        setStage(data.status)
+        setLabel(data.stage ?? data.status)
+        if (data.prUrl)    setPrUrl(data.prUrl)
+        if (data.nexusUrl) setNexus(data.nexusUrl)
+        // Resume polling if non-terminal and we have the taskId
+        if (data.taskId && !TERMINAL.includes(data.status)) {
+          poll(data.taskId)
+        }
+      } catch { /* non-fatal — button just stays idle */ }
+    }
+    hydrate()
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [action.repoId])
 
   function poll(taskId: string) {
     polls.current = 0
