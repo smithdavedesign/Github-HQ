@@ -246,7 +246,13 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 
 **Stripe integration** — Plain fetch against Stripe REST API (no SDK). Restricted key with Subscriptions + Products read-only. MRR auto-syncs alongside daily GitHub sync. `resolveApiKey()` checks DB-stored key first, falls back to `STRIPE_API_KEY` env var for local dev.
 
-**MCP Server** — `mcp/server.ts` is a stdio MCP server using `@modelcontextprotocol/sdk`. Queries Neon directly via `DATABASE_URL` + `MCP_USER_ID` env vars. Exposes 5 tools: `get_portfolio_summary`, `get_repo_context`, `get_portfolio_warnings`, `get_top_opportunities`, `get_active_goals`. Configured in `~/.claude/claude.json`.
+**MCP Server** — `mcp/server.ts` is a stdio MCP server using `@modelcontextprotocol/sdk`. Queries Neon directly via `DATABASE_URL` + `MCP_USER_ID` env vars. Configured in `~/.claude/claude.json`.
+
+8 tools across two tiers:
+
+*Diagnostic (read-only)*: `get_portfolio_summary`, `get_repo_context`, `get_portfolio_warnings`, `get_top_opportunities`, `get_active_goals`
+
+*Agentic (Phase 45)*: `get_coding_brief` — full session-start context doc for a repo; `get_next_action` — single highest-ROI task from simulation + advisor + goals; `log_session_complete` — writes a `portfolio_events` entry recording what was worked on (closes the Recommended vs Actual loop).
 
 **GitHub Actions crons** — Primary cron trigger (replaces Vercel Hobby once-per-day limit). 5 workflows in `.github/workflows/` call existing API endpoints with `CRON_SECRET`. Vercel crons remain as once-per-Sunday fallback. `CRON_SECRET` stored as GitHub repo secret.
 

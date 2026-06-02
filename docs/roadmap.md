@@ -282,6 +282,13 @@
 - [x] Only surfaces when delta ≥ 10 pts (suppressed when the gap is noise)
 - [x] Infers time investment from `weeklyCommits` field synced from GitHub
 
+### Phase 45 — Agentic Coding Context (MCP Expansion)
+- [x] `get_coding_brief(repo_name)` — health, lifecycle, tech stack, advisor actions, tech debt, security, recent session history; ready to paste at session start so agent never starts cold
+- [x] `get_next_action()` — single highest-ROI task from advisor + opportunity scores; skips Reference/Infrastructure/sunsetting repos; falls back to highest-opp repo if no advisor data
+- [x] `log_session_complete(repo_name, summary, agent_name)` — writes `session_complete` portfolio_events entry with agent metadata; future coding briefs include session history for agent continuity
+- [x] `mcp/brief.ts` — pure formatting helpers extracted for testability
+- [x] 22 unit tests covering health formatting, last-push display, actionable-repo filtering, action picking
+
 ### Phase 40 — Open-Source Template / Deploy-to-Vercel
 - [x] README rewritten — Deploy to Vercel button, full setup guide (8 steps), all services documented
 - [x] Local dev OAuth app separation documented (production vs localhost)

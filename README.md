@@ -61,7 +61,7 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 
 **Integrations**
 - **Stripe** — restricted API key; maps products to repos; MRR auto-syncs daily
-- **MCP Server** (`mcp/server.ts`) — 5 tools for Claude Code: portfolio summary, repo context, warnings, top opportunities, goals
+- **MCP Server** (`mcp/server.ts`) — 8 tools for Claude Code: portfolio summary, repo context, warnings, top opportunities, goals, coding brief, next action, session log
 - GitHub Environments + Pages auto-discovery for deployments
 
 **Public Portfolio**
