@@ -120,7 +120,7 @@ Sorted: critical → warning → info → positive, then date descending.
 
 | Endpoint | Time (UTC) | What it does |
 |----------|-----------|-------------|
-| `/api/cron/sync` | 02:00 daily | Full GitHub sync + health snapshot + goal refresh |
+| `/api/cron/sync` | 02:00 daily | Full GitHub sync + health snapshot + goal refresh + PR merge detection + delta resolution + health alerts |
 | `/api/cron/security` | 03:00 daily | Dependabot + secret scanning, recalculates health |
 | `/api/cron/deployments` | 04:00 daily | Uptime checks for all deployment URLs |
 | `/api/cron/ai-summary` | 05:00 Sunday | Regenerates Claude AI summaries for all repos |
@@ -191,10 +191,15 @@ digests                   weekly AI content per user
 goals                     user-set portfolio targets
   user_id, type, name, target_value, current_value, unit, deadline, is_active, completed_at
 
-portfolio_events          personal changelog (Phase 28)
+portfolio_events          personal changelog + agent event log (Phase 28 + 46–51)
   user_id, repo_id FK (nullable), event_type, title, description, metadata jsonb, dedup_key, occurred_at
-  event_type: repo_created | repo_archived | mrr_changed | health_milestone | first_revenue | manual_milestone
+  event_type (changelog): repo_created | repo_archived | mrr_changed | health_milestone | first_revenue | manual_milestone | session_complete
+  event_type (agent):     agent_task_queued | agent_pr_created | agent_pr_merged | agent_execution_failed | agent_attempt
   dedup_key: unique per (userId, dedupKey) — onConflictDoNothing prevents duplicate one-time events
+
+notifications             push notification inbox (Phase 49)
+  user_id, repo_id FK (nullable), event_type, title, body, metadata jsonb, read_at, created_at
+  event_type: health_alert | agent_pr_ready | agent_pr_merged | agent_failed | security_critical
 
 portfolio_score_history   daily composite score per user (Phase 30)
   user_id, score, avg_health, activity_ratio, revenue_score, diversity_score, recorded_date
@@ -220,7 +225,9 @@ computePortfolioEvents()      Pure event derivation from repo state changes (ded
 computeInternalDeps()         Cross-references package.json deps across portfolio repos
 ```
 
-208 unit tests as of Phase 42. Zero DB calls in any scoring function.
+316 unit tests as of Phase 51. Zero DB calls in any scoring function.
+
+**Agentic execution pipeline** — RepoHQ integrates with AI-Took-My-Job (Nexus) for automated portfolio improvement. See `docs/agentic-full-flow.md` for full architecture diagrams. Key components: `src/lib/actions/nexus.ts` (queue actions), `src/lib/agents/pr-merge-checker.ts` (detect merges via GitHub API), `src/lib/notifications/dispatcher.ts` + `webhook.ts` (push notifications).
 
 ---
 
@@ -248,11 +255,13 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 
 **MCP Server** — `mcp/server.ts` is a stdio MCP server using `@modelcontextprotocol/sdk`. Queries Neon directly via `DATABASE_URL` + `MCP_USER_ID` env vars. Configured in `~/.claude/claude.json`.
 
-8 tools across two tiers:
+10 tools across three tiers:
 
 *Diagnostic (read-only)*: `get_portfolio_summary`, `get_repo_context`, `get_portfolio_warnings`, `get_top_opportunities`, `get_active_goals`
 
-*Agentic (Phase 45)*: `get_coding_brief` — full session-start context doc for a repo; `get_next_action` — single highest-ROI task from simulation + advisor + goals; `log_session_complete` — writes a `portfolio_events` entry recording what was worked on (closes the Recommended vs Actual loop).
+*Agentic (Phase 45)*: `get_coding_brief` — full session-start doc including In Flight PRs + attempt history; `get_next_action` — top ROI task, skips repos with open agent PRs and known dead-end actions; `log_session_complete` — writes `session_complete` portfolio_event.
+
+*Active Work + Feedback (Phase 50–51)*: `get_active_work(repo_name?)` — shows open agent PRs, safe-to-start flag; `log_attempt(repo_name, action, outcome, reason)` — writes `agent_attempt` event, feeds dead-end detection. See `docs/agentic-full-flow.md` for the complete MCP tool table and flow diagrams.
 
 **GitHub Actions crons** — Primary cron trigger (replaces Vercel Hobby once-per-day limit). 5 workflows in `.github/workflows/` call existing API endpoints with `CRON_SECRET`. Vercel crons remain as once-per-Sunday fallback. `CRON_SECRET` stored as GitHub repo secret.
 
