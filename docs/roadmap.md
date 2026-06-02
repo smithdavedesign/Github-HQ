@@ -313,6 +313,44 @@
 
 See [docs/agentic-execution-prd.md](agentic-execution-prd.md) for full PRD, architecture, and risk analysis.
 
+---
+
+## Intelligence & Agent Quality Roadmap
+
+The next layer of value: making the system smarter for both humans and agents the longer it runs.
+
+### Phase 49 — Push Notifications
+Turn RepoHQ from a dashboard you check into a system that works for you.
+- [ ] Email digest on critical events: repo health crosses threshold, agent PR ready for review, new security critical alert
+- [ ] Configurable thresholds in Settings — "notify me when health drops below 60" per-repo or portfolio-wide
+- [ ] Weekly portfolio briefing email: net pts gained/lost, agent activity, priority action for the week
+- [ ] Webhook/Slack output: POST a JSON payload to a user-configured URL on any portfolio event (enables Zapier, n8n, custom alerts)
+- [ ] In-app notification bell: unread count badge on layout, notification centre panel for recent events without leaving the app
+
+### Phase 50 — Active Work Signal in MCP
+Prevent agent collisions and give every agent session a complete picture of what's currently in flight.
+- [ ] New MCP tool: `get_active_work(repo_name)` — returns open agent PRs, current stage (queued/running/pr_open), PR URL, and whether it's safe to start a new session
+- [ ] `get_next_action()` updated to skip repos with open agent PRs (avoid double-queueing at the MCP level, not just the UI)
+- [ ] `get_coding_brief()` gains an "In Flight" section: active PRs, last session outcome, any known blockers
+- [ ] MCP `list_active_work()` — portfolio-wide view of all in-flight agent tasks (for orchestrators managing multiple repos)
+
+### Phase 51 — Attempt Log & Failure Feedback
+Make failed attempts visible so agents and humans stop repeating the same mistakes.
+- [ ] `log_attempt(repo_name, action, outcome, reason)` MCP tool — agent logs what it tried and why it failed or succeeded
+- [ ] `attempt_log` stored in `portfolio_events` (eventType: `agent_attempt`) with outcome, reason, and any error detail
+- [ ] `get_coding_brief()` includes attempt history: last 3 attempts per repo, outcome, and failure reason
+- [ ] UI: Attempt history visible in Agent History tab on repo detail page
+- [ ] Advisor filters out actions that have failed 2+ times with the same reason (don't re-recommend a known dead end)
+- [ ] Closed/rejected PR detection: if a PR is closed without merging, write a `pr_rejected` event; advisor de-prioritises that action type for that repo
+
+### Phase 52 — Advisor Learning Loop
+The longer the system runs, the better its recommendations should get.
+- [ ] Per-action-type accuracy tracking: success rate broken out by `impactType` (security, docs, deps, activity) — visible on `/agent-performance`
+- [ ] Predicted vs actual delta accuracy score per action type: if "add docs" consistently predicts +8 but delivers +2, show the calibration gap
+- [ ] Advisor prompt injection: low-accuracy action types get a confidence caveat ("documentation tasks have 41% accuracy — review carefully before queuing")
+- [ ] Repo-level failure memory: advisor notes if a repo has had 2+ failed agent runs and downgrades its recommendation priority until a human intervenes
+- [ ] Monthly accuracy report: email/digest summary of advisor calibration, which task types are reliable, which aren't
+
 ### Phase 40 — Open-Source Template / Deploy-to-Vercel
 - [x] README rewritten — Deploy to Vercel button, full setup guide (8 steps), all services documented
 - [x] Local dev OAuth app separation documented (production vs localhost)
