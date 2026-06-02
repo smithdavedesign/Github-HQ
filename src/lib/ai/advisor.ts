@@ -9,7 +9,8 @@ import {
   calculateTrafficScore,
 } from '@/lib/health/scoring'
 import { formatValuation } from '@/lib/health/valuation'
-import { getAccuracyByImpactType, getDowngradedRepos, MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy'
+import { getAccuracyByImpactType, getDowngradedRepos } from '@/lib/actions/advisor-accuracy'
+import { MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy-utils'
 
 
 export interface AdvisorAction {

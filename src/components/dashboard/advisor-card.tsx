@@ -8,7 +8,7 @@ import { Sparkles, Loader2, Zap, Shield, TrendingUp, Heart, ArrowRight, Clock } 
 import type { AdvisorContent, AdvisorAction } from '@/lib/ai/advisor'
 import type { TimeAllocationItem } from '@/lib/health/scoring'
 import type { AccuracyStats } from '@/lib/actions/advisor-accuracy'
-import { MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy'
+import { MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy-utils'
 import { triggerAdvisor } from '@/lib/actions/repositories'
 import { formatDistanceToNow } from '@/lib/utils'
 import { QueueButton } from './queue-button'

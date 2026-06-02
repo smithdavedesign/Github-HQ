@@ -10,9 +10,6 @@ import {
   type ImpactType,
 } from './advisor-accuracy-utils'
 
-export type { ImpactType }
-export { MIN_DATA_POINTS, parsePredictedDelta } from './advisor-accuracy-utils'
-
 export interface AccuracyStats {
   impactType: ImpactType
   successRate: number        // 0-100 (directional: actualDelta > 0)
