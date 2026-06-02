@@ -41,6 +41,16 @@ function buildAcceptanceCriteria(action: AdvisorAction): string[] {
 export async function queueAdvisorAction(
   action: AdvisorAction,
 ): Promise<QueuedTask> {
+  try {
+    return await _queueAdvisorAction(action)
+  } catch (err) {
+    // Always re-throw as plain serializable Error so Next.js sends it to
+    // the client catch block instead of "Server Components render" error
+    throw new Error(err instanceof Error ? err.message : `Queue failed: ${String(err)}`)
+  }
+}
+
+async function _queueAdvisorAction(action: AdvisorAction): Promise<QueuedTask> {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
