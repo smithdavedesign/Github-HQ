@@ -562,7 +562,7 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
           placeholder="Search repositories…"
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
-          className="h-8 w-64 text-sm"
+          className="h-8 w-full sm:w-64 text-sm"
         />
 
         {/* Columns */}
@@ -666,7 +666,7 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between text-sm text-muted-foreground flex-wrap gap-2">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-sm text-muted-foreground gap-2">
         <span>
           {table.getFilteredRowModel().rows.length} of {data.length} repositories
           {nlFilters && filteredData.length !== data.length && ` (${filteredData.length} after AI filter)`}

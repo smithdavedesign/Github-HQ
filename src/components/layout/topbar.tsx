@@ -3,6 +3,7 @@
 import { signOut } from 'next-auth/react'
 import { RefreshCw, LogOut, Moon, Sun } from 'lucide-react'
 import { NotificationBell } from './notification-bell'
+import { MobileNav } from './mobile-nav'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -60,11 +61,12 @@ export function Topbar({ user, lastSyncedAt }: TopbarProps) {
   const initials = user.name?.split(' ').map((n) => n[0]).join('').toUpperCase() ?? '?'
 
   return (
-    <header className="h-13 border-b border-border/60 flex items-center justify-between px-5 gap-4 bg-background/95 backdrop-blur-sm shrink-0">
-      {/* Left — sync status */}
-      <div className="flex items-center gap-3 min-w-0">
+    <header className="h-13 border-b border-border/60 flex items-center justify-between px-4 gap-3 bg-background/95 backdrop-blur-sm shrink-0">
+      {/* Left — mobile nav + sync status */}
+      <div className="flex items-center gap-2 min-w-0">
+        <MobileNav />
         {lastSyncedAt ? (
-          <span className="text-xs text-muted-foreground hidden sm:block">
+          <span className="text-xs text-muted-foreground hidden sm:block truncate">
             Synced {formatRelative(lastSyncedAt)}
           </span>
         ) : (

@@ -106,7 +106,7 @@ export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, nexus
         <span className="text-[10px] text-muted-foreground/60">— trigger an AI agent directly on this repo</span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         {SKILLS.map(skill => {
           const Icon = skill.icon
           const isExpanded = expanded === skill.id

@@ -85,7 +85,7 @@ export default async function DashboardPage() {
       {/* ── STATUS ────────────────────────────────────────────────── */}
       <SectionLabel label="Status" />
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4">
         <MetricCard title="Total Repos" value={stats.total} icon={GitFork} />
         <MetricCard title="Private" value={stats.private} icon={Lock} />
         <MetricCard title="Public" value={stats.public} icon={Globe} />
@@ -104,7 +104,7 @@ export default async function DashboardPage() {
       {hasRevenue && (
         <div>
           <h2 className="text-sm font-medium text-muted-foreground mb-3">Portfolio P&amp;L</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
             <MetricCard title="Monthly Revenue" value={`$${stats.totalMrr.toFixed(0)}`} icon={DollarSign} variant="success" description={`${stats.revenueCount} revenue-generating repos`} />
             <MetricCard title="ARR" value={`$${stats.totalArr.toFixed(0)}`} icon={TrendingUp} variant="success" description="Annual recurring revenue" />
             <MetricCard title="Monthly Cost" value={`$${stats.totalCost.toFixed(0)}`} icon={Banknote} variant={stats.totalCost > 0 ? 'warning' : 'default'} description="Total infrastructure cost" />

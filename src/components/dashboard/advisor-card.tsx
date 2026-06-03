@@ -211,7 +211,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
 
               {/* Expanded detail panel */}
               {isExpanded && (
-                <div className="px-3 pb-3 space-y-3 border-t border-border/40 pt-3 ml-10">
+                <div className="px-3 pb-3 space-y-3 border-t border-border/40 pt-3 ml-0 sm:ml-10">
                   {/* Full reasoning */}
                   <p className="text-xs text-muted-foreground leading-relaxed">{action.reasoning}</p>
 
@@ -259,7 +259,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
 
               {/* Collapsed: Run Agent lives in the header row */}
               {!isExpanded && (
-                <div className="flex items-center gap-1.5 px-3 pb-3 -mt-1 ml-10">
+                <div className="flex items-center gap-1.5 px-3 pb-3 -mt-1 ml-0 sm:ml-10 flex-wrap">
                   {nexusEnabled && <QueueButton action={action} />}
                   <Link
                     href={`/repos/${action.repoId}`}

@@ -96,7 +96,7 @@ export function NotificationBell() {
       </Button>
 
       <Sheet open={open} onOpenChange={handleOpen}>
-        <SheetContent side="right" className="w-80 p-0 flex flex-col">
+        <SheetContent side="right" className="w-full sm:w-80 p-0 flex flex-col">
           <SheetHeader className="flex-row items-center justify-between px-4 py-3 border-b border-border/60 space-y-0">
             <SheetTitle className="text-sm font-semibold">Notifications</SheetTitle>
             {items.length > 0 && (
