@@ -46,3 +46,6 @@ test-results/
 playwright-report/
 tests/setup/auth-state.json
 .gstack/
+
+# gstack / Nexus agent runtime output (ephemeral, changes every run)
+.nexus/
