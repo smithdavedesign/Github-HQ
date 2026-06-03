@@ -169,6 +169,67 @@ JSON output is written to `.nexus/` and validated against the Nexus agent contra
 
 ---
 
+## 2026-06-03 — `/health` Code Quality (Run 3 — post Phase 55 tests)
+
+**Score:** 72/100 | **Tests:** 497/497 | **TypeScript:** 0 errors
+
+### ✅ Passing
+- TypeScript clean, 497 tests passing, no `any` types in actions, `'use server'` correctness clean
+
+### ⚠️ New findings
+
+**Dead exports (7 functions exported but never imported outside `actions/`):**
+
+| File | Dead Export |
+|------|------------|
+| `nexus.ts` | `queueAdvisorActionForUser`, `getNexusTaskStatus`, `isNexusConfigured` |
+| `advisor-accuracy.ts` | `getRepoAccuracy`, `getMyDowngradedRepos` |
+| `repositories.ts` | `getPortfolioCostBreakdown` |
+| `goals.ts` | `updateGoalProgress` |
+
+Note: `queueAdvisorActionForUser` IS used in `cron/digest/route.ts` — false positive. Others need verification.
+
+**Missing try/catch:** `notifications.ts`, `auto-dispatch-settings.ts`, `stripe.ts` (hasStripeKey/stripeKeySource), `deployments.ts` (checkSingleDeployment)
+
+**Sequential awaits:** `stripe.ts:fetchStripeProducts`, `deployments.ts:discoverRepoDeployments`
+
+**Coverage gaps:** `changelog.ts`, `goals.ts`, `sync.ts`
+
+### Status
+- 🔲 Verify dead exports (some may be used externally or by cron)
+- 🔲 Add try/catch to hasStripeKey, stripeKeySource, getUnreadNotifications
+- 🔲 Fix sequential awaits in stripe + deployments
+
+---
+
+## 2026-06-03 — `/investigate` Security Check (Run 2)
+
+**Score:** 78/100 *(improved from 71 — previous findings resolved)*
+
+### ✅ Clean (same as Run 1 — confirmed resolved)
+- Cron endpoints: fail-secure secret validation ✓
+- All server actions scope DB to `session.user.id` ✓
+- Drizzle ORM throughout, no raw SQL ✓
+- No hardcoded secrets ✓
+- Auth scopes on all user-facing routes ✓
+
+### ⚠️ Findings
+
+| Severity | File | Finding |
+|----------|------|---------|
+| Medium | `schema.ts:74,77` | **Credentials plaintext** — GitHub tokens, LLM keys, Stripe keys stored unencrypted at rest (known, deferred) |
+| Low | `deployments.ts:53` | **IDOR on checkSingleDeployment** — exported server action with no auth check on deploymentId; authenticated user could trigger checks on arbitrary IDs (no data exposed, just wasted compute) |
+| Low | `stripe.ts:syncStripeMrr` | **Auth fails silently in cron** — calls `auth()` but cron has no session; error swallowed by `Promise.allSettled` |
+| Info | `api/nl-query/route.ts` | `JSON.parse` on raw LLM output without schema validation — malformed responses produce 500s |
+
+### Status
+- 🔲 Add auth check to `checkSingleDeployment` (add `userId` scope)
+- 🔲 Fix `syncStripeMrr` to accept `userId` directly (bypass `auth()` for cron context)
+- 🔲 Add Zod validation to nl-query LLM response parsing
+- 🔲 Credentials encryption (longer-term, already deferred)
+
+---
+
 ## Log Format
 
 Each entry should follow this structure:
