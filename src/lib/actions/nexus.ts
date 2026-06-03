@@ -97,6 +97,7 @@ async function _queueAdvisorAction(action: AdvisorAction): Promise<QueuedTask> {
         riskTier,
         predictedDelta:  action.estimatedImpact,
         source:          'repohq-advisor',
+        skillName:       action.impactType === 'security' ? 'investigate' : 'ship',
         autoExecute:     action.effort !== 'substantial', // tier3/substantial tasks queue for manual review
       }),
     }),
@@ -124,6 +125,123 @@ async function _queueAdvisorAction(action: AdvisorAction): Promise<QueuedTask> {
       effort:          action.effort,
       riskTier,
       nexusUrl:        config.url,
+    },
+  })
+
+  return {
+    taskId:   data.agentTaskId,
+    status:   (data.status ?? 'queued') as NexusTaskStatus,
+    nexusUrl: `${config.url}/learn/review-queue`,
+  }
+}
+
+// ─── Ad-hoc gstack skill queueing (user + AI agent triggered) ────────────────
+
+export type GstackSkill = 'investigate' | 'health' | 'ship'
+
+const SKILL_DEFAULTS: Record<GstackSkill, { executionMode: string; acceptanceCriteria: string[] }> = {
+  investigate: {
+    executionMode: 'investigate',
+    acceptanceCriteria: [
+      'Root cause identified and documented',
+      'Findings listed with file paths and evidence',
+      'No new issues introduced',
+    ],
+  },
+  health: {
+    executionMode: 'investigate',
+    acceptanceCriteria: [
+      'Code quality report produced',
+      'TypeScript errors, test failures, and dead code listed',
+      'Health score computed and findings documented',
+    ],
+  },
+  ship: {
+    executionMode: 'fix',
+    acceptanceCriteria: [
+      'Changes implement the stated objective',
+      'All existing tests continue to pass',
+      'PR created with clear description',
+    ],
+  },
+}
+
+/**
+ * Queues an ad-hoc gstack skill on a repo — triggered by the user from the
+ * repo Agent tab or by an AI agent via the queue_gstack_skill MCP tool.
+ * Bypasses the AdvisorAction requirement; accepts a free-form objective.
+ */
+export async function queueGstackSkill(
+  repoId: number,
+  skill: GstackSkill,
+  objective: string,
+): Promise<QueuedTask> {
+  try {
+    return await _queueGstackSkill(repoId, skill, objective)
+  } catch (err) {
+    throw new Error(err instanceof Error ? err.message : `Queue failed: ${String(err)}`)
+  }
+}
+
+async function _queueGstackSkill(repoId: number, skill: GstackSkill, objective: string): Promise<QueuedTask> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  const config = getNexusConfig()
+  if (!config) throw new Error('Nexus not configured.')
+
+  const lifecycle = await getRepoLifecycle(session.user.id, repoId)
+  if (BLOCKING_STAGES.has(lifecycle.stage)) {
+    throw new Error(`An agent task is already active for this repo (${lifecycle.stage}). Wait for it to complete.`)
+  }
+
+  const repo = await db.query.repositories.findFirst({
+    where: and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)),
+    columns: { fullName: true, name: true },
+  })
+  if (!repo) throw new Error(`Repo ${repoId} not found`)
+
+  const defaults = SKILL_DEFAULTS[skill]
+  const riskTier = skill === 'ship' ? 'tier2' : 'tier3'
+
+  const res = await fetch(`${config.url}/internal/agent-tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.token}` },
+    body: JSON.stringify({
+      objective,
+      targetRepository:  repo.fullName,
+      executionMode:     defaults.executionMode,
+      acceptanceCriteria: defaults.acceptanceCriteria,
+      contextNotes: JSON.stringify({
+        repoHQRepoId:   repoId,
+        repoHQRepoName: repo.name,
+        skillName:      skill,
+        riskTier,
+        source:         'repohq-gstack-ui',
+        autoExecute:    true,
+      }),
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: { message?: string } }
+    throw new Error(`Nexus error: ${err.error?.message ?? res.statusText}`)
+  }
+
+  const data = await res.json() as { agentTaskId: string; status: string }
+
+  await db.insert(portfolioEvents).values({
+    userId:    session.user.id,
+    repoId,
+    eventType: 'agent_task_queued',
+    title:     `gstack /${skill}: ${objective.slice(0, 80)}`,
+    description: objective,
+    metadata: {
+      taskId:    data.agentTaskId,
+      skillName: skill,
+      source:    'repohq-gstack-ui',
+      riskTier,
+      nexusUrl:  config.url,
     },
   })
 

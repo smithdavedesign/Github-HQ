@@ -419,6 +419,19 @@ Currently `AGENT_EXECUTION_COMMAND` is a single env var — one script for all t
 
 The Nexus worker already passes `impactType` in `contextNotes` — routing just needs to read it before spawning the command.
 
+### G1 — Real gstack Skill Invocation ✅
+- `gstack-investigate.sh`: now invokes `claude /investigate` with `OPENCLAW_SESSION=true` + `SPAWNED_SESSION=true` — real multi-turn skill, not bare `claude --print`
+- `gstack-ship.sh`: same upgrade to `claude /ship`
+- `skillName` added to contextNotes in all task queuing so Nexus can route to the correct script
+- Both scripts merge RepoHQ brief into the task prompt before invoking the skill
+
+### G2 — UI Skill Launcher + MCP Tool ✅
+- `GstackSkillLauncher` component on repo Agent tab — three cards: `/investigate`, `/health`, `/ship`
+- Smart objective pre-fill from repo state (failing build → investigate build, security alerts → investigate CVE, advisor action → ship it)
+- `queueGstackSkill(repoId, skill, objective)` server action — same lifecycle guard as advisor queueing
+- `queue_gstack_skill(repo_name, skill, objective?)` MCP tool — AI agents can trigger skills from Claude Code context; tracked by `get_active_work()` naturally
+- `agent_skill_report` event type — investigation findings stored in `portfolio_events` and displayed inline in Agent History with bullet list
+
 ### G3 — gstack Learnings Persistence
 
 gstack's learnings system (`.gstack/projects/{slug}/learnings.jsonl`) captures operational discoveries across sessions:

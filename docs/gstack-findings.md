@@ -2,6 +2,8 @@
 
 Running record of findings from gstack integration tests and slash commands against the RepoHQ codebase.
 
+**gstack G1+G2 shipped:** Scripts now invoke real gstack skills (`claude /investigate`, `claude /ship`) with `OPENCLAW_SESSION=true`. Users can trigger skills from the repo Agent tab. AI agents use `queue_gstack_skill()` via MCP.
+
 Scripts live in `tests/integration/`. Run from the project root:
 ```bash
 bash tests/integration/gstack-security-check.sh          # /investigate — security

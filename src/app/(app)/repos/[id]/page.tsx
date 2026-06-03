@@ -4,6 +4,8 @@ import { PROVIDER_SHORT_NAME } from '@/lib/ai/providers'
 import { getLatestAdvisorContent } from '@/lib/actions/repositories'
 import { getMyAccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { RepoAdvisorSection } from '@/components/repos/repo-advisor-section'
+import { GstackSkillLauncher } from '@/components/repos/gstack-skill-launcher'
+import type { GstackSkill } from '@/lib/actions/nexus'
 import { db } from '@/lib/db'
 import { portfolioEvents } from '@/lib/db/schema'
 import { and, eq, inArray, desc } from 'drizzle-orm'
@@ -41,7 +43,7 @@ export default async function RepoDetailPage({ params }: Props) {
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.repoId, repoId),
-        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_execution_failed', 'agent_attempt']),
+        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_execution_failed', 'agent_attempt', 'agent_skill_report']),
       ),
       orderBy: [desc(portfolioEvents.occurredAt)],
       limit: 30,
@@ -390,6 +392,33 @@ export default async function RepoDetailPage({ params }: Props) {
 
         {/* Agent tab — Advisory + History */}
         <TabsContent value="agent" className="pt-4 space-y-6">
+          {/* gstack Skill Launcher */}
+          {(() => {
+            const nexusConfigured = !!(process.env.NEXUS_API_URL && process.env.NEXUS_API_TOKEN)
+            const openAlerts = repo.securityFindings?.filter(f => f.state === 'open' && ['critical','high'].includes(f.severity ?? '')) ?? []
+            const failingBuild = repo.metrics?.buildStatus === 'failure'
+            const repoActions = advisor?.actions?.filter(a => a.repoId === repoId) ?? []
+
+            const defaultObjectives: Record<GstackSkill, string> = {
+              investigate: failingBuild
+                ? `Investigate why the build is failing in ${repo.name} and fix the root cause`
+                : openAlerts.length > 0
+                  ? `Investigate ${openAlerts.length} critical/high security alert${openAlerts.length > 1 ? 's' : ''} in ${repo.name}`
+                  : `Investigate code quality issues and potential improvements in ${repo.name}`,
+              health: `Run code health check on ${repo.name} — report TypeScript errors, test failures, dead code, and lint issues`,
+              ship: repoActions[0]?.action ?? `Ship latest changes in ${repo.name}`,
+            }
+
+            return (
+              <GstackSkillLauncher
+                repoId={repoId}
+                repoName={repo.name}
+                defaultObjectives={defaultObjectives}
+                nexusEnabled={nexusConfigured}
+              />
+            )
+          })()}
+
           {/* AI Repo Advisory */}
           <RepoAdvisorSection
             actions={advisor?.actions?.filter(a => a.repoId === repoId) ?? []}
@@ -420,12 +449,14 @@ export default async function RepoDetailPage({ params }: Props) {
                 const isMerged   = event.eventType === 'agent_pr_merged'
                 const isFailed   = event.eventType === 'agent_execution_failed'
                 const isAttempt  = event.eventType === 'agent_attempt'
+                const isReport   = event.eventType === 'agent_skill_report'
                 const attemptOutcome = isAttempt ? (meta?.outcome as string | undefined) : undefined
 
                 const Icon = isMerged ? GitMerge : isCreated ? GitPullRequest : isQueued ? Clock : Bot
                 const iconColor = isMerged ? 'text-emerald-500'
                   : isCreated ? 'text-blue-500'
                   : isFailed ? 'text-red-400'
+                  : isReport ? 'text-violet-500'
                   : isAttempt && attemptOutcome === 'success' ? 'text-emerald-500'
                   : isAttempt && attemptOutcome === 'failed' ? 'text-red-400'
                   : isAttempt ? 'text-amber-500'
@@ -433,6 +464,7 @@ export default async function RepoDetailPage({ params }: Props) {
                 const label = isQueued ? 'Queued'
                   : isCreated ? 'PR Created'
                   : isMerged ? 'Merged'
+                  : isReport ? `/${(meta?.skillName as string) ?? 'skill'} Report`
                   : isAttempt ? `Attempt: ${attemptOutcome ?? '?'}`
                   : 'Failed'
                 const labelColor = isMerged
@@ -472,6 +504,22 @@ export default async function RepoDetailPage({ params }: Props) {
                           </a>
                         )}
                       </div>
+                      {/* Skill report findings inline */}
+                      {isReport && Array.isArray(meta?.findings) && (meta.findings as string[]).length > 0 && (
+                        <ul className="mt-1.5 space-y-0.5">
+                          {(meta.findings as string[]).slice(0, 5).map((f, fi) => (
+                            <li key={fi} className="text-[10px] text-muted-foreground flex items-start gap-1">
+                              <span className="shrink-0 mt-0.5">·</span>
+                              <span>{f}</span>
+                            </li>
+                          ))}
+                          {(meta.findings as string[]).length > 5 && (
+                            <li className="text-[10px] text-muted-foreground">
+                              +{(meta.findings as string[]).length - 5} more findings
+                            </li>
+                          )}
+                        </ul>
+                      )}
                     </div>
                     <span className="text-[10px] text-muted-foreground shrink-0">
                       {formatDistanceToNow(event.occurredAt)}

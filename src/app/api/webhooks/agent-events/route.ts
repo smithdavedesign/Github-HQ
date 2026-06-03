@@ -6,7 +6,7 @@ import { after } from 'next/server'
 import { dispatchNotification } from '@/lib/notifications/dispatcher'
 
 interface AgentEventPayload {
-  eventType: 'agent_task_queued' | 'agent_pr_created' | 'agent_pr_merged' | 'agent_execution_failed'
+  eventType: 'agent_task_queued' | 'agent_pr_created' | 'agent_pr_merged' | 'agent_execution_failed' | 'agent_skill_report'
   taskId:    string
   repoName?: string
   prUrl?:    string
@@ -15,6 +15,11 @@ interface AgentEventPayload {
   durationMs?: number
   filesChanged?: number
   costUsd?: number
+  // Phase G4: gstack skill findings (when outcome = no-changes)
+  skillName?: string
+  findings?: string[]
+  outcome?: string
+  healthScore?: number
 }
 
 export async function POST(request: Request) {
@@ -163,6 +168,26 @@ export async function POST(request: Request) {
         repoId: repoId ?? null,
         metadata: { taskId },
       })
+    })
+  }
+
+  // Phase G4: gstack skill completed with findings but no code changes
+  if (eventType === 'agent_skill_report') {
+    await db.insert(portfolioEvents).values({
+      userId,
+      repoId,
+      eventType: 'agent_skill_report',
+      title:     `/${payload.skillName ?? 'skill'} findings${repoName ? ` — ${repoName}` : ''}`,
+      description: summary ?? null,
+      metadata: {
+        taskId,
+        skillName:   payload.skillName,
+        findings:    payload.findings ?? [],
+        outcome:     payload.outcome ?? 'no-changes',
+        healthScore: payload.healthScore ?? null,
+        agentName,
+        durationMs,
+      },
     })
   }
 

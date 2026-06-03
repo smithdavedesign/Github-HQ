@@ -117,6 +117,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
 
+    // ── Phase G2: gstack skill launcher ─────────────────────────────────
+    {
+      name: 'queue_gstack_skill',
+      description: 'Trigger a real gstack skill on a repo — /investigate for debugging and security analysis, /health for code quality reporting, /ship for creating PRs. Use this when get_coding_brief shows problems that need deeper investigation, or when you want an agent to implement and ship changes. Returns a taskId to poll with get_active_work().',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          repo_name: { type: 'string', description: 'Repository name (e.g. "repohq")' },
+          skill:     { type: 'string', enum: ['investigate', 'health', 'ship'], description: 'gstack skill to run' },
+          objective: { type: 'string', description: 'What the agent should do — defaults to a sensible objective based on the skill and repo state if omitted' },
+        },
+        required: ['repo_name', 'skill'],
+      },
+    },
+
     // ── Phase 52: Accuracy report ────────────────────────────────────────
     {
       name: 'get_accuracy_report',
@@ -672,6 +687,114 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [{
             type: 'text',
             text: `✓ Session logged for **${repo.name}**\nAgent: ${agent}\nSummary: ${summary}`,
+          }],
+        }
+      }
+
+      case 'queue_gstack_skill': {
+        const { repo_name, skill, objective: rawObjective } = args as {
+          repo_name: string
+          skill: 'investigate' | 'health' | 'ship'
+          objective?: string
+        }
+
+        const repo = await db.query.repositories.findFirst({
+          where: and(eq(schema.repositories.userId, USER_ID), eq(schema.repositories.name, repo_name)),
+          with: { metrics: { columns: { buildStatus: true, healthScore: true } }, securityFindings: { where: eq(schema.securityFindings.state, 'open') } },
+          columns: { id: true, name: true, fullName: true },
+        })
+        if (!repo) {
+          return { content: [{ type: 'text', text: `Repo "${repo_name}" not found. Make sure it's synced.` }] }
+        }
+
+        // Smart default objectives based on skill + repo state
+        const openAlerts = repo.securityFindings?.filter(f => ['critical', 'high'].includes((f as { severity?: string }).severity ?? '')) ?? []
+        const failingBuild = repo.metrics?.buildStatus === 'failure'
+        const defaultObjective = skill === 'investigate'
+          ? failingBuild
+            ? `Investigate why the build is failing in ${repo.name} and fix the root cause`
+            : openAlerts.length > 0
+              ? `Investigate ${openAlerts.length} critical/high security alert${openAlerts.length > 1 ? 's' : ''} in ${repo.name}`
+              : `Investigate code quality issues and potential improvements in ${repo.name}`
+          : skill === 'health'
+            ? `Run code health check on ${repo.name} — report TypeScript errors, test failures, dead code, and lint issues`
+            : `Ship latest changes in ${repo.name}`
+
+        const objective = rawObjective?.trim() || defaultObjective
+
+        // Lifecycle guard
+        const lifecycle = await getOpenAgentPRMap()
+        if (lifecycle.has(repo.id)) {
+          const existing = lifecycle.get(repo.id)!
+          return { content: [{ type: 'text', text: `⚠️ ${repo.name} already has an agent PR in flight (task ${existing.taskId}). Review or merge it first before launching another skill.` }] }
+        }
+
+        // Queue via Nexus
+        const nexusUrl = process.env.NEXUS_API_URL?.replace(/\/$/, '')
+        const nexusToken = process.env.NEXUS_API_TOKEN
+        if (!nexusUrl || !nexusToken) {
+          return { content: [{ type: 'text', text: `Nexus not configured (NEXUS_API_URL / NEXUS_API_TOKEN missing). Cannot queue skill.` }] }
+        }
+
+        const executionMode = skill === 'ship' ? 'fix' : 'investigate'
+        const riskTier = skill === 'ship' ? 'tier2' : 'tier3'
+
+        const res = await fetch(`${nexusUrl}/internal/agent-tasks`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${nexusToken}` },
+          body: JSON.stringify({
+            objective,
+            targetRepository: repo.fullName,
+            executionMode,
+            acceptanceCriteria: skill === 'investigate'
+              ? ['Root cause identified and documented', 'Findings listed with file paths', 'No new issues introduced']
+              : skill === 'health'
+                ? ['Code quality report produced', 'Critical issues listed', 'Health score computed']
+                : ['Changes implement the objective', 'Tests pass', 'PR created'],
+            contextNotes: JSON.stringify({
+              repoHQRepoId:   repo.id,
+              repoHQRepoName: repo.name,
+              skillName:      skill,
+              riskTier,
+              source:         'repohq-mcp-agent',
+              autoExecute:    true,
+            }),
+          }),
+        })
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({})) as { error?: { message?: string } }
+          return { content: [{ type: 'text', text: `Nexus error: ${err.error?.message ?? res.statusText}` }], isError: true }
+        }
+
+        const data = await res.json() as { agentTaskId: string; status: string }
+
+        // Record in portfolio_events
+        await db.insert(schema.portfolioEvents).values({
+          userId:    USER_ID!,
+          repoId:    repo.id,
+          eventType: 'agent_task_queued',
+          title:     `gstack /${skill}: ${objective.slice(0, 80)}`,
+          description: objective,
+          metadata: {
+            taskId:    data.agentTaskId,
+            skillName: skill,
+            source:    'repohq-mcp-agent',
+            riskTier,
+            nexusUrl,
+          },
+        })
+
+        return {
+          content: [{
+            type: 'text',
+            text: [
+              `✓ gstack /${skill} queued for **${repo.name}**`,
+              `Task ID: \`${data.agentTaskId}\``,
+              `Objective: ${objective}`,
+              ``,
+              `Track progress with: \`get_active_work("${repo.name}")\``,
+            ].join('\n'),
           }],
         }
       }

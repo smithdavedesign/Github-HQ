@@ -96,7 +96,7 @@ describe('weekly-diff — WeeklyDiff shape', () => {
       topImprover: { repoId: 1, repoName: 'ai-brand-context', delta: 19, oldScore: 61, newScore: 80 },
     }
     expect(diff.topImprover?.delta).toBe(19)
-    expect(diff.topImprover?.newScore - diff.topImprover!.oldScore).toBe(19)
+    expect((diff.topImprover?.newScore ?? 0) - (diff.topImprover?.oldScore ?? 0)).toBe(19)
   })
 
   it('diff with decliner has negative delta', () => {
@@ -158,8 +158,8 @@ describe('dbOp error wrapper', () => {
   })
 
   it('hides internal error details from callers', async () => {
-    const err = await dbOp('load', () => { throw new Error('postgresql://user:secret@host/db') }).catch(e => e)
-    expect(err.message).not.toContain('postgresql://')
-    expect(err.message).not.toContain('secret')
+    const err = await dbOp('load', () => { throw new Error('postgresql://user:secret@host/db') }).catch((e: unknown) => e)
+    expect((err as Error).message).not.toContain('postgresql://')
+    expect((err as Error).message).not.toContain('secret')
   })
 })
