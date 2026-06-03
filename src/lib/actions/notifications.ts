@@ -9,29 +9,38 @@ export async function getUnreadNotifications(limit = 20) {
   const session = await auth()
   if (!session?.user?.id) return []
 
-  return db.query.notifications.findMany({
-    where: and(
-      eq(notifications.userId, session.user.id),
-      isNull(notifications.readAt),
-    ),
-    orderBy: [desc(notifications.createdAt)],
-    limit,
-    with: { repository: { columns: { name: true, id: true } } },
-  })
+  try {
+    return await db.query.notifications.findMany({
+      where: and(
+        eq(notifications.userId, session.user.id),
+        isNull(notifications.readAt),
+      ),
+      orderBy: [desc(notifications.createdAt)],
+      limit,
+      with: { repository: { columns: { name: true, id: true } } },
+    })
+  } catch (err) {
+    console.warn('[notifications/getUnread]', err instanceof Error ? err.message : err)
+    return []
+  }
 }
 
 export async function getUnreadCount(): Promise<number> {
   const session = await auth()
   if (!session?.user?.id) return 0
 
-  const rows = await db.query.notifications.findMany({
-    where: and(
-      eq(notifications.userId, session.user.id),
-      isNull(notifications.readAt),
-    ),
-    columns: { id: true },
-  })
-  return rows.length
+  try {
+    const rows = await db.query.notifications.findMany({
+      where: and(
+        eq(notifications.userId, session.user.id),
+        isNull(notifications.readAt),
+      ),
+      columns: { id: true },
+    })
+    return rows.length
+  } catch {
+    return 0
+  }
 }
 
 export async function markAllNotificationsRead(): Promise<void> {

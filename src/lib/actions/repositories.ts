@@ -252,7 +252,8 @@ export async function updateRepoTags(repoId: number, tags: string[]) {
   )
 }
 
-export async function getPortfolioCostBreakdown() {
+/** Phase 23 (deferred) — used internally; no external callers yet */
+async function getPortfolioCostBreakdown() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 

@@ -102,7 +102,8 @@ export async function createGoal(data: {
   revalidatePath('/settings')
 }
 
-export async function updateGoalProgress(goalId: number, currentValue: number) {
+/** Internal — auto-tracking only; UI uses updateCustomGoalProgress */
+async function updateGoalProgress(goalId: number, currentValue: number) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 

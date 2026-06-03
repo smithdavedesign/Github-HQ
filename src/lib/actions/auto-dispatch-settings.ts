@@ -40,6 +40,7 @@ export async function getAutoDispatchSettings() {
   const session = await auth()
   if (!session?.user?.id) return null
 
+  try {
   const user = await db.query.users.findFirst({
     where: eq(users.id, session.user.id),
     columns: {
@@ -56,5 +57,9 @@ export async function getAutoDispatchSettings() {
     autoDispatchMaxPerRun:         user?.autoDispatchMaxPerRun ?? 3,
     autoDispatchSkipSecurity:      user?.autoDispatchSkipSecurity ?? true,
     autoDispatchAccuracyThreshold: user?.autoDispatchAccuracyThreshold ?? 0,
+  }
+  } catch (err) {
+    console.warn('[auto-dispatch/getSettings]', err instanceof Error ? err.message : err)
+    return null
   }
 }

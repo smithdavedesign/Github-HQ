@@ -35,7 +35,7 @@ export async function GET(request: Request) {
         snapshotHealthScores(user.id),
         snapshotPortfolioScore(user.id),
         refreshGoalProgress(user.id),
-        syncStripeMrr(),
+        syncStripeMrr(user.id), // pass userId directly — cron has no session
         resolveActualDeltas(user.id),
         checkHealthThresholdAlerts(user.id),
       ])

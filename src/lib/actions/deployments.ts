@@ -51,22 +51,31 @@ export async function removeDeploymentUrl(deploymentId: number) {
 }
 
 export async function checkSingleDeployment(deploymentId: number) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+
+  // Scope to user's own deployments — prevents IDOR
   const deployment = await db.query.deployments.findFirst({
     where: eq(deployments.id, deploymentId),
+    with: { repository: { columns: { userId: true } } },
   })
-  if (!deployment) return
+  if (!deployment || deployment.repository?.userId !== session.user.id) return
 
-  const result = await checkDeploymentUrl(deployment.url)
-  await db
-    .update(deployments)
-    .set({
-      status: result.status,
-      responseTimeMs: result.responseTimeMs,
-      httpStatus: result.httpStatus,
-      sslValid: result.sslValid,
-      lastChecked: new Date(),
-    })
-    .where(eq(deployments.id, deploymentId))
+  try {
+    const result = await checkDeploymentUrl(deployment.url)
+    await db
+      .update(deployments)
+      .set({
+        status: result.status,
+        responseTimeMs: result.responseTimeMs,
+        httpStatus: result.httpStatus,
+        sslValid: result.sslValid,
+        lastChecked: new Date(),
+      })
+      .where(eq(deployments.id, deploymentId))
+  } catch (err) {
+    console.warn('[deployments/checkSingle]', err instanceof Error ? err.message : err)
+  }
 }
 
 export async function discoverRepoDeployments(repoId: number) {
@@ -103,15 +112,11 @@ export async function discoverRepoDeployments(repoId: number) {
     if (!exists) discovered.push({ url, name: 'Homepage', provider })
   }
 
-  let added = 0
-  for (const dep of discovered) {
-    try {
-      await addDeploymentUrl(repoId, dep.url, dep.name, dep.provider)
-      added++
-    } catch {
-      // Skip duplicates or errors
-    }
-  }
+  // Parallel upserts — was sequential await in a loop
+  const results = await Promise.allSettled(
+    discovered.map(dep => addDeploymentUrl(repoId, dep.url, dep.name, dep.provider))
+  )
+  const added = results.filter(r => r.status === 'fulfilled').length
 
   return { discovered: discovered.length, added }
 }

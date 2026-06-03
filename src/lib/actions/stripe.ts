@@ -61,16 +61,18 @@ async function fetchStripeMrr(apiKey: string): Promise<Map<string, { mrr: number
 
 async function fetchStripeProducts(apiKey: string, productIds: string[]): Promise<Map<string, string>> {
   const nameById = new Map<string, string>()
-  for (const id of productIds) {
-    try {
-      const res = await fetch(`https://api.stripe.com/v1/products/${id}`, {
+  // Parallel requests — was sequential await in a loop
+  const results = await Promise.allSettled(
+    productIds.map(id =>
+      fetch(`https://api.stripe.com/v1/products/${id}`, {
         headers: { 'Authorization': `Bearer ${apiKey}` },
-      })
-      if (res.ok) {
-        const p = await res.json() as { id: string; name: string }
-        nameById.set(p.id, p.name)
-      }
-    } catch { /* skip */ }
+      }).then(res => res.ok ? res.json() as Promise<{ id: string; name: string }> : null)
+    )
+  )
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value) {
+      nameById.set(r.value.id, r.value.name)
+    }
   }
   return nameById
 }
@@ -134,11 +136,20 @@ export async function mapStripeProduct(repoId: number, stripeProductId: string |
     .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
 }
 
-export async function syncStripeMrr(): Promise<{ synced: number }> {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
+/**
+ * Accepts an optional userId for cron context where no session exists.
+ * When called without userId it falls back to the current session (UI context).
+ */
+export async function syncStripeMrr(cronUserId?: string): Promise<{ synced: number }> {
+  let userId: string
+  if (cronUserId) {
+    userId = cronUserId
+  } else {
+    const session = await auth()
+    if (!session?.user?.id) throw new Error('Unauthorized')
+    userId = session.user.id
+  }
 
-  const userId = session.user.id
   const apiKey = await resolveApiKey(userId)
   if (!apiKey) return { synced: 0 }
 
@@ -173,20 +184,28 @@ export async function syncStripeMrr(): Promise<{ synced: number }> {
 }
 
 export async function hasStripeKey(): Promise<boolean> {
-  const session = await auth()
-  if (!session?.user?.id) return false
-  const key = await resolveApiKey(session.user.id)
-  return !!key
+  try {
+    const session = await auth()
+    if (!session?.user?.id) return false
+    const key = await resolveApiKey(session.user.id)
+    return !!key
+  } catch {
+    return false
+  }
 }
 
 export async function stripeKeySource(): Promise<'db' | 'env' | null> {
-  const session = await auth()
-  if (!session?.user?.id) return null
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, session.user.id),
-    columns: { stripeApiKey: true },
-  })
-  if (user?.stripeApiKey) return 'db'
-  if (process.env.STRIPE_API_KEY) return 'env'
-  return null
+  try {
+    const session = await auth()
+    if (!session?.user?.id) return null
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, session.user.id),
+      columns: { stripeApiKey: true },
+    })
+    if (user?.stripeApiKey) return 'db'
+    if (process.env.STRIPE_API_KEY) return 'env'
+    return null
+  } catch {
+    return null
+  }
 }

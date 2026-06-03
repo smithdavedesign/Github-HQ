@@ -111,7 +111,8 @@ export async function getAccuracyByImpactType(userId: string): Promise<AccuracyS
  * Returns per-repo accuracy for a specific repo.
  * Uses the hybrid model: returns repo-specific if ≥3 data points, otherwise global.
  */
-export async function getRepoAccuracy(
+/** Used internally by getMyAccuracyStats — no external callers */
+async function getRepoAccuracy(
   userId: string,
   repoId: number,
 ): Promise<AccuracyStats[]> {
@@ -221,6 +222,7 @@ export async function getMyAccuracyStats(): Promise<AccuracyStats[]> {
   return getAccuracyByImpactType(session.user.id)
 }
 
+/** Session-aware wrapper — called from settings and dashboard server components */
 export async function getMyDowngradedRepos() {
   const session = await auth()
   if (!session?.user?.id) return []

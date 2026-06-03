@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { getLLMAdapter } from '@/lib/ai/adapter'
+import { z } from 'zod'
 
 export interface NLQueryFilters {
   healthMin?: number
@@ -24,6 +25,28 @@ export interface NLQueryResult {
   filters: NLQueryFilters
   explanation: string  // human-readable summary of what was filtered
 }
+
+// Zod schema — validates the LLM response so malformed output produces a 400 not a 500
+const NLQueryResultSchema = z.object({
+  filters: z.object({
+    healthMin:           z.number().int().min(0).max(100).optional(),
+    healthMax:           z.number().int().min(0).max(100).optional(),
+    activityStatus:      z.array(z.string()).optional(),
+    lastPushBeforeDays:  z.number().int().positive().optional(),
+    lastPushAfterDays:   z.number().int().positive().optional(),
+    visibility:          z.enum(['public', 'private']).optional(),
+    language:            z.string().max(50).optional(),
+    framework:           z.string().max(50).optional(),
+    database:            z.string().max(50).optional(),
+    isRevenueGenerating: z.boolean().optional(),
+    hasSecurityIssues:   z.boolean().optional(),
+    starsMin:            z.number().int().min(0).optional(),
+    mrrMin:              z.number().min(0).optional(),
+    sortBy:              z.enum(['health', 'activity', 'security', 'lastPush', 'stars', 'mrr', 'name']).optional(),
+    sortDir:             z.enum(['asc', 'desc']).optional(),
+  }),
+  explanation: z.string().max(200),
+})
 
 const SYSTEM_PROMPT = `You translate natural language questions about a GitHub portfolio into structured filter specifications.
 
@@ -81,8 +104,22 @@ export async function POST(request: Request) {
   const text = await adapter.generate({
     system: SYSTEM_PROMPT, user: question, fast: true, maxTokens: 256, cacheSystem: true,
   })
-  const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-  const result: NLQueryResult = JSON.parse(jsonStr)
 
-  return NextResponse.json(result)
+  const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(jsonStr)
+  } catch {
+    console.warn('[nl-query] LLM returned non-JSON:', text.slice(0, 100))
+    return NextResponse.json({ error: 'Failed to parse query — please rephrase your question' }, { status: 422 })
+  }
+
+  const validated = NLQueryResultSchema.safeParse(parsed)
+  if (!validated.success) {
+    console.warn('[nl-query] LLM schema mismatch:', validated.error.issues)
+    return NextResponse.json({ error: 'Query could not be understood — please rephrase' }, { status: 422 })
+  }
+
+  return NextResponse.json(validated.data)
 }

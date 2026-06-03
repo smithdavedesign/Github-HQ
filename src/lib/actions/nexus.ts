@@ -398,19 +398,3 @@ export async function autoDispatchAdvisorActions(
   return result
 }
 
-export async function getNexusTaskStatus(taskId: string): Promise<NexusTaskStatus> {
-  const config = getNexusConfig()
-  if (!config) return 'unknown'
-
-  const res = await fetch(`${config.url}/internal/agent-tasks/${taskId}`, {
-    headers: { 'Authorization': `Bearer ${config.token}` },
-  })
-
-  if (!res.ok) return 'unknown'
-  const data = await res.json() as { status?: string }
-  return (data.status ?? 'unknown') as NexusTaskStatus
-}
-
-export async function isNexusConfigured(): Promise<boolean> {
-  return !!getNexusConfig()
-}

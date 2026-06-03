@@ -195,10 +195,21 @@ Note: `queueAdvisorActionForUser` IS used in `cron/digest/route.ts` — false po
 
 **Coverage gaps:** `changelog.ts`, `goals.ts`, `sync.ts`
 
-### Status
-- 🔲 Verify dead exports (some may be used externally or by cron)
-- 🔲 Add try/catch to hasStripeKey, stripeKeySource, getUnreadNotifications
-- 🔲 Fix sequential awaits in stripe + deployments
+### Resolved — 2026-06-03
+
+| Finding | Resolution |
+|---------|-----------|
+| Dead exports: `getNexusTaskStatus`, `isNexusConfigured` | ✅ Removed — never called outside own file |
+| Dead export: `getPortfolioCostBreakdown` | ✅ Made internal (`async function`, not `export`) — Phase 23 deferred feature |
+| Dead export: `getRepoAccuracy` | ✅ Made internal — only called by `getMyAccuracyStats` wrapper |
+| Dead export: `getMyDowngradedRepos` | ✅ Kept exported — used by advisor and settings, comment added |
+| Dead export: `updateGoalProgress` | ✅ Made internal — UI uses `updateCustomGoalProgress` |
+| Missing try/catch: `hasStripeKey`, `stripeKeySource` | ✅ Both wrapped; return `false`/`null` on DB error |
+| Missing try/catch: `getUnreadNotifications`, `getUnreadCount` | ✅ Both wrapped; return `[]`/`0` on DB error |
+| Missing try/catch: `getAutoDispatchSettings` | ✅ Wrapped; returns `null` on DB error |
+| Missing try/catch: `checkSingleDeployment` | ✅ Wrapped + IDOR fixed (see security section) |
+| N+1: `fetchStripeProducts` sequential for-loop | ✅ Replaced with `Promise.allSettled` parallel fetch |
+| N+1: `discoverRepoDeployments` sequential for-loop | ✅ Replaced with `Promise.allSettled` parallel upsert |
 
 ---
 
@@ -222,11 +233,14 @@ Note: `queueAdvisorActionForUser` IS used in `cron/digest/route.ts` — false po
 | Low | `stripe.ts:syncStripeMrr` | **Auth fails silently in cron** — calls `auth()` but cron has no session; error swallowed by `Promise.allSettled` |
 | Info | `api/nl-query/route.ts` | `JSON.parse` on raw LLM output without schema validation — malformed responses produce 500s |
 
-### Status
-- 🔲 Add auth check to `checkSingleDeployment` (add `userId` scope)
-- 🔲 Fix `syncStripeMrr` to accept `userId` directly (bypass `auth()` for cron context)
-- 🔲 Add Zod validation to nl-query LLM response parsing
-- 🔲 Credentials encryption (longer-term, already deferred)
+### Resolved — 2026-06-03
+
+| Finding | Resolution |
+|---------|-----------|
+| **IDOR on `checkSingleDeployment`** | ✅ Added `session.user.id` auth check; verifies deployment belongs to user's repo before checking/updating |
+| **`syncStripeMrr` fails silently in cron** | ✅ Accepts optional `cronUserId` param — bypasses `auth()` when called from cron; cron passes `user.id` directly |
+| **`JSON.parse` without validation in nl-query** | ✅ Added Zod schema (`NLQueryResultSchema`); invalid JSON returns 422 with user-friendly message; schema mismatch also returns 422; internal errors no longer surface as 500s |
+| Credentials stored plaintext | 🔲 Deferred — longer-term, needs envelope encryption |
 
 ---
 
