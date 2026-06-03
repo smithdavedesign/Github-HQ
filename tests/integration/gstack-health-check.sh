@@ -70,7 +70,9 @@ npm test 2>&1 | tail -4
 
 echo ""
 echo "[gstack-health] Running Claude Code health assessment..."
-cat "$PROMPT_FILE" | npx --yes claude@latest \
+export CLAUDECODE_OVERRIDE="$CLAUDECODE"
+unset CLAUDECODE
+cat "$PROMPT_FILE" | claude \
   --print \
   --dangerously-skip-permissions \
   "$(cat "$PROMPT_FILE")" 2>&1 || true
