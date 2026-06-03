@@ -72,6 +72,11 @@ export const users = pgTable('users', {
   hoursPerWeek: integer('hours_per_week').default(10),
   // Phase 37: Stripe integration
   stripeApiKey: text('stripe_api_key'),
+  // Subscription fields written by the Stripe webhook handler
+  stripeCustomerId:         text('stripe_customer_id'),
+  stripeSubscriptionId:     text('stripe_subscription_id'),
+  stripePlan:               text('stripe_plan').default('free'),        // 'free' | 'pro' | 'team'
+  stripeSubscriptionStatus: text('stripe_subscription_status'),         // 'active' | 'canceled' | 'past_due' …
   // Phase 44: Bring Your Own LLM Key
   llmProvider: text('llm_provider').default('anthropic'), // anthropic | openai | gemini
   llmApiKey: text('llm_api_key'),   // legacy single-key field (kept for migration safety)
