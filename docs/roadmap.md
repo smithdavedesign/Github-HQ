@@ -311,7 +311,7 @@
 - [x] Wired into `/api/cron/sync` — runs before full sync (detect + record healthBefore), resolves deltas after sync completes
 - [ ] Phase E: Upgrade to GitHub App real-time webhooks (see Distribution Roadmap below)
 
-See [docs/agentic-execution-prd.md](agentic-execution-prd.md) for full PRD, architecture, and risk analysis.
+See [docs/architecture.md](architecture.md) for risk tiers, safety gates, success metrics, and competitive context. See [docs/agentic-full-flow.md](agentic-full-flow.md) for mermaid architecture and sequence diagrams.
 
 ---
 

@@ -278,3 +278,58 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 **GitHub Actions crons** — Primary cron trigger (replaces Vercel Hobby once-per-day limit). 5 workflows in `.github/workflows/` call existing API endpoints with `CRON_SECRET`. Vercel crons remain as once-per-Sunday fallback. `CRON_SECRET` stored as GitHub repo secret.
 
 **Pure function extraction** — All scoring, simulation, event derivation, and dep-analysis logic lives in plain `.ts` files with no DB imports. Server actions and sync code call these functions. This pattern makes everything testable without DB mocks and keeps server action files thin.
+
+---
+
+## Agent Execution — Risk Tiers & Safety Gates
+
+All agent tasks are classified by risk tier. Do not route to a higher tier until the lower tier has proven ≥80% advisor accuracy over 20+ executions.
+
+| Tier | Task Types | Skill | Safety |
+|------|-----------|-------|--------|
+| Tier 1 | Documentation gaps, README improvements | `/ship` | Any failure is immediately obvious; revert is trivial |
+| Tier 2 | Dependency updates, CI/test fixes | `/ship` | Clear test criteria (tests pass = success); revert is one-line diff |
+| Tier 3 | Security alert fixes, investigations | `/investigate` | Only after Tier 1-2 proven; a wrong security fix can introduce new vulnerabilities |
+| Blocked | Feature work, architecture changes, auth/payments/migrations | — | Never in scope for autonomous execution |
+
+**NOT in scope for autonomous agents:** Feature work, architectural changes, major refactors, cross-repo coordinated changes, anything touching auth, payments, or data migrations.
+
+## Agent Execution — Risks & Mitigations
+
+| Risk | Mitigation |
+|------|------------|
+| Advisor accuracy too low | Track `predictedDelta` vs `actualDelta` from Day 1; phase gates prevent advancing until ≥70% (B) and ≥80% (E) |
+| Agent context loss (>70% token capacity) | Coding brief capped at 6h TTL; one action per execution; snapshot memoization |
+| Security fix introduces new vulnerability | Security in Tier 3 only, after Tier 1-2 proven safe over 20+ executions |
+| Approval bottleneck | Auto-dispatch (Phase 53) with effort gate + accuracy gate; never auto-queues without user consent |
+| Nexus API auth leak | Service token in RepoHQ env vars only, never stored in DB |
+| PR created without user knowledge | All PRs default `draft: true`; lifecycle guard prevents duplicate queuing |
+| Auto-queue causing unreviewed work | Phase 53 gated by effort/accuracy/security settings; master toggle defaults off |
+| gstack skill incompatibility | Each wrapper tested against `.nexus/output.json` contract in isolation (`tests/unit/nexus-output-contract.test.ts`) |
+| Agent crash mid-execution | Checkpoint mode (`continuous`) enabled — WIP commits survive timeouts; re-run resumes from last WIP |
+
+## Agent Execution — Success Metrics
+
+| Metric | Target | Gate |
+|--------|--------|------|
+| Queue click-through rate | > 30% of advisor actions shown | Phase A validation |
+| Advisor accuracy (predicted vs actual delta) | > 70% | Unlock Phase B (MCP context) |
+| Advisor accuracy | > 80% | Unlock Phase E (auto-queue) |
+| Agent execution success rate | > 80% | Ongoing from Phase A.5 |
+| PR merged rate | > 75% | Ongoing |
+| Portfolio score gained from agents | Measurable upward trend | After 2 weeks |
+| Zero production incidents | 100% | Always — draft PRs enforce this |
+| Skill report closure rate (`log_attempt` called) | 100% | Always |
+
+## Competitive Context (mid-2026)
+
+What makes this combination novel: portfolio-level prioritisation (not arbitrary feature work) flowing into a review-gated execution pipeline with a learning loop. No other tool connects "scored opportunity → approved work item → agent branch → PR → accuracy measurement" as a single product flow.
+
+| Tool | Portfolio Scoring | Agent Execution | Human Gate | Accuracy Loop |
+|------|-----------------|-----------------|------------|---------------|
+| RepoHQ alone | ✅ quantified | ❌ | — | — |
+| AI-Took-My-Job alone | ❌ | ✅ | ✅ | ❌ |
+| Devin | ❌ | ✅ | minimal | ❌ |
+| Copilot Workspace | ❌ | plan-only | ✅ | ❌ |
+| OpenHands | ❌ | ✅ | none | ❌ |
+| **RepoHQ + Nexus + gstack** | **✅ quantified** | **✅** | **✅** | **✅** |

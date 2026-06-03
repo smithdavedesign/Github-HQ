@@ -219,6 +219,8 @@ See [mcp/README.md](mcp/README.md) for full setup and tool reference.
 
 ## Agentic Execution (Nexus)
 
+> **The core thesis:** RepoHQ has Find, Prioritize, and Measure. Nexus adds Execute. That's why this feels different from every other dashboard feature — it's not another card. It's the loop closing.
+
 RepoHQ integrates with **AI-Took-My-Job** (AI-DevOps Nexus) to automatically execute advisor recommendations. When you click "Run Agent" on an advisor action:
 
 1. RepoHQ POSTs to Nexus `/internal/agent-tasks`
@@ -236,7 +238,7 @@ The Run Agent button hydrates from the database on mount — it always reflects 
 
 To enable: add `NEXUS_API_URL`, `NEXUS_API_TOKEN`, and `NEXUS_WEBHOOK_SECRET` to your environment.
 
-See [docs/agentic-execution-prd.md](docs/agentic-execution-prd.md) and [docs/agentic-full-flow.md](docs/agentic-full-flow.md) for architecture diagrams.
+See [docs/agentic-full-flow.md](docs/agentic-full-flow.md) for architecture diagrams and mermaid sequence flows.
 
 ---
 
@@ -311,6 +313,6 @@ npm run db:generate   # Generate migration files
 
 - [Architecture](docs/architecture.md) — system design, scoring formulas, DB schema, design decisions
 - [Roadmap](docs/roadmap.md) — all phases shipped + upcoming, gstack roadmap, distribution roadmap
-- [Agentic Execution PRD](docs/agentic-execution-prd.md) — full spec for the agent pipeline
+- [Architecture](docs/architecture.md) — risk tiers, safety gates, success metrics, competitive context
 - [Agentic Full Flow](docs/agentic-full-flow.md) — mermaid architecture + sequence diagrams
 - [MCP Setup](mcp/README.md) — IDE integration guide with all 11 tools
