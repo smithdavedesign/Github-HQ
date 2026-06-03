@@ -224,27 +224,32 @@ export async function triageSetLifecycle(repoId: number, status: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  await db
-    .update(repositories)
-    .set({ lifecycleStatus: status })
-    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  await dbOp('update lifecycle (triage)', () =>
+    db.update(repositories)
+      .set({ lifecycleStatus: status })
+      .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  )
 }
 
 export async function updateAbandonmentReason(repoId: number, reason: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
-  await db.update(repositories).set({ abandonmentReason: reason })
-    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+
+  await dbOp('update abandonment reason', () =>
+    db.update(repositories).set({ abandonmentReason: reason })
+      .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  )
 }
 
 export async function updateRepoTags(repoId: number, tags: string[]) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  await db
-    .update(repositories)
-    .set({ tags })
-    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  await dbOp('update tags', () =>
+    db.update(repositories)
+      .set({ tags })
+      .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  )
 }
 
 export async function getPortfolioCostBreakdown() {
@@ -408,8 +413,11 @@ export async function getOpportunityData() {
 export async function updateRepoEffort(repoId: number, effort: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
-  await db.update(repositories).set({ estimatedEffort: effort })
-    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+
+  await dbOp('update effort', () =>
+    db.update(repositories).set({ estimatedEffort: effort })
+      .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  )
   const { revalidatePath } = await import('next/cache')
   revalidatePath(`/repos/${repoId}`)
   revalidatePath('/analytics')
@@ -419,7 +427,9 @@ export async function updateHoursPerWeek(hours: number) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
   const { users } = await import('@/lib/db/schema')
-  await db.update(users).set({ hoursPerWeek: hours }).where(eq(users.id, session.user.id))
+  await dbOp('update hours per week', () =>
+    db.update(users).set({ hoursPerWeek: hours }).where(eq(users.id, session.user.id))
+  )
 }
 
 export async function togglePublicProfile(enabled: boolean) {
@@ -427,7 +437,9 @@ export async function togglePublicProfile(enabled: boolean) {
   if (!session?.user?.id) throw new Error('Unauthorized')
 
   const { users } = await import('@/lib/db/schema')
-  await db.update(users).set({ publicProfile: enabled }).where(eq(users.id, session.user.id))
+  await dbOp('toggle public profile', () =>
+    db.update(users).set({ publicProfile: enabled }).where(eq(users.id, session.user.id))
+  )
 }
 
 export async function analyzeRepo(repoId: number, force = false) {
@@ -509,11 +521,11 @@ export async function updateRepoPurpose(repoId: number, purpose: string | null) 
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  await db
-    .update(repositories)
-    .set({ purpose })
-    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
-
+  await dbOp('update purpose', () =>
+    db.update(repositories)
+      .set({ purpose })
+      .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  )
   const { revalidatePath } = await import('next/cache')
   revalidatePath(`/repos/${repoId}`)
   revalidatePath('/repos')
@@ -523,11 +535,11 @@ export async function toggleFocused(repoId: number, isFocused: boolean) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  await db
-    .update(repositories)
-    .set({ isFocused })
-    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
-
+  await dbOp('toggle focused', () =>
+    db.update(repositories)
+      .set({ isFocused })
+      .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  )
   const { revalidatePath } = await import('next/cache')
   revalidatePath(`/repos/${repoId}`)
   revalidatePath('/repos')

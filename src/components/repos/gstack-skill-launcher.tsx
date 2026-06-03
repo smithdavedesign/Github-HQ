@@ -25,9 +25,9 @@ const SKILLS: SkillDef[] = [
     icon: Search,
     iconColor: 'text-red-500',
     label: '/investigate',
-    tagline: 'Debug & security',
-    description: '4-phase root cause analysis — diagnose first, fix only if safe and low blast-radius. Best for failing builds, security alerts, and mysterious bugs.',
-    badge: 'Tier 3',
+    tagline: 'Debug & fix',
+    description: 'Diagnoses the root cause first, then fixes only if it\'s safe and low-risk. Best for failing builds, security alerts, and mysterious bugs. Will report findings and skip the fix if the change is too risky.',
+    badge: 'Analyze + Fix',
     badgeColor: 'bg-red-50 text-red-600 border-red-200 dark:bg-red-950/30 dark:text-red-400',
   },
   {
@@ -35,9 +35,9 @@ const SKILLS: SkillDef[] = [
     icon: Heart,
     iconColor: 'text-amber-500',
     label: '/health',
-    tagline: 'Code quality check',
-    description: 'Runs TypeScript, tests, lint, and dead code analysis. Produces a scored dashboard with findings and recommendations. No code changes — report only.',
-    badge: 'Read-only',
+    tagline: 'Code quality report',
+    description: 'Runs TypeScript, tests, lint, and dead code checks — produces a scored report with findings. Makes no code changes. Use this to understand the current state of the codebase before taking action.',
+    badge: 'Report only',
     badgeColor: 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400',
   },
   {
@@ -45,9 +45,9 @@ const SKILLS: SkillDef[] = [
     icon: GitPullRequest,
     iconColor: 'text-indigo-500',
     label: '/ship',
-    tagline: 'Create PR',
-    description: 'Full ship pipeline — pre-flight checks, run tests, implement changes, open PR. Use when you have a clear objective and want the agent to execute and ship.',
-    badge: 'Tier 2',
+    tagline: 'Implement & open PR',
+    description: 'Implements the objective, runs tests, and opens a PR — full pipeline from start to finish. Use when you have a clear task and want the agent to execute it completely.',
+    badge: 'Creates PR',
     badgeColor: 'bg-indigo-50 text-indigo-600 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400',
   },
 ]
@@ -65,7 +65,18 @@ export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, nexus
   const [loading, setLoading] = useState<GstackSkill | null>(null)
   const [launched, setLaunched] = useState<Record<string, boolean>>({})
 
-  if (!nexusEnabled) return null
+  if (!nexusEnabled) {
+    return (
+      <div className="rounded-lg border border-border/40 bg-muted/10 px-4 py-5 text-center space-y-2">
+        <p className="text-sm font-medium text-muted-foreground">gstack skills not available</p>
+        <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+          Add <code className="text-[10px] bg-muted px-1 py-0.5 rounded">NEXUS_API_URL</code> and{' '}
+          <code className="text-[10px] bg-muted px-1 py-0.5 rounded">NEXUS_API_TOKEN</code> to your
+          environment to enable /investigate, /health, and /ship on this repo.
+        </p>
+      </div>
+    )
+  }
 
   async function handleRun(skill: GstackSkill) {
     const objective = objectives[skill].trim()
@@ -130,7 +141,7 @@ export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, nexus
                       </Badge>
                     )}
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{skill.tagline}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{skill.tagline}</p>
                 </div>
                 {isExpanded
                   ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />

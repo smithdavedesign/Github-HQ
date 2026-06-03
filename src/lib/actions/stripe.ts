@@ -149,24 +149,27 @@ export async function syncStripeMrr(): Promise<{ synced: number }> {
     columns: { id: true, stripeProductId: true },
   })
 
-  let synced = 0
-  for (const repo of mappedRepos) {
-    if (!repo.stripeProductId) continue
-    const data = mrrByProduct.get(repo.stripeProductId)
-    if (data == null) continue
-
-    const mrrDollars = (data.mrr / 100).toFixed(2)
-    await db.update(repositories)
-      .set({
-        mrr: mrrDollars,
+  // Batch all updates in parallel — was N sequential DB round-trips
+  const toUpdate = mappedRepos
+    .filter(r => r.stripeProductId && mrrByProduct.has(r.stripeProductId))
+    .map(repo => {
+      const data = mrrByProduct.get(repo.stripeProductId!)!
+      return {
+        id: repo.id,
+        mrr: (data.mrr / 100).toFixed(2),
         arr: (data.mrr / 100 * 12).toFixed(2),
-        isRevenueGenerating: true,
-      })
-      .where(eq(repositories.id, repo.id))
-    synced++
-  }
+      }
+    })
 
-  return { synced }
+  await Promise.all(
+    toUpdate.map(({ id, mrr, arr }) =>
+      db.update(repositories)
+        .set({ mrr, arr, isRevenueGenerating: true })
+        .where(eq(repositories.id, id))
+    )
+  )
+
+  return { synced: toUpdate.length }
 }
 
 export async function hasStripeKey(): Promise<boolean> {

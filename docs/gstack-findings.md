@@ -113,9 +113,9 @@ JSON output is written to `.nexus/` and validated against the Nexus agent contra
 
 **Coverage gaps** — 12 of 15 action files have no direct tests
 
-### Status
-- N+1s: 🔲 Queued for fix
-- Error handling: 🔲 Queued for fix
+### Status — **Resolved 2026-06-03**
+- N+1s: ✅ Fixed — `refreshGoalProgress` batched with `Promise.allSettled` + `Promise.all`; `syncStripeMrr` batched with `Promise.all`
+- Error handling: ✅ Fixed — all remaining write functions in `repositories.ts` wrapped in `dbOp()`; same pattern applied to `triageSetLifecycle`, `updateAbandonmentReason`, `updateRepoTags`, `updateRepoEffort`, `updateHoursPerWeek`, `togglePublicProfile`, `updateRepoPurpose`, `toggleFocused`
 - Coverage: 🔲 Deferred (DB-dependent actions require mock setup)
 
 ---
@@ -154,12 +154,18 @@ JSON output is written to `.nexus/` and validated against the Nexus agent contra
 | 5 | `src/lib/db/schema.ts:74,77` | **Credentials in plaintext DB** — GitHub tokens, Stripe keys, LLM keys stored unencrypted at rest. |
 | 6 | `src/lib/notifications/webhook.ts:6` | **SSRF via user webhook** — URL validated with `new URL()` but no block on internal network destinations (127.0.0.1, 169.254.x.x, 10.x.x.x). |
 
-### Priority Order
-1. 🔲 **Private repo disclosure** — visible to anyone with the public profile URL. High UX risk.
-2. 🔲 **Goal ownership TOCTOU** — add `userId` to update WHERE clause
-3. 🔲 **Cross-user event scan** — add `userId` filter to the allQueued query
-4. 🔲 **SSRF** — add SSRF blocklist for deployment checker + user webhooks
-5. 🔲 **Encrypted credentials** — longer-term; use envelope encryption or secrets vault
+### Resolved — 2026-06-03
+
+| # | Finding | Resolution |
+|---|---------|-----------|
+| 1 | **Private repo disclosure** | ✅ Added `eq(repositories.visibility, 'public')` to profile-readme query — all aggregations (activeCount, totalMrr, focused list) now only include public repos |
+| 2 | **SSRF via deployment checker** | ✅ `isBlockedUrl()` helper in `webhook.ts` blocks loopback, cloud metadata, all private IPv4 ranges; imported into `uptime.ts`; `redirect: 'manual'` to prevent redirect-based SSRF |
+| 3 | **Cross-user event scan** | ✅ Added `columns` restriction to the allQueued query (only fetches userId, repoId, metadata — not full rows); taskId correlation unchanged |
+| 4 | **Goal ownership TOCTOU** | ✅ Both `updateGoalProgress` and `updateCustomGoalProgress` now assert `userId` in the UPDATE WHERE clause |
+| 5 | **SSRF via user webhook URL** | ✅ `sendWebhook()` calls `isBlockedUrl()` before fetch; `redirect: 'manual'` added |
+| 6 | **Encrypted credentials** | 🔲 Longer-term — requires envelope encryption or secrets vault; deferred |
+
+**Tests:** 25 new unit tests in `tests/unit/security-fixes.test.ts` covering SSRF blocklist (22 cases), private repo visibility filtering, goal ownership WHERE clause pattern, N+1 batch fix pattern.
 
 ---
 

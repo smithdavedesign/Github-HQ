@@ -159,7 +159,7 @@ export default async function RepoDetailPage({ params }: Props) {
       )}
 
       {/* Tabs */}
-      <Tabs defaultValue="overview">
+      <Tabs defaultValue="agent">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="stack">Tech Stack</TabsTrigger>

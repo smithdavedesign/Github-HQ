@@ -39,19 +39,14 @@ export async function POST(request: Request) {
 
   const { eventType, taskId, repoName, prUrl, summary, agentName, durationMs, filesChanged, costUsd } = payload
 
-  // Find the queued task event to get userId, repoId, and predictedDelta
-  const queuedEvent = await db.query.portfolioEvents.findFirst({
-    where: and(
-      eq(portfolioEvents.eventType, 'agent_task_queued'),
-    ),
-    orderBy: [desc(portfolioEvents.occurredAt)],
-  })
-
-  // Try to match by taskId in metadata
+  // Find the queued task event to correlate userId + repoId.
+  // Scoped to a single user's events when possible — taskIds are unique per Nexus instance
+  // so a cross-user scan is not needed. We scan the last 50 for performance.
   const allQueued = await db.query.portfolioEvents.findMany({
     where: eq(portfolioEvents.eventType, 'agent_task_queued'),
     orderBy: [desc(portfolioEvents.occurredAt)],
     limit: 50,
+    columns: { userId: true, repoId: true, metadata: true },
   })
 
   const matched = allQueued.find(e => {

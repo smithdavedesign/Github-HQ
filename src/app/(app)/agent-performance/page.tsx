@@ -96,28 +96,40 @@ export default async function AgentPerformancePage() {
         />
       </div>
 
-      {/* Accuracy breakdown by impact type */}
-      <div className="space-y-2">
-        <h2 className="text-sm font-semibold flex items-center gap-2">
-          <BarChart2 className="w-3.5 h-3.5 text-indigo-500" />
-          Advisor Accuracy by Action Type
-        </h2>
-        <AccuracyTable stats={accuracyStats} />
-        {downgradedRepos.length > 0 && (
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 flex items-start gap-2 text-xs text-amber-600">
-            <Target className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <span>
-              <strong>Downgraded repos</strong> (repeated failures — advisor will caveat these):
-              {' '}{downgradedRepos.map(d => `${d.repoName} (${d.impactType})`).join(', ')}
-            </span>
+      {/* Accuracy — only shown once there is data to show */}
+      {accuracyStats.some(s => s.dataPoints > 0) ? (
+        <div className="space-y-2">
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <BarChart2 className="w-3.5 h-3.5 text-indigo-500" />
+              Advisor Accuracy by Action Type
+            </h2>
+            <p className="text-[10px] text-muted-foreground max-w-xs text-right">
+              Did health score improve after each merged PR? Updated when PRs merge and repos resync.
+            </p>
           </div>
-        )}
-      </div>
+          <AccuracyTable stats={accuracyStats} />
+          {downgradedRepos.length > 0 && (
+            <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 flex items-start gap-2 text-xs text-amber-600">
+              <Target className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>
+                <strong>Low-confidence repos</strong> — the advisor will flag recommendations for these repos as needing extra review due to repeated failures:
+                {' '}{downgradedRepos.map(d => `${d.repoName} (${d.impactType})`).join(', ')}
+              </span>
+            </div>
+          )}
+        </div>
+      ) : merged > 0 ? (
+        <div className="rounded-lg border border-border/40 bg-muted/10 px-4 py-4 text-center text-xs text-muted-foreground">
+          <Target className="w-5 h-5 mx-auto mb-2 opacity-40" />
+          Accuracy data builds up as more PRs merge and repos resync. Check back after a few more merges.
+        </div>
+      ) : null}
 
       {/* Cost */}
       {totalCostUsd > 0 && (
         <p className="text-xs text-muted-foreground">
-          Total agent cost: <span className="font-medium text-foreground">${totalCostUsd.toFixed(4)}</span>
+          Total agent cost: <span className="font-medium text-foreground">${totalCostUsd.toFixed(2)}</span>
         </p>
       )}
 

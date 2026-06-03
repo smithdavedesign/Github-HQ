@@ -112,12 +112,13 @@ export async function updateGoalProgress(goalId: number, currentValue: number) {
   if (!goal) throw new Error('Goal not found')
 
   const completed = currentValue >= (goal.targetValue ?? 0)
+  // userId asserted in WHERE — prevents TOCTOU between ownership check and update
   await db.update(goals)
     .set({
       currentValue,
       completedAt: completed && !goal.completedAt ? new Date() : goal.completedAt,
     })
-    .where(eq(goals.id, goalId))
+    .where(and(eq(goals.id, goalId), eq(goals.userId, session.user.id)))
 
   revalidatePath('/')
 }
@@ -135,7 +136,7 @@ export async function updateCustomGoalProgress(goalId: number, currentValue: num
   await db.update(goals).set({
     currentValue,
     completedAt: completed && !goal.completedAt ? new Date() : goal.completedAt,
-  }).where(eq(goals.id, goalId))
+  }).where(and(eq(goals.id, goalId), eq(goals.userId, session.user.id)))
 
   revalidatePath('/')
 }
@@ -157,17 +158,28 @@ export async function refreshGoalProgress(userId: string) {
     where: and(eq(goals.userId, userId), eq(goals.isActive, true)),
   })
 
-  for (const goal of activeGoals) {
-    if (goal.type === 'custom') continue
-    try {
-      const current = await computeCurrentValue(userId, goal.type as GoalType)
-      const completed = current >= (goal.targetValue ?? 0)
-      await db.update(goals).set({
-        currentValue: current,
-        completedAt: completed && !goal.completedAt ? new Date() : goal.completedAt,
-      }).where(eq(goals.id, goal.id))
-    } catch {
-      // Non-fatal
-    }
-  }
+  // Compute all values in parallel, then batch the updates with Promise.all
+  // (was N sequential DB round-trips — now 1 parallel compute + N parallel updates)
+  const updates = await Promise.allSettled(
+    activeGoals
+      .filter(g => g.type !== 'custom')
+      .map(async goal => {
+        const current = await computeCurrentValue(userId, goal.type as GoalType)
+        const completed = current >= (goal.targetValue ?? 0)
+        return { id: goal.id, current, completed, goal }
+      })
+  )
+
+  await Promise.all(
+    updates
+      .filter((r): r is PromiseFulfilledResult<{ id: number; current: number; completed: boolean; goal: typeof activeGoals[0] }> =>
+        r.status === 'fulfilled'
+      )
+      .map(({ value: { id, current, completed, goal } }) =>
+        db.update(goals).set({
+          currentValue: current,
+          completedAt: completed && !goal.completedAt ? new Date() : goal.completedAt,
+        }).where(eq(goals.id, id)).catch(() => null) // non-fatal per-goal
+      )
+  )
 }

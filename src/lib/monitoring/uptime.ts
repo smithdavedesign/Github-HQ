@@ -6,13 +6,19 @@ interface CheckResult {
 }
 
 export async function checkDeploymentUrl(url: string): Promise<CheckResult> {
+  // Block SSRF — refuse to check internal/private network addresses
+  const { isBlockedUrl } = await import('@/lib/notifications/webhook')
+  if (isBlockedUrl(url)) {
+    return { status: 'down', responseTimeMs: null, httpStatus: null, sslValid: null }
+  }
+
   const start = Date.now()
 
   try {
     const response = await fetch(url, {
       method: 'GET',
       signal: AbortSignal.timeout(10000),
-      redirect: 'follow',
+      redirect: 'manual', // never follow redirects to prevent SSRF via open redirects
     })
 
     const responseTimeMs = Date.now() - start

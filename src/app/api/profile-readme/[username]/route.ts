@@ -15,8 +15,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ usernam
     return new Response('Not found', { status: 404 })
   }
 
+  // Only expose public repos on the public profile README
   const rows = await db.query.repositories.findMany({
-    where: and(eq(repositories.userId, user.id)),
+    where: and(eq(repositories.userId, user.id), eq(repositories.visibility, 'public')),
     with: {
       metrics: { columns: { healthScore: true, activityStatus: true, opportunityScore: true } },
       deployments: { columns: { status: true } },
