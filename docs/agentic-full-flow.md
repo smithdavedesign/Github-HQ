@@ -1,6 +1,6 @@
-# RepoHQ — Full Agentic Flow (Phases 46–54)
+# RepoHQ — Full Agentic Flow (Phases 46–55)
 
-Complete visual reference for the automated portfolio improvement pipeline as of Phase 54.
+Complete visual reference for the automated portfolio improvement pipeline as of Phase 55.
 
 ---
 
@@ -260,3 +260,62 @@ flowchart LR
 | `get_active_work` | 50 | Open agent PRs; safe-to-start flag |
 | `log_attempt` | 51 | Records attempt outcome; feeds dead-end detection |
 | `get_accuracy_report` | 52 | Advisor calibration table + downgraded repos |
+
+---
+
+## CI Feedback Loop — Self-Correcting Agents (Phase 55)
+
+The missing piece that closes the full loop: today the system has no awareness of CI failures on agent PRs. Phase 55 adds CI status as a first-class lifecycle event and auto-retries with the error output as context.
+
+```mermaid
+flowchart TD
+    A([Agent opens PR]) --> B[GitHub Actions CI runs]
+    
+    B -->|passes| C[Human reviews + merges]
+    C --> D[agent_pr_merged event]
+    D --> E[resync → actualDelta → accuracy loop]
+    
+    B -->|fails| F[checkCIFailuresOnAgentPRs\nevery 6h cron]
+    F --> G[Fetch error output\nGitHub /check-runs API]
+    G --> H[Write agent_ci_failed event\nattempt = N]
+    
+    H --> I{attempt < 3?}
+    
+    I -->|yes| J[Re-queue Nexus task\nexistingBranch + ciError context]
+    J --> K[Nexus: checkout existing branch\nnot a new nexus/auto-* branch]
+    K --> L[Agent reads CI error\npushes fix commit]
+    L --> B
+    
+    I -->|no| M[Write agent_needs_human event]
+    M --> N[Notification: PR needs human review\nafter 3 failed CI fix attempts]
+    N --> O[Human intervenes]
+```
+
+### New lifecycle states
+
+```
+idle → queued → preparing → running → pr_ready → ci_failing → [retry loop]
+                                              ↘ merged ✓  (terminal)
+                                              ↘ failed ✓  (terminal)
+                                              ↘ timed_out ✓ (terminal)
+                                              ↘ needs_human ✓ (terminal — escalated)
+```
+
+### What the agent gets as context on a CI retry
+
+```
+Objective: Fix CI failure on PR #1 in smithdavedesign/Github-HQ
+
+CI error (attempt 2/3):
+  Check: build
+  Step: Next.js build
+  Error: Module not found: Can't resolve 'stripe'
+         at src/app/api/webhooks/stripe/route.ts:30:27
+
+Existing branch: nexus/auto-a1b2c3d4
+PR: https://github.com/smithdavedesign/Github-HQ/pull/1
+
+RepoHQ context: [get_coding_brief output]
+```
+
+The agent checks out the existing branch, reads what it built, understands the constraint (no Stripe SDK — plain fetch only per CLAUDE.md), and pushes a fix commit. CI re-runs. If it passes, the PR is ready for human review and merge.

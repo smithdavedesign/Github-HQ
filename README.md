@@ -230,7 +230,9 @@ RepoHQ integrates with **AI-Took-My-Job** (AI-DevOps Nexus) to automatically exe
 5. A webhook fires back to RepoHQ — notification + stage update + automatic health resync on merge
 6. The advisor learning loop records the outcome for future accuracy tracking
 
-**Lifecycle states:** `idle → queued → preparing → running → pr_ready → merged / failed / timed_out`
+**Lifecycle states:** `idle → queued → preparing → running → pr_ready → ci_failing → merged / failed / timed_out / needs_human`
+
+**CI feedback loop (Phase 55):** When a CI build fails on an agent PR, the system detects it via GitHub API polling, feeds the error output back as context, and re-queues the agent on the same branch to push a fix commit. Up to 3 auto-retries before escalating to human review.
 
 The Run Agent button hydrates from the database on mount — it always reflects the true current state even after navigation or page refresh. The server also blocks duplicate queuing server-side.
 

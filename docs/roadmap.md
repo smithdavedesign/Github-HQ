@@ -373,6 +373,26 @@ Prevents redundant DB queries and token spend as agent volume grows.
 - [ ] **T4: Context compression** (distil sessions+attempts weekly via Sunday cron) — future
 - [ ] **T5: pgvector** (semantic repo matching, outcome clustering) — future when 50+ repos with history
 
+### Phase 55 — CI Feedback Loop (Self-Correcting Agents)
+
+The last-mile gap: once an agent opens a PR, CI can still fail — and today the system has no awareness of it. A human has to intervene. This phase closes the loop so the agent can detect CI failures, understand the error, and push a fix commit to the same branch automatically.
+
+**The flow:**
+```
+PR created → CI runs →
+  success → merge (existing loop) ✓
+  failure → detect → fetch error output → re-queue on same branch → fix commit → CI re-runs
+            (after 3 failures → escalate to human)
+```
+
+- [ ] `checkCIFailuresOnAgentPRs(userId)` — polls GitHub API (`/commits/{sha}/check-runs`) for failed CI on open agent PRs; runs in the 6h sync cron alongside `checkMergedAgentPRs()`
+- [ ] `agent_ci_failed` event type — stores: `{ prUrl, branchName, checkName, errorSummary, attempt, sha }` in `portfolio_events`; new lifecycle stage `ci_failing`
+- [ ] Auto-requeue with error context — creates a new Nexus task: objective = "Fix CI failure on PR #{N}: {errorSummary}", `contextNotes.existingBranch` = PR head branch, `contextNotes.prNumber`, `contextNotes.ciError` = truncated error output
+- [ ] Nexus: resume-on-branch mode — agent-runner checks `contextNotes.existingBranch`; if set, fetches and checks out that branch instead of creating a new `nexus/auto-*` branch
+- [ ] Retry guard — max 3 CI fix attempts per PR; on 4th failure writes `agent_needs_human` event and dispatches notification: "Agent PR #{N} has failing CI after 3 fix attempts — human review needed"
+- [ ] QueueButton: `ci_failing` stage shown in the lifecycle UI (yellow, links to the failed check)
+- [ ] Agent History tab: `agent_ci_failed` events shown inline with error summary and attempt count
+
 ### Phase 40 — Open-Source Template / Deploy-to-Vercel
 - [x] README rewritten — Deploy to Vercel button, full setup guide (8 steps), all services documented
 - [x] Local dev OAuth app separation documented (production vs localhost)

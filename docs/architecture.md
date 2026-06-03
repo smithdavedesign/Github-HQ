@@ -275,6 +275,8 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 
 **Token Efficiency (Phase 54)** — Two caches reduce redundant token spend as agent volume grows: (1) `repositories.cached_brief JSONB` — written by `get_coding_brief` on first call, served from cache within 6h, cleared on sync; (2) `digests.advisor_repo_snapshot JSONB` — the compiled repoLines prompt text, reused for 23h, invalidated on sync. Saves ~25K tokens per 100 agents on briefs alone.
 
+**CI Feedback Loop (Phase 55, in progress)** — Closes the last-mile gap: today the system is blind to CI failures on agent PRs. Phase 55 adds `checkCIFailuresOnAgentPRs()` (runs in the 6h sync cron alongside `checkMergedAgentPRs()`), polls GitHub `/check-runs` for failed CI on open agent PRs, writes `agent_ci_failed` events with error summaries, and automatically re-queues a fix task on the *existing branch* with the error output as context. Max 3 retries before escalating to human. New lifecycle stage: `ci_failing`. Requires `GITHUB_APP_TOKEN` or existing OAuth token with `checks:read` scope. See `docs/agentic-full-flow.md` for the full CI retry loop diagram.
+
 **gstack Integration Tests** — `tests/integration/` contains shell scripts that run gstack-style investigation and health-check workflows against the RepoHQ codebase itself. `tests/unit/nexus-output-contract.test.ts` validates the Nexus agent output.json contract that all gstack scripts must produce.
 
 **GitHub Actions crons** — Primary cron trigger (replaces Vercel Hobby once-per-day limit). 5 workflows in `.github/workflows/` call existing API endpoints with `CRON_SECRET`. Vercel crons remain as once-per-Sunday fallback. `CRON_SECRET` stored as GitHub repo secret.
