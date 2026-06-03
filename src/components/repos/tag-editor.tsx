@@ -50,7 +50,7 @@ export function TagEditor({ repoId, initialTags }: TagEditorProps) {
       {tags.map((tag) => (
         <Badge key={tag} variant="secondary" className="gap-1 text-xs h-6">
           {tag}
-          <button onClick={() => removeTag(tag)} className="hover:text-destructive transition-colors">
+          <button aria-label={`Remove tag ${tag}`} onClick={() => removeTag(tag)} className="hover:text-destructive transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded">
             <X className="w-3 h-3" />
           </button>
         </Badge>

@@ -98,6 +98,7 @@ export function RepoAdvisorSection({ actions, nexusEnabled, generatedAt, accurac
               onClick={() => toggleCard(i)}
               className="flex items-start gap-3 p-3 w-full text-left"
               aria-expanded={isExpanded}
+              aria-label={`${isExpanded ? 'Collapse' : 'Expand'} recommendation: ${action.action}`}
             >
               <div className={`w-6 h-6 rounded-md border flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-bold ${impactColor}`}>
                 {i + 1}

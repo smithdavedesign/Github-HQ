@@ -149,9 +149,9 @@ export function NotificationBell() {
                       </div>
                     </div>
                     <button
-                      className="text-muted-foreground hover:text-foreground shrink-0 mt-0.5"
+                      aria-label="Mark notification as read"
+                      className="text-muted-foreground hover:text-foreground shrink-0 mt-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
                       onClick={() => handleMarkRead(n.id)}
-                      title="Mark as read"
                     >
                       <X className="w-3 h-3" />
                     </button>

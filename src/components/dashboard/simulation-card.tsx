@@ -52,9 +52,9 @@ export function SimulationCard({ defaultHours }: Props) {
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground font-medium">Available hours</label>
             <div className="flex items-center gap-1.5">
-              <button onClick={() => setHours(h => Math.max(1, h - 1))} className="w-7 h-7 rounded border border-border/60 text-sm hover:bg-muted/50 transition-colors">−</button>
-              <span className="w-8 text-center text-sm font-medium tabular-nums">{hours}</span>
-              <button onClick={() => setHours(h => Math.min(80, h + 1))} className="w-7 h-7 rounded border border-border/60 text-sm hover:bg-muted/50 transition-colors">+</button>
+              <button aria-label="Decrease hours" onClick={() => setHours(h => Math.max(1, h - 1))} className="w-7 h-7 rounded border border-border/60 text-sm hover:bg-muted/50 transition-colors focus-visible:ring-1 focus-visible:ring-ring">−</button>
+              <span className="w-8 text-center text-sm font-medium tabular-nums" aria-live="polite" aria-label={`${hours} hours`}>{hours}</span>
+              <button aria-label="Increase hours" onClick={() => setHours(h => Math.min(80, h + 1))} className="w-7 h-7 rounded border border-border/60 text-sm hover:bg-muted/50 transition-colors focus-visible:ring-1 focus-visible:ring-ring">+</button>
             </div>
           </div>
 

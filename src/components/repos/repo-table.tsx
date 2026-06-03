@@ -381,8 +381,9 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
           <button
             onClick={() => handleRevenueToggle(id, isRev ?? false)}
             disabled={revenueLoading === id}
+            aria-label={isRev ? 'Mark as non-revenue-generating' : 'Mark as revenue-generating'}
+            aria-pressed={isRev ?? false}
             className={`flex items-center gap-1 text-xs transition-colors ${isRev ? 'text-emerald-600' : 'text-muted-foreground hover:text-foreground'}`}
-            title={isRev ? 'Mark as non-revenue' : 'Mark as revenue-generating'}
           >
             <DollarSign className="w-3 h-3" />
             {isRev ? 'Yes' : 'No'}

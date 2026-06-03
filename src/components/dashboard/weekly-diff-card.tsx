@@ -101,7 +101,9 @@ export function WeeklyDiffCard({ diff }: Props) {
         {hiddenCount > 0 && (
           <button
             onClick={() => setExpanded(v => !v)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors pt-0.5 w-full"
+            aria-expanded={expanded}
+            aria-label={expanded ? 'Show fewer changes' : `Show ${hiddenCount} more change${hiddenCount !== 1 ? 's' : ''}`}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors pt-0.5 w-full focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
           >
             {expanded ? (
               <>

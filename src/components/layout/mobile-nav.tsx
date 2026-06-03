@@ -41,7 +41,7 @@ export function MobileNav() {
       </Button>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="left" className="w-[240px] p-0 bg-sidebar border-sidebar-border">
+        <SheetContent side="left" className="w-[240px] p-0 bg-sidebar border-sidebar-border [&_[data-slot=sheet-close]]:text-white/70 [&_[data-slot=sheet-close]]:hover:text-white [&_[data-slot=sheet-close]]:hover:bg-white/10">
           <SheetHeader className="px-5 py-4 border-b border-sidebar-border">
             <SheetTitle className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">

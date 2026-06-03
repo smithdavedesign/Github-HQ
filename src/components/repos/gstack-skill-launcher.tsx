@@ -127,6 +127,8 @@ export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, nexus
                 onClick={() => setExpanded(isExpanded ? null : skill.id)}
                 className="flex items-start gap-3 p-3 w-full text-left"
                 disabled={isLoading}
+                aria-expanded={isExpanded}
+                aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${skill.label} skill details`}
               >
                 <Icon className={`w-4 h-4 shrink-0 mt-0.5 ${skill.iconColor}`} />
                 <div className="flex-1 min-w-0">

@@ -31,8 +31,9 @@ export function CollapsibleSection({ label, storageKey, defaultOpen = true, chil
     <div>
       <button
         onClick={toggle}
-        className="flex items-center gap-3 pt-2 w-full group"
+        className="flex items-center gap-3 pt-2 w-full group focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
         aria-expanded={open}
+        aria-label={`${open ? 'Hide' : 'Show'} ${label} section`}
       >
         <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50 shrink-0 group-hover:text-muted-foreground/70 transition-colors">
           {label}

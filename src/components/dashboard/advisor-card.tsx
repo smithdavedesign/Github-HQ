@@ -171,6 +171,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
                 onClick={() => toggleCard(i)}
                 className="flex gap-3 p-3 w-full text-left"
                 aria-expanded={isExpanded}
+                aria-label={`${isExpanded ? 'Collapse' : 'Expand'} action: ${action.action}`}
               >
                 {/* Impact icon */}
                 <div className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 ${IMPACT_COLOR[action.impactType]}`}>
@@ -277,7 +278,9 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
         {advisor.actions.length > DEFAULT_VISIBLE && (
           <button
             onClick={() => setShowAll(v => !v)}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left pl-1"
+            aria-expanded={showAll}
+            aria-label={showAll ? 'Show fewer advisor actions' : `Show ${advisor.actions.length - DEFAULT_VISIBLE} more advisor actions`}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left pl-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
           >
             {showAll
               ? 'Show less ↑'
