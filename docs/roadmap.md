@@ -432,40 +432,26 @@ The Nexus worker already passes `impactType` in `contextNotes` — routing just 
 - `queue_gstack_skill(repo_name, skill, objective?)` MCP tool — AI agents can trigger skills from Claude Code context; tracked by `get_active_work()` naturally
 - `agent_skill_report` event type — investigation findings stored in `portfolio_events` and displayed inline in Agent History with bullet list
 
-### G3 — gstack Learnings Persistence
+### G3 — gstack Learnings Persistence ✅
+- Both scripts call `gstack-learnings-search --limit 5` before the skill runs and append results to the task prompt — agents start each session knowing what already failed
+- `/investigate` calls `gstack-learnings-log` after completion to persist key findings for future runs
+- Slug computed per-repo via `gstack-slug`; learnings stored in `~/.gstack/projects/{slug}/learnings.jsonl`
 
-gstack's learnings system (`.gstack/projects/{slug}/learnings.jsonl`) captures operational discoveries across sessions:
+### G4 — Checkpoint Mode Integration ✅
+- Both scripts call `gstack-config set checkpoint_mode continuous` before invoking the skill
+- WIP commits auto-created at each step; if Nexus times out, a re-run resumes from last WIP commit
+- Reduces "timed out after 15 min" events significantly for large tasks
 
-- Agent learns which patterns fail on specific repos (e.g. "this project uses bun, not npm — use bun install")
-- Learnings surface automatically in future sessions via `gstack-learnings-search`
-- Closes the loop with Phase 51's `log_attempt` — both systems feed failure memory, gstack at the session level, RepoHQ at the portfolio level
+### G5 — MCP + gstack Session Synergy ✅
+- All scripts write the RepoHQ brief (from `context.json`) directly into `CLAUDE.md` in the worktree between sentinel comments (`<!-- repohq-brief-start -->` / `<!-- repohq-brief-end -->`)
+- gstack reads `CLAUDE.md` natively as project context — brief appears automatically in every tool call, no manual prompt injection needed
+- Prior RepoHQ sections stripped and re-injected on each run so it stays fresh
 
-### G4 — Checkpoint Mode Integration
-
-gstack's checkpoint mode auto-commits WIP with `WIP:` prefix so agent progress survives crashes:
-
-- Enable `checkpoint_mode: continuous` for all agent executions
-- On resume after a crash, agent reads the WIP commits and continues from last state
-- Reduces "agent timed out" events significantly
-
-### G5 — MCP + gstack Session Synergy
-
-The RepoHQ MCP server already provides `get_coding_brief` to agents. With gstack:
-
-- Brief output auto-injected as a gstack session context file (not manually appended to prompt)
-- `log_session_complete` and `log_attempt` called by gstack skill completion hooks, not manually by the agent
-- `get_accuracy_report()` surfaced in the gstack session start context so the agent knows which action types have high vs low confidence before starting
-
-### G6 — gstack Routing in Nexus Worker (Phase D full implementation)
-
-Complete the Phase 46D vision — the Nexus worker selects the execution command based on task metadata:
-
-```typescript
-const command = selectGstackCommand(task.contextNotes.impactType, task.contextNotes.effort)
-// 'substantial' effort always goes through /investigate regardless of impactType
-```
-
-This replaces the single `AGENT_EXECUTION_COMMAND` env var with dynamic routing.
+### G6 — Dynamic Skill Routing in Nexus Worker ✅
+- `resolveSkillCommand(skillName, fallback)` in `agent-runner.ts` reads `contextNotes.skillName` and maps to the correct script: `investigate→gstack-investigate.sh`, `ship→gstack-ship.sh`, `health→gstack-health.sh`
+- `GSTACK_SCRIPTS_DIR` env var overrides the script directory (defaults to dirname of `AGENT_EXECUTION_COMMAND`)
+- `skillName` now included in all task queuing: advisor actions, auto-dispatch, gstack UI launcher, MCP tool
+- `gstack-health.sh` added as a new script — wraps `/health` skill, produces Nexus output.json contract
 
 ---
 

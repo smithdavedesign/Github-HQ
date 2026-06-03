@@ -296,6 +296,7 @@ export async function queueAdvisorActionForUser(
           riskTier,
           predictedDelta:  action.estimatedImpact,
           source:          'repohq-auto-dispatch',
+          skillName:       action.impactType === 'security' ? 'investigate' : 'ship',
           autoExecute:     action.effort !== 'substantial',
         }),
       }),
