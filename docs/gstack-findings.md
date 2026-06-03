@@ -83,19 +83,83 @@ JSON output is written to `.nexus/` and validated against the Nexus agent contra
 
 ---
 
-## 2026-06-02 — `/investigate` Security Check
+## 2026-06-02 — `/health` Code Quality Check (Run 2 — after G1-G6 fixes)
+
+**Script:** `tests/integration/gstack-health-check.sh`
+**Provider:** Claude Code (real `/health` skill via `OPENCLAW_SESSION=true`)
+**Score:** 62 / 100 *(was 76 in Run 1 — more thorough scan found previously-missed N+1s)*
+**Outcome:** `no-changes`
+
+### ✅ Passing (improved since Run 1)
+
+| Check | Detail |
+|-------|--------|
+| TypeScript | 0 errors |
+| Unit tests | 442/442 passing |
+| `'use server'` correctness | All 14 action files export only async functions |
+| `any` types | `advisor-accuracy.ts` fix confirmed; only 1 intentional `any` remains (sync.ts:111) |
+
+### ⚠️ Findings
+
+**N+1 queries (Run 1 said "clean" — Run 2 corrected):**
+
+| File | Issue |
+|------|-------|
+| `src/lib/actions/goals.ts:156-174` `refreshGoalProgress` | 2 sequential DB calls per goal inside for-loop; should batch with Promise.all |
+| `src/lib/actions/stripe.ts:147-168` `syncStripeMrr` | 1 `db.update` per matching repo; could use bulk upsert or Promise.all |
+
+**Error handling** (5 files with 0 try/catch):
+`changelog.ts`, `feed.ts`, `simulation.ts`, `weekly-diff.ts`, `auto-dispatch-settings.ts`
+
+**Coverage gaps** — 12 of 15 action files have no direct tests
+
+### Status
+- N+1s: 🔲 Queued for fix
+- Error handling: 🔲 Queued for fix
+- Coverage: 🔲 Deferred (DB-dependent actions require mock setup)
+
+---
+
+## 2026-06-02 — `/investigate` Security Check ✅ COMPLETED
 
 **Script:** `tests/integration/gstack-security-check.sh`
-**Provider:** Claude Code / GitHub Copilot
-**Outcome:** Rate limited — both providers exhausted before completing
+**Provider:** Claude Code (real `/investigate` skill via `OPENCLAW_SESSION=true`)
+**Score:** 71 / 100
+**Outcome:** `no-changes` (investigation only)
 
-**Status:** Both Claude and Copilot hit rate limits during this run. The script infrastructure, provider routing, and contract validation all worked correctly. Re-run when limits reset.
+### ✅ Clean
 
-**To re-run:**
-```bash
-bash tests/integration/gstack-security-check.sh                    # Claude
-GSTACK_SECURITY_PROVIDER=copilot bash tests/integration/gstack-security-check.sh  # Copilot
-```
+| Check | Result |
+|-------|--------|
+| Server action auth | All actions consistently check `auth()` |
+| Cron endpoint security | All 5 routes use fail-secure `verifyCronSecret()` |
+| SQL injection | No raw SQL concatenation; all Drizzle parametrized |
+| Hardcoded secrets | None found |
+
+### ⚠️ Findings
+
+**Medium:**
+
+| # | File | Issue |
+|---|------|-------|
+| 1 | `src/app/api/profile-readme/[username]/route.ts:47` | **Private repo disclosure** — "Currently building" section uses `isFocused` only; no `visibility === 'public'` filter. Private repos appear in public README. `activeCount` and `totalMrr` also aggregate across private repos. |
+| 2 | `src/lib/monitoring/uptime.ts:12` | **SSRF via deployment checker** — Cron fetches all deployment URLs with `redirect: 'follow'`, no origin validation. Could be pointed at internal network destinations. |
+
+**Low:**
+
+| # | File | Issue |
+|---|------|-------|
+| 3 | `src/app/api/webhooks/agent-events/route.ts:51-55` | **Cross-user event scan** — `allQueued` query has no `userId` filter; scans all users' tasks to find a `taskId` match. Mitigated by `NEXUS_WEBHOOK_SECRET`. |
+| 4 | `src/lib/actions/goals.ts:115,135` | **TOCTOU on goal ownership** — Ownership verified via SELECT but UPDATE uses only `eq(goals.id, goalId)` without re-asserting `userId` in the WHERE clause. |
+| 5 | `src/lib/db/schema.ts:74,77` | **Credentials in plaintext DB** — GitHub tokens, Stripe keys, LLM keys stored unencrypted at rest. |
+| 6 | `src/lib/notifications/webhook.ts:6` | **SSRF via user webhook** — URL validated with `new URL()` but no block on internal network destinations (127.0.0.1, 169.254.x.x, 10.x.x.x). |
+
+### Priority Order
+1. 🔲 **Private repo disclosure** — visible to anyone with the public profile URL. High UX risk.
+2. 🔲 **Goal ownership TOCTOU** — add `userId` to update WHERE clause
+3. 🔲 **Cross-user event scan** — add `userId` filter to the allQueued query
+4. 🔲 **SSRF** — add SSRF blocklist for deployment checker + user webhooks
+5. 🔲 **Encrypted credentials** — longer-term; use envelope encryption or secrets vault
 
 ---
 
