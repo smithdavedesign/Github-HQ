@@ -278,7 +278,7 @@ See the [gstack Integration Roadmap](docs/roadmap.md#gstack-integration-roadmap)
 ## Testing
 
 ```bash
-npm test              # 423 Vitest unit tests
+npm test              # 442 Vitest unit tests
 npm run test:e2e      # Playwright e2e tests (requires dev server)
 npm run test:all      # both
 npm run typecheck     # TypeScript strict check

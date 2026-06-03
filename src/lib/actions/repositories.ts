@@ -8,25 +8,39 @@ import { repositories, repositoryMetrics, techStack, deployments, securityFindin
 import { eq, and, sql, inArray, desc } from 'drizzle-orm'
 import { portfolioEvents } from '@/lib/db/schema'
 
+/**
+ * Wraps DB calls in server actions so raw Neon/Drizzle errors are caught,
+ * logged server-side, and surfaced as clean user-facing messages.
+ * Auth errors (Unauthorized / Not found) pass through unchanged.
+ */
+async function dbOp<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (err) {
+    if (err instanceof Error && ['Unauthorized', 'Not found', 'Repository not found'].includes(err.message)) {
+      throw err
+    }
+    console.error(`[repositories/${label}]`, err instanceof Error ? err.message : err)
+    throw new Error(`Failed to ${label}. Please try again.`)
+  }
+}
+
 export const getRepositories = cache(async function getRepositories() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  const rows = await db.query.repositories.findMany({
-    where: eq(repositories.userId, session.user.id),
-    with: {
-      metrics: true,
-      techStack: true,
-      deployments: true,
-      securityFindings: {
-        where: eq(securityFindings.state, 'open'),
+  return dbOp('load repositories', async () => {
+    const rows = await db.query.repositories.findMany({
+      where: eq(repositories.userId, session.user.id),
+      with: {
+        metrics: true,
+        techStack: true,
+        deployments: true,
+        securityFindings: { where: eq(securityFindings.state, 'open') },
       },
-    },
+    })
+    return rows.sort((a, b) => (b.metrics?.healthScore ?? -1) - (a.metrics?.healthScore ?? -1))
   })
-
-  // Sort by health score descending (health score lives on the related metrics table,
-  // not on repositories, so ORDER BY in the lateral-join query won't work)
-  return rows.sort((a, b) => (b.metrics?.healthScore ?? -1) - (a.metrics?.healthScore ?? -1))
 })
 
 /** Lightweight version for the dashboard top-5 table — avoids overfetching deployments + security findings */
@@ -34,31 +48,29 @@ export async function getRepositoriesSlim() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  const rows = await db.query.repositories.findMany({
-    where: eq(repositories.userId, session.user.id),
-    columns: { id: true, name: true, visibility: true, mrr: true },
-    with: {
-      metrics: { columns: { healthScore: true, activityStatus: true } },
-      techStack: { columns: { frontend: true, language: true } },
-    },
+  return dbOp('load repositories slim', async () => {
+    const rows = await db.query.repositories.findMany({
+      where: eq(repositories.userId, session.user.id),
+      columns: { id: true, name: true, visibility: true, mrr: true },
+      with: {
+        metrics: { columns: { healthScore: true, activityStatus: true } },
+        techStack: { columns: { frontend: true, language: true } },
+      },
+    })
+    return rows.sort((a, b) => (b.metrics?.healthScore ?? -1) - (a.metrics?.healthScore ?? -1))
   })
-
-  return rows.sort((a, b) => (b.metrics?.healthScore ?? -1) - (a.metrics?.healthScore ?? -1))
 }
 
 export async function getRepositoryById(id: number) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  return db.query.repositories.findFirst({
-    where: and(eq(repositories.id, id), eq(repositories.userId, session.user.id)),
-    with: {
-      metrics: true,
-      techStack: true,
-      deployments: true,
-      securityFindings: true,
-    },
-  })
+  return dbOp('load repository', () =>
+    db.query.repositories.findFirst({
+      where: and(eq(repositories.id, id), eq(repositories.userId, session.user.id)),
+      with: { metrics: true, techStack: true, deployments: true, securityFindings: true },
+    })
+  )
 }
 
 export const getDashboardStats = cache(async function getDashboardStats() {
@@ -67,6 +79,7 @@ export const getDashboardStats = cache(async function getDashboardStats() {
 
   const userId = session.user.id
 
+  return dbOp('load dashboard stats', async () => {
   const [repoStats, securityStats, revenueStats] = await Promise.all([
     db
       .select({
@@ -113,41 +126,45 @@ export const getDashboardStats = cache(async function getDashboardStats() {
     monthlyProfit: totalMrr - totalCost,
     revenueCount: revenueStats[0]?.revenueCount ?? 0,
   }
+  }) // end dbOp
 })
 
 export async function toggleRevenueGenerating(repoId: number, value: boolean) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  await db
-    .update(repositories)
-    .set({ isRevenueGenerating: value })
-    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  await dbOp('toggle revenue', () =>
+    db.update(repositories)
+      .set({ isRevenueGenerating: value })
+      .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  )
 }
 
 export async function updateRepoRevenue(repoId: number, data: { mrr?: string; arr?: string; monthlyCost?: string }) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  await db
-    .update(repositories)
-    .set({
-      mrr: data.mrr ?? undefined,
-      arr: data.arr ?? undefined,
-      monthlyCost: data.monthlyCost ?? undefined,
-      isRevenueGenerating: parseFloat(data.mrr ?? '0') > 0 || parseFloat(data.arr ?? '0') > 0,
-    })
-    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  await dbOp('update revenue', () =>
+    db.update(repositories)
+      .set({
+        mrr: data.mrr ?? undefined,
+        arr: data.arr ?? undefined,
+        monthlyCost: data.monthlyCost ?? undefined,
+        isRevenueGenerating: parseFloat(data.mrr ?? '0') > 0 || parseFloat(data.arr ?? '0') > 0,
+      })
+      .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  )
 }
 
 export async function updateLifecycleStatus(repoId: number, status: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  await db
-    .update(repositories)
-    .set({ lifecycleStatus: status })
-    .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  await dbOp('update lifecycle', () =>
+    db.update(repositories)
+      .set({ lifecycleStatus: status })
+      .where(and(eq(repositories.id, repoId), eq(repositories.userId, session.user.id)))
+  )
 
   const { revalidatePath } = await import('next/cache')
   revalidatePath(`/repos/${repoId}`)

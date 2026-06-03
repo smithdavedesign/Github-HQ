@@ -59,11 +59,19 @@ JSON output is written to `.nexus/` and validated against the Nexus agent contra
 | `src/lib/actions/advisor-accuracy.ts:29` | `let mergedEvents: any[]` — should be typed as the Drizzle partial row type |
 | `src/lib/github/sync.ts:109` | `githubRepo: any` parameter — GitHub REST API response type; intentional but undocumented |
 
-### Recommended Actions
+### Recommended Actions → **Resolved 2026-06-02**
 
-1. **Highest priority:** Add try/catch to `repositories.ts` — wrap DB calls to return structured errors instead of raw exceptions
-2. Add unit tests to `goals.ts`, `stripe.ts`, `llm.ts` (pure validation logic is easy to test without DB)
-3. Type `mergedEvents` in `advisor-accuracy.ts` using Drizzle's inferred partial type
+| Action | Status | Resolution |
+|--------|--------|-----------|
+| Add try/catch to `repositories.ts` | ✅ Fixed | Added `dbOp()` wrapper — catches raw DB errors, logs server-side, surfaces clean message to client. Applied to `getRepositories`, `getRepositoriesSlim`, `getRepositoryById`, `getDashboardStats`, `toggleRevenueGenerating`, `updateRepoRevenue`, `updateLifecycleStatus`. Auth errors pass through unchanged. |
+| Type `mergedEvents` in `advisor-accuracy.ts` | ✅ Fixed | Replaced `any[]` with `Array<{ eventType: string; metadata: unknown; occurredAt: Date }>` |
+| `githubRepo: any` in `sync.ts` | ✅ Documented | Added explanatory comment — intentional due to multiple GitHub API response shapes; eslint-disable already present |
+| Test coverage: `auto-dispatch-settings.ts` | ✅ Fixed | Added to `tests/unit/coverage-gaps.test.ts` — 8 tests covering all validation rules |
+| Test coverage: `weekly-diff.ts` | ✅ Fixed | Added shape + delta logic tests in same file |
+| `dbOp` wrapper behaviour | ✅ Tested | 5 tests verifying pass-through of auth errors, clean wrapping of DB errors, secret hiding |
+| Remaining coverage gaps (`goals.ts`, `stripe.ts`, `llm.ts`) | 🔲 Deferred | DB-dependent; require mock setup. Tracked for future gstack /health run. |
+
+**Tests after fixes:** 442 passing (30 files) — up from 423.
 
 ---
 

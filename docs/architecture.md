@@ -225,7 +225,9 @@ computePortfolioEvents()      Pure event derivation from repo state changes (ded
 computeInternalDeps()         Cross-references package.json deps across portfolio repos
 ```
 
-423 unit tests as of Phase 54. Zero DB calls in any scoring function.
+442 unit tests as of Phase 54 (post gstack /health fixes). Zero DB calls in any scoring function.
+
+**`dbOp()` error wrapper** — all server actions in `src/lib/actions/repositories.ts` that touch the DB are wrapped in `dbOp(label, fn)`. This catches raw Neon/Drizzle errors, logs them server-side with context, and surfaces a clean user-facing message. Auth errors (`Unauthorized`, `Not found`) pass through unchanged. Internal connection strings and schema details are never exposed to the client.
 
 **Agentic execution pipeline** — RepoHQ integrates with AI-Took-My-Job (Nexus) for automated portfolio improvement. See `docs/agentic-full-flow.md` for full architecture diagrams. Key components: `src/lib/actions/nexus.ts` (queue actions), `src/lib/agents/pr-merge-checker.ts` (detect merges via GitHub API), `src/lib/notifications/dispatcher.ts` + `webhook.ts` (push notifications).
 

@@ -1,0 +1,25 @@
+{
+  "contractVersion": "nexus-agent-output-v1",
+  "summary": "Codebase is structurally sound with 0 TypeScript errors and 423 passing tests, but 7 of 15 server action files lack unit tests and repositories.ts (33 functions) has no error handling.",
+  "findings": [
+    "✅ TypeScript: 0 errors (npm run typecheck clean)",
+    "✅ Tests: 423 passed across 29 unit test files",
+    "✅ 'use server' correctness: all non-async exports in server action files are interface/type exports — no non-async function violations",
+    "✅ No N+1 queries detected: loops in repositories.ts and feed.ts iterate over already-fetched in-memory data, no per-iteration DB calls",
+    "⚠️ Coverage gap: src/lib/actions/auto-dispatch-settings.ts has no unit tests (2 exported functions)",
+    "⚠️ Coverage gap: src/lib/actions/changelog.ts has no unit tests (3 exported functions)",
+    "⚠️ Coverage gap: src/lib/actions/goals.ts has no unit tests (6 exported functions)",
+    "⚠️ Coverage gap: src/lib/actions/llm.ts has no unit tests (4 exported functions)",
+    "⚠️ Coverage gap: src/lib/actions/repositories.ts has no unit tests (33 exported functions — largest gap)",
+    "⚠️ Coverage gap: src/lib/actions/stripe.ts has no unit tests (7 exported functions)",
+    "⚠️ Coverage gap: src/lib/actions/weekly-diff.ts has no unit tests (1 exported function)",
+    "⚠️ Error handling: src/lib/actions/repositories.ts — 33 async server actions with 0 try/catch blocks; DB failures will propagate as unhandled errors to the client",
+    "⚠️ Error handling: src/lib/actions/changelog.ts, auto-dispatch-settings.ts, sync.ts, simulation.ts, feed.ts, weekly-diff.ts — each has 0-1 try/catch for 1-3 DB-touching functions",
+    "⚠️ `any` type: src/lib/actions/advisor-accuracy.ts:29 — `let mergedEvents: any[]` should be typed (FeedEvent[] based on context)",
+    "⚠️ `any` type: src/lib/github/sync.ts:109 — `githubRepo: any` parameter lacks type annotation"
+  ],
+  "outcome": "no-changes",
+  "changedFiles": [],
+  "validationCommand": "npm test && npm run typecheck",
+  "healthScore": 76
+}

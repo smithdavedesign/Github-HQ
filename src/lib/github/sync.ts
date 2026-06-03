@@ -105,6 +105,8 @@ export async function syncAllRepos(userId: string): Promise<void> {
 export async function syncSingleRepo(
   userId: string,
   token: string,
+  // GitHub REST API repo shape varies across endpoints (list vs get vs search).
+  // Using `any` intentionally — typed narrowly where fields are actually accessed below.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   githubRepo: any,
   existingState: ExistingRepoState = undefined,

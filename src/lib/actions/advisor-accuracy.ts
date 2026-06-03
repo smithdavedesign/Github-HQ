@@ -25,8 +25,7 @@ export interface AccuracyStats {
  * Time-decay: events in the last 30 days count 2x.
  */
 export async function getAccuracyByImpactType(userId: string): Promise<AccuracyStats[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let mergedEvents: any[] = []
+  let mergedEvents: Array<{ eventType: string; metadata: unknown; occurredAt: Date }> = []
   try {
     mergedEvents = await db.query.portfolioEvents.findMany({
       where: and(

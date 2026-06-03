@@ -1,0 +1,15 @@
+{
+  "contractVersion": "nexus-agent-output-v1",
+  "summary": "RepoHQ has generally sound auth and API route guards, but the top finding is a client-exposed server action that refreshes any deployment by id without session or ownership authorization.",
+  "findings": [
+    "Finding 1: Unauthenticated, client-exposed server action in src/lib/actions/deployments.ts:53; checkSingleDeployment() performs no auth() check or repository ownership check before reading a deployment by id and updating it at src/lib/actions/deployments.ts:54 and src/lib/actions/deployments.ts:60, and it is imported into the client at src/components/repos/deployment-manager.tsx:9 and called with a raw id at src/components/repos/deployment-manager.tsx:87.",
+    "Finding 2: Deployment URL validation permits SSRF-capable targets; addDeploymentUrl() only checks new URL(url) at src/lib/actions/deployments.ts:14, then server-side fetches the stored URL through checkSingleDeployment() at src/lib/actions/deployments.ts:32 and src/lib/monitoring/uptime.ts:12, while the cron job later fetches all deployment URLs at src/app/api/cron/deployments/route.ts:13 and src/app/api/cron/deployments/route.ts:17. There is no http/https-only enforcement, DNS/IP allowlist or private-network denylist.",
+    "Finding 3: Notification webhook URLs have the same SSRF gap; saveNotificationSettings() accepts any syntactically valid URL at src/lib/actions/notifications.ts:82 and src/lib/actions/notifications.ts:84, then dispatchNotification() POSTs the stored user URL from server-side code at src/lib/notifications/dispatcher.ts:49 and src/lib/notifications/dispatcher.ts:50 via fetch() at src/lib/notifications/webhook.ts:7 without scheme, host, DNS, or private-network restrictions.",
+    "No SQL injection risks found in scoped source: raw sql template usage is static or column-bound, and user-controlled values reviewed are passed through Drizzle predicates rather than string-concatenated SQL.",
+    "No hardcoded production secrets found in scoped source; secret material is read from environment variables or user database fields, with only placeholder examples in documentation and .env.example."
+  ],
+  "outcome": "no-changes",
+  "changedFiles": [],
+  "validationCommand": "npm run typecheck",
+  "securityScore": 74
+}
