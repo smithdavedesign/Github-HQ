@@ -265,3 +265,26 @@ Each entry should follow this structure:
 ### Recommended Actions
 ...
 ```
+
+---
+
+## G7 Integration Test Scripts Added
+
+New integration test scripts in `tests/integration/`:
+
+| Script | Skill | Tests |
+|--------|-------|-------|
+| `gstack-review-check.sh` | `/review` | Code review: auth patterns, input validation, error handling, type safety |
+| `gstack-qa-only-check.sh` | `/qa-only` | Bug hunt: lifecycle stuck states, webhook edge cases, pagination, settings validation |
+| `gstack-retro-check.sh` | `/retro` | Weekly commit analysis: what shipped, patterns, velocity, growth areas |
+
+Run any with:
+```bash
+bash tests/integration/gstack-review-check.sh
+bash tests/integration/gstack-qa-only-check.sh
+bash tests/integration/gstack-retro-check.sh
+# Copilot variant:
+GSTACK_SECURITY_PROVIDER=copilot bash tests/integration/gstack-review-check.sh
+```
+
+All three are read-only — they never modify files, only produce findings reports.

@@ -137,29 +137,9 @@ async function _queueAdvisorAction(action: AdvisorAction): Promise<QueuedTask> {
 
 // ─── Ad-hoc gstack skill queueing (user + AI agent triggered) ────────────────
 
-export type GstackSkill =
-  // Understand
-  | 'investigate' | 'review'
-  // Build Quality
-  | 'qa-only' | 'qa'
-  // Ship
-  | 'ship' | 'document-release'
-  // Monitor
-  | 'health' | 'canary'
-  // Reflect
-  | 'retro'
-
-export const SKILL_META: Record<GstackSkill, { label: string; phase: string; type: 'report' | 'fix' | 'pr' }> = {
-  investigate:        { label: '/investigate',        phase: 'Understand',    type: 'fix'    },
-  review:             { label: '/review',             phase: 'Understand',    type: 'report' },
-  'qa-only':          { label: '/qa-only',            phase: 'Build Quality', type: 'report' },
-  qa:                 { label: '/qa',                 phase: 'Build Quality', type: 'fix'    },
-  ship:               { label: '/ship',               phase: 'Ship',          type: 'pr'     },
-  'document-release': { label: '/document-release',   phase: 'Ship',          type: 'fix'    },
-  health:             { label: '/health',             phase: 'Monitor',       type: 'report' },
-  canary:             { label: '/canary',             phase: 'Monitor',       type: 'report' },
-  retro:              { label: '/retro',              phase: 'Reflect',       type: 'report' },
-}
+export type { GstackSkill } from './nexus-utils'
+export { SKILL_META } from './nexus-utils'
+import type { GstackSkill } from './nexus-utils'
 
 const SKILL_DEFAULTS: Record<GstackSkill, { executionMode: string; acceptanceCriteria: string[] }> = {
   investigate:        { executionMode: 'investigate', acceptanceCriteria: ['Root cause identified and documented', 'Findings listed with file paths and evidence', 'No new issues introduced'] },
