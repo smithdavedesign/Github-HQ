@@ -18,6 +18,8 @@ import { SimulationCard } from '@/components/dashboard/simulation-card'
 import { ProfileOptimizerCard } from '@/components/dashboard/profile-optimizer-card'
 import { ShipItCard } from '@/components/dashboard/ship-it-card'
 import { AgentImpactCard } from '@/components/dashboard/agent-impact-card'
+import { ActiveAgentsCard } from '@/components/dashboard/active-agents-card'
+import { getActiveAgentSummary } from '@/lib/actions/repositories'
 import { CollapsibleSection } from '@/components/dashboard/collapsible-section'
 import { getMyAccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { getGoals } from '@/lib/actions/goals'
@@ -45,7 +47,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats] = await Promise.all([
+  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats, activeAgents] = await Promise.all([
     getDashboardStats(),
     getRepositoriesSlim(),
     getOpportunityData(),
@@ -64,6 +66,7 @@ export default async function DashboardPage() {
     getShipItWarnings(),
     getAgentStats(),
     getMyAccuracyStats(),
+    getActiveAgentSummary(),
   ])
 
   const topRepos = repos
@@ -115,6 +118,7 @@ export default async function DashboardPage() {
 
       {/* Ship It — alert, belongs in status zone */}
       <ShipItCard warnings={shipItWarnings} />
+      <ActiveAgentsCard agents={activeAgents} />
 
       {/* ── INTELLIGENCE ──────────────────────────────────────────── */}
       <SectionLabel label="Intelligence" />

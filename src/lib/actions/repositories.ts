@@ -908,3 +908,65 @@ export async function getAgentStats() {
 
   return { queued, created, merged, failed, successRate, totalScoreGained, recentMergeCount: recentMerges.length }
 }
+
+/** Returns repos with active (non-terminal) agent tasks — used by the Active Agents dashboard card */
+export async function getActiveAgentSummary() {
+  const session = await auth()
+  if (!session?.user?.id) return []
+
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+
+  try {
+    const events = await db.query.portfolioEvents.findMany({
+      where: and(
+        eq(portfolioEvents.userId, session.user.id),
+        inArray(portfolioEvents.eventType, [
+          'agent_task_queued', 'agent_pr_created', 'agent_pr_merged',
+          'agent_execution_failed', 'agent_skill_report',
+        ]),
+      ),
+      columns: { repoId: true, eventType: true, metadata: true, occurredAt: true },
+      with: { repository: { columns: { id: true, name: true } } },
+      orderBy: [desc(portfolioEvents.occurredAt)],
+      limit: 100,
+    })
+
+    // Build per-repo lifecycle: find repos with non-terminal tasks
+    const repoStates = new Map<number, { repoName: string; stage: string; taskId: string; prUrl?: string; occurredAt: Date }>()
+    const mergedTaskIds = new Set<string>()
+    const reportedTaskIds = new Set<string>()
+    const failedTaskIds = new Set<string>()
+
+    for (const e of events) {
+      const meta = e.metadata as { taskId?: string; prUrl?: string } | null
+      if (!meta?.taskId) continue
+      if (e.eventType === 'agent_pr_merged')    mergedTaskIds.add(meta.taskId)
+      if (e.eventType === 'agent_skill_report') reportedTaskIds.add(meta.taskId)
+      if (e.eventType === 'agent_execution_failed') failedTaskIds.add(meta.taskId)
+    }
+
+    for (const e of events) {
+      if (!e.repoId || !e.repository) continue
+      const meta = e.metadata as { taskId?: string; prUrl?: string } | null
+      if (!meta?.taskId) continue
+      if (repoStates.has(e.repoId)) continue // already have most recent
+
+      const taskId = meta.taskId
+      const isMerged   = mergedTaskIds.has(taskId)
+      const isReported = reportedTaskIds.has(taskId)
+      const isFailed   = failedTaskIds.has(taskId)
+
+      if (e.eventType === 'agent_task_queued' && !isMerged && !isReported && !isFailed) {
+        repoStates.set(e.repoId, { repoName: e.repository.name, stage: 'queued', taskId, occurredAt: e.occurredAt })
+      } else if (e.eventType === 'agent_pr_created' && !isMerged) {
+        repoStates.set(e.repoId, { repoName: e.repository.name, stage: 'pr_ready', taskId, prUrl: meta.prUrl, occurredAt: e.occurredAt })
+      }
+    }
+
+    return [...repoStates.values()]
+      .filter(s => s.occurredAt >= twentyFourHoursAgo)
+      .slice(0, 10)
+  } catch {
+    return []
+  }
+}

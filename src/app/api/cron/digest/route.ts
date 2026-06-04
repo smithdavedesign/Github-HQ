@@ -5,9 +5,10 @@ import { generateDigest } from '@/lib/ai/digest'
 import { generateAdvisor, getLatestAdvisor } from '@/lib/ai/advisor'
 import { generateCeoReport } from '@/lib/ai/ceo-report'
 import { verifyCronSecret } from '@/lib/cron-auth'
-import { autoDispatchAdvisorActions } from '@/lib/actions/nexus'
+import { autoDispatchAdvisorActions, queueAdvisorActionForUser } from '@/lib/actions/nexus'
 import { getAccuracyByImpactType } from '@/lib/actions/advisor-accuracy'
-import { isNotNull } from 'drizzle-orm'
+import { isNotNull, eq } from 'drizzle-orm'
+import { repositories } from '@/lib/db/schema'
 
 export async function GET(request: Request) {
   if (!verifyCronSecret(request)) {
@@ -23,6 +24,8 @@ export async function GET(request: Request) {
       autoDispatchMaxPerRun: true,
       autoDispatchSkipSecurity: true,
       autoDispatchAccuracyThreshold: true,
+      autoRunHealthWeekly: true,
+      autoRunRetroWeekly: true,
     },
   })
 
@@ -74,6 +77,45 @@ export async function GET(request: Request) {
           // Never let dispatch failures crash the digest run
           console.warn('[digest-cron] auto-dispatch failed:', dispatchErr instanceof Error ? dispatchErr.message : dispatchErr)
         }
+      }
+
+      // G7: Scheduled skill runs on focused repos
+      const now = new Date()
+      const isMonday = now.getDay() === 1
+      const isSunday = now.getDay() === 0
+
+      if (user.autoRunRetroWeekly && isMonday) {
+        try {
+          const focusedRepos = await db.query.repositories.findMany({
+            where: eq(repositories.userId, user.id),
+            columns: { id: true, name: true },
+          }).then(r => r.filter((_, i) => i < 3)) // max 3 focused retros
+          for (const repo of focusedRepos) {
+            await queueAdvisorActionForUser(user.id, {
+              repoId: repo.id, repoName: repo.name,
+              action: `Run weekly retro on ${repo.name}`,
+              impactType: 'health', effort: 'quick', estimatedImpact: 'Weekly insight',
+              reasoning: 'Auto-scheduled weekly retro',
+            } as never).catch(() => null) // non-fatal
+          }
+        } catch { /* non-fatal */ }
+      }
+
+      if (user.autoRunHealthWeekly && isSunday) {
+        try {
+          const focusedRepos = await db.query.repositories.findMany({
+            where: eq(repositories.userId, user.id),
+            columns: { id: true, name: true },
+          }).then(r => r.filter((_, i) => i < 5)) // max 5 health checks
+          for (const repo of focusedRepos) {
+            await queueAdvisorActionForUser(user.id, {
+              repoId: repo.id, repoName: repo.name,
+              action: `Run weekly health check on ${repo.name}`,
+              impactType: 'health', effort: 'quick', estimatedImpact: 'Health score',
+              reasoning: 'Auto-scheduled weekly health check',
+            } as never).catch(() => null) // non-fatal
+          }
+        } catch { /* non-fatal */ }
       }
 
       processed++

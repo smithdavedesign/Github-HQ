@@ -5,6 +5,7 @@ import { getLatestAdvisorContent } from '@/lib/actions/repositories'
 import { getMyAccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { RepoAdvisorSection } from '@/components/repos/repo-advisor-section'
 import { GstackSkillLauncher } from '@/components/repos/gstack-skill-launcher'
+import { SkillReportFindings } from '@/components/repos/skill-report-findings'
 import type { GstackSkill } from '@/lib/actions/nexus'
 import { db } from '@/lib/db'
 import { portfolioEvents } from '@/lib/db/schema'
@@ -405,14 +406,21 @@ export default async function RepoDetailPage({ params }: Props) {
                 : openAlerts.length > 0
                   ? `Investigate ${openAlerts.length} critical/high security alert${openAlerts.length > 1 ? 's' : ''} in ${repo.name}`
                   : `Investigate code quality issues and potential improvements in ${repo.name}`,
-              health: `Run code health check on ${repo.name} — report TypeScript errors, test failures, dead code, and lint issues`,
-              ship: repoActions[0]?.action ?? `Ship latest changes in ${repo.name}`,
+              review:             `Review the latest changes before merging in ${repo.name}`,
+              'qa-only':          `Find bugs in ${repo.name} and report them with repro steps`,
+              qa:                 `Find and fix bugs in ${repo.name}`,
+              ship:               repoActions[0]?.action ?? `Ship latest changes in ${repo.name}`,
+              'document-release': `Update README and docs to match what was shipped in ${repo.name}`,
+              health:             `Run code health check on ${repo.name} — report TypeScript errors, test failures, dead code, and lint issues`,
+              canary:             repo.homepage ? `Check ${repo.homepage} for console errors and performance issues` : `Monitor ${repo.name} deployments for errors`,
+              retro:              `Summarise this week's commits and engineering patterns in ${repo.name}`,
             }
 
             return (
               <GstackSkillLauncher
                 repoId={repoId}
                 repoName={repo.name}
+                repoHomepage={repo.homepage}
                 defaultObjectives={defaultObjectives}
                 nexusEnabled={nexusConfigured}
               />
@@ -510,21 +518,15 @@ export default async function RepoDetailPage({ params }: Props) {
                           </a>
                         )}
                       </div>
-                      {/* Skill report findings inline */}
+                      {/* Skill report findings — expandable full list + actionable queue buttons */}
                       {isReport && Array.isArray(meta?.findings) && (meta.findings as string[]).length > 0 && (
-                        <ul className="mt-1.5 space-y-0.5">
-                          {(meta.findings as string[]).slice(0, 5).map((f, fi) => (
-                            <li key={fi} className="text-[10px] text-muted-foreground flex items-start gap-1">
-                              <span className="shrink-0 mt-0.5">·</span>
-                              <span>{f}</span>
-                            </li>
-                          ))}
-                          {(meta.findings as string[]).length > 5 && (
-                            <li className="text-[10px] text-muted-foreground">
-                              +{(meta.findings as string[]).length - 5} more findings
-                            </li>
-                          )}
-                        </ul>
+                        <SkillReportFindings
+                          findings={meta.findings as string[]}
+                          skillName={meta.skillName as string | undefined}
+                          repoId={repoId}
+                          repoName={repo.name}
+                          nexusEnabled={!!(process.env.NEXUS_API_URL && process.env.NEXUS_API_TOKEN)}
+                        />
                       )}
                     </div>
                     <span className="text-[10px] text-muted-foreground shrink-0">

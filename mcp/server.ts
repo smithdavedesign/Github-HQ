@@ -117,18 +117,30 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
 
-    // ── Phase G2: gstack skill launcher ─────────────────────────────────
+    // ── G7: Full lifecycle gstack skill integration ───────────────────
     {
       name: 'queue_gstack_skill',
-      description: 'Trigger a real gstack skill on a repo — /investigate for debugging and security analysis, /health for code quality reporting, /ship for creating PRs. Use this when get_coding_brief shows problems that need deeper investigation, or when you want an agent to implement and ship changes. Returns a taskId to poll with get_active_work().',
+      description: 'Trigger a gstack skill across the full repo lifecycle. Skills by phase — Understand: /investigate (debug+fix), /review (code review); Build Quality: /qa-only (report bugs), /qa (fix bugs); Ship: /ship (create PR), /document-release (update docs); Monitor: /health (code quality score), /canary (live app check); Reflect: /retro (weekly commit analysis). Returns a taskId to poll with get_active_work().',
       inputSchema: {
         type: 'object',
         properties: {
           repo_name: { type: 'string', description: 'Repository name (e.g. "repohq")' },
-          skill:     { type: 'string', enum: ['investigate', 'health', 'ship'], description: 'gstack skill to run' },
-          objective: { type: 'string', description: 'What the agent should do — defaults to a sensible objective based on the skill and repo state if omitted' },
+          skill:     { type: 'string', enum: ['investigate', 'review', 'qa-only', 'qa', 'ship', 'document-release', 'health', 'canary', 'retro'], description: 'gstack skill to run' },
+          objective: { type: 'string', description: 'What the agent should do — defaults to a sensible objective if omitted' },
         },
         required: ['repo_name', 'skill'],
+      },
+    },
+    {
+      name: 'get_skill_history',
+      description: 'Get recent gstack skill run history for a repo. Shows what skills ran, what findings they produced, and when. Useful before running a skill again — "what did the last health check find?"',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          repo_name: { type: 'string', description: 'Repository name' },
+          skill:     { type: 'string', description: 'Filter to a specific skill (e.g. "health") — omit for all skills' },
+        },
+        required: ['repo_name'],
       },
     },
 
@@ -691,10 +703,56 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
 
+      case 'get_skill_history': {
+        const { repo_name, skill: filterSkill } = args as { repo_name: string; skill?: string }
+
+        const repo = await db.query.repositories.findFirst({
+          where: and(eq(schema.repositories.userId, USER_ID!), eq(schema.repositories.name, repo_name)),
+          columns: { id: true, name: true },
+        })
+        if (!repo) return { content: [{ type: 'text', text: `Repo "${repo_name}" not found.` }] }
+
+        const events = await db.query.portfolioEvents.findMany({
+          where: and(
+            eq(schema.portfolioEvents.userId, USER_ID!),
+            eq(schema.portfolioEvents.repoId, repo.id),
+            inArray(schema.portfolioEvents.eventType, ['agent_skill_report', 'agent_execution_failed']),
+          ),
+          columns: { eventType: true, metadata: true, occurredAt: true, title: true },
+          orderBy: [desc(schema.portfolioEvents.occurredAt)],
+          limit: 20,
+        })
+
+        const filtered = filterSkill
+          ? events.filter(e => (e.metadata as { skillName?: string } | null)?.skillName === filterSkill)
+          : events
+
+        if (filtered.length === 0) {
+          return { content: [{ type: 'text', text: `No skill history found for **${repo_name}**${filterSkill ? ` (/${filterSkill})` : ''}.` }] }
+        }
+
+        const lines = [`# Skill History — ${repo_name}`, '']
+        for (const e of filtered.slice(0, 5)) {
+          const meta = e.metadata as { skillName?: string; findings?: string[]; summary?: string } | null
+          const date = new Date(e.occurredAt).toLocaleDateString()
+          const skill = meta?.skillName ?? 'unknown'
+          const isFailed = e.eventType === 'agent_execution_failed'
+          lines.push(`## /${skill} — ${date}${isFailed ? ' ❌ Failed' : ''}`)
+          if (meta?.summary) lines.push(meta.summary)
+          if (meta?.findings?.length) {
+            for (const f of meta.findings.slice(0, 5)) lines.push(`- ${f}`)
+            if ((meta.findings.length ?? 0) > 5) lines.push(`- …${meta.findings.length - 5} more findings`)
+          }
+          lines.push('')
+        }
+
+        return { content: [{ type: 'text', text: lines.join('\n') }] }
+      }
+
       case 'queue_gstack_skill': {
         const { repo_name, skill, objective: rawObjective } = args as {
           repo_name: string
-          skill: 'investigate' | 'health' | 'ship'
+          skill: 'investigate' | 'review' | 'qa-only' | 'qa' | 'ship' | 'document-release' | 'health' | 'canary' | 'retro'
           objective?: string
         }
 
@@ -710,15 +768,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Smart default objectives based on skill + repo state
         const openAlerts = repo.securityFindings?.filter(f => ['critical', 'high'].includes((f as { severity?: string }).severity ?? '')) ?? []
         const failingBuild = repo.metrics?.buildStatus === 'failure'
-        const defaultObjective = skill === 'investigate'
-          ? failingBuild
+        const SKILL_DEFAULTS_MCP: Record<string, string> = {
+          investigate: failingBuild
             ? `Investigate why the build is failing in ${repo.name} and fix the root cause`
             : openAlerts.length > 0
               ? `Investigate ${openAlerts.length} critical/high security alert${openAlerts.length > 1 ? 's' : ''} in ${repo.name}`
-              : `Investigate code quality issues and potential improvements in ${repo.name}`
-          : skill === 'health'
-            ? `Run code health check on ${repo.name} — report TypeScript errors, test failures, dead code, and lint issues`
-            : `Ship latest changes in ${repo.name}`
+              : `Investigate code quality issues in ${repo.name}`,
+          review:             `Review the latest changes before merging in ${repo.name}`,
+          'qa-only':          `Find bugs in ${repo.name} and document them with repro steps`,
+          qa:                 `Find and fix bugs in ${repo.name}`,
+          ship:               `Ship latest changes in ${repo.name}`,
+          'document-release': `Update README and docs to match what was shipped in ${repo.name}`,
+          health:             `Run code health check on ${repo.name} — TypeScript errors, tests, dead code, lint`,
+          canary:             `Monitor ${repo.name} live app for console errors and performance issues`,
+          retro:              `Summarise this week's commits and engineering patterns in ${repo.name}`,
+        }
+        const defaultObjective = SKILL_DEFAULTS_MCP[skill] ?? `Run /${skill} on ${repo.name}`
 
         const objective = rawObjective?.trim() || defaultObjective
 

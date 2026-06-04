@@ -137,33 +137,40 @@ async function _queueAdvisorAction(action: AdvisorAction): Promise<QueuedTask> {
 
 // ─── Ad-hoc gstack skill queueing (user + AI agent triggered) ────────────────
 
-export type GstackSkill = 'investigate' | 'health' | 'ship'
+export type GstackSkill =
+  // Understand
+  | 'investigate' | 'review'
+  // Build Quality
+  | 'qa-only' | 'qa'
+  // Ship
+  | 'ship' | 'document-release'
+  // Monitor
+  | 'health' | 'canary'
+  // Reflect
+  | 'retro'
+
+export const SKILL_META: Record<GstackSkill, { label: string; phase: string; type: 'report' | 'fix' | 'pr' }> = {
+  investigate:        { label: '/investigate',        phase: 'Understand',    type: 'fix'    },
+  review:             { label: '/review',             phase: 'Understand',    type: 'report' },
+  'qa-only':          { label: '/qa-only',            phase: 'Build Quality', type: 'report' },
+  qa:                 { label: '/qa',                 phase: 'Build Quality', type: 'fix'    },
+  ship:               { label: '/ship',               phase: 'Ship',          type: 'pr'     },
+  'document-release': { label: '/document-release',   phase: 'Ship',          type: 'fix'    },
+  health:             { label: '/health',             phase: 'Monitor',       type: 'report' },
+  canary:             { label: '/canary',             phase: 'Monitor',       type: 'report' },
+  retro:              { label: '/retro',              phase: 'Reflect',       type: 'report' },
+}
 
 const SKILL_DEFAULTS: Record<GstackSkill, { executionMode: string; acceptanceCriteria: string[] }> = {
-  investigate: {
-    executionMode: 'investigate',
-    acceptanceCriteria: [
-      'Root cause identified and documented',
-      'Findings listed with file paths and evidence',
-      'No new issues introduced',
-    ],
-  },
-  health: {
-    executionMode: 'investigate',
-    acceptanceCriteria: [
-      'Code quality report produced',
-      'TypeScript errors, test failures, and dead code listed',
-      'Health score computed and findings documented',
-    ],
-  },
-  ship: {
-    executionMode: 'fix',
-    acceptanceCriteria: [
-      'Changes implement the stated objective',
-      'All existing tests continue to pass',
-      'PR created with clear description',
-    ],
-  },
+  investigate:        { executionMode: 'investigate', acceptanceCriteria: ['Root cause identified and documented', 'Findings listed with file paths and evidence', 'No new issues introduced'] },
+  review:             { executionMode: 'investigate', acceptanceCriteria: ['Code review findings documented', 'Security and logic issues identified', 'No code changes made'] },
+  'qa-only':          { executionMode: 'investigate', acceptanceCriteria: ['Bugs found and documented with repro steps', 'No code changes made', 'Health score computed'] },
+  qa:                 { executionMode: 'fix',         acceptanceCriteria: ['Bugs found and fixed', 'All existing tests continue to pass', 'Fix commits created'] },
+  ship:               { executionMode: 'fix',         acceptanceCriteria: ['Changes implement the stated objective', 'All existing tests continue to pass', 'PR created with clear description'] },
+  'document-release': { executionMode: 'fix',         acceptanceCriteria: ['README and docs updated to match shipped code', 'CHANGELOG updated', 'No functional code changes'] },
+  health:             { executionMode: 'investigate', acceptanceCriteria: ['Code quality report produced', 'TypeScript errors, test failures, and dead code listed', 'Health score computed'] },
+  canary:             { executionMode: 'investigate', acceptanceCriteria: ['Live app checked for console errors and performance issues', 'Baseline comparisons noted', 'No code changes made'] },
+  retro:              { executionMode: 'investigate', acceptanceCriteria: ['Weekly commit patterns analysed', 'Engineering highlights and growth areas noted', 'No code changes made'] },
 }
 
 /**

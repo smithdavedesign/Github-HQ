@@ -86,6 +86,10 @@ export const users = pgTable('users', {
   healthAlertThreshold: integer('health_alert_threshold').default(55),
   // Phase 53: Auto-dispatch (agentic workforce)
   autoDispatchEnabled:           boolean('auto_dispatch_enabled').default(false),
+  // G7: Scheduled skill runs
+  autoRunHealthWeekly:   boolean('auto_run_health_weekly').default(false),
+  autoRunRetroWeekly:    boolean('auto_run_retro_weekly').default(false),
+  autoRunCanaryOnDeploy: boolean('auto_run_canary_on_deploy').default(false),
   autoDispatchEffortGate:        text('auto_dispatch_effort_gate').default('quick_only'),
   // 'quick_only' | 'quick_and_medium' | 'all'
   autoDispatchMaxPerRun:         integer('auto_dispatch_max_per_run').default(3),
