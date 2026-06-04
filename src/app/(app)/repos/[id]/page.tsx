@@ -488,7 +488,13 @@ export default async function RepoDetailPage({ params }: Props) {
                         <p className="text-sm font-medium truncate">{event.title}</p>
                       </div>
                       {event.description && (
-                        <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>
+                        isFailed ? (
+                          <pre className="text-[10px] text-red-500/80 mt-1 bg-red-500/5 border border-red-500/10 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
+                            {event.description}
+                          </pre>
+                        ) : (
+                          <p className="text-xs text-muted-foreground mt-0.5 break-words">{event.description}</p>
+                        )
                       )}
                       <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground flex-wrap">
                         {predictedDelta && <span>Predicted: {predictedDelta}</span>}
