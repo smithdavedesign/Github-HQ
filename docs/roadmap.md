@@ -473,6 +473,61 @@ The Nexus worker already passes `impactType` in `contextNotes` — routing just 
 - `skillName` now included in all task queuing: advisor actions, auto-dispatch, gstack UI launcher, MCP tool
 - `gstack-health.sh` added as a new script — wraps `/health` skill, produces Nexus output.json contract
 
+### G7 — Full Lifecycle Skill Integration ✅
+All 9 portfolio-relevant gstack skills wired end-to-end.
+
+- [x] 6 new Nexus scripts: `gstack-review.sh`, `gstack-qa.sh`, `gstack-qa-only.sh`, `gstack-retro.sh`, `gstack-canary.sh`, `gstack-document-release.sh` — same G1-G5 pattern (OPENCLAW_SESSION, learnings, CLAUDE.md brief, checkpoint mode)
+- [x] `GstackSkill` type + `SKILL_META` extracted to `nexus-utils.ts` (no auth/DB imports — unit-test safe); `nexus.ts` re-exports
+- [x] `SKILL_DEFAULTS` extended for all 9 skills; `queueGstackSkill()` works generically
+- [x] Repo Agent tab: lifecycle-phased skill menu (5 sections: Understand / Build Quality / Ship / Monitor / Reflect), 9 skills with type badges (Analyze+Fix / Report only / Creates PR), collapsible sections with `localStorage` persistence
+- [x] `/canary` hidden when repo has no `homepage` — shows "Needs deployment URL" notice instead
+- [x] `SkillReportFindings` component: full expandable findings (no truncation), "Show N more" toggle, `getSuggestedActions()` infers `/ship` or `/investigate` from finding text, one-click queue buttons per suggestion
+- [x] `agent_skill_report` event: Nexus worker fires webhook on `outcome: no-changes` + `skillName`; `report_ready` terminal stage stops UI polling
+- [x] Dashboard: `ActiveAgentsCard` in Status section — shows in-flight agent tasks, hidden when nothing running
+- [x] `get_skill_history(repo_name, skill?)` MCP tool — returns recent skill runs with findings
+- [x] `queue_gstack_skill` MCP tool extended to all 9 skills with per-skill default objectives
+- [x] Schema: `autoRunHealthWeekly`, `autoRunRetroWeekly`, `autoRunCanaryOnDeploy` on users
+- [x] Digest cron: auto-queues `/retro` Monday + `/health` Sunday on focused repos when toggles enabled
+- [x] Settings: "Scheduled Skills" section in Auto-Dispatch card with three toggles
+- [x] 30 new unit tests (SKILL_META completeness, getSuggestedActions inference, canary visibility, active agent derivation)
+- [x] Playwright tests: phase labels, type badges, findings expansion, actionable items, Active Agents card
+- [x] Integration test scripts: `gstack-review-check.sh`, `gstack-qa-only-check.sh`, `gstack-retro-check.sh`
+
+### G8 — OpenClaw Orchestration (Fully Agentic Flow)
+
+The vision: RepoHQ stops being a dispatch system and becomes an **AI workforce coordinator**. Instead of a human clicking "Queue" and one agent running on one repo, OpenClaw orchestrates multiple agents in parallel — sharing context, chaining skills, and re-prioritizing in real-time.
+
+**The architecture shift:**
+
+Today:
+```
+Monday cron → advisor generates actions → auto-dispatch queues them →
+Nexus runs tasks one at a time → agents are isolated, no shared context
+```
+
+With OpenClaw:
+```
+Monday cron → advisor generates priority queue →
+OpenClaw spawns N agents in parallel, each on a different repo/skill →
+  Agent A finds an issue → OpenClaw injects finding into Agent B's context
+  Agent C finishes /health → OpenClaw auto-chains /ship if findings warrant it →
+  Agent D finishes → result feeds back into advisor priority queue →
+Human reviews outcomes, not individual tasks
+```
+
+**Planned items:**
+
+- [ ] **Parallel execution**: Replace Nexus single-task dispatch with OpenClaw multi-agent spawn — N agents across N repos simultaneously, bounded by `autoDispatchMaxPerRun`
+- [ ] **Skill chaining**: `/health` findings with TypeScript errors → auto-spawn `/ship "Fix TypeScript errors"` without human click; `/investigate` findings with security issue → auto-spawn `/ship` fix; chainable up to 2 hops to prevent loops
+- [ ] **Cross-repo context sharing**: OpenClaw passes findings from Agent A (e.g. "repo uses deprecated auth pattern") into Agent B's CLAUDE.md brief when B is working on a related repo (detected via `internal_deps` dependency map)
+- [ ] **Live orchestrator on dashboard**: RepoHQ advisor acts as the OpenClaw task planner — continuously re-ranks the queue as agents report back; "Orchestrator running" status in Active Agents card
+- [ ] **Human approval gate**: Before OpenClaw auto-chains a skill, a lightweight approval toast appears in the dashboard — "Agent found TypeScript errors in open-travel. Run /ship to fix? [Approve] [Skip]" — with 10-min auto-approve if `autoDispatchEnabled`
+- [ ] **Termination conditions**: OpenClaw stops when: (a) all tasks complete, (b) 3 consecutive chained failures, (c) a `/investigate` returns `security` severity finding requiring human review, or (d) manual stop from dashboard
+- [ ] **Session history in briefs**: OpenClaw surfaces what other agents learned this session in each new agent's CLAUDE.md brief — "Agent working on Open-Travel found: dead code in utils/format.ts. Review before writing similar utilities."
+- [ ] **Prerequisite**: Phase 55 (CI feedback loop) should ship first — OpenClaw chaining without CI awareness would create PRs that fail silently
+
+**Why OpenClaw over a custom orchestrator:** `OPENCLAW_SESSION=true` is already in every gstack script. The infrastructure recognizes spawned sessions and suppresses interactive prompts. OpenClaw's skill coordination layer is built for exactly this pattern — building a custom orchestrator would replicate it. The integration point is replacing the Nexus worker's single-task spawn with an OpenClaw session that manages the task graph.
+
 ---
 
 ## Distribution Roadmap
