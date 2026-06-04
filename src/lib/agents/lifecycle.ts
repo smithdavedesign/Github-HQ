@@ -36,6 +36,7 @@ export async function getRepoLifecycle(userId: string, repoId: number): Promise<
           'agent_pr_created',
           'agent_pr_merged',
           'agent_execution_failed',
+          'agent_skill_report',
         ]),
       ),
       columns: { eventType: true, metadata: true, occurredAt: true },
@@ -69,6 +70,11 @@ export async function getRepoLifecycle(userId: string, repoId: number): Promise<
   if (mergedEvent) {
     const m = mergedEvent.metadata as { prUrl?: string } | null
     return { stage: 'merged', taskId, prUrl: m?.prUrl ?? null, queuedAt }
+  }
+
+  const skillReportEvent = eventsForTask.find(e => e.eventType === 'agent_skill_report')
+  if (skillReportEvent) {
+    return { stage: 'report_ready', taskId, prUrl: null, queuedAt }
   }
 
   const failedEvent = eventsForTask.find(e => e.eventType === 'agent_execution_failed')

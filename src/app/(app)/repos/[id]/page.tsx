@@ -429,7 +429,7 @@ export default async function RepoDetailPage({ params }: Props) {
 
           {/* Activity history */}
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Agent History</p>
+            <p id="agent-history" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide scroll-mt-4">Agent History</p>
           {agentHistory.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground text-sm">
               <Bot className="w-8 h-8 mx-auto mb-3 opacity-30" />

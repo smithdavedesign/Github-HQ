@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Search, Heart, GitPullRequest, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -59,11 +59,48 @@ interface GstackSkillLauncherProps {
   nexusEnabled: boolean
 }
 
+type SkillStatus = 'idle' | 'queued' | 'running' | 'report_ready' | 'pr_ready' | 'failed'
+
 export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, nexusEnabled }: GstackSkillLauncherProps) {
   const [expanded, setExpanded] = useState<GstackSkill | null>(null)
   const [objectives, setObjectives] = useState(defaultObjectives)
   const [loading, setLoading] = useState<GstackSkill | null>(null)
+  const [skillStatus, setSkillStatus] = useState<Record<string, SkillStatus>>({})
   const [launched, setLaunched] = useState<Record<string, boolean>>({})
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // On mount + after launch: poll lifecycle to show report_ready / pr_ready / failed
+  useEffect(() => {
+    let cancelled = false
+    async function checkLifecycle() {
+      try {
+        const res = await fetch(`/api/agent-task-status?repoId=${repoId}`)
+        if (!res.ok || cancelled) return
+        const data = await res.json() as { status: string; taskId?: string }
+        if (cancelled) return
+        // Map lifecycle stage to a skill-agnostic status
+        const rawStatus = data.status
+        const terminalStatuses = ['report_ready', 'pr_ready', 'failed', 'merged']
+        if (terminalStatuses.includes(rawStatus)) {
+          const resolvedStatus: SkillStatus = rawStatus === 'merged' ? 'pr_ready'
+            : rawStatus as SkillStatus
+          setSkillStatus(prev => {
+            const inFlight = Object.entries(prev).find(([, s]) => s === 'queued' || s === 'running')
+            if (inFlight) return { ...prev, [inFlight[0]]: resolvedStatus }
+            return prev
+          })
+          if (pollRef.current) clearInterval(pollRef.current)
+        }
+      } catch { /* non-fatal */ }
+    }
+    // Poll every 5s while any skill is in-flight
+    const hasInFlight = Object.values(skillStatus).some(s => s === 'queued' || s === 'running')
+    if (hasInFlight) {
+      pollRef.current = setInterval(checkLifecycle, 5000)
+      checkLifecycle()
+    }
+    return () => { cancelled = true; if (pollRef.current) clearInterval(pollRef.current) }
+  }, [repoId, JSON.stringify(skillStatus)])  // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!nexusEnabled) {
     return (
@@ -85,9 +122,10 @@ export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, nexus
     try {
       await queueGstackSkill(repoId, skill, objective)
       setLaunched(prev => ({ ...prev, [skill]: true }))
+      setSkillStatus(prev => ({ ...prev, [skill]: 'queued' }))
       setExpanded(null)
       toast.success(`gstack /${skill} queued for ${repoName}`, {
-        description: 'Track progress in the Agent History section below.',
+        description: skill === 'ship' ? 'Agent will open a PR when done.' : 'Report will appear in Agent History when ready.',
         duration: 5000,
       })
     } catch (err) {
@@ -112,6 +150,7 @@ export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, nexus
           const isExpanded = expanded === skill.id
           const isLoading = loading === skill.id
           const wasLaunched = launched[skill.id]
+          const liveStatus = skillStatus[skill.id] ?? 'idle'
 
           return (
             <div
@@ -137,9 +176,29 @@ export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, nexus
                     <Badge variant="outline" className={`text-[10px] h-4 px-1.5 ${skill.badgeColor}`}>
                       {skill.badge}
                     </Badge>
-                    {wasLaunched && (
+                    {wasLaunched && liveStatus === 'queued' && (
+                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-indigo-50 text-indigo-600 border-indigo-200">
+                        Queued…
+                      </Badge>
+                    )}
+                    {liveStatus === 'running' && (
+                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-amber-50 text-amber-600 border-amber-200">
+                        Running…
+                      </Badge>
+                    )}
+                    {liveStatus === 'report_ready' && (
+                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-violet-50 text-violet-600 border-violet-200">
+                        Report ready ↓
+                      </Badge>
+                    )}
+                    {liveStatus === 'pr_ready' && (
                       <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-emerald-50 text-emerald-600 border-emerald-200">
-                        Queued ✓
+                        PR Ready ✓
+                      </Badge>
+                    )}
+                    {liveStatus === 'failed' && (
+                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-red-50 text-red-600 border-red-200">
+                        Failed
                       </Badge>
                     )}
                   </div>

@@ -11,18 +11,20 @@ export type AgentTaskStage =
   | 'running'
   | 'pr_ready'
   | 'merged'
+  | 'report_ready'
   | 'failed'
   | 'timed_out'
 
 const STAGE_LABELS: Record<string, string> = {
-  idle:      'Idle',
-  queued:    'Queued',
-  preparing: 'Preparing context…',
-  running:   'Agent running…',
-  pr_ready:  'PR created',
-  merged:    'PR merged',
-  failed:    'Agent failed',
-  timed_out: 'Timed out',
+  idle:         'Idle',
+  queued:       'Queued',
+  preparing:    'Preparing context…',
+  running:      'Agent running…',
+  pr_ready:     'PR created',
+  merged:       'PR merged',
+  report_ready: 'Report ready',
+  failed:       'Agent failed',
+  timed_out:    'Timed out',
 }
 
 export async function GET(request: Request) {
@@ -57,7 +59,8 @@ export async function GET(request: Request) {
     where: and(
       eq(portfolioEvents.userId, session.user.id),
       inArray(portfolioEvents.eventType, [
-        'agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_execution_failed',
+        'agent_task_queued', 'agent_pr_created', 'agent_pr_merged',
+        'agent_execution_failed', 'agent_skill_report',
       ]),
     ),
     orderBy: [desc(portfolioEvents.occurredAt)],
@@ -69,9 +72,10 @@ export async function GET(request: Request) {
     return meta?.taskId === taskId
   })
 
-  const prMerged   = matching.find(e => e.eventType === 'agent_pr_merged')
-  const prCreated  = matching.find(e => e.eventType === 'agent_pr_created')
-  const execFailed = matching.find(e => e.eventType === 'agent_execution_failed')
+  const prMerged    = matching.find(e => e.eventType === 'agent_pr_merged')
+  const prCreated   = matching.find(e => e.eventType === 'agent_pr_created')
+  const execFailed  = matching.find(e => e.eventType === 'agent_execution_failed')
+  const skillReport = matching.find(e => e.eventType === 'agent_skill_report')
 
   if (prMerged)  {
     const meta = prMerged.metadata as { prUrl?: string } | null
@@ -81,7 +85,8 @@ export async function GET(request: Request) {
     const meta = prCreated.metadata as { prUrl?: string } | null
     return ok('pr_ready', { prUrl: meta?.prUrl, nexusUrl })
   }
-  if (execFailed) return ok('failed', { nexusUrl })
+  if (skillReport) return ok('report_ready', { nexusUrl })
+  if (execFailed)  return ok('failed', { nexusUrl })
 
   // 2. Poll Nexus directly for live stage (webhook may not have fired yet)
   if (nexusUrl && nexusToken) {

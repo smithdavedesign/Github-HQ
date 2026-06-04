@@ -7,6 +7,7 @@ export type AgentLifecycleStage =
   | 'running'
   | 'pr_ready'
   | 'merged'
+  | 'report_ready'
   | 'failed'
   | 'timed_out'
 
@@ -17,7 +18,7 @@ export const BLOCKING_STAGES = new Set<AgentLifecycleStage>([
 
 /** Terminal stages — allow new queue or retry */
 export const TERMINAL_STAGES = new Set<AgentLifecycleStage>([
-  'idle', 'merged', 'failed', 'timed_out',
+  'idle', 'merged', 'report_ready', 'failed', 'timed_out',
 ])
 
 export const LIFECYCLE_TIMEOUT_MS = 15 * 60 * 1000  // 15 minutes

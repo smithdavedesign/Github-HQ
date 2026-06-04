@@ -4,13 +4,13 @@ import { useState, useEffect, useRef } from 'react'
 import { queueAdvisorAction } from '@/lib/actions/nexus'
 import type { AdvisorAction } from '@/lib/ai/advisor'
 import { toast } from 'sonner'
-import { Bot, Loader2, CheckCircle, ExternalLink, GitPullRequest, AlertCircle, Clock } from 'lucide-react'
+import { Bot, Loader2, CheckCircle, ExternalLink, GitPullRequest, AlertCircle, Clock, FileText } from 'lucide-react'
 
-type Stage = 'idle' | 'launching' | 'queued' | 'preparing' | 'running' | 'pr_ready' | 'merged' | 'failed' | 'timed_out'
+type Stage = 'idle' | 'launching' | 'queued' | 'preparing' | 'running' | 'pr_ready' | 'merged' | 'report_ready' | 'failed' | 'timed_out'
 
 interface StatusPayload { status: Stage; stage: string; prUrl?: string; nexusUrl?: string }
 
-const TERMINAL: Stage[] = ['pr_ready', 'merged', 'failed', 'timed_out']
+const TERMINAL: Stage[] = ['pr_ready', 'merged', 'report_ready', 'failed', 'timed_out']
 const POLL_MS  = 5000
 const MAX_POLLS = 180  // 15 min
 
@@ -115,7 +115,7 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
       setStage('queued')
       setLabel('Queued')
       poll(result.taskId)
-      toast.info('Agent queued', { description: 'Will create a PR automatically', duration: 3000 })
+      toast.info('Agent queued', { description: 'Running — results will appear in Agent History', duration: 3000 })
     } catch (err) {
       setStage('idle')
       toast.error(err instanceof Error ? err.message : 'Failed to start agent')
@@ -148,6 +148,16 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
       <a href={prUrl} target="_blank" rel="noopener noreferrer"
         className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 hover:text-emerald-700">
         <GitPullRequest className="w-3 h-3" />PR Ready<ExternalLink className="w-2.5 h-2.5" />
+      </a>
+    )
+  }
+
+  // ── Report Ready (findings-only skills: /health, /investigate) ────────────
+  if (stage === 'report_ready') {
+    return (
+      <a href="#agent-history" onClick={e => { e.preventDefault(); document.getElementById('agent-history')?.scrollIntoView({ behavior: 'smooth' }) }}
+        className="flex items-center gap-1 text-[10px] font-medium text-violet-600 hover:text-violet-700 cursor-pointer">
+        <FileText className="w-3 h-3" />Report Ready
       </a>
     )
   }
