@@ -3,17 +3,21 @@
 Running record of findings from gstack integration tests and slash commands against the RepoHQ codebase.
 
 **gstack G1–G6 fully shipped:**
-- G1: Real skill invocation (`claude /investigate`, `claude /ship`, `claude /health`)
-- G2: UI skill launcher on repo Agent tab + `queue_gstack_skill` MCP tool
+- G1: Real skill invocation via `OPENCLAW_SESSION=true` + Claude Code CLI (`/investigate`, `/ship`, `/health`, `/review`, `/qa-only`, `/qa`, `/document-release`, `/canary`, `/retro`)
+- G2: UI skill launcher on repo Agent tab (9 skills, 5 phases) + `queue_gstack_skill` MCP tool
 - G3: Learnings injected from `~/.gstack/projects/{slug}/learnings.jsonl` before each run; findings logged back after
-- G4: Checkpoint mode (`continuous`) enabled — WIP commits survive crashes
-- G5: RepoHQ brief written to `CLAUDE.md` in worktree (gstack reads it natively as project context)
-- G6: Dynamic skill router in Nexus agent-runner — `skillName` in contextNotes selects the correct script; `GSTACK_SCRIPTS_DIR` for override
+- G4: Checkpoint mode (`continuous`) enabled — WIP commits survive crashes; `agent_skill_report` webhook event for no-changes outcomes
+- G5: RepoHQ coding brief written to `CLAUDE.md` in Nexus worktree — gstack reads it natively as project context
+- G6: Dynamic skill router in Nexus agent-runner — `skillName` in `contextNotes` selects the correct gstack script; `GSTACK_SCRIPTS_DIR` env var for override
 
-Scripts live in `tests/integration/`. Run from the project root:
+Integration test scripts live in `tests/integration/`. Run from the project root:
 ```bash
-bash tests/integration/gstack-security-check.sh          # /investigate — security
-bash tests/integration/gstack-health-check.sh            # /health — code quality
+bash tests/integration/gstack-security-check.sh    # /investigate — security
+bash tests/integration/gstack-health-check.sh      # /health — code quality
+bash tests/integration/gstack-review-check.sh      # /review — code review
+bash tests/integration/gstack-qa-only-check.sh     # /qa-only — bug hunt
+bash tests/integration/gstack-retro-check.sh       # /retro — weekly analysis
+# Alternate provider:
 GSTACK_SECURITY_PROVIDER=copilot bash tests/integration/gstack-security-check.sh
 ```
 
@@ -252,7 +256,7 @@ Each entry should follow this structure:
 ## YYYY-MM-DD — /[command] [description]
 
 **Script:** tests/integration/gstack-[name].sh
-**Provider:** Claude Code | GitHub Copilot | Codex
+**Provider:** Claude Code (claude-sonnet-4-6) | GitHub Copilot | Codex
 **Score:** N / 100  (if applicable)
 **Outcome:** no-changes | changes-made | blocked | rate-limited
 
@@ -262,9 +266,11 @@ Each entry should follow this structure:
 ### ⚠️ Findings
 ...
 
-### Recommended Actions
+### Resolved — YYYY-MM-DD
 ...
 ```
+
+When a skill run is triggered from the UI or MCP, findings are stored as `agent_skill_report` events in `portfolio_events` and surfaced inline in the skill launcher. This log is for manually-run integration test results and post-fix resolution notes.
 
 ---
 

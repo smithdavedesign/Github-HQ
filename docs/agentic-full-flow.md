@@ -1,6 +1,6 @@
-# RepoHQ — Full Agentic Flow (Phases 46–55)
+# RepoHQ — Full Agentic Flow
 
-Complete visual reference for the automated portfolio improvement pipeline as of Phase 55.
+Complete visual reference for the automated portfolio improvement pipeline.
 
 ---
 
@@ -14,39 +14,43 @@ graph TB
         SCORE[Health Scoring Engine\nactivity · security · docs · build]
         ADVISOR[AI Advisor\nquantified actions + predicted delta]
         DASH[Dashboard\nAdvisorCard + QueueButton]
+        LAUNCHER[gstack Skill Launcher\n9 skills · 5 phases]
         DB[(Neon PostgreSQL\nrepositories · portfolio_events\nnotifications · health_score_history)]
 
-        subgraph MCP["MCP Server (Agent Context)"]
-            MB1[get_coding_brief\nhealth · in-flight · attempts]
+        subgraph MCP["MCP Server (14 tools)"]
+            MB1[get_coding_brief\nhealth · in-flight · attempts · last skill report]
             MB2[get_next_action\nskips open PRs + dead ends]
             MB3[log_attempt\noutcome feedback]
             MB4[log_session_complete]
             MB5[get_active_work\ncollision prevention]
+            MB6[queue_gstack_skill\nall 9 skills]
+            MB7[get_skill_history\nget_skill_findings]
         end
 
-        subgraph NOTIFY["Push Notifications (Phase 49)"]
+        subgraph NOTIFY["Push Notifications"]
             BELL[In-app Bell\nunread badge + sheet]
             HOOK_OUT[Webhook Dispatcher\nSlack · Zapier · custom]
             HEALTH_ALERT[Health Threshold Alerts\nper-user threshold in Settings]
         end
 
-        subgraph OBSERVE["Observability (Phase 47–48)"]
+        subgraph OBSERVE["Observability"]
             PERF[Agent Performance Page\n/agent-performance]
             FEED[Portfolio Feed\nagent events inline]
             BADGE[Repo List PR badge\nopen → GitHub link]
-            HISTORY[Repo Detail Agent tab\nattempts · PRs · actual delta]
+            HISTORY[Repo Detail Agent tab\nattempts · PRs · skill reports · actual delta]
         end
 
         MERGE[PR Merge Detector\ncheckMergedAgentPRs]
         DELTA[Delta Resolver\nresolveActualDeltas]
         HOOK_IN[Webhook Handler\n/api/webhooks/agent-events]
+        AUTODISPATCH[Auto-Dispatch\nMonday cron]
     end
 
     subgraph Nexus["AI-Took-My-Job / Nexus (Execution Layer)"]
         direction TB
         API[Internal API\n/internal/agent-tasks]
-        WORKER[BullMQ Worker\nauto-execute pipeline]
-        AGENT[Claude Agent\nisolated branch]
+        WORKER[BullMQ Worker\nskillName routes to gstack script]
+        AGENT[Claude Code + gstack\nOPENCLAW_SESSION=true]
         VALID[Validation\ntests pass?]
         PROMOTE[PR Promotion\ndraft:false]
     end
@@ -55,11 +59,14 @@ graph TB
     SCORE -->|health scores| ADVISOR
     ADVISOR -->|top actions| DASH
     DASH -->|"Run Agent"| API
+    LAUNCHER -->|queueGstackSkill| API
+    MB6 -->|queue_gstack_skill| API
+    AUTODISPATCH -->|queueAdvisorActionForUser| API
     API -->|taskId| DB
     API --> WORKER
     WORKER -->|get_coding_brief| MB1
-    MB1 -->|context| AGENT
-    AGENT -->|changes| VALID
+    MB1 -->|context + last skill report| AGENT
+    AGENT -->|gstack /ship · /investigate · /health · etc.| VALID
     VALID -->|pass| PROMOTE
     PROMOTE -->|agent_pr_created webhook| HOOK_IN
     HOOK_IN -->|write event| DB
@@ -70,6 +77,7 @@ graph TB
     DELTA -->|actualDelta patch| DB
     DELTA -->|agent_pr_merged event| PERF
     WORKER -->|agent_failed webhook| HOOK_IN
+    WORKER -->|agent_skill_report webhook\nfindings + suggestedNextSkill| HOOK_IN
     HOOK_IN -->|"agent_failed notification"| HOOK_OUT
     HOOK_OUT --> BELL
     HOOK_OUT -->|POST| SLACK[Slack / Zapier]
@@ -88,7 +96,7 @@ graph TB
 
 ---
 
-## Automated Execution Sequence (Happy Path)
+## Automated Execution Sequence (Happy Path — Advisor Action)
 
 ```mermaid
 sequenceDiagram
@@ -101,15 +109,15 @@ sequenceDiagram
     Human->>RepoHQ: Views dashboard
     RepoHQ->>RepoHQ: Advisor generates "Fix security alert (+12 pts)"
     Human->>RepoHQ: Clicks "Run Agent" (effort: quick)
-    RepoHQ->>Nexus: POST /internal/agent-tasks {autoExecute:true}
+    RepoHQ->>Nexus: POST /internal/agent-tasks {skillName: "investigate", autoExecute: true}
     Nexus-->>RepoHQ: {taskId}
     RepoHQ->>RepoHQ: Writes agent_task_queued event
     Note over RepoHQ: QueueButton shows "Queued → Preparing…"
 
     Nexus->>MCP: get_coding_brief("repo-name")
-    MCP-->>Nexus: health 62/100 · no open PRs · 0 recent failures
+    MCP-->>Nexus: health 62/100 · no open PRs · 0 recent failures · last skill report
     Nexus->>GitHub: clone repo, create branch
-    Nexus->>Nexus: Claude agent executes fix
+    Nexus->>Nexus: Claude Code runs gstack /investigate
     Nexus->>MCP: log_attempt("repo", "fix CVE-2024-x", "success")
     MCP->>RepoHQ: Writes agent_attempt event
     Nexus->>GitHub: push branch, create PR
@@ -129,7 +137,37 @@ sequenceDiagram
 
 ---
 
-## Dead-End Detection & Feedback Loop (Phase 51)
+## gstack Skill Sequence (Report-only Skill — /health)
+
+```mermaid
+sequenceDiagram
+    actor Human
+    participant RepoHQ
+    participant MCP
+    participant Nexus
+
+    Human->>RepoHQ: Clicks "/health" in gstack Skill Launcher
+    RepoHQ->>Nexus: POST /internal/agent-tasks {skillName: "health", autoExecute: true}
+    Nexus-->>RepoHQ: {taskId}
+    Note over RepoHQ: Skill launcher shows "Queued… → Running…"
+
+    Nexus->>MCP: get_coding_brief("repo-name")
+    MCP-->>Nexus: context + last /health findings
+    Nexus->>Nexus: Claude Code runs gstack /health
+    Nexus->>Nexus: Produces findings report (no code changes)
+    Nexus->>RepoHQ: POST /webhooks/agent-events {agent_skill_report, findings[], suggestedNextSkill}
+    RepoHQ->>RepoHQ: Writes agent_skill_report event to portfolio_events
+    Note over RepoHQ: Skill launcher shows "Report ready ↓"\nInline preview shows first 2 findings
+
+    Human->>RepoHQ: Scrolls to Agent History
+    Note over Human: Reads full findings list\nSees suggestedNextSkill: "ship"
+    Human->>RepoHQ: Clicks "/ship" in launcher
+    Note over Human: Next skill queued with context from health report
+```
+
+---
+
+## Dead-End Detection & Feedback Loop
 
 ```mermaid
 flowchart LR
@@ -146,7 +184,7 @@ flowchart LR
 
 ---
 
-## Notification Flow (Phase 49)
+## Notification Flow
 
 ```mermaid
 flowchart TD
@@ -156,7 +194,7 @@ flowchart TD
     B -->|Agent PR created| D[Webhook handler\nafter POST from Nexus]
     B -->|Agent execution failed| E[Webhook handler\nafter POST from Nexus]
 
-    C --> F[Insert notification\nheal_alert]
+    C --> F[Insert notification\nhealth_alert]
     D --> G[Insert notification\nagent_pr_ready]
     E --> H[Insert notification\nagent_failed]
 
@@ -172,24 +210,7 @@ flowchart TD
 
 ---
 
-## MCP Tool Summary (Phase 45–51)
-
-| Tool | Phase | Purpose |
-|------|-------|---------|
-| `get_portfolio_summary` | 45 | Overview: score, focused repos, top advisor actions |
-| `get_repo_context` | 45 | Deep context for a specific repo |
-| `get_portfolio_warnings` | 45 | Failing builds, security alerts, health drops |
-| `get_top_opportunities` | 45 | Repos by opportunity score |
-| `get_active_goals` | 45 | Goals with progress |
-| `get_coding_brief` | 45–51 | Full session-start doc: health, in-flight, attempts, sessions |
-| `get_next_action` | 45–51 | Top ROI action; skips open PRs + dead ends |
-| `log_session_complete` | 45 | Records what was done (human-authored session note) |
-| `get_active_work` | 50 | Open agent PRs per repo or portfolio-wide; safe-to-start flag |
-| `log_attempt` | 51 | Records attempt outcome; feeds dead-end detection |
-
----
-
-## Auto-Dispatch Flow (Phase 53 — Monday Morning PRs)
+## Auto-Dispatch Flow (Monday Morning PRs)
 
 ```mermaid
 sequenceDiagram
@@ -203,11 +224,11 @@ sequenceDiagram
     Cron->>Advisor: Generate top 5 recommendations
     Advisor-->>Cron: AdvisorContent (5 actions)
     Cron->>Dispatch: if autoDispatchEnabled
-    
+
     loop For each action (up to maxPerRun)
-        Dispatch->>Dispatch: Effort gate check (quick/medium/all)
-        Dispatch->>Dispatch: Security gate (skip if enabled)
-        Dispatch->>Dispatch: Accuracy gate (min success rate)
+        Dispatch->>Dispatch: Effort gate check (quick_only / quick_and_medium / all)
+        Dispatch->>Dispatch: Security gate (skip if autoDispatchSkipSecurity)
+        Dispatch->>Dispatch: Accuracy gate (min success rate by impactType)
         Dispatch->>Guard: getRepoLifecycle(userId, repoId)
         Guard-->>Dispatch: stage (idle/queued/running/pr_ready/...)
         alt stage is BLOCKING
@@ -221,101 +242,62 @@ sequenceDiagram
 
     Note over Human: Monday morning
     Human->>Human: Notification bell shows N new PRs
-    Human->>Human: Reviews each PR
+    Human->>Human: Reviews each PR (Auto badge visible)
     Human->>Human: Merges good ones, closes bad ones
 ```
 
-## Token Efficiency (Phase 54)
+---
+
+## Token Efficiency (Brief + Advisor Caches)
 
 ```mermaid
 flowchart LR
-    subgraph Before["Before Phase 54 (per agent call)"]
-        A1[7-8 DB queries] --> B1[277 tokens fresh]
-        A2[Recompute repo deltas] --> B2[2550 tokens rebuilt]
-    end
-    
-    subgraph After["After Phase 54 (per agent call)"]
+    subgraph Brief["Brief Cache (per repo)"]
         C1{cached_brief\nfresh < 6h?} -->|Yes| D1[1 DB read\n0 compute]
         C1 -->|No - stale/missing| D2[7-8 DB queries\nwrite to cache]
+    end
+
+    subgraph Advisor["Advisor Cache (per user)"]
         C2{advisorRepoSnapshot\nfresh < 23h?} -->|Yes| D3[Reuse repoLines\n0 tokens]
         C2 -->|No - sync cleared it| D4[Recompute + store]
     end
-    
+
     E[Sync completes] --> F[Clear cached_brief\nClear advisorRepoSnapshot]
     F --> G[Next call regenerates fresh]
 ```
 
-## MCP Tool Summary (Phase 45–54)
+---
 
-| Tool | Phase | Purpose |
-|------|-------|---------|
-| `get_portfolio_summary` | 45 | Overview: score, focused repos, top advisor actions |
-| `get_repo_context` | 45 | Deep context for a specific repo |
-| `get_portfolio_warnings` | 45 | Failing builds, security alerts, health drops |
-| `get_top_opportunities` | 45 | Repos by opportunity score |
-| `get_active_goals` | 45 | Goals with progress |
-| `get_coding_brief` | 45–54 | Full session-start doc; served from cache within 6h |
-| `get_next_action` | 45–54 | Top ROI action; skips open PRs + dead ends; confidence line |
-| `log_session_complete` | 45 | Records what was done |
-| `get_active_work` | 50 | Open agent PRs; safe-to-start flag |
-| `log_attempt` | 51 | Records attempt outcome; feeds dead-end detection |
-| `get_accuracy_report` | 52 | Advisor calibration table + downgraded repos |
+## MCP Tool Reference
+
+| Tool | Purpose |
+|------|---------|
+| `get_portfolio_summary` | Overview: score, focused repos, top advisor actions |
+| `get_repo_context` | Deep context for a specific repo |
+| `get_portfolio_warnings` | Failing builds, security alerts, health drops |
+| `get_top_opportunities` | Repos by opportunity score |
+| `get_active_goals` | Goals with progress |
+| `get_coding_brief` | Full session-start doc: health, in-flight PRs, attempts, last skill report findings. Served from cache within 6h. |
+| `get_next_action` | Top ROI action; skips open PRs + dead ends; confidence line |
+| `log_session_complete` | Records what was done |
+| `get_active_work` | Open agent PRs; safe-to-start flag |
+| `log_attempt` | Records attempt outcome; feeds dead-end detection |
+| `get_accuracy_report` | Advisor calibration table + downgraded repos |
+| `queue_gstack_skill` | Trigger any of 9 skills on a repo from Claude Code |
+| `get_skill_history` | Recent skill runs for a repo (prose-formatted, last 5) |
+| `get_skill_findings` | Structured JSON findings from most recent skill run + suggestedNextSkill |
 
 ---
 
-## CI Feedback Loop — Self-Correcting Agents (Phase 55)
+## Webhook Events Reference
 
-The missing piece that closes the full loop: today the system has no awareness of CI failures on agent PRs. Phase 55 adds CI status as a first-class lifecycle event and auto-retries with the error output as context.
+Events Nexus POSTs to `/api/webhooks/agent-events` (authenticated with `x-nexus-webhook-secret`):
 
-```mermaid
-flowchart TD
-    A([Agent opens PR]) --> B[GitHub Actions CI runs]
-    
-    B -->|passes| C[Human reviews + merges]
-    C --> D[agent_pr_merged event]
-    D --> E[resync → actualDelta → accuracy loop]
-    
-    B -->|fails| F[checkCIFailuresOnAgentPRs\nevery 6h cron]
-    F --> G[Fetch error output\nGitHub /check-runs API]
-    G --> H[Write agent_ci_failed event\nattempt = N]
-    
-    H --> I{attempt < 3?}
-    
-    I -->|yes| J[Re-queue Nexus task\nexistingBranch + ciError context]
-    J --> K[Nexus: checkout existing branch\nnot a new nexus/auto-* branch]
-    K --> L[Agent reads CI error\npushes fix commit]
-    L --> B
-    
-    I -->|no| M[Write agent_needs_human event]
-    M --> N[Notification: PR needs human review\nafter 3 failed CI fix attempts]
-    N --> O[Human intervenes]
-```
+| eventType | When | What RepoHQ does |
+|-----------|------|-----------------|
+| `agent_pr_created` | Agent pushes branch + opens PR | Writes event, dispatches `agent_pr_ready` notification |
+| `agent_pr_merged` | PR is merged (Nexus detects or GitHub webhook) | Writes event, triggers `syncSingleRepo()` via `after()` to compute actualDelta |
+| `agent_execution_failed` | Agent errors out | Writes event with impactType for accuracy tracking, dispatches `agent_failed` notification |
+| `agent_skill_report` | Skill completes with findings but no code changes | Writes event with `findings[]`, `suggestedNextSkill`, `healthScore`; UI shows inline preview |
 
-### New lifecycle states
-
-```
-idle → queued → preparing → running → pr_ready → ci_failing → [retry loop]
-                                              ↘ merged ✓  (terminal)
-                                              ↘ failed ✓  (terminal)
-                                              ↘ timed_out ✓ (terminal)
-                                              ↘ needs_human ✓ (terminal — escalated)
-```
-
-### What the agent gets as context on a CI retry
-
-```
-Objective: Fix CI failure on PR #1 in smithdavedesign/Github-HQ
-
-CI error (attempt 2/3):
-  Check: build
-  Step: Next.js build
-  Error: Module not found: Can't resolve 'stripe'
-         at src/app/api/webhooks/stripe/route.ts:30:27
-
-Existing branch: nexus/auto-a1b2c3d4
-PR: https://github.com/smithdavedesign/Github-HQ/pull/1
-
-RepoHQ context: [get_coding_brief output]
-```
-
-The agent checks out the existing branch, reads what it built, understands the constraint (no Stripe SDK — plain fetch only per CLAUDE.md), and pushes a fix commit. CI re-runs. If it passes, the PR is ready for human review and merge.
+All events are correlated to a user + repo by scanning the last 50 `agent_task_queued` events for a matching `taskId`.

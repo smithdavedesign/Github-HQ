@@ -2,7 +2,7 @@
 
 ## System Overview
 
-RepoHQ is a Next.js 16 App Router application that syncs GitHub repository data into Neon PostgreSQL and surfaces it as an AI-powered portfolio health dashboard.
+RepoHQ is a Next.js 16 App Router application that syncs GitHub repository data into Neon PostgreSQL and surfaces it as an AI-powered portfolio health dashboard with an integrated agent execution pipeline.
 
 ```
 ┌─────────────┐    OAuth     ┌──────────────────────┐
@@ -14,7 +14,7 @@ RepoHQ is a Next.js 16 App Router application that syncs GitHub repository data 
 │   Next.js 16 on Vercel               ││
 │                                      ││
 │  App Router     ←── Server Actions ──┤│
-│  Route Handlers ←── Vercel Cron   ───┘│
+│  Route Handlers ←── GitHub Actions ──┘│
 │  proxy.ts       (route guard)         │
 │                                       │
 │  ┌────────────────┐  ┌─────────────┐  │
@@ -22,6 +22,12 @@ RepoHQ is a Next.js 16 App Router application that syncs GitHub repository data 
 │  │  (Drizzle ORM) │  │   Claude    │  │
 │  └────────────────┘  └─────────────┘  │
 └───────────────────────────────────────┘
+           │ POST /internal/agent-tasks
+           ▼
+┌──────────────────────────┐
+│  AI-Took-My-Job / Nexus  │
+│  BullMQ + gstack scripts │
+└──────────────────────────┘
 ```
 
 ---
@@ -81,12 +87,13 @@ valuation =
 
 All scoring is pure functions in `src/lib/health/scoring.ts` and `src/lib/health/valuation.ts`. Recalculated on every sync.
 
-### Monday Cron (Digest + Advisor + CEO Report)
-`/api/cron/digest` runs Mondays at 06:00 UTC and generates three artifacts in parallel for each user:
+### Monday Cron (Digest + Advisor + CEO Report + Auto-Dispatch)
+`/api/cron/digest` runs Mondays at 06:00 UTC and generates three artifacts in parallel for each user, then runs auto-dispatch:
 
 1. **Triage Digest** — top 3 portfolio priorities with urgency, reason, action (claude-haiku, cached prompt)
 2. **Portfolio Advisor** — pre-computes opportunity score deltas per repo, then asks Claude for top 5 quantified actions
 3. **CEO Report** — portfolio summary, biggest wins, biggest risks, recommended focus (claude-haiku, cached prompt)
+4. **Auto-Dispatch** — if enabled, filters advisor actions through effort/security/accuracy/lifecycle gates and queues eligible tasks to Nexus
 
 All stored as jsonb columns on the `digests` row. Dashboard cards show the most recent if < 8 days old.
 
@@ -99,7 +106,7 @@ All stored as jsonb columns on the `digests` row. Dashboard cards show the most 
 - Critical/high security alerts (from `security_findings`)
 - Dormant repos (`last_push` > 90 days)
 - Failing builds (`build_status = 'failure'`)
-- Dependency cascade risk (Phase 29 — if a dep repo has health < 60, warn dependent repos)
+- Dependency cascade risk (if a dep repo has health < 60, warn dependent repos)
 
 Sorted: critical → warning → info → positive, then date descending.
 
@@ -124,9 +131,9 @@ Sorted: critical → warning → info → positive, then date descending.
 | `/api/cron/security` | 03:00 daily | Dependabot + secret scanning, recalculates health |
 | `/api/cron/deployments` | 04:00 daily | Uptime checks for all deployment URLs |
 | `/api/cron/ai-summary` | 05:00 Sunday | Regenerates Claude AI summaries for all repos |
-| `/api/cron/digest` | 06:00 Monday | Digest + Advisor + CEO Report per user |
+| `/api/cron/digest` | 06:00 Monday | Digest + Advisor + CEO Report + Auto-Dispatch per user |
 
-All routes require `Authorization: Bearer $CRON_SECRET`.
+All routes require `Authorization: Bearer $CRON_SECRET`. Primary trigger is GitHub Actions (5 workflows in `.github/workflows/`); Vercel crons remain as once-per-Sunday fallback.
 
 ---
 
@@ -137,6 +144,9 @@ users
   id, name, email, image
   github_login, github_id, github_token
   last_synced_at, public_profile
+  auto_dispatch_enabled, auto_dispatch_effort_gate
+  auto_dispatch_max_per_run, auto_dispatch_skip_security
+  auto_dispatch_accuracy_threshold
 
 accounts / sessions / verification_tokens   ← Auth.js adapter tables
 
@@ -153,6 +163,7 @@ repositories
   ai_summary              jsonb  {what_it_does, maturity, risk, recommendations[]}
   claude_analysis         jsonb  {architecture, security, codeQuality, techDebt, recommendations[], overallScore}
   claude_analysis_at
+  cached_brief            jsonb  {raw: string, generatedAt: string}  ← Phase 54 brief cache
 
 repository_metrics        (one-to-one with repositories)
   health_score, activity_score, security_score
@@ -187,21 +198,22 @@ scans                     sync job run progress
 
 digests                   weekly AI content per user
   user_id, content (briefing), advisor_content, ceo_report, generated_at
+  advisor_repo_snapshot   jsonb  ← Phase 54 advisor prompt cache (23h TTL)
 
 goals                     user-set portfolio targets
   user_id, type, name, target_value, current_value, unit, deadline, is_active, completed_at
 
-portfolio_events          personal changelog + agent event log (Phase 28 + 46–51)
+portfolio_events          personal changelog + agent event log
   user_id, repo_id FK (nullable), event_type, title, description, metadata jsonb, dedup_key, occurred_at
   event_type (changelog): repo_created | repo_archived | mrr_changed | health_milestone | first_revenue | manual_milestone | session_complete
-  event_type (agent):     agent_task_queued | agent_pr_created | agent_pr_merged | agent_execution_failed | agent_attempt
+  event_type (agent):     agent_task_queued | agent_pr_created | agent_pr_merged | agent_execution_failed | agent_attempt | agent_skill_report
   dedup_key: unique per (userId, dedupKey) — onConflictDoNothing prevents duplicate one-time events
 
-notifications             push notification inbox (Phase 49)
+notifications             push notification inbox
   user_id, repo_id FK (nullable), event_type, title, body, metadata jsonb, read_at, created_at
   event_type: health_alert | agent_pr_ready | agent_pr_merged | agent_failed | security_critical
 
-portfolio_score_history   daily composite score per user (Phase 30)
+portfolio_score_history   daily composite score per user
   user_id, score, avg_health, activity_ratio, revenue_score, diversity_score, recorded_date
   unique on (userId, recordedDate)
 ```
@@ -225,13 +237,11 @@ computePortfolioEvents()      Pure event derivation from repo state changes (ded
 computeInternalDeps()         Cross-references package.json deps across portfolio repos
 ```
 
-467 unit tests as of 2026-06-03 audit. Zero DB calls in any scoring function.
+595+ unit tests across 36 files. Zero DB calls in any scoring function.
 
-**`dbOp()` error wrapper** — all write-path server actions in `src/lib/actions/repositories.ts` are wrapped in `dbOp(label, fn)`. Catches raw Neon/Drizzle errors, logs server-side with context, surfaces a clean user-facing message. Auth errors pass through unchanged. Covers 15 mutation functions including all triage, lifecycle, tag, effort, focus, purpose, and user-preference operations.
+**`dbOp()` error wrapper** — all write-path server actions in `src/lib/actions/repositories.ts` and related files are wrapped in `dbOp(label, fn)`. Catches raw Neon/Drizzle errors, logs server-side with context, surfaces a clean user-facing message. Auth errors pass through unchanged.
 
-**SSRF protection** — `isBlockedUrl(url)` in `src/lib/notifications/webhook.ts` blocks loopback, cloud metadata (169.254.169.254), and all private IPv4 ranges. Applied to the user-configured webhook sender and the deployment URL health checker. Both use `redirect: 'manual'` to prevent redirect-based SSRF bypasses. 22 unit test cases in `tests/unit/security-fixes.test.ts`.
-
-**Agentic execution pipeline** — RepoHQ integrates with AI-Took-My-Job (Nexus) for automated portfolio improvement. See `docs/agentic-full-flow.md` for full architecture diagrams. Key components: `src/lib/actions/nexus.ts` (queue actions), `src/lib/agents/pr-merge-checker.ts` (detect merges via GitHub API), `src/lib/notifications/dispatcher.ts` + `webhook.ts` (push notifications).
+**SSRF protection** — `isBlockedUrl(url)` in `src/lib/notifications/webhook.ts` blocks loopback, cloud metadata (169.254.169.254), and all private IPv4 ranges. Applied to the user-configured webhook sender and the deployment URL health checker. Both use `redirect: 'manual'` to prevent redirect-based SSRF bypasses.
 
 ---
 
@@ -247,7 +257,7 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 
 **Async request APIs** — Next.js 16 removed synchronous access to `cookies()`, `headers()`, `params`, `searchParams`. All must be `await`ed.
 
-**`'use server'` files export only async functions** — Plain objects or types exported from `'use server'` files cause Turbopack build failures. Constants live in plain `.ts` files (e.g., `src/lib/goals.ts`, `src/lib/lifecycle.ts`).
+**`'use server'` files export only async functions** — Plain objects or types exported from `'use server'` files cause Turbopack build failures. Constants live in plain `.ts` files (e.g., `src/lib/goals.ts`, `src/lib/lifecycle.ts`, `src/lib/actions/nexus-utils.ts`).
 
 **Prompt caching** — Claude analysis, digest, advisor, and CEO report calls include `cache_control: { type: 'ephemeral' }` on system prompts. Reduces cost significantly for Monday bulk runs.
 
@@ -259,27 +269,25 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 
 **MCP Server** — `mcp/server.ts` is a stdio MCP server using `@modelcontextprotocol/sdk`. Queries Neon directly via `DATABASE_URL` + `MCP_USER_ID` env vars. Configured in `~/.claude/claude.json`.
 
-11 tools across four tiers:
+14 tools across five tiers:
 
 *Diagnostic (read-only)*: `get_portfolio_summary`, `get_repo_context`, `get_portfolio_warnings`, `get_top_opportunities`, `get_active_goals`
 
-*Agentic (Phase 45)*: `get_coding_brief` — full session-start doc including In Flight PRs + attempt history; `get_next_action` — top ROI task, skips repos with open PRs and dead-end actions, includes confidence line; `log_session_complete` — writes `session_complete` portfolio_event.
+*Agentic*: `get_coding_brief` — full session-start doc including in-flight PRs, attempt history, last skill report findings; served from `repositories.cached_brief` within 6h. `get_next_action` — top ROI task, skips repos with open PRs and dead-end actions, includes confidence line. `log_session_complete` — writes `session_complete` portfolio_event.
 
-*Active Work + Feedback (Phase 50–51)*: `get_active_work(repo_name?)` — shows open agent PRs, safe-to-start flag; `log_attempt(repo_name, action, outcome, reason)` — writes `agent_attempt` event, feeds dead-end detection.
+*Active Work + Feedback*: `get_active_work(repo_name?)` — shows open agent PRs, safe-to-start flag. `log_attempt(repo_name, action, outcome, reason)` — writes `agent_attempt` event, feeds dead-end detection.
 
-*Learning Loop (Phase 52)*: `get_accuracy_report()` — full calibration table (success rate, avg delta, signal strength per impactType) + downgraded repos. See `docs/agentic-full-flow.md` for complete tool table.
+*Learning Loop*: `get_accuracy_report()` — full calibration table (success rate, avg delta, signal strength per impactType) + downgraded repos.
+
+*gstack*: `queue_gstack_skill(repo_name, skill, objective?)` — queues any of the 9 skills directly from Claude Code. `get_skill_history(repo_name, skill?)` — prose-formatted run history. `get_skill_findings(repo_name, skill?)` — structured JSON findings + `suggestedNextSkill`.
 
 **Advisor Learning Loop** — `src/lib/actions/advisor-accuracy.ts` + `advisor-accuracy-utils.ts` compute per-impactType accuracy from `portfolio_events` on-the-fly (no new table). Time-decay (30d × 2×), risk-adjusted suppress thresholds, `deltaConfidence` flag on resolved deltas. Accuracy table injected into the advisor's user message before each generation so Claude self-calibrates; never blocks advisor generation (try/catch wrapped). Accuracy shown as table on `/agent-performance` and inline confidence badges on the AdvisorCard.
 
-**Auto-Dispatch (Phase 53)** — `queueAdvisorActionForUser(userId, action)` is a session-less Nexus queue function called from the digest cron after `generateAdvisor()` completes. `autoDispatchAdvisorActions()` filters through 4 gates: effort gate → security gate → accuracy gate → lifecycle guard. Users configure via Settings → Agent Auto-Dispatch (5 fields on `users` table). `autoDispatched: true` tag on events for traceability.
+**Auto-Dispatch** — `queueAdvisorActionForUser(userId, action)` is a session-less Nexus queue function called from the digest cron after `generateAdvisor()` completes. `autoDispatchAdvisorActions()` filters through 4 gates: effort gate → security gate → accuracy gate → lifecycle guard. Users configure via Settings → Agent Auto-Dispatch (5 fields on `users` table). `autoDispatched: true` tag on events for traceability. "Auto" badge shown on auto-dispatched events in the UI.
 
-**Token Efficiency (Phase 54)** — Two caches reduce redundant token spend as agent volume grows: (1) `repositories.cached_brief JSONB` — written by `get_coding_brief` on first call, served from cache within 6h, cleared on sync; (2) `digests.advisor_repo_snapshot JSONB` — the compiled repoLines prompt text, reused for 23h, invalidated on sync. Saves ~25K tokens per 100 agents on briefs alone.
+**Token Efficiency** — Two caches reduce redundant token spend as agent volume grows: (1) `repositories.cached_brief JSONB` — written by `get_coding_brief` on first call, served from cache within 6h, cleared on sync. (2) `digests.advisor_repo_snapshot JSONB` — the compiled repoLines prompt text, reused for 23h, invalidated on sync.
 
-**CI Feedback Loop (Phase 55, in progress)** — Closes the last-mile gap: today the system is blind to CI failures on agent PRs. Phase 55 adds `checkCIFailuresOnAgentPRs()` (runs in the 6h sync cron alongside `checkMergedAgentPRs()`), polls GitHub `/check-runs` for failed CI on open agent PRs, writes `agent_ci_failed` events with error summaries, and automatically re-queues a fix task on the *existing branch* with the error output as context. Max 3 retries before escalating to human. New lifecycle stage: `ci_failing`. Requires `GITHUB_APP_TOKEN` or existing OAuth token with `checks:read` scope. See `docs/agentic-full-flow.md` for the full CI retry loop diagram.
-
-**gstack Integration Tests** — `tests/integration/` contains shell scripts that run gstack-style investigation and health-check workflows against the RepoHQ codebase itself. `tests/unit/nexus-output-contract.test.ts` validates the Nexus agent output.json contract that all gstack scripts must produce.
-
-**GitHub Actions crons** — Primary cron trigger (replaces Vercel Hobby once-per-day limit). 5 workflows in `.github/workflows/` call existing API endpoints with `CRON_SECRET`. Vercel crons remain as once-per-Sunday fallback. `CRON_SECRET` stored as GitHub repo secret.
+**gstack Integration** — G1–G6 fully shipped. `skillName` in Nexus `contextNotes` selects the correct gstack script in the Nexus worker. `OPENCLAW_SESSION=true` enables real skill invocation. Learnings from `~/.gstack/projects/{slug}/learnings.jsonl` are injected before each run. Checkpoint mode (`continuous`) keeps WIP commits alive through crashes. `agent_skill_report` webhook event stores findings + `suggestedNextSkill`; `get_coding_brief` surfaces the last skill report findings. See `docs/gstack-findings.md` for the running log.
 
 **Pure function extraction** — All scoring, simulation, event derivation, and dep-analysis logic lives in plain `.ts` files with no DB imports. Server actions and sync code call these functions. This pattern makes everything testable without DB mocks and keeps server action files thin.
 
@@ -303,14 +311,13 @@ All agent tasks are classified by risk tier. Do not route to a higher tier until
 | Risk | Mitigation |
 |------|------------|
 | Advisor accuracy too low | Track `predictedDelta` vs `actualDelta` from Day 1; phase gates prevent advancing until ≥70% (B) and ≥80% (E) |
-| Agent context loss (>70% token capacity) | Coding brief capped at 6h TTL; one action per execution; snapshot memoization |
+| Agent context loss | Coding brief capped at 6h TTL; one action per execution; snapshot memoization |
 | Security fix introduces new vulnerability | Security in Tier 3 only, after Tier 1-2 proven safe over 20+ executions |
-| Approval bottleneck | Auto-dispatch (Phase 53) with effort gate + accuracy gate; never auto-queues without user consent |
+| Approval bottleneck | Auto-dispatch with effort gate + accuracy gate; never auto-queues without user consent |
 | Nexus API auth leak | Service token in RepoHQ env vars only, never stored in DB |
 | PR created without user knowledge | All PRs default `draft: true`; lifecycle guard prevents duplicate queuing |
-| Auto-queue causing unreviewed work | Phase 53 gated by effort/accuracy/security settings; master toggle defaults off |
-| gstack skill incompatibility | Each wrapper tested against `.nexus/output.json` contract in isolation (`tests/unit/nexus-output-contract.test.ts`) |
-| Agent crash mid-execution | Checkpoint mode (`continuous`) enabled — WIP commits survive timeouts; re-run resumes from last WIP |
+| Auto-queue causing unreviewed work | Auto-dispatch gated by effort/accuracy/security settings; master toggle defaults off |
+| Duplicate agent tasks | Server-side lifecycle guard in `queueAdvisorAction` and `queueGstackSkill` — both check `BLOCKING_STAGES` before posting to Nexus |
 
 ## Agent Execution — Success Metrics
 

@@ -16,12 +16,14 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 - **Opportunity score** — revenue potential × activity × health × stars; surfaces what to work on next
 - **Portfolio Score** — single 0–100 grade for your whole portfolio with weekly delta
 - **AI Advisor** — top 5 quantified actions with exact score deltas and confidence ratings based on past accuracy
-- **Agent Execution** — queue any advisor action; an AI agent opens a PR automatically (via AI-Took-My-Job / Nexus)
+- **gstack Skill Launcher** — 9 skills across 5 lifecycle phases launched from the repo Agent tab or via MCP
+- **Agent Execution** — queue any advisor action or gstack skill; an AI agent executes via AI-Took-My-Job (Nexus)
 - **Advisor Learning Loop** — the advisor tracks predicted vs actual outcomes and improves recommendations over time
+- **Auto-Dispatch** — Monday cron automatically queues eligible advisor actions; wake up to PRs ready to review
 - **Simulation Engine** — "given 10h this week and a goal of max ARR, here's the optimal allocation"
 - **Revenue tracking** — MRR, ARR, costs, P&L per repo; Stripe auto-sync
 - **Lifecycle management** — 8 stages from Idea to Archived with abandonment tracking
-- **MCP Server** — 11 tools exposing portfolio context + agent lifecycle to Claude Code and MCP-compatible IDEs
+- **MCP Server** — 14 tools exposing portfolio context + agent lifecycle to Claude Code and MCP-compatible IDEs
 
 ---
 
@@ -34,7 +36,7 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 - Plan My Week — simulation engine; greedy ROI-per-hour allocation
 - Opportunity Cost — what you worked on vs what had the highest value this week
 - GitHub Profile Optimizer — top 6 repos to pin on your GitHub profile
-- AI Portfolio Advisor — top 5 actions, expandable cards with full reasoning + "Agent will verify" checklist, confidence badges (🟢🟡🔴⚪) based on historical accuracy
+- AI Portfolio Advisor — top 5 actions, expandable cards with full reasoning + confidence badges (🟢🟡🔴⚪) based on historical accuracy
 - Agent Impact card — score points gained from agent PRs this month
 - CEO Report, Weekly Briefing, Goals, Concentration Risk, Archive Candidates, Lifecycle Distribution
 
@@ -46,21 +48,36 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 
 **Repository Detail**
 - Tabs: Overview, Tech Stack, Analysis, Security, Deployments, Revenue, AI Summary
-- **Agent tab** — AI advisor recommendations for this repo (expandable, Run Agent button) + agent history (tasks queued, PR status + links, attempt log, predicted vs actual delta)
+- **Agent tab** — gstack skill launcher (9 skills, 5 phases) + AI advisor actions (expandable, Run Agent button) + agent history (tasks queued, PR status + links, skill reports with inline findings preview, predicted vs actual delta)
 - 13-week commit chart, lifecycle + purpose + effort selectors, focus toggle, tags
 
+**gstack Skill Launcher**
+- 9 skills grouped by lifecycle phase, launched from the repo Agent tab or `queue_gstack_skill` MCP tool
+- Each skill has an editable objective field and live status badges (Queued → Running → Report ready / PR Ready / Failed)
+- Inline findings preview shown when a report skill completes — links to full report in Agent History
+- Last-run history shown for each skill when idle (days ago + finding count)
+- Canary skill auto-hidden if no deployment URL is configured
+
+| Phase | Skills |
+|-------|--------|
+| Understand | `/investigate` (diagnose + fix), `/review` (code review, report only) |
+| Build Quality | `/qa-only` (find bugs, report only), `/qa` (find + fix bugs) |
+| Ship | `/ship` (implement + PR), `/document-release` (update docs + CHANGELOG) |
+| Monitor | `/health` (code quality score), `/canary` (live app check) |
+| Reflect | `/retro` (weekly commit analysis) |
+
 **Agent Execution Pipeline**
-- "Run Agent" on any advisor action → queues to AI-Took-My-Job (Nexus)
+- "Run Agent" on any advisor action or gstack skill → POSTs to AI-Took-My-Job (Nexus)
 - Agent reads `get_coding_brief` context via MCP before starting
-- Auto-executes for quick/medium tasks; substantial tasks queue for human review
-- PR created automatically → webhook back to RepoHQ → notification + UI update
-- **Lifecycle guard** — prevents duplicate queuing; button hydrates from DB on mount so stage is always accurate
-- Full status stages: Queued → Preparing → Running → PR Ready → Merged / Failed / Timed out
-- Agent history, attempt log, and PR links on repo detail Agent tab
+- `skillName` in contextNotes routes the Nexus worker to the correct gstack script
+- Skill report outcomes (`agent_skill_report` webhook event) store findings + `suggestedNextSkill`; UI shows inline preview
+- Lifecycle guard — prevents duplicate queuing; button hydrates from DB on mount so stage is always accurate
+- Full status stages: Queued → Preparing → Running → PR Ready / Report Ready → Merged / Failed / Timed out
+- Agent history, attempt log, skill report findings, and PR links on repo detail Agent tab
 
 **Agent Observability**
 - `/agent-performance` — accuracy table by action type, success rates, avg delta, trend indicators
-- Portfolio Feed — agent events inline (PR opened, merged with actual delta, failed)
+- Portfolio Feed — agent events inline (PR opened, merged with actual delta, failed, skill report)
 - Repo list — "PR open →" badge linking directly to GitHub PR
 - Notifications — in-app bell + optional webhook (Slack, Zapier, Make) for PR ready / failed / health alerts
 
@@ -76,10 +93,10 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 **Integrations**
 - **Stripe** — restricted API key; maps products to repos; MRR auto-syncs daily
 - **AI-Took-My-Job / Nexus** — agent execution pipeline; see [Agentic Execution](#agentic-execution-nexus) below
-- **gstack** — execution wrappers (`/ship`, `/investigate` style); see [gstack Integration](#gstack-integration) below
-- **MCP Server** (`mcp/server.ts`) — 11 tools for Claude Code and any MCP-compatible IDE
+- **gstack** — real skill invocation via `OPENCLAW_SESSION=true` + Claude Code CLI; G1–G6 fully shipped
+- **MCP Server** (`mcp/server.ts`) — 14 tools for Claude Code and any MCP-compatible IDE
 
-**MCP Tools (11)**
+**MCP Tools (14)**
 
 | Tool | Description |
 |------|-------------|
@@ -88,12 +105,15 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 | `get_portfolio_warnings` | Failing builds, security alerts, low-health repos |
 | `get_top_opportunities` | Repos ranked by opportunity score |
 | `get_active_goals` | Goals with progress and deadlines |
-| `get_coding_brief` | Session-start doc: health, in-flight PRs, attempt history, sessions |
+| `get_coding_brief` | Session-start doc: health, in-flight PRs, attempt history, last skill report findings |
 | `get_next_action` | Top ROI task; skips open PRs + dead ends; includes confidence line |
 | `log_session_complete` | Records what was accomplished |
 | `get_active_work` | Open agent PRs per repo or portfolio-wide; safe-to-start flag |
 | `log_attempt` | Records attempt outcome (success/failed/partial); feeds dead-end detection |
 | `get_accuracy_report` | Advisor calibration table by action type + downgraded repos |
+| `queue_gstack_skill` | Trigger any of the 9 gstack skills on a repo; returns taskId |
+| `get_skill_history` | Recent skill run history for a repo (prose-formatted) |
+| `get_skill_findings` | Structured JSON findings from most recent skill run + suggestedNextSkill |
 
 **BYOK (Bring Your Own Key)** — Settings → AI Provider: Claude (Anthropic), GPT-4o (OpenAI), Gemini (Google)
 
@@ -123,7 +143,7 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 | Crons | GitHub Actions (primary) + Vercel weekly fallback |
 | Revenue | Stripe REST API (restricted key, no SDK) |
 | IDE | MCP Server (stdio, `@modelcontextprotocol/sdk`) |
-| Agent Execution | AI-Took-My-Job / Nexus (BullMQ + Render) |
+| Agent Execution | AI-Took-My-Job / Nexus (BullMQ + Redis) |
 
 ---
 
@@ -187,15 +207,27 @@ Set all env vars in Vercel → Project → Settings → Environment Variables. S
 Add `CRON_SECRET` to your GitHub repo → Settings → Secrets → Actions. The workflows in `.github/workflows/` trigger automatically:
 - Sync: every 6 hours
 - Security: daily
-- Deployments: every 12 hours
+- Deployments: daily
 - AI summaries: Sundays
-- Digest + Advisor + CEO Report: Mondays
+- Digest + Advisor + CEO Report + Auto-Dispatch: Mondays
 
 ### 7. (Optional) Connect Stripe
 
 In Settings → Revenue Integration, add a restricted Stripe key with Subscriptions + Products read access.
 
-### 8. (Optional) Enable MCP Server
+### 8. (Optional) Connect AI-Took-My-Job (Nexus)
+
+Add to your environment:
+
+```bash
+NEXUS_API_URL=https://your-nexus-instance.com
+NEXUS_API_TOKEN=your-service-token
+NEXUS_WEBHOOK_SECRET=your-webhook-secret
+```
+
+The gstack Skill Launcher and Run Agent buttons will activate once these are set. Without Nexus, the UI shows a "not configured" state.
+
+### 9. (Optional) Enable MCP Server
 
 ```json
 // Add to ~/.claude/claude.json
@@ -221,26 +253,27 @@ See [mcp/README.md](mcp/README.md) for full setup and tool reference.
 
 > **The core thesis:** RepoHQ has Find, Prioritize, and Measure. Nexus adds Execute. That's why this feels different from every other dashboard feature — it's not another card. It's the loop closing.
 
-RepoHQ integrates with **AI-Took-My-Job** (AI-DevOps Nexus) to automatically execute advisor recommendations. When you click "Run Agent" on an advisor action:
+RepoHQ integrates with **AI-Took-My-Job** (AI-DevOps Nexus) to automatically execute advisor recommendations and gstack skills. When you click "Run Agent" or launch a skill:
 
-1. RepoHQ POSTs to Nexus `/internal/agent-tasks`
-2. The Nexus worker clones the repo, creates an isolated branch
-3. An AI agent (Claude Code) reads the RepoHQ coding brief via MCP and implements the action
-4. Nexus runs validation (tests), promotes the PR
-5. A webhook fires back to RepoHQ — notification + stage update + automatic health resync on merge
-6. The advisor learning loop records the outcome for future accuracy tracking
+1. RepoHQ POSTs to Nexus `/internal/agent-tasks` with the objective, skill name, and acceptance criteria
+2. Nexus routes to the correct gstack script based on `skillName` in `contextNotes`
+3. The gstack script sets `OPENCLAW_SESSION=true`, injects the RepoHQ coding brief into `CLAUDE.md`, loads learnings from `~/.gstack/projects/{slug}/learnings.jsonl`, and runs Claude Code CLI
+4. On completion, Nexus fires a webhook back to `/api/webhooks/agent-events`:
+   - `agent_pr_created` → PR link shown in UI, notification dispatched
+   - `agent_pr_merged` → accuracy tracking triggered, health re-synced
+   - `agent_skill_report` → findings stored, inline preview shown in launcher, `suggestedNextSkill` computed
+   - `agent_execution_failed` → error shown in Agent History, notification dispatched
+5. UI polls `/api/agent-task-status?taskId=...` per skill for live stage updates
 
-**Lifecycle states:** `idle → queued → preparing → running → pr_ready → ci_failing → merged / failed / timed_out / needs_human`
+**Lifecycle states:** `idle → queued → preparing → running → pr_ready / report_ready → merged / failed / timed_out / needs_human`
 
-**CI feedback loop (Phase 55):** When a CI build fails on an agent PR, the system detects it via GitHub API polling, feeds the error output back as context, and re-queues the agent on the same branch to push a fix commit. Up to 3 auto-retries before escalating to human review.
+**Auto-dispatch:** Enable in Settings → Agent Auto-Dispatch. Every Monday the advisor automatically queues eligible actions — you wake up with PRs ready to review. Controls: effort gate (quick / quick+medium / all), max tasks per week (1–10), skip security tasks, minimum accuracy threshold.
 
 The Run Agent button hydrates from the database on mount — it always reflects the true current state even after navigation or page refresh. The server also blocks duplicate queuing server-side.
 
-**Auto-dispatch (Phase 53):** Enable in Settings → Agent Auto-Dispatch. Every Monday the advisor automatically queues eligible actions — you wake up with PRs ready to review. Controls: effort gate (quick / quick+medium / all), max tasks per week (1–10), skip security tasks, minimum accuracy threshold. The server-side lifecycle guard ensures no repo gets double-queued.
-
 To enable: add `NEXUS_API_URL`, `NEXUS_API_TOKEN`, and `NEXUS_WEBHOOK_SECRET` to your environment.
 
-See [docs/agentic-full-flow.md](docs/agentic-full-flow.md) for architecture diagrams and mermaid sequence flows.
+See [docs/agentic-full-flow.md](docs/agentic-full-flow.md) for architecture diagrams and sequence flows.
 
 ---
 
@@ -248,32 +281,28 @@ See [docs/agentic-full-flow.md](docs/agentic-full-flow.md) for architecture diag
 
 [gstack](https://garryslist.org) is a Claude Code skill framework providing specialised agent workflows (`/ship`, `/investigate`, `/qa`, etc.) with multi-turn planning and a learnings system.
 
-### What's available now
+**G1–G6 are fully shipped:**
 
-The Nexus worker uses two shell script wrappers as `AGENT_EXECUTION_COMMAND`:
+| Feature | What it does |
+|---------|-------------|
+| **G1** | Real skill invocation — `claude /investigate`, `claude /ship`, etc. via `OPENCLAW_SESSION=true` |
+| **G2** | UI skill launcher on repo Agent tab + `queue_gstack_skill` MCP tool (all 9 skills) |
+| **G3** | Learnings injected from `~/.gstack/projects/{slug}/learnings.jsonl` before each run; findings logged back after |
+| **G4** | Checkpoint mode (`continuous`) enabled — WIP commits survive crashes; `agent_skill_report` webhook for no-changes outcomes |
+| **G5** | RepoHQ brief written to `CLAUDE.md` in worktree — gstack reads it natively as project context |
+| **G6** | Dynamic skill router in Nexus agent-runner — `skillName` in `contextNotes` selects the correct script; `GSTACK_SCRIPTS_DIR` for override |
 
-| Script | Task type | Behaviour |
-|--------|-----------|-----------|
-| `scripts/gstack-ship.sh` (Tier 2) | Dependency updates, CI fixes, documentation | Claude Code with structured output contract |
-| `scripts/gstack-investigate.sh` (Tier 3) | Security fixes, complex investigations | Claude Code with diagnose-first, fix-only-if-safe rules |
+Integration test scripts live in `tests/integration/`. Run from the project root:
 
-Both scripts:
-- Inject the RepoHQ coding brief (health, lifecycle, recent sessions, in-flight PRs) from `.nexus/context.json`
-- Write `.nexus/output.json` in the Nexus agent output contract format
-- Run in non-interactive (`--print`) mode via `npx claude`
+```bash
+bash tests/integration/gstack-security-check.sh    # /investigate — security
+bash tests/integration/gstack-health-check.sh      # /health — code quality
+bash tests/integration/gstack-review-check.sh      # /review — code review
+bash tests/integration/gstack-qa-only-check.sh     # /qa-only — bug hunt
+bash tests/integration/gstack-retro-check.sh       # /retro — weekly analysis
+```
 
-These are **gstack-inspired wrappers** — named after gstack skill concepts, built on Claude Code CLI. They prove the execution pipeline works and produce real PRs today.
-
-### What's coming
-
-| Phase | Feature |
-|-------|---------|
-| **G1** | True gstack `/ship` and `/investigate` skill invocation (interactive, multi-turn planning) |
-| **G2** | Task-type routing — security → `/investigate`, deps/docs/revenue → `/ship` |
-| **G3** | gstack learnings persistence — agent operational discoveries accumulate across runs |
-| **G4** | Checkpoint mode — WIP commits on every step; resume after crash without losing progress |
-| **G5** | MCP + gstack synergy — `get_coding_brief` output auto-injected as gstack session context |
-| **G6** | Dynamic `AGENT_EXECUTION_COMMAND` routing by `impactType` + `effort` in Nexus worker |
+**G8 (planned):** OpenClaw orchestration for parallel multi-agent execution with skill chaining.
 
 See the [gstack Integration Roadmap](docs/roadmap.md#gstack-integration-roadmap) for full details.
 
@@ -282,19 +311,15 @@ See the [gstack Integration Roadmap](docs/roadmap.md#gstack-integration-roadmap)
 ## Testing
 
 ```bash
-npm test              # 467 Vitest unit tests
+npm test              # Vitest unit tests (595+ tests, 36 files)
 npm run test:e2e      # Playwright e2e tests (requires dev server)
 npm run test:all      # both
 npm run typecheck     # TypeScript strict check
-
-# gstack integration tests (require ANTHROPIC_API_KEY, run from project root)
-bash tests/integration/gstack-security-check.sh   # security investigation
-bash tests/integration/gstack-health-check.sh     # code quality assessment
 ```
 
-Unit tests cover: health scoring, opportunity scoring, archive scoring, valuation, portfolio score, simulation engine, opportunity cost, event computation, NL query filters, LLM adapter, nexus integration, notifications, MCP tools, advisor accuracy, agent lifecycle, provider mapping, auto-dispatch filter logic, cache TTL, Nexus output contract.
+Unit tests cover: health scoring, opportunity scoring, archive scoring, valuation, portfolio score, simulation engine, opportunity cost, event computation, NL query filters, LLM adapter, nexus integration, notifications, MCP tools, advisor accuracy, agent lifecycle, provider mapping, auto-dispatch filter logic, cache TTL, Nexus output contract, security fixes, gstack G7 integration, skill report logic, phase 56 features, CI feedback loop, and more.
 
-**gstack integration scripts** (`tests/integration/`) run gstack-style skill workflows against the RepoHQ codebase itself — using the same Claude Code patterns as agent executions. They validate the Nexus output.json contract and surface real security or health findings.
+Integration scripts (`tests/integration/`) run real gstack-style skill workflows against the RepoHQ codebase via Claude Code CLI and validate the Nexus output.json contract.
 
 ---
 
@@ -313,8 +338,9 @@ npm run db:generate   # Generate migration files
 
 ## Docs
 
-- [Architecture](docs/architecture.md) — system design, scoring formulas, DB schema, design decisions
+- [Architecture](docs/architecture.md) — system design, scoring formulas, DB schema, risk tiers, design decisions
 - [Roadmap](docs/roadmap.md) — all phases shipped + upcoming, gstack roadmap, distribution roadmap
-- [Architecture](docs/architecture.md) — risk tiers, safety gates, success metrics, competitive context
-- [Agentic Full Flow](docs/agentic-full-flow.md) — mermaid architecture + sequence diagrams
-- [MCP Setup](mcp/README.md) — IDE integration guide with all 11 tools
+- [Agentic Full Flow](docs/agentic-full-flow.md) — mermaid architecture + sequence diagrams for the agent pipeline
+- [Agentic Execution Flow](docs/agentic-execution-flow.md) — quick reference for the execution pipeline
+- [gstack Findings](docs/gstack-findings.md) — running log of skill run findings and resolutions
+- [MCP Setup](mcp/README.md) — IDE integration guide with all 14 tools
