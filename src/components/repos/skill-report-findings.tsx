@@ -60,7 +60,7 @@ export function SkillReportFindings({ findings, skillName, repoId, repoName, nex
       {findings.length > PREVIEW && (
         <button
           onClick={() => setShowAll(v => !v)}
-          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1 text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 underline underline-offset-2 transition-colors mt-1"
           aria-expanded={showAll}
         >
           {showAll ? (
