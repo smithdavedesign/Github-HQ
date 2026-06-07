@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronUp, GitPullRequest, Search, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { queueGstackSkill } from '@/lib/actions/nexus'
+import { getSuggestedActions, FINDINGS_PREVIEW_COUNT } from '@/lib/skills/suggest-actions'
 import { toast } from 'sonner'
 
 interface SkillReportFindingsProps {
@@ -24,7 +25,7 @@ export function SkillReportFindings({ findings, skillName, repoId, repoName, nex
   const [showAll, setShowAll] = useState(false)
   const [queuingFor, setQueuingFor] = useState<string | null>(null)
 
-  const PREVIEW = 4
+  const PREVIEW = FINDINGS_PREVIEW_COUNT
   const visible = showAll ? findings : findings.slice(0, PREVIEW)
   const hidden = findings.length - PREVIEW
 
@@ -110,90 +111,3 @@ export function SkillReportFindings({ findings, skillName, repoId, repoName, nex
   )
 }
 
-// ─── Suggested action inference ───────────────────────────────────────────────
-
-interface SuggestedAction {
-  skill: 'ship' | 'investigate'
-  label: string
-  objective: string
-}
-
-function getSuggestedActions(skillName: string | undefined, findings: string[], repoName: string): SuggestedAction[] {
-  const actions: SuggestedAction[] = []
-  const findingsText = findings.join(' ').toLowerCase()
-
-  if (skillName === 'health' || skillName === 'qa-only') {
-    // TypeScript errors → ship to fix
-    if (findingsText.includes('typescript') || findingsText.includes('type error') || findingsText.includes('ts error')) {
-      actions.push({
-        skill: 'ship',
-        label: 'Fix TypeScript errors',
-        objective: `Fix all TypeScript errors found in the /health report for ${repoName}. Focus on type safety and correct exports.`,
-      })
-    }
-    // Dead code → ship to remove
-    if (findingsText.includes('dead code') || findingsText.includes('never imported') || findingsText.includes('unused')) {
-      actions.push({
-        skill: 'ship',
-        label: 'Remove dead code',
-        objective: `Remove the dead code and unused exports identified in the /health report for ${repoName}.`,
-      })
-    }
-    // Missing tests → ship to add
-    if (findingsText.includes('no test') || findingsText.includes('missing test') || findingsText.includes('untested') || findingsText.includes('coverage')) {
-      actions.push({
-        skill: 'ship',
-        label: 'Add missing tests',
-        objective: `Add unit tests for the untested functions identified in the /health report for ${repoName}.`,
-      })
-    }
-    // Failing build → investigate
-    if (findingsText.includes('build fail') || findingsText.includes('build error') || findingsText.includes('compile error')) {
-      actions.push({
-        skill: 'investigate',
-        label: 'Investigate failing build',
-        objective: `Investigate and fix the build failures found in the /health report for ${repoName}.`,
-      })
-    }
-    // Generic: if findings exist and no specific action matched, suggest a ship
-    if (actions.length === 0 && findings.filter(f => f.includes('⚠️') || f.toLowerCase().includes('error') || f.toLowerCase().includes('issue')).length > 0) {
-      actions.push({
-        skill: 'ship',
-        label: 'Fix reported issues',
-        objective: `Fix the issues found in the /health report for ${repoName}: ${findings.filter(f => f.includes('⚠️')).slice(0, 2).join('; ')}`,
-      })
-    }
-  }
-
-  if (skillName === 'review') {
-    // Security issues → investigate
-    if (findingsText.includes('security') || findingsText.includes('vulnerability') || findingsText.includes('injection') || findingsText.includes('auth')) {
-      actions.push({
-        skill: 'investigate',
-        label: 'Investigate security findings',
-        objective: `Investigate and fix the security issues found in the /review report for ${repoName}.`,
-      })
-    }
-    // Logic issues → ship to fix
-    if (findingsText.includes('logic') || findingsText.includes('incorrect') || findingsText.includes('should') || findingsText.includes('bug')) {
-      actions.push({
-        skill: 'ship',
-        label: 'Fix logic issues',
-        objective: `Fix the logic issues and code quality problems found in the /review report for ${repoName}.`,
-      })
-    }
-  }
-
-  if (skillName === 'retro') {
-    // Retro suggests what to work on next week
-    if (findingsText.includes('test') || findingsText.includes('quality')) {
-      actions.push({
-        skill: 'ship',
-        label: 'Address technical debt',
-        objective: `Address the technical debt patterns identified in this week's retro for ${repoName}.`,
-      })
-    }
-  }
-
-  return actions.slice(0, 2) // max 2 actions to keep UI clean
-}
