@@ -37,35 +37,39 @@ interface MatchRule {
 
 // Specific rules — checked first, ordered by severity.
 const MATCH_RULES: MatchRule[] = [
+  // Security issues always take priority — investigate before fixing
   {
-    skills: ['health', 'qa-only'],
-    keywords: ['typescript', 'type error', 'ts error', 'tsc error', 'compile error'],
-    action: { skill: 'ship', label: 'Fix TypeScript errors' },
-    objectiveTpl: 'Fix all TypeScript errors found in the /health report for {repo}. Focus on type safety and correct exports.',
+    skills: ['health', 'qa-only', 'review'],
+    keywords: ['security', 'vulnerability', 'injection', 'auth bypass', 'csrf', 'xss', 'ssrf',
+               'credential', 'hardcoded', 'github_token', 'access_token', 'api_token',
+               'private key', 'exposed secret', 'committed token', 'committed secret',
+               'leaked', 'plaintext secret'],
+    action: { skill: 'investigate', label: 'Investigate security issue' },
+    objectiveTpl: 'Investigate and fix the security issue found in the /health report for {repo}.',
   },
   {
     skills: ['health', 'qa-only'],
-    keywords: ['dead code', 'never imported', 'unused export', 'unused function', 'unused variable'],
+    keywords: ['typescript', 'type error', 'ts error', 'tsc error', 'compile error', 'lint', 'eslint', 'unused import'],
+    action: { skill: 'ship', label: 'Fix TypeScript & lint errors' },
+    objectiveTpl: 'Fix TypeScript and lint errors found in the /health report for {repo}. Focus on type safety and removing unused imports.',
+  },
+  {
+    skills: ['health', 'qa-only'],
+    keywords: ['dead code', 'never imported', 'unused export', 'unused function', 'unused variable', 'dead route', 'missing dependency'],
     action: { skill: 'ship', label: 'Remove dead code' },
     objectiveTpl: 'Remove the dead code and unused exports identified in the /health report for {repo}.',
   },
   {
     skills: ['health', 'qa-only'],
-    keywords: ['no test', 'missing test', 'untested', 'coverage gap', 'test coverage', 'zero test'],
+    keywords: ['no test', 'missing test', 'untested', 'coverage gap', 'test coverage', 'zero test', '0 test', 'no spec'],
     action: { skill: 'ship', label: 'Add missing tests' },
     objectiveTpl: 'Add unit tests for the untested functions identified in the /health report for {repo}.',
   },
   {
     skills: ['health', 'qa-only'],
-    keywords: ['build fail', 'build error', 'compile failed', 'module not found'],
+    keywords: ['build fail', 'build error', 'compile failed', 'module not found', 'cron bug', 'missing import'],
     action: { skill: 'investigate', label: 'Investigate failing build' },
     objectiveTpl: 'Investigate and fix the build failures found in the /health report for {repo}.',
-  },
-  {
-    skills: ['review'],
-    keywords: ['security', 'vulnerability', 'injection', 'auth bypass', 'csrf', 'xss', 'ssrf'],
-    action: { skill: 'investigate', label: 'Investigate security findings' },
-    objectiveTpl: 'Investigate and fix the security issues found in the /review report for {repo}.',
   },
   {
     skills: ['review'],
@@ -91,11 +95,38 @@ const MATCH_RULES: MatchRule[] = [
 const GENERIC_RULES: MatchRule[] = [
   {
     skills: ['health', 'qa-only'],
-    keywords: ['⚠️', 'error', 'issue', 'warning', 'failed'],
+    keywords: ['⚠️', 'error', 'issue', 'warning', 'failed', 'missing', 'bug', 'latent'],
     action: { skill: 'ship', label: 'Fix reported issues' },
     objectiveTpl: 'Fix the issues identified in the /health report for {repo}.',
   },
 ]
+
+const REPORT_ONLY_SKILLS = new Set(['health', 'qa-only', 'review', 'canary', 'retro'])
+
+/**
+ * Returns default actions to always show after a report-only skill, even when
+ * no specific rule matched. Gives the user a way to act on any findings.
+ */
+export function getDefaultActions(
+  skillName: string | undefined,
+  problemFindings: string[],
+  repoName: string,
+): SuggestedAction[] {
+  if (!skillName || !REPORT_ONLY_SKILLS.has(skillName) || problemFindings.length === 0) return []
+  const topFindings = problemFindings.slice(0, 3).join('; ')
+  return [
+    {
+      skill: 'investigate',
+      label: 'Deep-dive these findings',
+      objective: `Investigate the issues found in the /health report for ${repoName} and fix the most critical ones. Findings: ${topFindings}`,
+    },
+    {
+      skill: 'ship',
+      label: 'Fix & ship a PR',
+      objective: `Fix the issues identified in the /health report for ${repoName} and open a PR. Address: ${topFindings}`,
+    },
+  ]
+}
 
 /**
  * Returns up to MAX_SUGGESTIONS actions inferred from skill findings.

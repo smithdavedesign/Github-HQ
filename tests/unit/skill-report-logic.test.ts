@@ -29,7 +29,7 @@ describe('getSuggestedActions — health / qa-only', () => {
       it('matches "typescript" keyword → /ship Fix TypeScript errors', () => {
         const actions = getSuggestedActions(skill, ['TypeScript: proxy.ts has type error'], REPO)
         expect(actions[0]?.skill).toBe('ship')
-        expect(actions[0]?.label).toBe('Fix TypeScript errors')
+        expect(actions[0]?.label).toBe('Fix TypeScript & lint errors')
       })
 
       it('matches "type error" keyword → /ship', () => {
@@ -141,7 +141,7 @@ describe('getSuggestedActions — review', () => {
   it('matches "security" → /investigate', () => {
     const actions = getSuggestedActions('review', ['Security: SSRF in webhook handler'], REPO)
     expect(actions[0]?.skill).toBe('investigate')
-    expect(actions[0]?.label).toBe('Investigate security findings')
+    expect(actions[0]?.label).toBe('Investigate security issue')
   })
 
   it('matches "vulnerability" → /investigate', () => {

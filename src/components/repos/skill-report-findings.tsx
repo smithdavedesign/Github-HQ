@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronUp, GitPullRequest, Search, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { queueGstackSkill } from '@/lib/actions/nexus'
-import { getSuggestedActions, FINDINGS_PREVIEW_COUNT } from '@/lib/skills/suggest-actions'
+import { getSuggestedActions, getDefaultActions, FINDINGS_PREVIEW_COUNT } from '@/lib/skills/suggest-actions'
 import { toast } from 'sonner'
 
 interface SkillReportFindingsProps {
@@ -29,8 +29,13 @@ export function SkillReportFindings({ findings, skillName, repoId, repoName, nex
   const visible = showAll ? findings : findings.slice(0, PREVIEW)
   const hidden = findings.length - PREVIEW
 
-  // Suggest an action based on the skill that ran and the findings content
-  const suggestedActions = getSuggestedActions(skillName, findings, repoName)
+  // Infer specific actions from findings keywords
+  const inferredActions = getSuggestedActions(skillName, findings, repoName)
+  // Always show default actions for report-only skills so there's always a way to act
+  const defaultActions = inferredActions.length === 0
+    ? getDefaultActions(skillName, findings, repoName)
+    : []
+  const suggestedActions = inferredActions.length > 0 ? inferredActions : defaultActions
 
   async function handleQueueAction(skill: 'ship' | 'investigate', objective: string) {
     setQueuingFor(skill)
@@ -71,40 +76,44 @@ export function SkillReportFindings({ findings, skillName, repoId, repoName, nex
         </button>
       )}
 
-      {/* Actionable items — suggested next steps */}
-      {nexusEnabled && suggestedActions.length > 0 && (
-        <div className="pt-1.5 border-t border-border/30 space-y-1.5">
-          <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide">
-            Suggested actions
+      {/* Actionable items — always shown for report-only skills with findings */}
+      {suggestedActions.length > 0 && (
+        <div className="pt-2 border-t border-border/40 space-y-2">
+          <p className="text-[10px] font-semibold text-foreground/70 uppercase tracking-wide">
+            Take action
           </p>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             {suggestedActions.map((action, ai) => (
-              <div key={ai} className="flex items-start gap-2 p-2 rounded-md bg-muted/10 border border-border/30">
-                <div className="shrink-0 mt-0.5">
+              <div key={ai} className="flex items-center gap-2 p-2 rounded-md bg-muted/20 border border-border/40">
+                <div className="shrink-0">
                   {action.skill === 'ship' ? (
-                    <GitPullRequest className="w-3 h-3 text-indigo-500" />
+                    <GitPullRequest className="w-3.5 h-3.5 text-indigo-500" />
                   ) : action.skill === 'investigate' ? (
-                    <Search className="w-3 h-3 text-red-500" />
+                    <Search className="w-3.5 h-3.5 text-red-500" />
                   ) : (
-                    <Wrench className="w-3 h-3 text-amber-500" />
+                    <Wrench className="w-3.5 h-3.5 text-amber-500" />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-medium leading-snug">{action.label}</p>
-                  <p className="text-[9px] text-muted-foreground mt-0.5">{action.objective}</p>
+                  <p className="text-[11px] font-medium leading-snug">{action.label}</p>
+                  <p className="text-[9px] text-muted-foreground mt-0.5 line-clamp-2">{action.objective}</p>
                 </div>
                 <Button
                   size="sm"
-                  variant="outline"
-                  className="h-6 px-2 text-[9px] shrink-0"
-                  disabled={queuingFor !== null}
-                  onClick={() => handleQueueAction(action.skill, action.objective)}
+                  variant={action.skill === 'investigate' ? 'destructive' : 'default'}
+                  className="h-7 px-3 text-[11px] shrink-0"
+                  disabled={queuingFor !== null || !nexusEnabled}
+                  title={!nexusEnabled ? 'Configure NEXUS_API_URL and NEXUS_API_TOKEN to queue agent tasks' : undefined}
+                  onClick={() => nexusEnabled && handleQueueAction(action.skill, action.objective)}
                 >
                   {queuingFor === action.skill ? '…' : `Run /${action.skill}`}
                 </Button>
               </div>
             ))}
           </div>
+          {!nexusEnabled && (
+            <p className="text-[9px] text-muted-foreground">Configure Nexus to queue agent tasks from here.</p>
+          )}
         </div>
       )}
     </div>
