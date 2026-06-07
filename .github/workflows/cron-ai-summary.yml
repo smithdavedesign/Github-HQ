@@ -10,14 +10,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Regenerate AI repo summaries
+      - name: Regenerate AI repo summaries (per-user, chunked)
         run: |
-          HTTP_STATUS=$(curl -s -o body.json -w "%{http_code}" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            https://repohq.vercel.app/api/cron/ai-summary)
-          echo "Status: $HTTP_STATUS"
-          cat body.json
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "AI summary failed with HTTP $HTTP_STATUS"
-            exit 1
-          fi
+          # Fetch list of users and process each user individually to avoid Vercel function timeouts
+          USERS_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "https://repohq.vercel.app/api/cron/ai-summary?list=1")
+          echo "Users payload: $(echo "$USERS_JSON" | jq -r '.users | length') users"
+          for u in $(echo "$USERS_JSON" | jq -r '.users[]'); do
+            echo "Processing user: $u"
+            HTTP_STATUS=$(curl -s -o body.json -w "%{http_code}" -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "https://repohq.vercel.app/api/cron/ai-summary?user=$u")
+            echo "Status: $HTTP_STATUS"
+            if [ "$HTTP_STATUS" != "200" ]; then
+              echo "AI summary for user $u failed with HTTP $HTTP_STATUS"
+              cat body.json
+              exit 1
+            fi
+          done
