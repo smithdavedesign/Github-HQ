@@ -137,9 +137,9 @@ async function _queueAdvisorAction(action: AdvisorAction): Promise<QueuedTask> {
 
 // ─── Ad-hoc gstack skill queueing (user + AI agent triggered) ────────────────
 
+import type { GstackSkill } from './nexus-utils'
 export type { GstackSkill } from './nexus-utils'
 export { SKILL_META } from './nexus-utils'
-import type { GstackSkill } from './nexus-utils'
 
 const SKILL_DEFAULTS: Record<GstackSkill, { executionMode: string; acceptanceCriteria: string[] }> = {
   investigate:        { executionMode: 'investigate', acceptanceCriteria: ['Root cause identified and documented', 'Findings listed with file paths and evidence', 'No new issues introduced'] },
