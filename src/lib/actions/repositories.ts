@@ -970,3 +970,48 @@ export async function getActiveAgentSummary() {
     return []
   }
 }
+
+export interface SkillRunRecord {
+  daysAgo: number
+  findingCount: number
+  taskId: string
+  summary?: string
+  topFindings: string[]
+}
+
+/** Returns the most recent agent_skill_report per skill for a repo. Used by GstackSkillLauncher. */
+export async function getSkillRunHistory(repoId: number): Promise<Record<string, SkillRunRecord>> {
+  const session = await auth()
+  if (!session?.user?.id) return {}
+
+  try {
+    const events = await db.query.portfolioEvents.findMany({
+      where: and(
+        eq(portfolioEvents.userId, session.user.id),
+        eq(portfolioEvents.repoId, repoId),
+        eq(portfolioEvents.eventType, 'agent_skill_report'),
+      ),
+      columns: { metadata: true, occurredAt: true },
+      orderBy: [desc(portfolioEvents.occurredAt)],
+      limit: 50,
+    })
+
+    const result: Record<string, SkillRunRecord> = {}
+    for (const e of events) {
+      const meta = e.metadata as { skillName?: string; findings?: string[]; taskId?: string; summary?: string } | null
+      if (!meta?.skillName || result[meta.skillName]) continue
+      const msAgo = Date.now() - new Date(e.occurredAt).getTime()
+      const findings = Array.isArray(meta.findings) ? meta.findings.filter(f => f && f.trim()) : []
+      result[meta.skillName] = {
+        daysAgo:      Math.floor(msAgo / (1000 * 60 * 60 * 24)),
+        findingCount: findings.length,
+        taskId:       meta.taskId ?? '',
+        summary:      meta.summary,
+        topFindings:  findings.slice(0, 3),
+      }
+    }
+    return result
+  } catch {
+    return {}
+  }
+}

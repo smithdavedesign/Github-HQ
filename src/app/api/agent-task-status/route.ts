@@ -85,7 +85,14 @@ export async function GET(request: Request) {
     const meta = prCreated.metadata as { prUrl?: string } | null
     return ok('pr_ready', { prUrl: meta?.prUrl, nexusUrl })
   }
-  if (skillReport) return ok('report_ready', { nexusUrl })
+  if (skillReport) {
+    const srMeta = skillReport.metadata as { findings?: string[]; skillName?: string } | null
+    return ok('report_ready', {
+      nexusUrl,
+      previewFindings: srMeta?.findings?.filter(f => f && f.trim()).slice(0, 2) ?? [],
+      skillName: srMeta?.skillName,
+    })
+  }
   if (execFailed)  return ok('failed', { nexusUrl })
 
   // 2. Poll Nexus directly for live stage (webhook may not have fired yet)
@@ -129,6 +136,6 @@ export async function GET(request: Request) {
   return ok('queued', { nexusUrl })
 }
 
-function ok(status: AgentTaskStage, opts: { prUrl?: string | null; nexusUrl?: string | null } = {}) {
+function ok(status: AgentTaskStage, opts: { prUrl?: string | null; nexusUrl?: string | null; previewFindings?: string[]; skillName?: string } = {}) {
   return NextResponse.json({ status, stage: STAGE_LABELS[status], ...opts })
 }

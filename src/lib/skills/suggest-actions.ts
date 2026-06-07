@@ -101,6 +101,7 @@ const GENERIC_RULES: MatchRule[] = [
  * Returns up to MAX_SUGGESTIONS actions inferred from skill findings.
  * - Filters out passing/clean findings before matching (avoids false positives)
  * - De-dupes by skill — max one /ship and one /investigate
+ * - Objectives include the most relevant finding text for precision
  * - Generic fallback only fires when no specific rule matched
  */
 export function getSuggestedActions(
@@ -117,25 +118,43 @@ export function getSuggestedActions(
   const actions: SuggestedAction[] = []
   const seenSkills = new Set<SuggestableSkill>()
 
-  function addIfNew(rule: MatchRule) {
+  function addIfNew(rule: MatchRule, triggeringFinding?: string) {
     if (!rule.skills.includes(skillName!)) return
     if (seenSkills.has(rule.action.skill)) return
     seenSkills.add(rule.action.skill)
-    actions.push({
-      ...rule.action,
-      objective: rule.objectiveTpl.replace('{repo}', repoName),
-    })
+
+    let objective = rule.objectiveTpl.replace('{repo}', repoName)
+    // Append the specific finding so the agent knows exactly what to fix
+    if (triggeringFinding) {
+      const snippet = triggeringFinding.length > 120
+        ? triggeringFinding.slice(0, 117) + '…'
+        : triggeringFinding
+      objective += ` Specifically: ${snippet}`
+    }
+
+    actions.push({ ...rule.action, objective })
   }
 
   for (const rule of MATCH_RULES) {
     if (actions.length >= MAX_SUGGESTIONS) break
-    if (rule.keywords.some(kw => text.includes(kw))) addIfNew(rule)
+    if (rule.keywords.some(kw => text.includes(kw))) {
+      // Find the first finding that triggered this rule
+      const trigger = problemFindings.find(f =>
+        rule.keywords.some(kw => f.toLowerCase().includes(kw))
+      )
+      addIfNew(rule, trigger)
+    }
   }
 
   if (actions.length === 0) {
     for (const rule of GENERIC_RULES) {
       if (actions.length >= MAX_SUGGESTIONS) break
-      if (rule.keywords.some(kw => text.includes(kw))) addIfNew(rule)
+      if (rule.keywords.some(kw => text.includes(kw))) {
+        const trigger = problemFindings.find(f =>
+          rule.keywords.some(kw => f.toLowerCase().includes(kw))
+        )
+        addIfNew(rule, trigger)
+      }
     }
   }
 

@@ -143,6 +143,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['repo_name'],
       },
     },
+    {
+      name: 'get_skill_findings',
+      description: 'Get the raw findings array from the most recent gstack skill run for a repo. Returns structured JSON — use this when you need to act on findings programmatically, e.g. to build a /ship objective from what /health found. Complements get_skill_history (which is prose-formatted for reading).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          repo_name: { type: 'string', description: 'Repository name' },
+          skill:     { type: 'string', description: 'Which skill\'s findings to retrieve (e.g. "health", "review") — omit for the most recent skill run of any type' },
+        },
+        required: ['repo_name'],
+      },
+    },
 
     // ── Phase 52: Accuracy report ────────────────────────────────────────
     {
@@ -432,8 +444,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return { content: [{ type: 'text', text: `Repo "${repoName}" not found. Make sure it's synced.` }] }
         }
 
-        // Fetch sessions, attempts, and open PRs in parallel
-        const [recentSessions, recentAttempts, openPRMap] = await Promise.all([
+        // Fetch sessions, attempts, open PRs, and last skill report in parallel
+        const [recentSessions, recentAttempts, openPRMap, lastSkillReport] = await Promise.all([
           db.query.portfolioEvents.findMany({
             where: and(
               eq(schema.portfolioEvents.userId, USER_ID),
@@ -453,6 +465,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             limit: 5,
           }),
           getOpenAgentPRMap(),
+          db.query.portfolioEvents.findFirst({
+            where: and(
+              eq(schema.portfolioEvents.userId, USER_ID),
+              eq(schema.portfolioEvents.repoId, repo.id),
+              eq(schema.portfolioEvents.eventType, 'agent_skill_report'),
+            ),
+            orderBy: [desc(schema.portfolioEvents.occurredAt)],
+            columns: { metadata: true, occurredAt: true },
+          }),
         ])
 
         const m = repo.metrics
@@ -569,6 +590,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             lines.push(`- **${date}** (${agent}): ${s.title}`)
           }
           lines.push(``)
+        }
+
+        // Last skill report findings
+        if (lastSkillReport) {
+          const srMeta = lastSkillReport.metadata as { skillName?: string; findings?: string[]; summary?: string } | null
+          if (srMeta?.skillName && srMeta.findings && srMeta.findings.length > 0) {
+            const runDate = new Date(lastSkillReport.occurredAt).toLocaleDateString()
+            const problemFindings = srMeta.findings.filter(f => f && f.trim() && !f.startsWith('✅') && !f.startsWith('✓'))
+            lines.push(`## Last /${srMeta.skillName} Report (${runDate})`)
+            if (srMeta.summary) lines.push(srMeta.summary)
+            for (const f of problemFindings.slice(0, 5)) lines.push(`- ${f}`)
+            if (problemFindings.length > 5) lines.push(`- …and ${problemFindings.length - 5} more findings`)
+            if (problemFindings.length > 0) {
+              lines.push(``)
+              lines.push(`> Use \`get_skill_findings("${repoName}", "${srMeta.skillName}")\` for the full list.`)
+            }
+            lines.push(``)
+          }
         }
 
         lines.push(`_Use \`log_attempt\` after each automated action and \`log_session_complete\` when done._`)
@@ -747,6 +786,53 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         return { content: [{ type: 'text', text: lines.join('\n') }] }
+      }
+
+      case 'get_skill_findings': {
+        const { repo_name, skill: filterSkill } = args as { repo_name: string; skill?: string }
+
+        const repo = await db.query.repositories.findFirst({
+          where: and(eq(schema.repositories.userId, USER_ID!), eq(schema.repositories.name, repo_name)),
+          columns: { id: true, name: true },
+        })
+        if (!repo) return { content: [{ type: 'text', text: `Repo "${repo_name}" not found.` }] }
+
+        const events = await db.query.portfolioEvents.findMany({
+          where: and(
+            eq(schema.portfolioEvents.userId, USER_ID!),
+            eq(schema.portfolioEvents.repoId, repo.id),
+            eq(schema.portfolioEvents.eventType, 'agent_skill_report'),
+          ),
+          columns: { metadata: true, occurredAt: true },
+          orderBy: [desc(schema.portfolioEvents.occurredAt)],
+          limit: 20,
+        })
+
+        const match = filterSkill
+          ? events.find(e => (e.metadata as { skillName?: string } | null)?.skillName === filterSkill)
+          : events[0]
+
+        if (!match) {
+          return { content: [{ type: 'text', text: JSON.stringify({ error: `No ${filterSkill ? `/${filterSkill}` : 'skill'} findings for ${repo_name}.`, findings: [] }) }] }
+        }
+
+        const meta = match.metadata as { skillName?: string; findings?: string[]; summary?: string; outcome?: string; suggestedNextSkill?: string } | null
+        const findings = Array.isArray(meta?.findings) ? meta!.findings.filter(f => f && f.trim()) : []
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              repo:             repo_name,
+              skill:            meta?.skillName,
+              summary:          meta?.summary,
+              findings,
+              findingCount:     findings.length,
+              runDate:          match.occurredAt,
+              suggestedNextSkill: meta?.suggestedNextSkill ?? null,
+            }, null, 2),
+          }],
+        }
       }
 
       case 'queue_gstack_skill': {

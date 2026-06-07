@@ -528,6 +528,26 @@ Human reviews outcomes, not individual tasks
 
 **Why OpenClaw over a custom orchestrator:** `OPENCLAW_SESSION=true` is already in every gstack script. The infrastructure recognizes spawned sessions and suppresses interactive prompts. OpenClaw's skill coordination layer is built for exactly this pattern — building a custom orchestrator would replicate it. The integration point is replacing the Nexus worker's single-task spawn with an OpenClaw session that manages the task graph.
 
+### Phase 56 — G7 UX & Agent Experience Improvements
+
+Following the architecture review of G7, three categories of improvements across user control, agent intelligence, and code quality.
+
+#### 56-A User Control
+- [x] **Auto tag in Agent History** — `source` field already stored per queued event (`repohq-advisor`, `repohq-gstack-ui`, `repohq-auto-dispatch`). Now surfaced as a small "Auto" badge on auto-dispatched events so users know what the system did vs. what they triggered.
+- [x] **Skill history on idle rows** — `getSkillRunHistory(repoId)` queries `portfolio_events` for the most recent `agent_skill_report` per skill; each idle skill row now shows "X days ago · N findings" so users know whether a skill has run before and what it found.
+- [x] **Inline report preview** — when a skill transitions to "Report ready ↓", the first 2 findings appear inline in the skill row (fetched from `agent-task-status` endpoint). No scroll to Agent History required to see what ran. Clicking the badge anchors to `#agent-history` for the full report.
+
+#### 56-B Agent Intelligence
+- [x] **`get_skill_findings` MCP tool** — returns raw findings array + summary from the most recent skill run for a repo. Separate from `get_skill_history` (prose-formatted) — this returns structured JSON for agents to act on programmatically. Agents preparing a `/ship` objective can read exactly what `/health` found.
+- [x] **Findings in `get_coding_brief`** — "Last /health Report" (or whatever skill ran most recently) section added to the coding brief. Agents start every session knowing the current diagnosis, not just health scores.
+- [x] **`suggestedNextSkill` in webhook metadata** — Nexus worker computes the suggested follow-up skill from findings using the same inference logic as the UI. Stored in `agent_skill_report` event metadata. G8 orchestrator can pick this up without re-running inference.
+- [x] **Finding-specific objectives** — suggested action objectives now include the most relevant finding text (e.g., "Fix TypeScript error: proxy.ts exports a config object but will never run as middleware" instead of the generic "Fix TypeScript errors in repo-name").
+
+#### 56-C Architecture Cleanup
+- [x] **Per-taskId polling** — `GstackSkillLauncher` now stores the `taskId` returned by `queueGstackSkill` per skill and polls by `?taskId=...` instead of `?repoId=...`. Eliminates status misattribution when multiple skills run; readies the component for G8 parallel skill execution.
+- [x] **`getSuggestedActions` extracted** — moved from `skill-report-findings.tsx` to `src/lib/skills/suggest-actions.ts`. Tests now import the real function; `gstack-g7.test.ts` was testing a mirrored copy that could silently diverge.
+- [ ] **`SKILLS_BY_PHASE` to nexus-utils** — icon, color, description, and phase grouping data still defined inside `gstack-skill-launcher.tsx`. Moving to `nexus-utils.ts` makes it importable in tests and reduces launcher file size. Planned for G8.
+
 ---
 
 ## Distribution Roadmap

@@ -1,4 +1,4 @@
-import { getRepositoryById } from '@/lib/actions/repositories'
+import { getRepositoryById, getSkillRunHistory } from '@/lib/actions/repositories'
 import { getLLMSettings } from '@/lib/actions/llm'
 import { PROVIDER_SHORT_NAME } from '@/lib/ai/providers'
 import { getLatestAdvisorContent } from '@/lib/actions/repositories'
@@ -39,7 +39,7 @@ type Props = { params: Promise<{ id: string }> }
 export default async function RepoDetailPage({ params }: Props) {
   const { id } = await params
   const repoId = Number(id)
-  const [repo, agentHistory, llmSettings, advisor, accuracyStats] = await Promise.all([
+  const [repo, agentHistory, llmSettings, advisor, accuracyStats, skillHistory] = await Promise.all([
     getRepositoryById(repoId),
     db.query.portfolioEvents.findMany({
       where: and(
@@ -52,6 +52,7 @@ export default async function RepoDetailPage({ params }: Props) {
     getLLMSettings(),
     getLatestAdvisorContent().catch(() => null),
     getMyAccuracyStats().catch(() => []),
+    getSkillRunHistory(repoId),
   ])
   if (!repo) notFound()
 
@@ -423,6 +424,7 @@ export default async function RepoDetailPage({ params }: Props) {
                 repoHomepage={repo.homepage}
                 defaultObjectives={defaultObjectives}
                 nexusEnabled={nexusConfigured}
+                skillHistory={skillHistory}
               />
             )
           })()}
@@ -487,12 +489,22 @@ export default async function RepoDetailPage({ params }: Props) {
                           ? 'bg-amber-500/10 text-amber-600 border-amber-200'
                           : 'bg-muted text-muted-foreground border-border/60'
 
+                const source = meta?.source as string | undefined
+                const isAutoDispatched = source === 'repohq-auto-dispatch'
+                const isMcpTriggered   = source === 'repohq-mcp-agent'
+
                 return (
                   <div key={event.id} className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-muted/10">
                     <Icon className={`w-4 h-4 shrink-0 mt-0.5 ${iconColor}`} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className={`text-[10px] px-1.5 ${labelColor}`}>{label}</Badge>
+                        {isAutoDispatched && (
+                          <Badge variant="outline" className="text-[9px] px-1 h-4 bg-violet-50 text-violet-600 border-violet-200">Auto</Badge>
+                        )}
+                        {isMcpTriggered && (
+                          <Badge variant="outline" className="text-[9px] px-1 h-4 bg-sky-50 text-sky-600 border-sky-200">MCP</Badge>
+                        )}
                         <p className="text-sm font-medium truncate">{event.title}</p>
                       </div>
                       {event.description && (

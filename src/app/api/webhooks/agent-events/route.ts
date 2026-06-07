@@ -18,6 +18,7 @@ interface AgentEventPayload {
   // Phase G4: gstack skill findings (when outcome = no-changes)
   skillName?: string
   findings?: string[]
+  suggestedNextSkill?: string
   outcome?: string
   healthScore?: number
 }
@@ -176,10 +177,11 @@ export async function POST(request: Request) {
       description: summary ?? null,
       metadata: {
         taskId,
-        skillName:   payload.skillName,
-        findings:    payload.findings ?? [],
-        outcome:     payload.outcome ?? 'no-changes',
-        healthScore: payload.healthScore ?? null,
+        skillName:          payload.skillName,
+        findings:           payload.findings ?? [],
+        outcome:            payload.outcome ?? 'no-changes',
+        healthScore:        payload.healthScore ?? null,
+        suggestedNextSkill: payload.suggestedNextSkill ?? null,
         agentName,
         durationMs,
       },
