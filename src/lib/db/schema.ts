@@ -262,6 +262,23 @@ export const scans = pgTable('scans', {
   index('scans_user_id_idx').on(table.userId),
 ])
 
+// ─── AI Summary Job Queue ───────────────────────────────────────────────────
+
+export const aiSummaryJobs = pgTable('ai_summary_jobs', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  repoId: integer('repo_id').references(() => repositories.id, { onDelete: 'set null' }),
+  status: text('status').default('queued'), // queued | processing | done | failed
+  attempts: integer('attempts').default(0),
+  error: text('error'),
+  payload: jsonb('payload'),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow(),
+  updatedAt: timestamp('updated_at', { mode: 'date' }),
+}, (t) => [
+  index('ai_jobs_user_idx').on(t.userId),
+  index('ai_jobs_status_idx').on(t.status),
+])
+
 // ─── Health Score History (Phase 9 — drift detection) ────────────────────────
 
 export const healthScoreHistory = pgTable('health_score_history', {
