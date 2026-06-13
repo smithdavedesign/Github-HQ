@@ -10,18 +10,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Regenerate AI repo summaries (per-user, chunked)
+      - name: Regenerate AI repo summaries (enqueue per-repo and process loop)
         run: |
-          # Fetch list of users and process each user individually to avoid Vercel function timeouts
-          USERS_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "https://repohq.vercel.app/api/cron/ai-summary?list=1")
-          echo "Users payload: $(echo "$USERS_JSON" | jq -r '.users | length') users"
-          for u in $(echo "$USERS_JSON" | jq -r '.users[]'); do
-            echo "Processing user: $u"
-            HTTP_STATUS=$(curl -s -o body.json -w "%{http_code}" -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "https://repohq.vercel.app/api/cron/ai-summary?user=$u")
-            echo "Status: $HTTP_STATUS"
-            if [ "$HTTP_STATUS" != "200" ]; then
-              echo "AI summary for user $u failed with HTTP $HTTP_STATUS"
-              cat body.json
-              exit 1
+          set -euo pipefail
+          BASE_URL="https://repohq.vercel.app"
+          echo "Enqueueing per-repo jobs..."
+          curl -s -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "$BASE_URL/api/cron/ai-summary?enqueueRepos=1" | jq -r '.' || true
+
+          echo "Processing jobs (one job per invocation)..."
+          for i in $(seq 1 1000); do
+            res=$(curl -s -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "$BASE_URL/api/cron/ai-summary?process=1")
+            echo "$res"
+            processed=$(echo "$res" | jq -r '.processed // 0')
+            if [ "$processed" -eq 0 ]; then
+              echo "No more jobs to process. Exiting."
+              break
             fi
+            sleep 1
           done

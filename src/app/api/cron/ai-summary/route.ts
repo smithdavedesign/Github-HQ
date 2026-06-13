@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { users, aiSummaryJobs } from '@/lib/db/schema'
-import { generateSummariesForUser } from '@/lib/ai/summary'
+import { users, aiSummaryJobs, repositories } from '@/lib/db/schema'
+import { generateSummariesForUser, generateRepoSummary } from '@/lib/ai/summary'
+import { getLLMAdapter } from '@/lib/ai/adapter'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { isNotNull, eq, and, inArray, asc } from 'drizzle-orm'
 
@@ -20,6 +21,7 @@ export async function GET(request: Request) {
   const offset = offsetParam ? parseInt(offsetParam, 10) : undefined
   const enqueue = params.get('enqueue')
   const processOne = params.get('process')
+  const enqueueRepos = params.get('enqueueRepos')
 
   // Fast path: return list of user ids (so scheduler can drive per-user requests)
   if (list) {
@@ -51,11 +53,38 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, enqueued })
   }
 
+  // Enqueue one job per repo for all users with tokens
+  if (enqueueRepos) {
+    const allUsers = await db.query.users.findMany({
+      where: isNotNull(users.githubToken),
+      columns: { id: true },
+    })
+
+    let enqueued = 0
+    for (const u of allUsers) {
+      const repos = await db.query.repositories.findMany({
+        where: eq(repositories.userId, u.id),
+        columns: { id: true },
+      })
+      for (const r of repos) {
+        const existing = await db.query.aiSummaryJobs.findFirst({
+          where: and(eq(aiSummaryJobs.repoId, r.id), inArray(aiSummaryJobs.status, ['queued', 'processing'])),
+          columns: { id: true },
+        })
+        if (existing) continue
+        await db.insert(aiSummaryJobs).values({ userId: u.id, repoId: r.id })
+        enqueued++
+      }
+    }
+
+    return NextResponse.json({ ok: true, enqueued })
+  }
+
   // Process a single queued job (useful for short worker slices)
   if (processOne) {
     const job = await db.query.aiSummaryJobs.findFirst({
       where: eq(aiSummaryJobs.status, 'queued'),
-      columns: { id: true, userId: true, repoId: true },
+      columns: { id: true, userId: true, repoId: true, attempts: true },
       orderBy: [asc(aiSummaryJobs.createdAt)],
     })
 
@@ -65,8 +94,34 @@ export async function GET(request: Request) {
     await db.update(aiSummaryJobs).set({ status: 'processing', updatedAt: new Date() }).where(eq(aiSummaryJobs.id, job.id))
 
     try {
-      // currently we run per-user summaries; per-repo jobs could be handled here if repoId is set
-      await generateSummariesForUser(job.userId)
+      if (job.repoId) {
+        // process single repo job
+        const repo = await db.query.repositories.findFirst({
+          where: eq(repositories.id, job.repoId),
+          with: { metrics: true, techStack: true },
+        })
+        if (!repo) throw new Error('Repo not found')
+
+        const adapter = await getLLMAdapter(job.userId)
+        await generateRepoSummary(repo.id, {
+          name: repo.name,
+          description: repo.description,
+          language: repo.language,
+          frontend: repo.techStack?.frontend ?? null,
+          backend: repo.techStack?.backend ?? null,
+          database: repo.techStack?.database ?? null,
+          hosting: repo.techStack?.hosting ?? null,
+          testing: repo.techStack?.testing ?? null,
+          openIssues: repo.metrics?.openIssues ?? 0,
+          openPrs: repo.metrics?.openPrs ?? 0,
+          healthScore: repo.metrics?.healthScore ?? 0,
+          activityStatus: repo.metrics?.activityStatus ?? 'unknown',
+        }, adapter)
+      } else {
+        // fallback: per-user summaries
+        await generateSummariesForUser(job.userId)
+      }
+
       await db.update(aiSummaryJobs).set({ status: 'done', updatedAt: new Date() }).where(eq(aiSummaryJobs.id, job.id))
       return NextResponse.json({ ok: true, processed: 1, jobId: job.id })
     } catch (err) {

@@ -54,7 +54,6 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
     }
     hydrate()
     return () => { cancelled = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [action.repoId])
 
   function poll(taskId: string) {

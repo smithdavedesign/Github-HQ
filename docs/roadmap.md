@@ -398,7 +398,7 @@ PR created → CI runs →
 - [x] Local dev OAuth app separation documented (production vs localhost)
 - [x] MCP server setup instructions in mcp/README.md
 - [x] Stripe restricted key setup guide included
-- [x] `.env.example` complete with all 7 required variables
+- [x] `.env.example` complete with all required variables (including `ENCRYPTION_KEY` added in Phase 58-A)
 
 ---
 
@@ -667,6 +667,39 @@ A 10-hour automated improvement loop ran over Phase 57 and found/fixed:
 | 10 | Testing | No test for `_OPENCLAW_READY` routing logic | 23-test bash integration suite |
 | 11 | Logic | `infer-next-skill.ts` lacked `stripPassingFindings()` — "0 failed" would trigger `investigate` | Added positivity filter mirroring `suggest-actions.ts` |
 
+### Phase 58 — Security Hardening & Code Quality
+
+Security audit findings addressed after external review.
+
+#### 58-A — Encryption at Rest
+- [x] AES-256-GCM `encrypt()` / `decrypt()` added to `src/lib/crypto-utils.ts`
+- [x] `github_token` encrypted on every OAuth sign-in (`auth.ts`) and decrypted at all 6 Octokit read sites
+- [x] `llm_keys` (per-provider API keys) encrypted on save in `actions/llm.ts`, decrypted in `ai/adapter.ts`
+- [x] `decrypt()` is backwards-compatible: values without `enc:` prefix pass through unchanged (zero-downtime migration)
+- [x] `ENCRYPTION_KEY` env var documented in `.env.example` and `AGENTS.md`
+
+#### 58-B — CI Build Gate
+- [x] Second `build` job added to `.github/workflows/ci.yml` — runs `npm run build` with stub env vars on every push
+- [x] Catches import errors and `'use server'` constraint violations that `tsc --noEmit` misses (CSS imports, shadcn path errors, etc.)
+
+#### 58-C — Uptime Check Fix
+- [x] Deployment uptime checker now treats `response.status < 400` as healthy (was `response.ok`, which incorrectly marked 3xx redirects as "down")
+- [x] Fixes false "Deployment down" badge on repos with www-redirect or Vercel cold-start responses
+
+#### 58-D — Type Safety
+- [x] `githubRepo: any` in `sync.ts` replaced with typed `GithubRepoInput` interface covering all fields accessed
+- [x] Compatible with both the Octokit `paginate` response and the hand-crafted stubs in agent-events and on-demand sync paths
+
+#### 58-E — Agent/Developer Experience
+- [x] `AGENTS.md` populated with encryption rules, `'use server'` constraints, cron conventions, and hard rules that caused prior production breaks
+- [x] Vercel cron (`vercel.json`) reduced to `gstack-self` only — removed 5 entries duplicated by GitHub Actions
+
+#### 58-F — AI Summary Per-Repo Queue
+- [x] `?enqueueRepos=1` endpoint creates one `ai_summary_jobs` row per repo across all users
+- [x] GitHub Actions cron now enqueues all repos then polls `?process=1` in a loop until the queue drains
+- [x] Each `process` call handles a single repo job end-to-end via `generateRepoSummary()` with the user's configured LLM adapter
+- [x] Cleaner than the previous per-user chunked approach; jobs are individually retryable and observable via the `ai_summary_jobs` table
+
 ---
 
 ## Distribution Roadmap
@@ -724,20 +757,20 @@ Features required to open RepoHQ to other users. Tracked separately because they
 
 ## Infrastructure
 
-**GitHub Actions (current — primary cron trigger):**
-- Sync: every 6 hours
-- Security: daily at 03:00 UTC
-- Deployments: every 12 hours
-- AI summaries: Sundays 05:00 UTC
-- Digest + Advisor + CEO Report: Mondays 06:00 UTC
+**GitHub Actions (canonical trigger — `.github/workflows/cron-*.yml`):**
 
-**Vercel crons (Sunday-only fallback):**
+| Workflow | Schedule | Endpoint |
+|----------|---------|---------|
+| cron-sync | every 6h | `/api/cron/sync` |
+| cron-security | 03:00 daily | `/api/cron/security` |
+| cron-deployments | every 12h | `/api/cron/deployments` |
+| cron-ai-summary | 05:00 Sunday | `/api/cron/ai-summary` (enqueue per-repo jobs then process loop) |
+| cron-digest | 06:00 Monday | `/api/cron/digest` |
+
+**Vercel cron (daily — gstack-self only):**
 
 | Endpoint | Time (UTC) | What it does |
 |----------|-----------|-------------|
-| `/api/cron/sync` | 02:00 daily | Full sync + health snapshot + goal refresh |
-| `/api/cron/security` | 03:00 daily | Dependabot + secret scanning |
-| `/api/cron/deployments` | 04:00 daily | Uptime checks |
-| `/api/cron/ai-summary` | 05:00 Sunday | Regenerate AI repo summaries |
-| `/api/cron/digest` | 06:00 Monday | Digest + Advisor + CEO Report |
 | `/api/cron/gstack-self` | 07:00 daily | Self-scan RepoHQ with /health + /qa-only → auto-queue fix tasks |
+
+All routes require `Authorization: Bearer $CRON_SECRET`. Vercel cron is used only for `gstack-self` because it must run daily regardless of git activity; all other jobs are driven by GitHub Actions, which provides logs, retry, and manual dispatch.

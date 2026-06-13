@@ -49,3 +49,6 @@ tests/setup/auth-state.json
 
 # gstack / Nexus agent runtime output (ephemeral, changes every run)
 .nexus/
+
+# local run logs
+*.log

@@ -58,12 +58,10 @@ export function HealthTrendLineChart({ data }: Props) {
                 axisLine={false}
               />
               <Tooltip
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 formatter={(value: any, name: any) => [
                   typeof value === 'number' ? value.toFixed(1) : value,
                   name === 'avgHealth' ? 'Health' : name === 'avgSecurity' ? 'Security' : 'Activity',
                 ]}
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 labelFormatter={(label: any) => typeof label === 'string' ? formatDate(label) : String(label)}
                 contentStyle={{ fontSize: 12 }}
               />

@@ -125,15 +125,16 @@ Sorted: critical → warning → info → positive, then date descending.
 
 ## Scheduled Jobs
 
-| Endpoint | Time (UTC) | What it does |
-|----------|-----------|-------------|
-| `/api/cron/sync` | 02:00 daily | Full GitHub sync + health snapshot + goal refresh + PR merge detection + delta resolution + health alerts |
-| `/api/cron/security` | 03:00 daily | Dependabot + secret scanning, recalculates health |
-| `/api/cron/deployments` | 04:00 daily | Uptime checks for all deployment URLs |
-| `/api/cron/ai-summary` | 05:00 Sunday | Regenerates Claude AI summaries for all repos |
-| `/api/cron/digest` | 06:00 Monday | Digest + Advisor + CEO Report + Auto-Dispatch per user |
+| Endpoint | Trigger | Time (UTC) | What it does |
+|----------|---------|-----------|-------------|
+| `/api/cron/sync` | GitHub Actions | every 6h | Full GitHub sync + health snapshot + goal refresh + PR merge detection + delta resolution + health alerts |
+| `/api/cron/security` | GitHub Actions | 03:00 daily | Dependabot + secret scanning, recalculates health |
+| `/api/cron/deployments` | GitHub Actions | every 12h | Uptime checks for all deployment URLs |
+| `/api/cron/ai-summary` | GitHub Actions | 05:00 Sunday | Enqueues per-repo AI summary jobs then processes them in a loop |
+| `/api/cron/digest` | GitHub Actions | 06:00 Monday | Digest + Advisor + CEO Report + Auto-Dispatch per user |
+| `/api/cron/gstack-self` | Vercel cron | 07:00 daily | Self-scan RepoHQ with /health + /qa-only → auto-queues fix tasks |
 
-All routes require `Authorization: Bearer $CRON_SECRET`. Primary trigger is GitHub Actions (5 workflows in `.github/workflows/`); Vercel crons remain as once-per-Sunday fallback.
+All routes require `Authorization: Bearer $CRON_SECRET`. GitHub Actions (`.github/workflows/cron-*.yml`) is the canonical trigger for all jobs except `gstack-self`, which runs daily via Vercel cron (no GitHub Actions equivalent since it runs continuously, not on a branch push schedule).
 
 ---
 
@@ -142,8 +143,9 @@ All routes require `Authorization: Bearer $CRON_SECRET`. Primary trigger is GitH
 ```
 users
   id, name, email, image
-  github_login, github_id, github_token
+  github_login, github_id, github_token          ← AES-256-GCM encrypted (enc: prefix)
   last_synced_at, public_profile
+  llm_provider, llm_keys jsonb                   ← per-provider keys, AES-256-GCM encrypted
   auto_dispatch_enabled, auto_dispatch_effort_gate
   auto_dispatch_max_per_run, auto_dispatch_skip_security
   auto_dispatch_accuracy_threshold
@@ -241,7 +243,7 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 
 **`dbOp()` error wrapper** — all write-path server actions in `src/lib/actions/repositories.ts` and related files are wrapped in `dbOp(label, fn)`. Catches raw Neon/Drizzle errors, logs server-side with context, surfaces a clean user-facing message. Auth errors pass through unchanged.
 
-**SSRF protection** — `isBlockedUrl(url)` in `src/lib/notifications/webhook.ts` blocks loopback, cloud metadata (169.254.169.254), and all private IPv4 ranges. Applied to the user-configured webhook sender and the deployment URL health checker. Both use `redirect: 'manual'` to prevent redirect-based SSRF bypasses.
+**SSRF protection** — `isBlockedUrl(url)` in `src/lib/notifications/webhook.ts` blocks loopback, cloud metadata (169.254.169.254), and all private IPv4 ranges. Applied to the user-configured webhook sender and the deployment URL health checker. Both use `redirect: 'manual'` to prevent redirect-based SSRF bypasses. The uptime checker treats 2xx and 3xx as "healthy" (`response.status < 400`) — with `redirect: 'manual'`, a 3xx means the site is responding; only 4xx/5xx and network errors count as "down".
 
 ---
 
@@ -261,7 +263,9 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 
 **Prompt caching** — Claude analysis, digest, advisor, and CEO report calls include `cache_control: { type: 'ephemeral' }` on system prompts. Reduces cost significantly for Monday bulk runs.
 
-**No client-side secrets** — GitHub tokens stored in `users` table (written by Auth.js adapter), only read server-side. Never sent to the browser.
+**Encryption at rest** — `github_token` and `llm_keys` are AES-256-GCM encrypted before writing to Postgres. `encrypt()` / `decrypt()` in `src/lib/crypto-utils.ts` use a 32-byte `ENCRYPTION_KEY` env var. `decrypt()` passes plaintext values (no `enc:` prefix) through unchanged for zero-downtime migration from legacy records. All Octokit client construction and LLM adapter factory calls go through `decrypt()` first. Never stored in client state.
+
+**No client-side secrets** — GitHub tokens stored in `users` table (written by Auth.js adapter), encrypted at rest, and only read server-side. Never sent to the browser.
 
 **Claude model selection** — `claude-sonnet-4-6` for deep repo analysis (quality matters). `claude-haiku-4-5` for digest, advisor, CEO report, NL query, and quarterly reports (speed + cost).
 
