@@ -539,3 +539,84 @@ export async function queueGstackSelfScan(
   }
 }
 
+/**
+ * Queues a CI fix task that resumes on an existing PR branch.
+ * Called by checkCIFailuresOnAgentPRs when a check-run fails on an open agent PR.
+ * Nexus worker reads contextNotes.existingBranch and checks out that branch instead
+ * of creating a new nexus/auto-* branch, so the fix commit lands on the same PR.
+ */
+export async function queueCIFix(
+  userId: string,
+  repoId: number,
+  repoFullName: string,
+  branchName: string,
+  prNumber: number,
+  errorSummary: string,
+  parentTaskId: string,
+): Promise<string | null> {
+  const config = getNexusConfig()
+  if (!config) return null
+
+  const objective = `Fix CI failure on PR #${prNumber}: ${errorSummary.slice(0, 200)}`
+
+  try {
+    const res = await fetch(`${config.url}/internal/agent-tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.token}` },
+      body: JSON.stringify({
+        objective,
+        targetRepository: repoFullName,
+        executionMode: 'fix',
+        acceptanceCriteria: [
+          'CI passes after the fix commit is pushed',
+          'The fix addresses only the CI failure — no unrelated changes',
+          'All previously passing tests continue to pass',
+        ],
+        contextNotes: JSON.stringify({
+          repoHQRepoId:    repoId,
+          repoHQRepoName:  repoFullName.split('/').pop() ?? repoFullName,
+          skillName:       'ship',
+          riskTier:        'tier2',
+          source:          'ci-fix',
+          existingBranch:  branchName,
+          prNumber,
+          ciError:         errorSummary.slice(0, 1000),
+          parentTaskId,
+          autoExecute:     true,
+        }),
+      }),
+    })
+
+    if (!res.ok) {
+      console.warn('[ci-fix] Nexus error:', res.status)
+      return null
+    }
+
+    const data = await res.json() as { agentTaskId: string }
+
+    await db.insert(portfolioEvents).values({
+      userId,
+      repoId,
+      eventType: 'agent_task_queued',
+      title:     `CI fix queued: PR #${prNumber} on ${repoFullName.split('/').pop()}`,
+      description: objective,
+      metadata: {
+        taskId:         data.agentTaskId,
+        skillName:      'ship',
+        source:         'ci-fix',
+        existingBranch: branchName,
+        prNumber,
+        parentTaskId,
+        riskTier:       'tier2',
+        nexusUrl:       config.url,
+        autoExecute:    true,
+      },
+    })
+
+    return data.agentTaskId
+  } catch (err) {
+    console.warn('[ci-fix] failed to queue:', err instanceof Error ? err.message : err)
+    return null
+  }
+}
+

@@ -7,6 +7,7 @@ import { snapshotPortfolioScore } from '@/lib/health/portfolio-snapshot'
 import { refreshGoalProgress } from '@/lib/actions/goals'
 import { syncStripeMrr } from '@/lib/actions/stripe'
 import { checkMergedAgentPRs, resolveActualDeltas } from '@/lib/agents/pr-merge-checker'
+import { checkCIFailuresOnAgentPRs } from '@/lib/agents/ci-checker'
 import { checkHealthThresholdAlerts } from '@/lib/notifications/dispatcher'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { isNotNull } from 'drizzle-orm'
@@ -24,6 +25,9 @@ export async function GET(request: Request) {
   let processed = 0
   for (const user of allUsers) {
     try {
+      // Detect CI failures on open agent PRs and queue fix tasks — before merge
+      // checker so a PR that fails CI and merges in the same window is handled cleanly
+      await checkCIFailuresOnAgentPRs(user.id)
       // Detect merged agent PRs and capture healthBefore — must run before sync
       // so the pre-merge health score is recorded accurately
       await checkMergedAgentPRs(user.id)

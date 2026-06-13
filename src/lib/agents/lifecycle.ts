@@ -37,6 +37,8 @@ export async function getRepoLifecycle(userId: string, repoId: number): Promise<
           'agent_pr_merged',
           'agent_execution_failed',
           'agent_skill_report',
+          'agent_ci_failed',
+          'agent_needs_human',
         ]),
       ),
       columns: { eventType: true, metadata: true, occurredAt: true },
@@ -80,6 +82,18 @@ export async function getRepoLifecycle(userId: string, repoId: number): Promise<
   const failedEvent = eventsForTask.find(e => e.eventType === 'agent_execution_failed')
   if (failedEvent) {
     return { stage: 'failed', taskId, prUrl: null, queuedAt }
+  }
+
+  const needsHumanEvent = eventsForTask.find(e => e.eventType === 'agent_needs_human')
+  if (needsHumanEvent) {
+    const m = needsHumanEvent.metadata as { prUrl?: string } | null
+    return { stage: 'needs_human', taskId, prUrl: m?.prUrl ?? null, queuedAt }
+  }
+
+  const ciFailedEvent = eventsForTask.find(e => e.eventType === 'agent_ci_failed')
+  if (ciFailedEvent) {
+    const m = ciFailedEvent.metadata as { prUrl?: string } | null
+    return { stage: 'ci_failing', taskId, prUrl: m?.prUrl ?? null, queuedAt }
   }
 
   const prCreatedEvent = eventsForTask.find(e => e.eventType === 'agent_pr_created')

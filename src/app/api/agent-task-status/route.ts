@@ -10,6 +10,8 @@ export type AgentTaskStage =
   | 'preparing'
   | 'running'
   | 'pr_ready'
+  | 'ci_failing'
+  | 'needs_human'
   | 'merged'
   | 'report_ready'
   | 'failed'
@@ -21,6 +23,8 @@ const STAGE_LABELS: Record<string, string> = {
   preparing:    'Preparing context…',
   running:      'Agent running…',
   pr_ready:     'PR created',
+  ci_failing:   'CI failing — fix queued',
+  needs_human:  'Needs human review',
   merged:       'PR merged',
   report_ready: 'Report ready',
   failed:       'Agent failed',
@@ -61,6 +65,7 @@ export async function GET(request: Request) {
       inArray(portfolioEvents.eventType, [
         'agent_task_queued', 'agent_pr_created', 'agent_pr_merged',
         'agent_execution_failed', 'agent_skill_report',
+        'agent_ci_failed', 'agent_needs_human',
       ]),
     ),
     orderBy: [desc(portfolioEvents.occurredAt)],
@@ -76,10 +81,20 @@ export async function GET(request: Request) {
   const prCreated   = matching.find(e => e.eventType === 'agent_pr_created')
   const execFailed  = matching.find(e => e.eventType === 'agent_execution_failed')
   const skillReport = matching.find(e => e.eventType === 'agent_skill_report')
+  const needsHuman  = matching.find(e => e.eventType === 'agent_needs_human')
+  const ciFailed    = matching.find(e => e.eventType === 'agent_ci_failed')
 
   if (prMerged)  {
     const meta = prMerged.metadata as { prUrl?: string } | null
     return ok('merged',   { prUrl: meta?.prUrl, nexusUrl })
+  }
+  if (needsHuman) {
+    const meta = needsHuman.metadata as { prUrl?: string } | null
+    return ok('needs_human', { prUrl: meta?.prUrl, nexusUrl })
+  }
+  if (ciFailed) {
+    const meta = ciFailed.metadata as { prUrl?: string } | null
+    return ok('ci_failing', { prUrl: meta?.prUrl, nexusUrl })
   }
   if (prCreated) {
     const meta = prCreated.metadata as { prUrl?: string } | null
