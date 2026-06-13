@@ -12,7 +12,7 @@ export default function NotFound() {
         <p className="text-4xl font-bold tabular-nums text-muted-foreground/40">404</p>
         <p className="text-lg font-semibold mt-2">Page not found</p>
         <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-          This page doesn't exist or you don't have access to it.
+          This page doesn&apos;t exist or you don&apos;t have access to it.
         </p>
       </div>
       <div className="flex gap-2">

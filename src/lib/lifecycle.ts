@@ -27,6 +27,3 @@ export const LIFECYCLE_META: Record<LifecycleStage, {
   archived:    { label: 'Archived',    description: 'No longer maintained',                color: 'text-muted-foreground', bg: 'bg-muted border-border' },
 }
 
-export function isActive(stage: LifecycleStage | null | undefined): boolean {
-  return stage === 'building' || stage === 'beta' || stage === 'production' || stage === 'growing'
-}

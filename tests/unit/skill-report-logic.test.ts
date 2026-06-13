@@ -229,9 +229,9 @@ describe('getSuggestedActions — edge cases', () => {
     expect(actions).toHaveLength(0)
   })
 
-  it('canary skill → no actions (not in any rule)', () => {
+  it('canary skill with error → suggests /investigate (Phase 57)', () => {
     const actions = getSuggestedActions('canary', ['console error: failed to load resource'], REPO)
-    expect(actions).toHaveLength(0)
+    expect(actions[0]?.skill).toBe('investigate')
   })
 
   it('investigate skill → no actions (outputs fix, no inference needed)', () => {

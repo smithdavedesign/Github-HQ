@@ -3,7 +3,7 @@
  * Infers which gstack skill to run next based on findings from a completed report.
  */
 
-export type SuggestableSkill = 'ship' | 'investigate'
+export type SuggestableSkill = 'ship' | 'investigate' | 'health' | 'canary' | 'qa-only'
 
 export interface SuggestedAction {
   skill: SuggestableSkill
@@ -88,6 +88,55 @@ const MATCH_RULES: MatchRule[] = [
     keywords: ['test', 'quality', 'coverage', 'tech debt', 'refactor'],
     action: { skill: 'ship', label: 'Address technical debt' },
     objectiveTpl: 'Address the technical debt patterns identified in this week\'s retro for {repo}.',
+  },
+  // ── Phase 57: 5 new skill branches mirroring inferNextSkill in Nexus worker ──
+  {
+    skills: ['investigate'],
+    keywords: ['fix', 'patch', 'should be changed', 'should update', 'race condition', 'memory leak', 'infinite loop'],
+    action: { skill: 'ship', label: 'Ship the fix' },
+    objectiveTpl: 'Implement the fix identified during investigation of {repo} and open a PR.',
+  },
+  {
+    skills: ['canary'],
+    keywords: ['error', 'exception', 'failed', 'timeout'],
+    action: { skill: 'investigate', label: 'Investigate canary error' },
+    objectiveTpl: 'Investigate the error or failure detected by the canary check for {repo}.',
+  },
+  {
+    skills: ['canary'],
+    keywords: ['slow', 'perf', 'latency', 'memory'],
+    action: { skill: 'health', label: 'Run health check' },
+    objectiveTpl: 'Run a full /health check on {repo} to diagnose the performance issue detected by canary.',
+  },
+  {
+    skills: ['qa'],
+    keywords: ['security', 'auth', 'xss', 'injection', 'csrf', 'ssrf'],
+    action: { skill: 'investigate', label: 'Investigate security bug' },
+    objectiveTpl: 'Investigate the security issue found during QA testing of {repo}.',
+  },
+  {
+    skills: ['qa'],
+    keywords: ['bug', 'broken', 'crash', 'regression'],
+    action: { skill: 'ship', label: 'Fix QA-reported bugs' },
+    objectiveTpl: 'Fix the bugs found during QA testing of {repo} and open a PR.',
+  },
+  {
+    skills: ['ship'],
+    keywords: ['deploy', 'production', 'release'],
+    action: { skill: 'canary', label: 'Run canary check' },
+    objectiveTpl: 'Run a canary check on {repo} to verify the deployment looks healthy.',
+  },
+  {
+    skills: ['ship'],
+    keywords: ['test', 'coverage'],
+    action: { skill: 'qa-only', label: 'Run QA checks' },
+    objectiveTpl: 'Run /qa-only on {repo} to check for regressions introduced by the recent changes.',
+  },
+  {
+    skills: ['document-release'],
+    keywords: ['outdated', 'missing', 'incomplete'],
+    action: { skill: 'ship', label: 'Complete documentation' },
+    objectiveTpl: 'Update the outdated or missing documentation found in {repo} and open a PR.',
   },
 ]
 

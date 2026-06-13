@@ -9,6 +9,15 @@ export type GstackSkill =
   | 'health' | 'canary'
   | 'retro'
 
+const VALID_SKILLS = new Set<GstackSkill>([
+  'investigate', 'review', 'qa-only', 'qa',
+  'ship', 'document-release', 'health', 'canary', 'retro',
+])
+
+export function isGstackSkill(value: unknown): value is GstackSkill {
+  return typeof value === 'string' && VALID_SKILLS.has(value as GstackSkill)
+}
+
 export const SKILL_META: Record<GstackSkill, { label: string; phase: string; type: 'report' | 'fix' | 'pr' }> = {
   investigate:        { label: '/investigate',       phase: 'Understand',    type: 'fix'    },
   review:             { label: '/review',            phase: 'Understand',    type: 'report' },

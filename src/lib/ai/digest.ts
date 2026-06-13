@@ -139,18 +139,3 @@ export async function generateDigest(userId: string): Promise<DigestContent> {
 
   return result
 }
-
-export async function getLatestDigest(userId: string): Promise<DigestContent | null> {
-  const latest = await db.query.digests.findFirst({
-    where: eq(digests.userId, userId),
-    orderBy: (d, { desc }) => [desc(d.generatedAt)],
-  })
-
-  if (!latest) return null
-
-  // Only return if generated in the last 8 days
-  const age = Date.now() - (latest.generatedAt?.getTime() ?? 0)
-  if (age > 8 * 24 * 60 * 60 * 1000) return null
-
-  return latest.content as DigestContent
-}

@@ -308,7 +308,7 @@ export default async function SettingsPage() {
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
             Connect to AI-DevOps Nexus to queue advisor actions for agent execution.
-            When configured, a "Queue →" button appears on each advisor action.
+            When configured, a &quot;Queue →&quot; button appears on each advisor action.
           </p>
           <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-2 text-xs font-mono">
             <p className="text-muted-foreground font-sans text-xs font-medium mb-2">Add to your environment variables:</p>

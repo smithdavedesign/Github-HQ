@@ -84,7 +84,7 @@ export function NotificationSettings({ initialWebhookUrl, initialThreshold }: No
           Health alert threshold
         </label>
         <p className="text-xs text-muted-foreground">
-          Notify when a repo's health score drops below this value. Default: 55.
+          Notify when a repo&apos;s health score drops below this value. Default: 55.
         </p>
         <div className="flex items-center gap-3">
           <Input

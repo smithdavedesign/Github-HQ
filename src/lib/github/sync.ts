@@ -107,7 +107,7 @@ export async function syncSingleRepo(
   token: string,
   // GitHub REST API repo shape varies across endpoints (list vs get vs search).
   // Using `any` intentionally — typed narrowly where fields are actually accessed below.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   githubRepo: any,
   existingState: ExistingRepoState = undefined,
 ): Promise<RepoDepInfo | null> {
@@ -419,9 +419,3 @@ function deriveActivityStatus(monthlyCommits: number, quarterlyCommits: number, 
   return 'Actively Maintained'
 }
 
-export async function getActiveScan(userId: string) {
-  return db.query.scans.findFirst({
-    where: and(eq(scans.userId, userId), eq(scans.status, 'running')),
-    orderBy: (s, { desc }) => [desc(s.startedAt)],
-  })
-}

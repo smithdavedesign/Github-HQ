@@ -493,6 +493,27 @@ All 9 portfolio-relevant gstack skills wired end-to-end.
 - [x] Playwright tests: phase labels, type badges, findings expansion, actionable items, Active Agents card
 - [x] Integration test scripts: `gstack-review-check.sh`, `gstack-qa-only-check.sh`, `gstack-retro-check.sh`
 
+### Phase 57 — Gstack Self-Improvement Loop ✅
+RepoHQ now monitors and improves itself without any human intervention, scoped to the RepoHQ repo.
+
+**The loop:**
+```
+Daily 07:00 UTC cron
+  → /api/cron/gstack-self finds "RepoHQ" in tracked repos
+  → queues /health + /qa-only scans to Nexus (parallel)
+  → Nexus runs gstack skills on RepoHQ codebase/site
+  → /api/webhooks/agent-events receives agent_skill_report
+  → findings parsed → up to 3 fix tasks auto-queued back to Nexus
+  → fix PRs created → merged → resync → health score improves
+  → next daily cycle starts with a higher baseline
+```
+
+- [x] `queueGstackSelfScan(userId, repoId, repoFullName, skill)` — in `nexus.ts`; queues `health`/`qa-only` directly to Nexus with `executionMode: 'investigate'`, bypassing the advisor flow; lifecycle-guarded
+- [x] `/api/cron/gstack-self` — new cron route; finds tracked repo matching `GSTACK_SELF_REPO_NAME` env (default `"RepoHQ"`); queues both skills in parallel per user
+- [x] Agent events webhook self-improvement branch — when `agent_skill_report` arrives with `source === 'gstack-self-scan'` and findings exist, converts up to 3 findings into `AdvisorAction`s and queues fix tasks via `after()` (non-blocking); security/health/opportunity classified by finding text
+- [x] Loop prevention — fix tasks dispatched from scan reports do not re-trigger further scans; max 3 fix tasks per cycle; lifecycle guard prevents parallel duplicates
+- [x] `vercel.json` — `0 7 * * *` schedule added (daily at 07:00 UTC)
+
 ### G8 — OpenClaw Orchestration (Fully Agentic Flow)
 
 The vision: RepoHQ stops being a dispatch system and becomes an **AI workforce coordinator**. Instead of a human clicking "Queue" and one agent running on one repo, OpenClaw orchestrates multiple agents in parallel — sharing context, chaining skills, and re-prioritizing in real-time.
@@ -547,6 +568,104 @@ Following the architecture review of G7, three categories of improvements across
 - [x] **Per-taskId polling** — `GstackSkillLauncher` now stores the `taskId` returned by `queueGstackSkill` per skill and polls by `?taskId=...` instead of `?repoId=...`. Eliminates status misattribution when multiple skills run; readies the component for G8 parallel skill execution.
 - [x] **`getSuggestedActions` extracted** — moved from `skill-report-findings.tsx` to `src/lib/skills/suggest-actions.ts`. Tests now import the real function; `gstack-g7.test.ts` was testing a mirrored copy that could silently diverge.
 - [ ] **`SKILLS_BY_PHASE` to nexus-utils** — icon, color, description, and phase grouping data still defined inside `gstack-skill-launcher.tsx`. Moving to `nexus-utils.ts` makes it importable in tests and reduces launcher file size. Planned for G8.
+
+---
+
+### Phase 57 — OpenClaw Integration + Fully Agentic Loop
+
+**Goal:** Replace the bare `claude /skill` spawn with OpenClaw's richer agent runtime, and close the feedback loop so skills auto-chain without human intervention.
+
+#### Why OpenClaw over bare claude
+
+OpenClaw is an open-source local agent platform (local Gateway on port 7070) that natively runs Claude Code + gstack skills with memory persistence and a background heartbeat. The existing Nexus worker already sets `OPENCLAW_SESSION=true` — OpenClaw was the implied execution target all along.
+
+#### Topology
+
+```
+RepoHQ (Vercel) → POST /internal/agent-tasks
+Nexus API (Render) → BullMQ (Render Redis) → Nexus Worker (LOCAL, co-located with OpenClaw)
+  gstack-{skill}.sh → OPENCLAW_GATEWAY_URL set → POST localhost:7070/run
+  OpenClaw Gateway → gstack-openclaw-{skill} → output.json (nexus-agent-output-v1)
+  webhook: agent_skill_report → RepoHQ → auto-queues suggestedNextSkill (1 hop)
+```
+
+Nexus API stays on Render (cloud-accessible). Worker runs locally where OpenClaw lives, consuming Render's Redis queue. Backwards-compatible: all scripts fall back to bare claude CLI when `OPENCLAW_GATEWAY_URL` is unset.
+
+#### 57-A — OpenClaw Local Agent Routing (Nexus)
+
+- [x] `OPENCLAW_LOCAL` boolean + `OPENCLAW_GATEWAY_TOKEN` added to `src/support/config.ts`
+- [x] Both vars passed through to child process env in `src/services/agent-tasks/agent-runner.ts`
+- [x] All 9 gstack-*.sh scripts: when `OPENCLAW_LOCAL=true` and `openclaw` is in PATH, uses `openclaw agent --local --session-id nexus-{taskId}` for memory persistence; falls back to bare claude CLI otherwise
+- [x] `.env.example` updated in both projects with correct Phase 57 vars (`OPENCLAW_LOCAL`, `OPENCLAW_CHAIN_SECRET`)
+- [x] **Note:** OpenClaw gateway is WebSocket (`ws://`), not HTTP REST — `curl POST` approach was corrected to `openclaw agent --local` CLI during iter-2 of improvement loop
+
+#### 57-B — Extended inferNextSkill (Nexus)
+
+- [x] `inferNextSkill()` extracted from `src/worker.ts` to `src/lib/infer-next-skill.ts` — now exported and independently testable
+- [x] Extended from 4 → 9 skill coverage: `investigate`, `canary`, `qa`, `ship`, `document-release` all infer meaningful next skills from findings text
+- [x] Added `stripPassingFindings()` filter (mirrors RepoHQ's `suggest-actions.ts`) — prevents `"0 failed checks"` from triggering `investigate` via false keyword match
+
+#### 57-C — Skill Chain Auto-Queue (RepoHQ)
+
+- [x] `queueSuggestedSkill()` added to `src/lib/actions/nexus.ts` — session-less, tags `contextNotes` with `source:'skill-chain'`, `chainDepth:1`, `parentSkill` to prevent infinite loops
+- [x] Auto-chain `after()` block added to `src/app/api/webhooks/agent-events/route.ts` — fires `queueSuggestedSkill` on `agent_skill_report` when `suggestedNextSkill` is present, `autoDispatchEnabled` is true, and the originating task was not itself a chain
+- [x] `SKILLS_BY_PHASE` events with `source:'skill-chain'` get "Chain" badge in Agent History (UI work tracked under G8)
+
+#### 57-D — OpenClaw Heartbeat Endpoint (RepoHQ)
+
+- [x] `POST /api/agent/chain-skill` route added — auth via `x-openclaw-chain-secret` header; allows local OpenClaw to queue skills without direct Nexus token exposure
+- [ ] OpenClaw heartbeat routine configured to call `get_next_action()` MCP tool → POST to `/api/agent/chain-skill`
+
+#### 57-E — OpenClaw Skill Variants (gstack)
+
+| Skill | OpenClaw variant | Status |
+|-------|-----------------|--------|
+| investigate | gstack-openclaw-investigate | Implemented (Phase 1/2) |
+| retro | gstack-openclaw-retro | Implemented (Phase 1/2) |
+| ship | gstack-openclaw-ship | To author |
+| health | gstack-openclaw-health | Implemented (iter-6) |
+| qa-only | gstack-openclaw-qa-only | To author |
+| review | gstack-openclaw-review | To author |
+| canary | gstack-openclaw-canary | To author |
+| qa | gstack-openclaw-qa | To author |
+| document-release | gstack-openclaw-document-release | To author |
+
+#### The Closed Loop
+
+```
+[Analyze]   Monday cron → generateAdvisor() → top 5 quantified actions
+[Advise]    autoDispatchAdvisorActions() — OR — OpenClaw heartbeat → get_next_action() MCP
+[Execute]   Nexus BullMQ → worker (local) → gstack-{skill}.sh → OpenClaw Gateway
+[Report]    output.json → Nexus → notifyRepoHQ() with suggestedNextSkill
+[Measure]   agent_pr_merged → syncSingleRepo() → actualDelta → accuracy calibration
+[Chain]     suggestedNextSkill + autoDispatchEnabled + !isChained → queueSuggestedSkill() (1 hop)
+[Re-analyze] Next Monday: advisor reads updated health + calibrated accuracy → new top 5
+```
+
+**New env vars:**
+- Nexus: `OPENCLAW_LOCAL`, `OPENCLAW_GATEWAY_TOKEN`
+- RepoHQ: `OPENCLAW_CHAIN_SECRET`
+
+#### Post-ship Self-Improvement Loop (iters 1–11)
+
+A 10-hour automated improvement loop ran over Phase 57 and found/fixed:
+
+| Iter | Category | Finding | Fix |
+|------|----------|---------|-----|
+| 1 | Validation | TypeScript clean, bash syntax clean | n/a |
+| 2 | **CRITICAL** | OpenClaw gateway is WebSocket, not HTTP REST — all 9 scripts had `curl POST` to non-existent endpoint | Replaced with `openclaw agent --local` |
+| 2 | Config | OPENCLAW_GATEWAY_URL (wrong concept) → OPENCLAW_LOCAL (bool flag) | Nexus config.ts rewritten |
+| 3 | Security | Timing attacks in 2 webhook secret comparisons | `crypto.timingSafeEqual` via shared `crypto-utils.ts` |
+| 3 | Security | No runtime skill name validation — unknown string → crash in `SKILL_DEFAULTS[skill]` | `isGstackSkill()` type guard added to `nexus-utils.ts` |
+| 4 | **CRITICAL** | `getSuggestedActions` (RepoHQ UI) and `inferNextSkill` (Nexus) diverged — 5 skill branches missing in UI | Added all 5 branches to `suggest-actions.ts`; 52 new tests |
+| 4 | Refactor | `inferNextSkill` not exported — untestable | Extracted to `src/lib/infer-next-skill.ts` |
+| 5 | Production | render.yaml worker missing 8 env vars (REPOHQ_* + OPENCLAW_*) | Added all to worker service |
+| 5 | Production | TypeScript regression: `handleQueueAction` too narrow after SuggestableSkill extension | Fixed to `GstackSkill` |
+| 6 | Feature | `gstack-openclaw-health` skill not yet written | Written with nexus-agent-output-v1 contract support |
+| 8 | OpenClaw | Auth model: `openclaw --local` uses claude-cli provider (same binary) — no extra auth needed | Documented; added `_OPENCLAW_READY` pre-flight guard to all 9 scripts |
+| 9 | YAML | `OPENCLAW_LOCAL: false` unquoted YAML boolean in render.yaml | `value: 'false'` (quoted string) |
+| 10 | Testing | No test for `_OPENCLAW_READY` routing logic | 23-test bash integration suite |
+| 11 | Logic | `infer-next-skill.ts` lacked `stripPassingFindings()` — "0 failed" would trigger `investigate` | Added positivity filter mirroring `suggest-actions.ts` |
 
 ---
 
@@ -621,3 +740,4 @@ Features required to open RepoHQ to other users. Tracked separately because they
 | `/api/cron/deployments` | 04:00 daily | Uptime checks |
 | `/api/cron/ai-summary` | 05:00 Sunday | Regenerate AI repo summaries |
 | `/api/cron/digest` | 06:00 Monday | Digest + Advisor + CEO Report |
+| `/api/cron/gstack-self` | 07:00 daily | Self-scan RepoHQ with /health + /qa-only → auto-queue fix tasks |

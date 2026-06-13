@@ -385,3 +385,157 @@ export async function autoDispatchAdvisorActions(
   return result
 }
 
+/**
+ * Queues a gstack skill scan (health, qa-only) targeting a specific repo.
+ * Used by the self-improvement cron — bypasses the advisor flow.
+ * Returns the taskId or null if Nexus is not configured / lifecycle blocked.
+ */
+/**
+ * Queues the next skill suggested by a completed skill report — called from the
+ * agent_skill_report webhook handler after() block.
+ * Session-less: accepts explicit userId + repoFullName so it works outside a browser request.
+ * Tags contextNotes with source:'skill-chain' and chainDepth:1 so the webhook handler
+ * can detect and refuse to chain again (prevents infinite loops).
+ * Returns the taskId on success, null on lifecycle block or Nexus error.
+ */
+export async function queueSuggestedSkill(
+  userId: string,
+  repoId: number,
+  repoFullName: string,
+  skill: GstackSkill,
+  objective: string,
+  parentSkill: string,
+): Promise<string | null> {
+  if (!userId || !repoId || !repoFullName) return null  // caller safety — webhook repoName can be undefined
+
+  const config = getNexusConfig()
+  if (!config) return null
+
+  const lifecycle = await getRepoLifecycle(userId, repoId)
+  if (BLOCKING_STAGES.has(lifecycle.stage)) return null
+
+  const defaults = SKILL_DEFAULTS[skill]
+  const riskTier = skill === 'ship' ? 'tier2' : 'tier3'
+
+  try {
+    const res = await fetch(`${config.url}/internal/agent-tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.token}` },
+      body: JSON.stringify({
+        objective,
+        targetRepository:   repoFullName,
+        executionMode:      defaults.executionMode,
+        acceptanceCriteria: defaults.acceptanceCriteria,
+        contextNotes: JSON.stringify({
+          repoHQRepoId:   repoId,
+          repoHQRepoName: repoFullName.split('/').pop() ?? repoFullName,
+          skillName:      skill,
+          riskTier,
+          source:         'skill-chain',
+          chainDepth:     1,
+          parentSkill,
+          autoExecute:    true,
+        }),
+      }),
+    })
+
+    if (!res.ok) {
+      console.warn(`[skill-chain] Nexus error for ${skill} on ${repoFullName}:`, res.status)
+      return null
+    }
+
+    const data = await res.json() as { agentTaskId: string }
+
+    await db.insert(portfolioEvents).values({
+      userId,
+      repoId,
+      eventType: 'agent_task_queued',
+      title:     `Auto-chain queued: /${skill} on ${repoFullName.split('/').pop()} (from /${parentSkill})`,
+      description: objective,
+      metadata: {
+        taskId:     data.agentTaskId,
+        skillName:  skill,
+        source:     'skill-chain',
+        chainDepth: 1,
+        parentSkill,
+        riskTier,
+        nexusUrl:   config.url,
+        autoExecute: true,
+      },
+    })
+
+    return data.agentTaskId
+  } catch (err) {
+    console.warn('[skill-chain] failed to queue suggested skill:', err instanceof Error ? err.message : err)
+    return null
+  }
+}
+
+export async function queueGstackSelfScan(
+  userId: string,
+  repoId: number,
+  repoFullName: string,
+  skill: 'health' | 'qa-only',
+): Promise<string | null> {
+  const config = getNexusConfig()
+  if (!config) return null
+
+  const lifecycle = await getRepoLifecycle(userId, repoId)
+  if (BLOCKING_STAGES.has(lifecycle.stage)) return null
+
+  const objective =
+    skill === 'health'
+      ? `Run /health on ${repoFullName}: compute code quality score, flag test coverage gaps, type errors, dead code, and linter violations.`
+      : `Run /qa-only on ${repoFullName}: systematically test the web application and produce a structured bug report with repro steps and severity.`
+
+  try {
+    const res = await fetch(`${config.url}/internal/agent-tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.token}` },
+      body: JSON.stringify({
+        objective,
+        targetRepository:   repoFullName,
+        executionMode:      'investigate',
+        acceptanceCriteria: [
+          `Produce a structured ${skill} report with findings and severity`,
+          'Post results back via agent_skill_report webhook event',
+        ],
+        contextNotes: JSON.stringify({
+          repoHQRepoId:   repoId,
+          repoHQRepoName: repoFullName.split('/').pop() ?? repoFullName,
+          skillName:      skill,
+          source:         'gstack-self-scan',
+          autoExecute:    true,
+        }),
+      }),
+    })
+
+    if (!res.ok) {
+      console.warn(`[gstack-self] Nexus error for ${skill} on ${repoFullName}:`, res.status)
+      return null
+    }
+
+    const data = await res.json() as { agentTaskId: string }
+
+    await db.insert(portfolioEvents).values({
+      userId,
+      repoId,
+      eventType: 'agent_task_queued',
+      title:     `Self-scan queued: /${skill} on ${repoFullName.split('/').pop()}`,
+      description: objective,
+      metadata: {
+        taskId:      data.agentTaskId,
+        skillName:   skill,
+        source:      'gstack-self-scan',
+        nexusUrl:    config.url,
+        autoExecute: true,
+      },
+    })
+
+    return data.agentTaskId
+  } catch (err) {
+    console.warn('[gstack-self] failed to queue scan:', err instanceof Error ? err.message : err)
+    return null
+  }
+}
+

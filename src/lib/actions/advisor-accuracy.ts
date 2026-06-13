@@ -222,9 +222,3 @@ export async function getMyAccuracyStats(): Promise<AccuracyStats[]> {
   return getAccuracyByImpactType(session.user.id)
 }
 
-/** Session-aware wrapper — called from settings and dashboard server components */
-export async function getMyDowngradedRepos() {
-  const session = await auth()
-  if (!session?.user?.id) return []
-  return getDowngradedRepos(session.user.id)
-}

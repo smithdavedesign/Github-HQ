@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronUp, GitPullRequest, Search, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { queueGstackSkill } from '@/lib/actions/nexus'
+import type { GstackSkill } from '@/lib/actions/nexus-utils'
 import { getSuggestedActions, getDefaultActions, FINDINGS_PREVIEW_COUNT } from '@/lib/skills/suggest-actions'
 import { toast } from 'sonner'
 
@@ -37,7 +38,7 @@ export function SkillReportFindings({ findings, skillName, repoId, repoName, nex
     : []
   const suggestedActions = inferredActions.length > 0 ? inferredActions : defaultActions
 
-  async function handleQueueAction(skill: 'ship' | 'investigate', objective: string) {
+  async function handleQueueAction(skill: GstackSkill, objective: string) {
     setQueuingFor(skill)
     try {
       await queueGstackSkill(repoId, skill, objective)

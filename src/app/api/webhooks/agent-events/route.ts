@@ -4,6 +4,8 @@ import { portfolioEvents, repositories } from '@/lib/db/schema'
 import { eq, and, desc } from 'drizzle-orm'
 import { after } from 'next/server'
 import { dispatchNotification } from '@/lib/notifications/dispatcher'
+import { isGstackSkill } from '@/lib/actions/nexus-utils'
+import { secretsEqual } from '@/lib/crypto-utils'
 
 interface AgentEventPayload {
   eventType: 'agent_task_queued' | 'agent_pr_created' | 'agent_pr_merged' | 'agent_execution_failed' | 'agent_skill_report'
@@ -24,10 +26,10 @@ interface AgentEventPayload {
 }
 
 export async function POST(request: Request) {
-  // Validate webhook secret
+  // Validate webhook secret — constant-time comparison to prevent timing attacks
   const secret = request.headers.get('x-nexus-webhook-secret')
   const expected = process.env.NEXUS_WEBHOOK_SECRET
-  if (!expected || secret !== expected) {
+  if (!expected || !secret || !secretsEqual(secret, expected)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -169,6 +171,9 @@ export async function POST(request: Request) {
 
   // Phase G4: gstack skill completed with findings but no code changes
   if (eventType === 'agent_skill_report') {
+    const queuedMeta = matched.metadata as { source?: string } | null
+    const isSelfScan = queuedMeta?.source === 'gstack-self-scan'
+
     await db.insert(portfolioEvents).values({
       userId,
       repoId,
@@ -184,8 +189,84 @@ export async function POST(request: Request) {
         suggestedNextSkill: payload.suggestedNextSkill ?? null,
         agentName,
         durationMs,
+        source: isSelfScan ? 'gstack-self-scan' : undefined,
       },
     })
+
+    // Self-improvement loop: convert findings from self-scans into queued fix tasks.
+    // Only fires for scans originating from /api/cron/gstack-self (source === 'gstack-self-scan').
+    // Max 3 fix tasks per report cycle to avoid runaway dispatch.
+    if (isSelfScan && repoId && (payload.findings?.length ?? 0) > 0) {
+      after(async () => {
+        try {
+          const { queueAdvisorActionForUser } = await import('@/lib/actions/nexus')
+          const findings = (payload.findings ?? []).slice(0, 3)
+          const repoShortName = repoName ?? 'RepoHQ'
+
+          for (const finding of findings) {
+            const impactType: 'health' | 'security' | 'opportunity' =
+              /secret|vuln|cve|injection|xss|auth/i.test(finding)
+                ? 'security'
+                : /opportunity|feature|perf|speed|ux/i.test(finding)
+                ? 'opportunity'
+                : 'health'
+
+            await queueAdvisorActionForUser(userId, {
+              repoId,
+              repoName:        repoShortName,
+              action:          `Fix: ${finding}`,
+              impactType,
+              effort:          'quick',
+              estimatedImpact: 'Improve code quality score',
+              reasoning:       `Gstack self-scan (/${payload.skillName ?? 'skill'}) finding: ${finding}`,
+            }).catch(err =>
+              console.warn('[gstack-self] fix task queue failed:', err instanceof Error ? err.message : err)
+            )
+          }
+        } catch (err) {
+          console.error('[gstack-self] self-improve dispatch failed:', err)
+        }
+      })
+    }
+  }
+
+  // OpenClaw skill-chain: when a skill report includes a suggestedNextSkill, automatically
+  // queue it — but only when the user has autoDispatch enabled AND the originating task was
+  // not itself a chain (chainDepth check prevents infinite loops).
+  if (eventType === 'agent_skill_report' && payload.suggestedNextSkill && repoId && userId) {
+    const queuedMeta = matched?.metadata as { source?: string; chainDepth?: number } | null
+    const isChained = queuedMeta?.source === 'skill-chain'
+    const nextSkill = payload.suggestedNextSkill
+
+    // Validate the suggested skill is a known GstackSkill before acting on it
+    if (!isChained && isGstackSkill(nextSkill)) {
+      after(async () => {
+        try {
+          const { users: usersTable } = await import('@/lib/db/schema')
+          const { eq: eqDrizzle } = await import('drizzle-orm')
+          const user = await db.query.users.findFirst({
+            where: eqDrizzle(usersTable.id, userId),
+            columns: { autoDispatchEnabled: true },
+          })
+          if (!user?.autoDispatchEnabled) return
+
+          const { queueSuggestedSkill } = await import('@/lib/actions/nexus')
+          const topFindings = (payload.findings ?? []).slice(0, 3).join('; ')
+          const objective = `Auto-chain from /${payload.skillName ?? 'skill'}: ${topFindings.slice(0, 200)}`
+
+          await queueSuggestedSkill(
+            userId,
+            repoId,
+            repoName ?? '',
+            nextSkill,
+            objective,
+            payload.skillName ?? 'unknown',
+          )
+        } catch (err) {
+          console.warn('[skill-chain] auto-queue failed (non-fatal):', err instanceof Error ? err.message : err)
+        }
+      })
+    }
   }
 
   return NextResponse.json({ ok: true, correlated: true })

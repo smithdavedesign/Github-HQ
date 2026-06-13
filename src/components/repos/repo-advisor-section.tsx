@@ -56,7 +56,7 @@ export function RepoAdvisorSection({ actions, nexusEnabled, generatedAt, accurac
         <Sparkles className="w-6 h-6 mx-auto mb-2 text-muted-foreground/40" />
         <p className="text-sm font-medium text-muted-foreground">No advisor recommendations for this repo this cycle</p>
         <p className="text-xs text-muted-foreground mt-1">
-          This repo didn't make the top 5 highest-impact actions.{' '}
+          This repo didn&apos;t make the top 5 highest-impact actions.{' '}
           <Link href="/" className="underline hover:text-foreground">
             View full advisor on dashboard →
           </Link>

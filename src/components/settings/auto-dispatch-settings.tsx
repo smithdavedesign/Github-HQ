@@ -96,7 +96,7 @@ export function AutoDispatchSettings({
                 <SelectItem value="all">All efforts (including 1+ day tasks)</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-[10px] text-muted-foreground">Substantial tasks are high-risk — "Quick only" is recommended to start.</p>
+            <p className="text-[10px] text-muted-foreground">Substantial tasks are high-risk — &quot;Quick only&quot; is recommended to start.</p>
           </div>
 
           {/* Max per run */}

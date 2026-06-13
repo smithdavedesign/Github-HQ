@@ -48,7 +48,7 @@ export function AnalysisTab({ analysis, analysisAt }: AnalysisTabProps) {
         <Sparkles className="w-8 h-8 text-muted-foreground mx-auto" />
         <p className="text-sm font-medium">No analysis yet</p>
         <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-          Click <strong>Analyze with Claude</strong> above to run a deep analysis of this repository's architecture, security, code quality, and tech debt.
+          Click <strong>Analyze with Claude</strong> above to run a deep analysis of this repository&apos;s architecture, security, code quality, and tech debt.
         </p>
       </div>
     )

@@ -167,7 +167,7 @@ test.describe('Accuracy stats DB computation (Phase 52)', () => {
         AND title LIKE ${'%' + prefix + '%'}
     `
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const successes = events.filter((e: any) => ((e.metadata as { actualDelta?: number })?.actualDelta ?? 0) > 0).length
 
     expect(successes).toBe(2)
@@ -192,9 +192,9 @@ test.describe('Accuracy stats DB computation (Phase 52)', () => {
         AND title LIKE ${'%' + prefix + '%'}
     `
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const lowConf = events.filter((e: any) => (e.metadata as { deltaConfidence?: string })?.deltaConfidence === 'low').length
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const highConf = events.filter((e: any) => (e.metadata as { deltaConfidence?: string })?.deltaConfidence === 'high').length
 
     expect(lowConf).toBe(1)

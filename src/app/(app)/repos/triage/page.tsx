@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
@@ -79,20 +80,20 @@ export default async function TriagePage({ searchParams }: PageProps) {
             </p>
           </div>
           {!showAll && hidden > 0 && (
-            <a
+            <Link
               href="/repos/triage?all=1"
               className="text-xs text-muted-foreground hover:text-foreground underline shrink-0 mt-1"
             >
               + {hidden} low-risk hidden
-            </a>
+            </Link>
           )}
           {showAll && (
-            <a
+            <Link
               href="/repos/triage"
               className="text-xs text-muted-foreground hover:text-foreground underline shrink-0 mt-1"
             >
               Show candidates only
-            </a>
+            </Link>
           )}
         </div>
       </div>
