@@ -24,8 +24,10 @@ export async function checkDeploymentUrl(url: string): Promise<CheckResult> {
     const responseTimeMs = Date.now() - start
     const sslValid = url.startsWith('https://')
 
+    // Treat 2xx and 3xx as "up". With redirect: 'manual', a 301/302 means the
+    // site is responding normally — following the redirect could expose SSRF.
     let status: 'healthy' | 'slow' | 'down'
-    if (!response.ok) {
+    if (response.status >= 400) {
       status = 'down'
     } else if (responseTimeMs > 3000) {
       status = 'slow'

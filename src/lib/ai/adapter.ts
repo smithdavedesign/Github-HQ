@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import { decrypt } from '@/lib/crypto-utils'
 export type { LLMProvider } from './providers'
 export { PROVIDER_LABELS, PROVIDER_MODELS, PROVIDER_KEY_HINTS } from './providers'
 import type { LLMProvider } from './providers'
@@ -110,8 +111,10 @@ export async function getLLMAdapter(userId: string): Promise<LLMAdapter> {
     provider === 'openai'    ? process.env.OPENAI_API_KEY :
     provider === 'gemini'    ? process.env.GEMINI_API_KEY : null
 
-  // Priority: per-provider key > legacy single key > env var
-  const apiKey = keys[provider] || user?.llmApiKey || envKey || null
+  // Priority: per-provider key > legacy single key > env var. Both key fields may be
+  // AES-GCM encrypted (enc: prefix) or legacy plaintext — decrypt handles both.
+  const rawKey = keys[provider] || user?.llmApiKey || null
+  const apiKey = rawKey ? decrypt(rawKey) : envKey || null
 
   if (!apiKey) {
     throw new Error(

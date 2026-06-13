@@ -4,6 +4,7 @@ import { DrizzleAdapter } from '@auth/drizzle-adapter'
 import { db } from '@/lib/db'
 import { accounts, sessions, users, verificationTokens } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import { encrypt } from '@/lib/crypto-utils'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: DrizzleAdapter(db, {
@@ -39,7 +40,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         await db
           .update(users)
           .set({
-            githubToken: account.access_token ?? undefined,
+            githubToken: account.access_token ? encrypt(account.access_token) : undefined,
             githubLogin: githubProfile?.login ?? undefined,
             githubId: githubProfile?.id ?? undefined,
           })

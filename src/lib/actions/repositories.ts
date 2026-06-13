@@ -7,6 +7,7 @@ import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, techStack, deployments, securityFindings } from '@/lib/db/schema'
 import { eq, and, sql, inArray, desc } from 'drizzle-orm'
 import { portfolioEvents } from '@/lib/db/schema'
+import { decrypt } from '@/lib/crypto-utils'
 
 /**
  * Wraps DB calls in server actions so raw Neon/Drizzle errors are caught,
@@ -195,7 +196,7 @@ export async function archiveRepoOnGitHub(repoId: number): Promise<{ alreadyArch
   if (!user?.githubToken) throw new Error('No GitHub token')
 
   const { createOctokit } = await import('@/lib/github/client')
-  const octokit = createOctokit(user.githubToken)
+  const octokit = createOctokit(decrypt(user.githubToken))
 
   await octokit.rest.repos.update({ owner: repo.owner, repo: repo.name, archived: true })
 
@@ -488,7 +489,7 @@ export async function resyncRepo(repoId: number) {
 
   if (!user?.githubToken || !repo) throw new Error('Not found')
 
-  const token = user.githubToken
+  const token = decrypt(user.githubToken)
   const githubRepoStub = {
     id: repo.githubId,
     name: repo.name,

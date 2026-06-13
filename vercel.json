@@ -1,9 +1,5 @@
 {
   "crons": [
-    { "path": "/api/cron/sync",        "schedule": "0 2 * * 0" },
-    { "path": "/api/cron/security",    "schedule": "0 3 * * 0" },
-    { "path": "/api/cron/deployments", "schedule": "0 4 * * 0" },
-    { "path": "/api/cron/ai-summary",  "schedule": "0 5 * * 0" },
-    { "path": "/api/cron/digest",      "schedule": "0 6 * * 1" }
+    { "path": "/api/cron/gstack-self", "schedule": "0 7 * * *" }
   ]
 }

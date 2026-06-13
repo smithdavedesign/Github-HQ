@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { portfolioEvents, repositoryMetrics, users } from '@/lib/db/schema'
 import { eq, and, inArray, gte, lte } from 'drizzle-orm'
+import { decrypt } from '@/lib/crypto-utils'
 
 /**
  * Polls GitHub API for all open agent PRs (created but not yet merged in portfolio_events).
@@ -41,7 +42,7 @@ export async function checkMergedAgentPRs(userId: string): Promise<number> {
   if (openPRs.length === 0) return 0
 
   const { createOctokit } = await import('@/lib/github/client')
-  const octokit = createOctokit(user.githubToken)
+  const octokit = createOctokit(decrypt(user.githubToken))
 
   let detected = 0
 

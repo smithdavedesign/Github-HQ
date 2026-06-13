@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { deployments, repositories, users } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { checkDeploymentUrl } from '@/lib/monitoring/uptime'
+import { decrypt } from '@/lib/crypto-utils'
 import { revalidatePath } from 'next/cache'
 
 export async function addDeploymentUrl(repoId: number, url: string, name?: string, provider?: string) {
@@ -96,7 +97,7 @@ export async function discoverRepoDeployments(repoId: number) {
 
   const { createOctokit } = await import('@/lib/github/client')
   const { discoverDeployments } = await import('@/lib/github/deployments')
-  const octokit = createOctokit(user.githubToken)
+  const octokit = createOctokit(decrypt(user.githubToken))
 
   const discovered = await discoverDeployments(octokit, repo.owner, repo.name)
 

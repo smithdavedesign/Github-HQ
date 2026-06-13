@@ -11,6 +11,7 @@ import { calculateValuation } from '@/lib/health/valuation'
 import { computePortfolioEvents, computeInternalDeps } from '@/lib/health/events'
 import type { RepoDepInfo } from '@/lib/health/events'
 import { eq, and } from 'drizzle-orm'
+import { decrypt } from '@/lib/crypto-utils'
 
 type ExistingRepoState = {
   id: number
@@ -18,6 +19,29 @@ type ExistingRepoState = {
   isArchived: boolean | null
   metrics: { healthScore: number | null } | null
 } | null | undefined
+
+// Minimal typed shape covering all fields accessed by syncSingleRepo.
+// Compatible with the listForAuthenticatedUser response as well as the hand-crafted
+// stubs passed by the on-demand sync paths.
+interface GithubRepoInput {
+  id: number
+  name: string
+  full_name: string
+  owner: { login: string }
+  visibility?: string | null
+  private?: boolean
+  description?: string | null
+  default_branch?: string | null
+  homepage?: string | null
+  stargazers_count?: number | null
+  forks_count?: number | null
+  language?: string | null
+  archived?: boolean | null
+  fork?: boolean | null
+  pushed_at?: string | null
+  created_at: string | null
+  updated_at: string | null
+}
 
 // Pause between repos if GitHub rate limit is getting low
 async function respectRateLimit(octokit: Awaited<ReturnType<typeof createOctokit>>) {
@@ -42,7 +66,7 @@ export async function syncAllRepos(userId: string): Promise<void> {
   const user = await db.query.users.findFirst({ where: eq(users.id, userId) })
   if (!user?.githubToken) throw new Error('No GitHub token found for user')
 
-  const octokit = createOctokit(user.githubToken)
+  const octokit = createOctokit(decrypt(user.githubToken))
 
   const [scan] = await db.insert(scans).values({ userId, type: 'sync', status: 'running' }).returning()
 
@@ -70,7 +94,7 @@ export async function syncAllRepos(userId: string): Promise<void> {
       try {
         await respectRateLimit(octokit)
         const depInfo = await syncSingleRepo(
-          userId, user.githubToken, repo,
+          userId, decrypt(user.githubToken), repo,
           existingByGithubId.get(repo.id) ?? null,
         )
         if (depInfo) depInfos.push(depInfo)
@@ -105,10 +129,7 @@ export async function syncAllRepos(userId: string): Promise<void> {
 export async function syncSingleRepo(
   userId: string,
   token: string,
-  // GitHub REST API repo shape varies across endpoints (list vs get vs search).
-  // Using `any` intentionally — typed narrowly where fields are actually accessed below.
-   
-  githubRepo: any,
+  githubRepo: GithubRepoInput,
   existingState: ExistingRepoState = undefined,
 ): Promise<RepoDepInfo | null> {
   const octokit = createOctokit(token)
@@ -140,8 +161,8 @@ export async function syncSingleRepo(
     language: githubRepo.language,
     isArchived: githubRepo.archived ?? false,
     isFork: githubRepo.fork ?? false,
-    createdAt: new Date(githubRepo.created_at),
-    updatedAt: new Date(githubRepo.updated_at),
+    createdAt: githubRepo.created_at ? new Date(githubRepo.created_at) : new Date(),
+    updatedAt: githubRepo.updated_at ? new Date(githubRepo.updated_at) : new Date(),
     syncedAt: new Date(),
   }
 

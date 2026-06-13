@@ -113,6 +113,9 @@ export default async function PublicPortfolioPage({ params }: Props) {
               </span>
               <span className="flex items-center gap-1.5">
                 Avg health <HealthBadge score={avgHealth} />
+                <span className="text-xs text-muted-foreground">
+                  ({avgHealth >= 80 ? 'good' : avgHealth >= 55 ? 'fair' : 'developing'})
+                </span>
               </span>
               <span className="text-muted-foreground">
                 {healthy} healthy

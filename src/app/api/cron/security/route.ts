@@ -4,6 +4,7 @@ import { users } from '@/lib/db/schema'
 import { syncSecurityForUser } from '@/lib/github/security'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { isNotNull } from 'drizzle-orm'
+import { decrypt } from '@/lib/crypto-utils'
 
 export async function GET(request: Request) {
   if (!verifyCronSecret(request)) {
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
   for (const user of allUsers) {
     if (!user.githubToken) continue
     try {
-      await syncSecurityForUser(user.id, user.githubToken)
+      await syncSecurityForUser(user.id, decrypt(user.githubToken))
       processed++
     } catch {
       // Continue

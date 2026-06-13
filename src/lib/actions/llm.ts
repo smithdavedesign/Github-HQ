@@ -6,6 +6,7 @@ import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { testLLMKey } from '@/lib/ai/adapter'
 import type { LLMProvider } from '@/lib/ai/adapter'
+import { encrypt, decrypt } from '@/lib/crypto-utils'
 
 type LLMKeys = Partial<Record<LLMProvider, string>>
 
@@ -65,7 +66,7 @@ export async function saveLLMSettings(provider: LLMProvider, apiKey: string) {
   })
 
   const existingKeys = ((current?.llmKeys ?? {}) as LLMKeys)
-  const updatedKeys: LLMKeys = { ...existingKeys, [provider]: apiKey }
+  const updatedKeys: LLMKeys = { ...existingKeys, [provider]: encrypt(apiKey) }
 
   const [updated] = await db.update(users)
     .set({ llmProvider: provider, llmKeys: updatedKeys })
@@ -75,7 +76,7 @@ export async function saveLLMSettings(provider: LLMProvider, apiKey: string) {
   if (!updated) throw new Error('Failed to save — could not find your user account')
 
   const saved = ((updated.llmKeys ?? {}) as LLMKeys)[provider]
-  if (saved !== apiKey) throw new Error('Key was not persisted correctly — please try again')
+  if (!saved || decrypt(saved) !== apiKey) throw new Error('Key was not persisted correctly — please try again')
 
   const { revalidatePath } = await import('next/cache')
   revalidatePath('/settings')

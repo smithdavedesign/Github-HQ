@@ -5,7 +5,7 @@ import { eq, and, desc } from 'drizzle-orm'
 import { after } from 'next/server'
 import { dispatchNotification } from '@/lib/notifications/dispatcher'
 import { isGstackSkill } from '@/lib/actions/nexus-utils'
-import { secretsEqual } from '@/lib/crypto-utils'
+import { secretsEqual, decrypt } from '@/lib/crypto-utils'
 
 interface AgentEventPayload {
   eventType: 'agent_task_queued' | 'agent_pr_created' | 'agent_pr_merged' | 'agent_execution_failed' | 'agent_skill_report'
@@ -132,7 +132,7 @@ export async function POST(request: Request) {
             description: null, default_branch: 'main', homepage: null, stargazers_count: 0,
             forks_count: 0, language: null, archived: false, fork: false,
             pushed_at: new Date().toISOString(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
-          await syncSingleRepo(userId, user.githubToken, repoStub)
+          await syncSingleRepo(userId, decrypt(user.githubToken), repoStub)
         } catch (err) {
           console.error('[agent-webhook] resync failed:', err)
         }
