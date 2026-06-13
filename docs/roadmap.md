@@ -591,13 +591,11 @@ Nexus API (Render) → BullMQ (Render Redis) → Nexus Worker (LOCAL, co-located
 
 Nexus API stays on Render (cloud-accessible). Worker runs locally where OpenClaw lives, consuming Render's Redis queue. Backwards-compatible: all scripts fall back to bare claude CLI when `OPENCLAW_GATEWAY_URL` is unset.
 
-#### 57-A — OpenClaw Local Agent Routing (Nexus)
+#### 57-A — Agent Skill Routing (Nexus)
 
-- [x] `OPENCLAW_LOCAL` boolean + `OPENCLAW_GATEWAY_TOKEN` added to `src/support/config.ts`
-- [x] Both vars passed through to child process env in `src/services/agent-tasks/agent-runner.ts`
-- [x] All 9 gstack-*.sh scripts: when `OPENCLAW_LOCAL=true` and `openclaw` is in PATH, uses `openclaw agent --local --session-id nexus-{taskId}` for memory persistence; falls back to bare claude CLI otherwise
-- [x] `.env.example` updated in both projects with correct Phase 57 vars (`OPENCLAW_LOCAL`, `OPENCLAW_CHAIN_SECRET`)
-- [x] **Note:** OpenClaw gateway is WebSocket (`ws://`), not HTTP REST — `curl POST` approach was corrected to `openclaw agent --local` CLI during iter-2 of improvement loop
+- [x] G6 dynamic skill routing: `skillName` in `contextNotes` selects the correct gstack script
+- [x] All 9 gstack-*.sh scripts invoke `claude /skill --print --dangerously-skip-permissions`
+- [x] OpenClaw routing removed — see Phase 58-G notes
 
 #### 57-B — Extended inferNextSkill (Nexus)
 
@@ -611,40 +609,23 @@ Nexus API stays on Render (cloud-accessible). Worker runs locally where OpenClaw
 - [x] Auto-chain `after()` block added to `src/app/api/webhooks/agent-events/route.ts` — fires `queueSuggestedSkill` on `agent_skill_report` when `suggestedNextSkill` is present, `autoDispatchEnabled` is true, and the originating task was not itself a chain
 - [x] `SKILLS_BY_PHASE` events with `source:'skill-chain'` get "Chain" badge in Agent History (UI work tracked under G8)
 
-#### 57-D — OpenClaw Heartbeat Endpoint (RepoHQ)
+#### 57-D — Skill Chain Auto-Queue (RepoHQ)
 
-- [x] `POST /api/agent/chain-skill` route added — auth via `x-openclaw-chain-secret` header; allows local OpenClaw to queue skills without direct Nexus token exposure
-- [ ] OpenClaw heartbeat routine configured to call `get_next_action()` MCP tool → POST to `/api/agent/chain-skill`
-
-#### 57-E — OpenClaw Skill Variants (gstack)
-
-| Skill | OpenClaw variant | Status |
-|-------|-----------------|--------|
-| investigate | gstack-openclaw-investigate | Implemented (Phase 1/2) |
-| retro | gstack-openclaw-retro | Implemented (Phase 1/2) |
-| ship | gstack-openclaw-ship | To author |
-| health | gstack-openclaw-health | Implemented (iter-6) |
-| qa-only | gstack-openclaw-qa-only | To author |
-| review | gstack-openclaw-review | To author |
-| canary | gstack-openclaw-canary | To author |
-| qa | gstack-openclaw-qa | To author |
-| document-release | gstack-openclaw-document-release | To author |
+- [x] `queueSuggestedSkill()` in `nexus.ts` — queues suggested follow-up skill to Nexus with `source:'skill-chain'` and `chainDepth:1`
+- [x] Auto-chain `after()` block in `agent-events/route.ts` — fires when `suggestedNextSkill` present, `autoDispatchEnabled` true, and originating task was not itself a chain
+- [x] `chain-skill` heartbeat endpoint removed — see Phase 58-G
 
 #### The Closed Loop
 
 ```
 [Analyze]   Monday cron → generateAdvisor() → top 5 quantified actions
-[Advise]    autoDispatchAdvisorActions() — OR — OpenClaw heartbeat → get_next_action() MCP
-[Execute]   Nexus BullMQ → worker (local) → gstack-{skill}.sh → OpenClaw Gateway
+[Advise]    autoDispatchAdvisorActions() — OR — get_next_action() MCP
+[Execute]   Nexus BullMQ (concurrency 3) → worker (Render) → gstack-{skill}.sh → claude /skill
 [Report]    output.json → Nexus → notifyRepoHQ() with suggestedNextSkill
 [Measure]   agent_pr_merged → syncSingleRepo() → actualDelta → accuracy calibration
 [Chain]     suggestedNextSkill + autoDispatchEnabled + !isChained → queueSuggestedSkill() (1 hop)
 [Re-analyze] Next Monday: advisor reads updated health + calibrated accuracy → new top 5
 ```
-
-**New env vars:**
-- Nexus: `OPENCLAW_LOCAL`, `OPENCLAW_GATEWAY_TOKEN`
-- RepoHQ: `OPENCLAW_CHAIN_SECRET`
 
 #### Post-ship Self-Improvement Loop (iters 1–11)
 
@@ -693,6 +674,26 @@ Security audit findings addressed after external review.
 #### 58-E — Agent/Developer Experience
 - [x] `AGENTS.md` populated with encryption rules, `'use server'` constraints, cron conventions, and hard rules that caused prior production breaks
 - [x] Vercel cron (`vercel.json`) reduced to `gstack-self` only — removed 5 entries duplicated by GitHub Actions
+
+#### 58-G — OpenClaw Removal + BullMQ Hardening
+
+OpenClaw is not publicly available and required running the Nexus worker locally (killing the "wake up to merged PRs" promise). Removed entirely; BullMQ now provides parallel execution natively.
+
+**Removed:**
+- [x] `OPENCLAW_LOCAL` + `OPENCLAW_GATEWAY_TOKEN` from Nexus `config.ts` and `agent-runner.ts`
+- [x] OpenClaw routing block (`_OPENCLAW_READY` pre-flight + `openclaw agent --local` branch) from all 9 gstack scripts — bare `claude /skill` is now the only execution path
+- [x] `render.yaml` OpenClaw env var entries
+- [x] `/api/agent/chain-skill` heartbeat endpoint (RepoHQ)
+- [x] `OPENCLAW_CHAIN_SECRET` from RepoHQ `.env.example`
+
+**BullMQ hardening (Nexus `src/worker.ts`):**
+- [x] `concurrency: 3` — 3 agent tasks run in parallel; each spawns an independent subprocess, no shared state risk
+- [x] `lockDuration: 60_000` — 60 s lock, auto-renewed every 30 s; prevents false stall detection on long agent runs
+- [x] `stalledInterval: 30_000` — check for stalled jobs every 30 s
+- [x] `maxStalledCount: 1` — fail immediately on stall; `failed` handler fires and notifies RepoHQ to clear the lifecycle guard
+- [x] `worker.on('error', ...)` — logs Redis/connection errors without crashing the process
+- [x] `worker.on('stalled', ...)` — logs stall events for observability
+- [x] Graceful shutdown: 30 s grace period via `setTimeout` + `worker.close(true)` force-close fallback; SIGINT/SIGTERM both handled
 
 #### 58-F — AI Summary Per-Repo Queue
 - [x] `?enqueueRepos=1` endpoint creates one `ai_summary_jobs` row per repo across all users

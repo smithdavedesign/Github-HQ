@@ -230,9 +230,9 @@ export async function POST(request: Request) {
     }
   }
 
-  // OpenClaw skill-chain: when a skill report includes a suggestedNextSkill, automatically
-  // queue it — but only when the user has autoDispatch enabled AND the originating task was
-  // not itself a chain (chainDepth check prevents infinite loops).
+  // Skill-chain: when a skill report includes a suggestedNextSkill, automatically queue it —
+  // but only when autoDispatch is enabled AND the originating task was not itself a chain
+  // (chainDepth check prevents infinite loops).
   if (eventType === 'agent_skill_report' && payload.suggestedNextSkill && repoId && userId) {
     const queuedMeta = matched?.metadata as { source?: string; chainDepth?: number } | null
     const isChained = queuedMeta?.source === 'skill-chain'
