@@ -255,6 +255,12 @@ export async function POST(request: Request) {
           })
           if (!user?.autoDispatchEnabled) return
 
+          const repo = await db.query.repositories.findFirst({
+            where: eq(repositories.id, repoId),
+            columns: { fullName: true },
+          })
+          if (!repo) return
+
           const { queueSuggestedSkill } = await import('@/lib/actions/nexus')
           const topFindings = (payload.findings ?? []).slice(0, 3).join('; ')
           const objective = `Auto-chain from /${payload.skillName ?? 'skill'}: ${topFindings.slice(0, 200)}`
@@ -262,7 +268,7 @@ export async function POST(request: Request) {
           await queueSuggestedSkill(
             userId,
             repoId,
-            repoName ?? '',
+            repo.fullName,
             nextSkill,
             objective,
             payload.skillName ?? 'unknown',
