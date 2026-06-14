@@ -63,7 +63,7 @@ export const users = pgTable('users', {
   image: text('image'),
   githubId: integer('github_id').unique(),
   githubLogin: text('github_login'),
-  githubToken: text('github_token'), // stored encrypted by Auth.js adapter
+  githubToken: text('github_token'), // AES-256-GCM encrypted via crypto-utils.ts (enc: prefix), set in auth.ts events.signIn
   lastSyncedAt: timestamp('last_synced_at', { mode: 'date' }),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
   // Phase 7: public portfolio

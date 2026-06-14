@@ -311,7 +311,7 @@ See the [gstack Integration Roadmap](docs/roadmap.md#gstack-integration-roadmap)
 ## Testing
 
 ```bash
-npm test              # Vitest unit tests (595+ tests, 36 files)
+npm test              # Vitest unit tests (675+ tests, 37 files)
 npm run test:e2e      # Playwright e2e tests (requires dev server)
 npm run test:all      # both
 npm run typecheck     # TypeScript strict check

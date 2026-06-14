@@ -1,6 +1,12 @@
 # RepoHQ — Honest Review
 *Reviewed June 13, 2026. Sources: full repo read-through + live site at https://repohq.vercel.app.*
 
+> **Status: RESOLVED.** Every Critical/High/Medium item in the Prioritised Recommendations
+> table below (encryption at rest, CI build gate, uptime false-positive, `ai_summary_jobs`
+> index, `githubRepo: any`, empty `CLAUDE.md`/`AGENTS.md`, cron trigger ambiguity) was
+> addressed in **Phase 58 — Security Hardening & Code Quality** (see `docs/roadmap.md`).
+> Kept here as a historical snapshot of the audit that drove that phase.
+
 ---
 
 ## TL;DR
