@@ -213,8 +213,8 @@ export function GstackSkillLauncher({ repoId, repoName, repoHomepage, defaultObj
               </span>
               <div className="flex-1 h-px bg-border/20" />
               {isOpen
-                ? <ChevronUp className="w-3 h-3 text-muted-foreground/30 group-hover:text-muted-foreground/50 shrink-0" />
-                : <ChevronRight className="w-3 h-3 text-muted-foreground/30 group-hover:text-muted-foreground/50 shrink-0" />}
+                ? <ChevronUp className="w-3 h-3 text-muted-foreground/60 group-hover:text-muted-foreground/80 shrink-0" />
+                : <ChevronRight className="w-3 h-3 text-muted-foreground/60 group-hover:text-muted-foreground/80 shrink-0" />}
             </button>
 
             {isOpen && (
@@ -275,7 +275,7 @@ export function GstackSkillLauncher({ repoId, repoName, repoHomepage, defaultObj
                           </span>
                         )}
                         {status === 'idle' && !history && (
-                          <ChevronDown className={`w-3 h-3 text-muted-foreground/40 ml-auto shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                          <ChevronDown className={`w-3 h-3 text-muted-foreground/60 ml-auto shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                         )}
                       </button>
 
