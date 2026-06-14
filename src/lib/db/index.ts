@@ -23,4 +23,11 @@ export const db = new Proxy({} as ReturnType<typeof createDb>, {
     if (!_db) _db = createDb()
     return (_db as unknown as Record<string | symbol, unknown>)[prop]
   },
+  // Auth.js's DrizzleAdapter uses `is(db, PgDatabase)` (instanceof-based) to
+  // validate the db instance. Without this trap, `instanceof` falls back to
+  // the proxy target's prototype (Object.prototype) and the check fails.
+  getPrototypeOf() {
+    if (!_db) _db = createDb()
+    return Reflect.getPrototypeOf(_db)
+  },
 })
