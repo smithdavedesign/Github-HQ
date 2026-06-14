@@ -125,8 +125,10 @@ export async function GET(request: Request) {
       await db.update(aiSummaryJobs).set({ status: 'done', updatedAt: new Date() }).where(eq(aiSummaryJobs.id, job.id))
       return NextResponse.json({ ok: true, processed: 1, jobId: job.id })
     } catch (err) {
-      await db.update(aiSummaryJobs).set({ status: 'failed', attempts: (job as any).attempts + 1, error: String(err), updatedAt: new Date() }).where(eq(aiSummaryJobs.id, job.id))
-      return NextResponse.json({ error: String(err) }, { status: 500 })
+      const errMsg = err instanceof Error ? err.message : String(err)
+      console.error('[cron/ai-summary] job failed', { jobId: job.id, userId: job.userId, error: errMsg })
+      await db.update(aiSummaryJobs).set({ status: 'failed', attempts: (job.attempts ?? 0) + 1, error: errMsg, updatedAt: new Date() }).where(eq(aiSummaryJobs.id, job.id))
+      return NextResponse.json({ error: errMsg }, { status: 500 })
     }
   }
 

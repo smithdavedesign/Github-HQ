@@ -44,7 +44,7 @@ interface GithubRepoInput {
 }
 
 // Pause between repos if GitHub rate limit is getting low
-async function respectRateLimit(octokit: Awaited<ReturnType<typeof createOctokit>>) {
+export async function respectRateLimit(octokit: Awaited<ReturnType<typeof createOctokit>>) {
   try {
     const { data } = await octokit.rest.rateLimit.get()
     const remaining = data.rate.remaining

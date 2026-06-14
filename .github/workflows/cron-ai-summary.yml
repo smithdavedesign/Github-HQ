@@ -8,7 +8,7 @@ on:
 jobs:
   ai-summary:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 55
     steps:
       - name: Regenerate AI repo summaries (enqueue per-repo and process loop)
         run: |
@@ -18,12 +18,16 @@ jobs:
           curl -s -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "$BASE_URL/api/cron/ai-summary?enqueueRepos=1" | jq -r '.' || true
 
           echo "Processing jobs (one job per invocation)..."
-          for i in $(seq 1 1000); do
+          # Cap at 500 iterations (≈500s + curl overhead ≈ 12 min) to stay inside the
+          # 55-min workflow budget even on large portfolios. Any remaining jobs are picked
+          # up on the next Sunday run — each job marks itself done, so the queue drains
+          # incrementally across runs.
+          for i in $(seq 1 500); do
             res=$(curl -s -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "$BASE_URL/api/cron/ai-summary?process=1")
             echo "$res"
             processed=$(echo "$res" | jq -r '.processed // 0')
             if [ "$processed" -eq 0 ]; then
-              echo "No more jobs to process. Exiting."
+              echo "No more jobs to process. Exiting after $i iterations."
               break
             fi
             sleep 1

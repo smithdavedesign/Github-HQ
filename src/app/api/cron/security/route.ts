@@ -17,15 +17,20 @@ export async function GET(request: Request) {
   })
 
   let processed = 0
+  let failed = 0
   for (const user of allUsers) {
     if (!user.githubToken) continue
     try {
       await syncSecurityForUser(user.id, decrypt(user.githubToken))
       processed++
-    } catch {
-      // Continue
+    } catch (err) {
+      failed++
+      console.error('[cron/security] user scan failed', {
+        userId: user.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 
-  return NextResponse.json({ ok: true, processed })
+  return NextResponse.json({ ok: true, processed, failed, total: allUsers.length })
 }

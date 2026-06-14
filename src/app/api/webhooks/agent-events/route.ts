@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { portfolioEvents, repositories } from '@/lib/db/schema'
-import { eq, and, desc } from 'drizzle-orm'
+import { eq, and, desc, sql } from 'drizzle-orm'
 import { after } from 'next/server'
 import { dispatchNotification } from '@/lib/notifications/dispatcher'
 import { isGstackSkill } from '@/lib/actions/nexus-utils'
@@ -40,22 +40,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
+  // Cap findings to 50 items to prevent memory exhaustion on malformed payloads
+  if (Array.isArray(payload.findings)) {
+    payload.findings = payload.findings.slice(0, 50)
+  }
+
   const { eventType, taskId, repoName, prUrl, summary, agentName, durationMs, filesChanged, costUsd } = payload
 
-  // Find the queued task event to correlate userId + repoId.
-  // Scoped to a single user's events when possible — taskIds are unique per Nexus instance
-  // so a cross-user scan is not needed. We scan the last 50 for performance.
-  const allQueued = await db.query.portfolioEvents.findMany({
-    where: eq(portfolioEvents.eventType, 'agent_task_queued'),
-    orderBy: [desc(portfolioEvents.occurredAt)],
-    limit: 50,
-    columns: { userId: true, repoId: true, metadata: true },
-  })
+  // Correlate taskId → userId/repoId via JSONB containment query.
+  // More reliable than scanning a fixed window of recent events — taskIds are UUIDs
+  // so false matches are essentially impossible, and this works regardless of queue depth.
+  const matchedRows = await db
+    .select({ userId: portfolioEvents.userId, repoId: portfolioEvents.repoId, metadata: portfolioEvents.metadata })
+    .from(portfolioEvents)
+    .where(and(
+      eq(portfolioEvents.eventType, 'agent_task_queued'),
+      sql`${portfolioEvents.metadata} @> ${JSON.stringify({ taskId })}::jsonb`,
+    ))
+    .orderBy(desc(portfolioEvents.occurredAt))
+    .limit(1)
 
-  const matched = allQueued.find(e => {
-    const meta = e.metadata as { taskId?: string } | null
-    return meta?.taskId === taskId
-  })
+  const matched = matchedRows[0] ?? null
 
   if (!matched) {
     // Still accept the webhook, just can't correlate accuracy

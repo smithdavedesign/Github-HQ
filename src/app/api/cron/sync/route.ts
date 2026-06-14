@@ -23,31 +23,29 @@ export async function GET(request: Request) {
   })
 
   let processed = 0
+  let failed = 0
   for (const user of allUsers) {
     try {
-      // Detect CI failures on open agent PRs and queue fix tasks — before merge
-      // checker so a PR that fails CI and merges in the same window is handled cleanly
       await checkCIFailuresOnAgentPRs(user.id)
-      // Detect merged agent PRs and capture healthBefore — must run before sync
-      // so the pre-merge health score is recorded accurately
       await checkMergedAgentPRs(user.id)
-
       await syncAllRepos(user.id)
-
-      // After sync, health scores are fresh — compute actualDelta for merged PRs
       await Promise.allSettled([
         snapshotHealthScores(user.id),
         snapshotPortfolioScore(user.id),
         refreshGoalProgress(user.id),
-        syncStripeMrr(user.id), // pass userId directly — cron has no session
+        syncStripeMrr(user.id),
         resolveActualDeltas(user.id),
         checkHealthThresholdAlerts(user.id),
       ])
       processed++
-    } catch {
-      // Continue to next user
+    } catch (err) {
+      failed++
+      console.error('[cron/sync] user sync failed', {
+        userId: user.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 
-  return NextResponse.json({ ok: true, processed })
+  return NextResponse.json({ ok: true, processed, failed, total: allUsers.length })
 }

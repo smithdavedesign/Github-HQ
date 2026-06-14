@@ -695,6 +695,29 @@ OpenClaw is not publicly available and required running the Nexus worker locally
 - [x] `worker.on('stalled', ...)` — logs stall events for observability
 - [x] Graceful shutdown: 30 s grace period via `setTimeout` + `worker.close(true)` force-close fallback; SIGINT/SIGTERM both handled
 
+#### 58-H — Security, Reliability & Production Hardening
+
+Findings from a full security + production flow audit.
+
+**CI Checker hardening:**
+- [x] Guard against null `repoId` on `agent_pr_created` events — skip PRs with no repo handle
+- [x] SHA dedup: don't re-record `agent_ci_failed` for the same commit SHA across sync cycles; write a new event only after a fix commit changes the head SHA
+- [x] Check `queueCIFix()` return value — log a warning if Nexus is unreachable instead of silently dropping the error; lifecycle correctly shows `ci_failing` until next cycle retries
+- [x] Rate limit: call `respectRateLimit()` before each GitHub PR + check-runs API call in the loop (exported from `src/lib/github/sync.ts`)
+
+**Cron observability:**
+- [x] `cron/sync`, `cron/security`, `cron/ai-summary`: all now return `{ ok, processed, failed, total }` and log per-user errors with `console.error` — previously swallowed all failures silently
+
+**Webhook reliability:**
+- [x] `agent-events`: replace 50-event global scan for taskId correlation with PostgreSQL JSONB containment query (`metadata @> '{"taskId":"..."}'::jsonb`) — works regardless of event volume
+- [x] `agent-events`: cap `findings` array to 50 items before processing to prevent memory exhaustion on malformed payloads
+
+**Workflow reliability:**
+- [x] `cron-ai-summary.yml`: increase `timeout-minutes` 15 → 55; cap process loop at 500 iterations (~12 min of work) to leave headroom before the timeout
+
+**UI accuracy:**
+- [x] Public portfolio: hide "Avg health" badge when `sorted.length === 0` (all repos archived) — previously showed a misleading 0/100 score
+
 #### 58-F — AI Summary Per-Repo Queue
 - [x] `?enqueueRepos=1` endpoint creates one `ai_summary_jobs` row per repo across all users
 - [x] GitHub Actions cron now enqueues all repos then polls `?process=1` in a loop until the queue drains

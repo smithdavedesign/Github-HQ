@@ -208,7 +208,7 @@ goals                     user-set portfolio targets
 portfolio_events          personal changelog + agent event log
   user_id, repo_id FK (nullable), event_type, title, description, metadata jsonb, dedup_key, occurred_at
   event_type (changelog): repo_created | repo_archived | mrr_changed | health_milestone | first_revenue | manual_milestone | session_complete
-  event_type (agent):     agent_task_queued | agent_pr_created | agent_pr_merged | agent_execution_failed | agent_attempt | agent_skill_report
+  event_type (agent):     agent_task_queued | agent_pr_created | agent_pr_merged | agent_execution_failed | agent_attempt | agent_skill_report | agent_ci_failed | agent_needs_human
   dedup_key: unique per (userId, dedupKey) — onConflictDoNothing prevents duplicate one-time events
 
 notifications             push notification inbox
@@ -292,6 +292,10 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 **Token Efficiency** — Two caches reduce redundant token spend as agent volume grows: (1) `repositories.cached_brief JSONB` — written by `get_coding_brief` on first call, served from cache within 6h, cleared on sync. (2) `digests.advisor_repo_snapshot JSONB` — the compiled repoLines prompt text, reused for 23h, invalidated on sync.
 
 **gstack Integration** — G1–G6 fully shipped. `skillName` in Nexus `contextNotes` selects the correct gstack script in the Nexus worker. `OPENCLAW_SESSION=true` enables real skill invocation. Learnings from `~/.gstack/projects/{slug}/learnings.jsonl` are injected before each run. Checkpoint mode (`continuous`) keeps WIP commits alive through crashes. `agent_skill_report` webhook event stores findings + `suggestedNextSkill`; `get_coding_brief` surfaces the last skill report findings. See `docs/gstack-findings.md` for the running log.
+
+**CI Feedback Loop (Phase 55)** — `checkCIFailuresOnAgentPRs(userId)` runs before `checkMergedAgentPRs` in every 6h sync. It polls GitHub check-runs on open agent PRs. SHA deduplication prevents re-recording the same failure on every sync cycle — a new `agent_ci_failed` event is written only when the head SHA changes (i.e., a new fix commit was pushed). After MAX_CI_FIX_ATTEMPTS (3) failures it escalates to `agent_needs_human` and fires an in-app notification. The Nexus worker's `prepareRepositoryWorkspace` accepts `existingBranch` from `contextNotes` — if set, it checks out that branch instead of creating a new `nexus/auto-*` branch, so the fix commit lands on the same PR.
+
+**Webhook taskId correlation** — The agent-events webhook uses a PostgreSQL JSONB containment query (`metadata @> '{"taskId":"..."}'::jsonb`) to correlate Nexus task IDs to portfolio_events rows. This replaces the previous 50-event global scan, which could miss events in high-throughput scenarios.
 
 **Pure function extraction** — All scoring, simulation, event derivation, and dep-analysis logic lives in plain `.ts` files with no DB imports. Server actions and sync code call these functions. This pattern makes everything testable without DB mocks and keeps server action files thin.
 

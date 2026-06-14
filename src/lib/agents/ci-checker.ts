@@ -2,23 +2,28 @@ import { db } from '@/lib/db'
 import { portfolioEvents, users } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { decrypt } from '@/lib/crypto-utils'
+import { respectRateLimit } from '@/lib/github/sync'
 
 const MAX_CI_FIX_ATTEMPTS = 3
 
-type PRMeta      = { taskId?: string; prUrl?: string; branchName?: string }
-type CIFailMeta  = { taskId?: string; attempt?: number }
+type PRMeta      = { taskId?: string; prUrl?: string }
+type CIFailMeta  = { taskId?: string; sha?: string; attempt?: number }
 type TerminalMeta = { taskId?: string }
 
 /**
- * Polls GitHub check-runs on open agent PRs. For each PR with a failing CI check:
- *  - If < 3 prior fix attempts: records agent_ci_failed + queues a CI fix task to Nexus
- *    with contextNotes.existingBranch so the agent pushes onto the same PR branch.
- *  - If >= 3 prior attempts: records agent_needs_human + dispatches an in-app notification.
+ * Polls GitHub check-runs on open agent PRs. For each PR with a failing check:
  *
- * Runs in the 6h sync cron before checkMergedAgentPRs so the CI failure is recorded
- * before a potential concurrent merge closes the PR.
+ *  - SHA dedup: skip if we already recorded a ci_failed event for this exact
+ *    commit SHA — prevents re-recording the same failure on every 6h sync until
+ *    a fix commit is pushed.
+ *  - If < MAX_CI_FIX_ATTEMPTS prior fix attempts: records agent_ci_failed and
+ *    queues a CI fix task to Nexus with contextNotes.existingBranch so the agent
+ *    pushes onto the same PR branch.
+ *  - If >= MAX_CI_FIX_ATTEMPTS: records agent_needs_human and fires an in-app
+ *    notification.
  *
- * Returns the number of PRs with detected CI failures.
+ * Runs in the 6h sync cron before checkMergedAgentPRs.
+ * Returns the number of PRs with newly detected CI failures.
  */
 export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number> {
   const user = await db.query.users.findFirst({
@@ -41,7 +46,7 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
     columns: { id: true, eventType: true, repoId: true, metadata: true },
   })
 
-  // Build set of taskIds that are already terminal (merged / failed / escalated)
+  // Build set of taskIds that are already terminal
   const terminalTaskIds = new Set<string>()
   for (const e of events) {
     if (
@@ -54,9 +59,11 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
     }
   }
 
-  // Open PRs: agent_pr_created with no terminal event for the same taskId
+  // Open PRs: agent_pr_created with no terminal event AND a known repoId.
+  // Skip null-repoId events — we can't attribute CI failures without a repo handle.
   const openPREvents = events.filter(e => {
     if (e.eventType !== 'agent_pr_created') return false
+    if (!e.repoId) return false
     const m = e.metadata as PRMeta | null
     return m?.taskId && !terminalTaskIds.has(m.taskId) && m?.prUrl
   })
@@ -69,7 +76,7 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
 
   for (const prEvent of openPREvents) {
     const meta = prEvent.metadata as PRMeta | null
-    if (!meta?.prUrl || !meta?.taskId) continue
+    if (!meta?.prUrl || !meta?.taskId || !prEvent.repoId) continue
 
     const match = meta.prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/)
     if (!match) continue
@@ -77,15 +84,25 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
     const prNumber = parseInt(prNumberStr, 10)
 
     try {
-      const { data: prData } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber })
+      await respectRateLimit(octokit)
 
-      // Skip merged or closed PRs — handled by the merge checker
+      const { data: prData } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber })
       if (prData.merged_at || prData.state === 'closed') continue
 
       const headSha    = prData.head.sha
       const branchName = prData.head.ref
 
-      // Check-runs for the head commit
+      // SHA dedup: if we already recorded a ci_failed for this exact commit,
+      // don't record again until a new commit is pushed (i.e., the fix landed).
+      const alreadyRecordedForSha = events.some(e => {
+        if (e.eventType !== 'agent_ci_failed') return false
+        const m = e.metadata as CIFailMeta | null
+        return m?.taskId === meta.taskId && m?.sha === headSha
+      })
+      if (alreadyRecordedForSha) continue
+
+      await respectRateLimit(octokit)
+
       const { data: checksData } = await octokit.rest.checks.listForRef({
         owner, repo, ref: headSha, per_page: 50,
       })
@@ -95,7 +112,7 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
       )
       if (failedChecks.length === 0) continue
 
-      // Count prior CI fix attempts for this taskId
+      // Count distinct fix attempts (distinct SHAs that failed) for this taskId
       const priorAttempts = events.filter(e => {
         if (e.eventType !== 'agent_ci_failed') return false
         const m = e.metadata as CIFailMeta | null
@@ -107,7 +124,6 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
       const errorSummary = (firstFailed.output?.summary ?? `${checkName} failed`).slice(0, 500)
 
       if (priorAttempts >= MAX_CI_FIX_ATTEMPTS) {
-        // Already tried enough — escalate and notify once
         const alreadyEscalated = events.some(e => {
           if (e.eventType !== 'agent_needs_human') return false
           const m = e.metadata as TerminalMeta | null
@@ -117,7 +133,7 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
 
         await db.insert(portfolioEvents).values({
           userId,
-          repoId: prEvent.repoId ?? null,
+          repoId: prEvent.repoId,
           eventType: 'agent_needs_human',
           title: `Agent PR needs human review: ${repo}#${prNumber}`,
           description: `CI failed ${priorAttempts} times without a working fix`,
@@ -136,7 +152,7 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
           eventType: 'agent_failed',
           title: `Agent PR needs human review: ${repo}#${prNumber}`,
           body: `CI failed ${priorAttempts} times. Manual review required. ${meta.prUrl}`,
-          repoId: prEvent.repoId ?? null,
+          repoId: prEvent.repoId,
           metadata: { prUrl: meta.prUrl, taskId: meta.taskId },
         })
 
@@ -144,10 +160,12 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
         continue
       }
 
-      // Record the CI failure
+      // Record the CI failure, then attempt to queue a fix.
+      // Write the event first so the lifecycle shows ci_failing immediately,
+      // even if Nexus is temporarily down (the next cycle will retry queueing).
       await db.insert(portfolioEvents).values({
         userId,
-        repoId: prEvent.repoId ?? null,
+        repoId: prEvent.repoId,
         eventType: 'agent_ci_failed',
         title: `CI failed on agent PR: ${repo}#${prNumber}`,
         description: errorSummary,
@@ -162,17 +180,24 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
         },
       })
 
-      // Queue a CI fix task that resumes on the existing branch
       const { queueCIFix } = await import('@/lib/actions/nexus')
-      await queueCIFix(
+      const queued = await queueCIFix(
         userId,
-        prEvent.repoId ?? 0,
+        prEvent.repoId,
         `${owner}/${repo}`,
         branchName,
         prNumber,
         errorSummary,
         meta.taskId,
       )
+
+      if (!queued) {
+        // Nexus is down — the ci_failed event is written and the lifecycle shows
+        // ci_failing. The next sync cycle will retry queueing (SHA dedup prevents
+        // double-recording). Not counted as detected since no action was taken.
+        console.warn(`[ci-checker] Nexus unavailable for ${owner}/${repo}#${prNumber} — will retry next cycle`)
+        continue
+      }
 
       detected++
     } catch (err) {
