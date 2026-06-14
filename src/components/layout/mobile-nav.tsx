@@ -28,6 +28,21 @@ export function MobileNav() {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
 
+  function isActive(href: string) {
+    if (href === '/') return pathname === '/'
+    if (pathname === href) return true
+    if (!pathname.startsWith(href + '/')) return false
+
+    // Prefer the most specific matching nav item (e.g. /repos/triage over /repos).
+    const hasMoreSpecificMatch = navItems.some((item) => {
+      if (item.href === href) return false
+      if (!item.href.startsWith(href + '/')) return false
+      return pathname === item.href || pathname.startsWith(item.href + '/')
+    })
+
+    return !hasMoreSpecificMatch
+  }
+
   return (
     <>
       <Button
@@ -56,7 +71,7 @@ export function MobileNav() {
               Navigation
             </p>
             {navItems.map(({ href, icon: Icon, label }) => {
-              const active = href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/')
+              const active = isActive(href)
               return (
                 <Link
                   key={href}

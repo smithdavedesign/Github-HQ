@@ -41,6 +41,30 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Vercel cron (`vercel.json`) is fallback only. Do not add duplicate schedules for the same route.
 - All cron routes are guarded by `verifyCronSecret()`.
 
+## Worker bootstrap (Nexus / CI worktrees)
+
+**Before running any check or making any fix, the agent MUST install dependencies.**
+The Nexus worktree is a bare git clone — there are no `node_modules`.
+Skipping this step means `tsc`, `eslint`, `vitest`, and `next build` are all unavailable
+and any health or fix task will silently fail.
+
+A universal bootstrap script is included at the repo root:
+
+```bash
+# Step 1 — bootstrap (detects stack, installs deps, verifies toolchain)
+bash bootstrap.sh
+
+# Step 2 — now run checks / make fixes
+npm run typecheck
+npm run lint
+npm test
+```
+
+`bootstrap.sh` handles npm / yarn / pnpm / bun / Python / Ruby / Go / Rust — it
+detects the right package manager from lockfiles and exits non-zero on failure.
+
+If `bootstrap.sh` fails, **stop and report** rather than proceeding with missing tooling.
+
 ## Build & test commands
 
 ```
@@ -50,6 +74,26 @@ npm test            # vitest unit tests
 npm run build       # next build — MUST pass before shipping
 npm run dead-code   # knip unused exports
 ```
+
+### Environment variables required for `npm run build`
+
+`next build` evaluates edge-runtime bundles at build time.  If the following
+variables are absent the build will fail with a database or auth error:
+
+| Variable | Purpose | Dummy value safe for CI |
+|---|---|---|
+| `DATABASE_URL` | Neon Postgres connection string | any non-empty string |
+| `AUTH_SECRET` | Auth.js session signing | any 32-char string |
+| `GITHUB_CLIENT_ID` | GitHub OAuth | any string |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth | any string |
+| `CRON_SECRET` | Cron route guard | any string |
+| `ENCRYPTION_KEY` | AES-256 key (must be 64 hex chars) | `0000…0001` (64 chars) |
+| `NEXT_PUBLIC_APP_URL` | Redirect URLs | `http://localhost:3000` |
+
+The GitHub Actions `build` job in `.github/workflows/ci.yml` already injects all
+of these as dummy values.  **Vercel preview deployments** must also have these set
+under _Project → Settings → Environment Variables_ (target: Preview + Production).
+Without them, Vercel's preview build will fail on edge routes that import `@/lib/db`.
 
 ## Hard rules
 
