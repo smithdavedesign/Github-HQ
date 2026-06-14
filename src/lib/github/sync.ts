@@ -8,7 +8,7 @@ import { createOctokit } from './client'
 import { scanRepository } from './scanner'
 import { calculateHealthScore, calculateOpportunityScore, calculateArchiveScore } from '@/lib/health/scoring'
 import { calculateValuation } from '@/lib/health/valuation'
-import { computePortfolioEvents, computeInternalDeps } from '@/lib/health/events'
+import { computePortfolioEvents, computeInternalDeps, computeExternalDeps, shouldInvalidateCachedBrief } from '@/lib/health/events'
 import type { RepoDepInfo } from '@/lib/health/events'
 import { eq, and } from 'drizzle-orm'
 import { decrypt } from '@/lib/crypto-utils'
@@ -108,6 +108,11 @@ export async function syncAllRepos(userId: string): Promise<void> {
     // Phase 29: cross-reference internal deps using pure function
     if (depInfos.length > 1) {
       await resolveInternalDeps(depInfos)
+    }
+
+    // Phase 33: tag prominent shared external deps for the dependency graph
+    if (depInfos.length > 0) {
+      await resolveExternalDeps(depInfos)
     }
 
     await db.update(users).set({ lastSyncedAt: new Date() }).where(eq(users.id, userId))
@@ -385,10 +390,13 @@ export async function syncSingleRepo(
       .onConflictDoNothing()
   }
 
-  // Invalidate the cached brief so the next get_coding_brief call regenerates fresh context
-  await db.update(repositories)
-    .set({ cachedBrief: null })
-    .where(eq(repositories.id, repoId))
+  // Phase 54 T3: only invalidate the cached brief on high-signal events — otherwise
+  // the cache survives routine syncs and get_coding_brief avoids a ~25K-token regen.
+  if (shouldInvalidateCachedBrief(eventsToInsert)) {
+    await db.update(repositories)
+      .set({ cachedBrief: null })
+      .where(eq(repositories.id, repoId))
+  }
 
   return { repoId, repoName: githubRepo.name, packageName: stackData.packageName, depNames: stackData.allDepNames }
 }
@@ -401,6 +409,19 @@ async function resolveInternalDeps(depInfos: RepoDepInfo[]) {
       db
         .update(repositoryMetrics)
         .set({ internalDeps: internalDeps.length > 0 ? internalDeps : null })
+        .where(eq(repositoryMetrics.repoId, repoId))
+    )
+  )
+}
+
+async function resolveExternalDeps(depInfos: RepoDepInfo[]) {
+  const depsMap = computeExternalDeps(depInfos)
+  if (depsMap.size === 0) return
+  await Promise.all(
+    Array.from(depsMap.entries()).map(([repoId, externalDeps]) =>
+      db
+        .update(repositoryMetrics)
+        .set({ externalDeps: externalDeps.length > 0 ? externalDeps : null })
         .where(eq(repositoryMetrics.repoId, repoId))
     )
   )

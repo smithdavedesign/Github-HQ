@@ -253,8 +253,12 @@ export async function updateRepoTags(repoId: number, tags: string[]) {
   )
 }
 
-/** Phase 23 (deferred) — used internally; no external callers yet */
-async function getPortfolioCostBreakdown() {
+/**
+ * Aggregates cost_items across all of the user's repos into a portfolio-wide
+ * breakdown by label, falling back to monthlyCost -> 'Other' for repos with
+ * no itemized costs. Returns breakdown sorted desc by amount, plus the total.
+ */
+export async function getPortfolioCostBreakdown() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 

@@ -302,7 +302,7 @@ bash tests/integration/gstack-qa-only-check.sh     # /qa-only — bug hunt
 bash tests/integration/gstack-retro-check.sh       # /retro — weekly analysis
 ```
 
-**G8 (planned):** OpenClaw orchestration for parallel multi-agent execution with skill chaining.
+**G8 (planned):** 2-hop skill auto-chaining on top of the existing BullMQ parallel execution (concurrency: 3).
 
 See the [gstack Integration Roadmap](docs/roadmap.md#gstack-integration-roadmap) for full details.
 

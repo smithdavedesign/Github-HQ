@@ -1,5 +1,5 @@
 import { toNum } from '@/lib/utils'
-import { getDashboardStats, getRepositories, getRepositoriesSlim, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk, getProfileRecommendations, getShipItWarnings, getAgentStats } from '@/lib/actions/repositories'
+import { getDashboardStats, getRepositories, getRepositoriesSlim, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk, getProfileRecommendations, getShipItWarnings, getAgentStats, getPortfolioCostBreakdown } from '@/lib/actions/repositories'
 import { getPortfolioScoreTrend } from '@/lib/health/portfolio-snapshot'
 import { getWeeklyDiff } from '@/lib/actions/weekly-diff'
 import { MetricCard } from '@/components/dashboard/metric-card'
@@ -19,6 +19,7 @@ import { ProfileOptimizerCard } from '@/components/dashboard/profile-optimizer-c
 import { ShipItCard } from '@/components/dashboard/ship-it-card'
 import { AgentImpactCard } from '@/components/dashboard/agent-impact-card'
 import { ActiveAgentsCard } from '@/components/dashboard/active-agents-card'
+import { PortfolioCostCard } from '@/components/dashboard/portfolio-cost-card'
 import { getActiveAgentSummary } from '@/lib/actions/repositories'
 import { CollapsibleSection } from '@/components/dashboard/collapsible-section'
 import { getMyAccuracyStats } from '@/lib/actions/advisor-accuracy'
@@ -47,7 +48,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats, activeAgents] = await Promise.all([
+  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats, activeAgents, costBreakdown] = await Promise.all([
     getDashboardStats(),
     getRepositoriesSlim(),
     getOpportunityData(),
@@ -67,6 +68,7 @@ export default async function DashboardPage() {
     getAgentStats(),
     getMyAccuracyStats(),
     getActiveAgentSummary(),
+    getPortfolioCostBreakdown(),
   ])
 
   const topRepos = repos
@@ -105,14 +107,17 @@ export default async function DashboardPage() {
       </div>
 
       {hasRevenue && (
-        <div>
-          <h2 className="text-sm font-medium text-muted-foreground mb-3">Portfolio P&amp;L</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-            <MetricCard title="Monthly Revenue" value={`$${stats.totalMrr.toFixed(0)}`} icon={DollarSign} variant="success" description={`${stats.revenueCount} revenue-generating repos`} />
-            <MetricCard title="ARR" value={`$${stats.totalArr.toFixed(0)}`} icon={TrendingUp} variant="success" description="Annual recurring revenue" />
-            <MetricCard title="Monthly Cost" value={`$${stats.totalCost.toFixed(0)}`} icon={Banknote} variant={stats.totalCost > 0 ? 'warning' : 'default'} description="Total infrastructure cost" />
-            <MetricCard title="Monthly Profit" value={`$${stats.monthlyProfit.toFixed(0)}`} icon={stats.monthlyProfit >= 0 ? TrendingUp : TrendingDown} variant={stats.monthlyProfit >= 0 ? 'success' : 'danger'} description={stats.totalMrr > 0 ? `${Math.round((stats.monthlyProfit / stats.totalMrr) * 100)}% margin` : undefined} />
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-sm font-medium text-muted-foreground mb-3">Portfolio P&amp;L</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+              <MetricCard title="Monthly Revenue" value={`$${stats.totalMrr.toFixed(0)}`} icon={DollarSign} variant="success" description={`${stats.revenueCount} revenue-generating repos`} />
+              <MetricCard title="ARR" value={`$${stats.totalArr.toFixed(0)}`} icon={TrendingUp} variant="success" description="Annual recurring revenue" />
+              <MetricCard title="Monthly Cost" value={`$${stats.totalCost.toFixed(0)}`} icon={Banknote} variant={stats.totalCost > 0 ? 'warning' : 'default'} description="Total infrastructure cost" />
+              <MetricCard title="Monthly Profit" value={`$${stats.monthlyProfit.toFixed(0)}`} icon={stats.monthlyProfit >= 0 ? TrendingUp : TrendingDown} variant={stats.monthlyProfit >= 0 ? 'success' : 'danger'} description={stats.totalMrr > 0 ? `${Math.round((stats.monthlyProfit / stats.totalMrr) * 100)}% margin` : undefined} />
+            </div>
           </div>
+          <PortfolioCostCard breakdown={costBreakdown.breakdown} total={costBreakdown.total} />
         </div>
       )}
 

@@ -18,6 +18,7 @@ describe('BLOCKING_STAGES', () => {
   it('does NOT include terminal stages', () => {
     expect(BLOCKING_STAGES.has('idle')).toBe(false)
     expect(BLOCKING_STAGES.has('merged')).toBe(false)
+    expect(BLOCKING_STAGES.has('rejected')).toBe(false)
     expect(BLOCKING_STAGES.has('failed')).toBe(false)
     expect(BLOCKING_STAGES.has('timed_out')).toBe(false)
   })
@@ -27,6 +28,7 @@ describe('TERMINAL_STAGES', () => {
   it('includes idle and all completion states', () => {
     expect(TERMINAL_STAGES.has('idle')).toBe(true)
     expect(TERMINAL_STAGES.has('merged')).toBe(true)
+    expect(TERMINAL_STAGES.has('rejected')).toBe(true)
     expect(TERMINAL_STAGES.has('failed')).toBe(true)
     expect(TERMINAL_STAGES.has('timed_out')).toBe(true)
   })
@@ -49,7 +51,7 @@ describe('TERMINAL_STAGES', () => {
 
 // ─── Lifecycle derivation logic (mirrors getRepoLifecycle internals) ──────────
 
-type EventType = 'agent_task_queued' | 'agent_pr_created' | 'agent_pr_merged' | 'agent_execution_failed'
+type EventType = 'agent_task_queued' | 'agent_pr_created' | 'agent_pr_merged' | 'agent_pr_rejected' | 'agent_execution_failed'
 interface Event { eventType: EventType; metadata: Record<string, unknown>; occurredAt: Date }
 
 function deriveStage(events: Event[], taskId: string): string {
@@ -57,6 +59,7 @@ function deriveStage(events: Event[], taskId: string): string {
   const forTask = events.filter(e => e.metadata.taskId === taskId)
   if (forTask.find(e => e.eventType === 'agent_pr_merged'))       return 'merged'
   if (forTask.find(e => e.eventType === 'agent_execution_failed')) return 'failed'
+  if (forTask.find(e => e.eventType === 'agent_pr_rejected'))     return 'rejected'
   if (forTask.find(e => e.eventType === 'agent_pr_created'))      return 'pr_ready'
   const queued = forTask.find(e => e.eventType === 'agent_task_queued')
   if (!queued) return 'idle'
@@ -67,7 +70,7 @@ function deriveStage(events: Event[], taskId: string): string {
 
 const makeEvent = (type: EventType, taskId: string, ageMs = 0): Event => ({
   eventType: type,
-  metadata: { taskId, prUrl: type === 'agent_pr_created' || type === 'agent_pr_merged' ? 'https://github.com/test/r/pull/1' : undefined },
+  metadata: { taskId, prUrl: type === 'agent_pr_created' || type === 'agent_pr_merged' || type === 'agent_pr_rejected' ? 'https://github.com/test/r/pull/1' : undefined },
   occurredAt: new Date(Date.now() - ageMs),
 })
 
@@ -120,6 +123,15 @@ describe('lifecycle stage derivation', () => {
     expect(deriveStage(events, 'task-1')).toBe('merged')
   })
 
+  it('returns rejected after pr_created + pr_rejected, not pr_ready', () => {
+    const events = [
+      makeEvent('agent_task_queued', 'task-1', 600_000),
+      makeEvent('agent_pr_created',  'task-1', 300_000),
+      makeEvent('agent_pr_rejected', 'task-1', 60_000),
+    ]
+    expect(deriveStage(events, 'task-1')).toBe('rejected')
+  })
+
   it('ignores events for a different taskId', () => {
     const events = [
       makeEvent('agent_task_queued',  'task-1', 300_000),
@@ -151,6 +163,10 @@ describe('blocking stage guard', () => {
 
   it('allows retry when task failed', () => {
     expect(shouldBlock('failed')).toBe(false)
+  })
+
+  it('allows retry when PR was rejected (closed without merging)', () => {
+    expect(shouldBlock('rejected')).toBe(false)
   })
 
   it('allows retry when task timed out', () => {

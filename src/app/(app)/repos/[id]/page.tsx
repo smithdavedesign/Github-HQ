@@ -44,7 +44,7 @@ export default async function RepoDetailPage({ params }: Props) {
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.repoId, repoId),
-        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_execution_failed', 'agent_attempt', 'agent_skill_report']),
+        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected', 'agent_execution_failed', 'agent_attempt', 'agent_skill_report']),
       ),
       orderBy: [desc(portfolioEvents.occurredAt)],
       limit: 30,
@@ -457,13 +457,15 @@ export default async function RepoDetailPage({ params }: Props) {
                 const isQueued   = event.eventType === 'agent_task_queued'
                 const isCreated  = event.eventType === 'agent_pr_created'
                 const isMerged   = event.eventType === 'agent_pr_merged'
+                const isRejected = event.eventType === 'agent_pr_rejected'
                 const isFailed   = event.eventType === 'agent_execution_failed'
                 const isAttempt  = event.eventType === 'agent_attempt'
                 const isReport   = event.eventType === 'agent_skill_report'
                 const attemptOutcome = isAttempt ? (meta?.outcome as string | undefined) : undefined
 
-                const Icon = isMerged ? GitMerge : isCreated ? GitPullRequest : isQueued ? Clock : Bot
+                const Icon = isMerged ? GitMerge : isRejected ? XCircle : isCreated ? GitPullRequest : isQueued ? Clock : Bot
                 const iconColor = isMerged ? 'text-emerald-500'
+                  : isRejected ? 'text-muted-foreground'
                   : isCreated ? 'text-blue-500'
                   : isFailed ? 'text-red-400'
                   : isReport ? 'text-violet-500'
@@ -474,6 +476,7 @@ export default async function RepoDetailPage({ params }: Props) {
                 const label = isQueued ? 'Queued'
                   : isCreated ? 'PR Created'
                   : isMerged ? 'Merged'
+                  : isRejected ? 'PR Closed — Not Merged'
                   : isReport ? `/${(meta?.skillName as string) ?? 'skill'} Report`
                   : isAttempt ? `Attempt: ${attemptOutcome ?? '?'}`
                   : 'Failed'

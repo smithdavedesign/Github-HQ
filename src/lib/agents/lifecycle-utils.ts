@@ -9,6 +9,7 @@ export type AgentLifecycleStage =
   | 'ci_failing'    // PR open, CI failed — auto-fix being queued
   | 'needs_human'   // CI failed 3 times — human intervention required
   | 'merged'
+  | 'rejected'      // PR closed without merging — terminal, not actionable
   | 'report_ready'
   | 'failed'
   | 'timed_out'
@@ -20,7 +21,7 @@ export const BLOCKING_STAGES = new Set<AgentLifecycleStage>([
 
 /** Terminal stages — allow new queue or retry */
 export const TERMINAL_STAGES = new Set<AgentLifecycleStage>([
-  'idle', 'merged', 'report_ready', 'failed', 'timed_out', 'needs_human',
+  'idle', 'merged', 'rejected', 'report_ready', 'failed', 'timed_out', 'needs_human',
 ])
 
 export const LIFECYCLE_TIMEOUT_MS = 15 * 60 * 1000  // 15 minutes

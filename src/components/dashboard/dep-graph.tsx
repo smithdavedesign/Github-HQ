@@ -11,8 +11,12 @@ export interface DepNode {
 }
 
 export interface DepEdge {
-  source: number  // repoId that depends on target
-  target: number  // repoId being depended on
+  source: number  // repoId that depends on target (or either side for 'external')
+  target: number  // repoId being depended on (or either side for 'external')
+  /** 'internal' (default): one portfolio repo depends on another. 'external': repos share a prominent third-party dep. */
+  type?: 'internal' | 'external'
+  /** For 'external' edges: comma-joined names of the shared dependencies. */
+  label?: string
 }
 
 interface Props {
@@ -113,7 +117,7 @@ export function DepGraph({ nodes, edges }: Props) {
     return new Set(
       edges
         .filter(e => e.source === hoveredId || e.target === hoveredId)
-        .map(e => `${e.source}-${e.target}`)
+        .map(e => `${e.source}-${e.target}-${e.type ?? 'internal'}`)
     )
   }, [hoveredId, edges])
 
@@ -121,8 +125,8 @@ export function DepGraph({ nodes, edges }: Props) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-sm">
         <GitFork className="w-8 h-8 mb-3 opacity-30" />
-        <p className="font-medium">No internal dependencies detected</p>
-        <p className="text-xs mt-1">Dependencies appear when one portfolio repo uses another as an npm package</p>
+        <p className="font-medium">No dependencies detected</p>
+        <p className="text-xs mt-1">Edges appear when one portfolio repo uses another as an npm package, or when repos share a prominent third-party dependency</p>
       </div>
     )
   }
@@ -139,16 +143,45 @@ export function DepGraph({ nodes, edges }: Props) {
         const si = idxById.get(edge.source) ?? -1
         const ti = idxById.get(edge.target) ?? -1
         if (si < 0 || ti < 0) return null
-        const key = `${edge.source}-${edge.target}`
+        const isExternal = edge.type === 'external'
+        const key = `${edge.source}-${edge.target}-${edge.type ?? 'internal'}`
         const isHighlighted = hoveredEdgeSet.has(key)
         const dimmed = hoveredId !== null && !isHighlighted
 
-        // Arrow direction: source → target
         const x1 = positions[si].x
         const y1 = positions[si].y
         const x2 = positions[ti].x
         const y2 = positions[ti].y
         const angle = Math.atan2(y2 - y1, x2 - x1)
+
+        if (isExternal) {
+          // Undirected shared-dependency edge: dashed, no arrowhead, with a label at the midpoint
+          const mx = (x1 + x2) / 2
+          const my = (y1 + y2) / 2
+          return (
+            <g key={key} opacity={dimmed ? 0.1 : 1}>
+              <line
+                x1={x1} y1={y1} x2={x2} y2={y2}
+                stroke={isHighlighted ? 'oklch(0.585 0.233 277)' : 'rgba(129,140,248,0.35)'}
+                strokeWidth={isHighlighted ? 2 : 1}
+                strokeDasharray="4 3"
+              />
+              {edge.label && (
+                <text
+                  x={mx} y={my - 4}
+                  textAnchor="middle"
+                  fontSize={9}
+                  fill="oklch(0.585 0.233 277)"
+                  className="fill-indigo-500"
+                >
+                  {edge.label}
+                </text>
+              )}
+            </g>
+          )
+        }
+
+        // Internal edge: solid line + arrowhead, direction source → target
         const ex = x2 - Math.cos(angle) * (NODE_R + 3)
         const ey = y2 - Math.sin(angle) * (NODE_R + 3)
 
@@ -237,7 +270,7 @@ export function DepGraphCard({ nodes, edges }: Props) {
           <div>
             <CardTitle className="text-sm font-semibold">Dependency Map</CardTitle>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Repos that depend on other repos in your portfolio
+              Repos that depend on other repos in your portfolio, and repos that share prominent third-party packages
             </p>
           </div>
           {edges.length > 0 && (
@@ -251,10 +284,15 @@ export function DepGraphCard({ nodes, edges }: Props) {
       <CardContent className="pt-0">
         <DepGraph nodes={displayNodes} edges={edges} />
         {displayNodes.length > 0 && (
-          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground flex-wrap">
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> ≥90</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> 70–89</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> &lt;70</span>
+            {edges.some(e => e.type === 'external') && (
+              <span className="flex items-center gap-1">
+                <span className="w-3 border-t border-dashed border-indigo-400 inline-block" /> Shared dependency
+              </span>
+            )}
             <span className="ml-auto">{displayNodes.length} repos · {edges.length} dep{edges.length !== 1 ? 's' : ''}</span>
           </div>
         )}

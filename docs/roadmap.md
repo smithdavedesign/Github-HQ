@@ -131,7 +131,7 @@
 - [x] `cost_items` jsonb on repositories — `[{ label, amount }]` line items
 - [x] Cost line-item editor on Revenue tab — add/remove/edit, total auto-summed
 - [x] Per-repo P&L summary on Revenue tab: revenue, itemized costs, monthly + annual profit, margin
-- [ ] Portfolio cost breakdown on dashboard (by label)
+- [x] Portfolio cost breakdown on dashboard (by label)
 
 ### Phase 24 — Weekly CEO Report
 - [x] `ceo_report` jsonb on `digests` table
@@ -215,8 +215,8 @@
 - [x] Shipped in Phase 43c
 
 ### Phase 33 — Dependency Graph: Shared External Deps
-- [ ] Extend dep graph to show repos that share prominent external packages (drizzle-orm, openai, etc.)
-- [ ] Shared deps shown as edge labels; more immediately useful than internal deps
+- [x] Extend dep graph to show repos that share prominent external packages (drizzle-orm, openai, etc.)
+- [x] Shared deps shown as edge labels; more immediately useful than internal deps
 
 ### Phase 34 — Portfolio Concentration Risk
 - [x] Revenue concentration: % of total MRR tied to top repo, risk level (low/medium/high)
@@ -340,9 +340,9 @@ The next layer of value: making the system smarter for both humans and agents th
 - [x] `log_attempt(repo_name, action, outcome, reason)` MCP tool — writes `agent_attempt` to `portfolio_events`
 - [x] `getDeadEndActions()` helper — identifies (repo, action) combos with 2+ failures
 - [x] `get_next_action()` skips dead-end actions (advisor stops recommending known-failed approaches)
-- [x] `get_coding_brief()` gains "Recent Attempts" section: outcome emoji, reason, failure warning at 2+ failures
+- [x] `get_coding_brief()` gains "Recent Attempt History" section: outcome emoji, reason, failure warning at 2+ failures (superseded by the distilled 7-day summary from Phase 54-T4)
 - [x] Agent History tab on repo detail now includes `agent_attempt` events with colour-coded outcome badges
-- [ ] Closed/rejected PR detection (future — needs GitHub webhook or polling for PR close events)
+- [x] Closed/rejected PR detection — `checkMergedAgentPRs()` cron poll inserts `agent_pr_rejected` when a PR is closed without merging; new `rejected` lifecycle stage (terminal) surfaced in `queue-button.tsx`, `agent-task-status`, and Agent History timelines
 
 ### Phase 52 — Advisor Learning Loop ✅
 The longer the system runs, the better its recommendations get. Every merged agent PR is a data point; the advisor now reads its own track record before generating recommendations.
@@ -367,10 +367,10 @@ Wake up Monday morning with PRs ready to review — no clicking required.
 ### Phase 54 — Token Efficiency ✅
 Prevents redundant DB queries and token spend as agent volume grows.
 
-- [x] **T1: `cachedBrief`** — `repositories.cached_brief JSONB`; written by `get_coding_brief` after generation, cleared on each sync; subsequent calls within 6h served from cache with 0 DB queries (saves ~25K tokens at 100 agents)
+- [x] **T1: `cachedBrief`** — `repositories.cached_brief JSONB`; written by `get_coding_brief` after generation; subsequent calls within 6h served from cache with 0 DB queries (saves ~25K tokens at 100 agents). Invalidation refined by T3.
 - [x] **T2: `advisorRepoSnapshot`** — `digests.advisor_repo_snapshot JSONB`; stores the compiled repo lines sent to Claude; reused for 23h then recomputed; invalidated on sync (saves ~2,500 tokens per advisor run)
-- [ ] **T3: Brief freshness signal** (`briefStaleAt` timestamp, event-driven) — future
-- [ ] **T4: Context compression** (distil sessions+attempts weekly via Sunday cron) — future
+- [x] **T3: Brief freshness signal** — `shouldInvalidateCachedBrief()` (`src/lib/health/events.ts`) only nulls `cachedBrief` when a sync produces a high-signal event (`health_milestone`, `first_revenue`); routine syncs keep the cache. `get_coding_brief` counts events recorded since `cachedBrief.generatedAt` and appends a "⚠ N events recorded since this brief was generated" note on cache hits.
+- [x] **T4: Attempt distillation** — `distillAttempts()` (`src/lib/agents/attempt-distiller.ts`) groups the last 7 days of `agent_attempt` events per repo by action into `repositories.attempt_summary JSONB` (success rate, common failure reason); runs from the existing Monday digest cron (no new schedule). `get_coding_brief` renders the distilled "Recent Attempt History (7d)" section from this summary.
 - [ ] **T5: pgvector** (semantic repo matching, outcome clustering) — future when 50+ repos with history
 
 ### Phase 55 — CI Feedback Loop (Self-Correcting Agents)
@@ -385,13 +385,13 @@ PR created → CI runs →
             (after 3 failures → escalate to human)
 ```
 
-- [ ] `checkCIFailuresOnAgentPRs(userId)` — polls GitHub API (`/commits/{sha}/check-runs`) for failed CI on open agent PRs; runs in the 6h sync cron alongside `checkMergedAgentPRs()`
-- [ ] `agent_ci_failed` event type — stores: `{ prUrl, branchName, checkName, errorSummary, attempt, sha }` in `portfolio_events`; new lifecycle stage `ci_failing`
-- [ ] Auto-requeue with error context — creates a new Nexus task: objective = "Fix CI failure on PR #{N}: {errorSummary}", `contextNotes.existingBranch` = PR head branch, `contextNotes.prNumber`, `contextNotes.ciError` = truncated error output
-- [ ] Nexus: resume-on-branch mode — agent-runner checks `contextNotes.existingBranch`; if set, fetches and checks out that branch instead of creating a new `nexus/auto-*` branch
-- [ ] Retry guard — max 3 CI fix attempts per PR; on 4th failure writes `agent_needs_human` event and dispatches notification: "Agent PR #{N} has failing CI after 3 fix attempts — human review needed"
-- [ ] QueueButton: `ci_failing` stage shown in the lifecycle UI (yellow, links to the failed check)
-- [ ] Agent History tab: `agent_ci_failed` events shown inline with error summary and attempt count
+- [x] `checkCIFailuresOnAgentPRs(userId)` — polls GitHub API (`/commits/{sha}/check-runs`) for failed CI on open agent PRs; runs in the 6h sync cron alongside `checkMergedAgentPRs()`
+- [x] `agent_ci_failed` event type — stores: `{ prUrl, branchName, checkName, errorSummary, attempt, sha }` in `portfolio_events`; new lifecycle stage `ci_failing`
+- [x] Auto-requeue with error context — creates a new Nexus task: objective = "Fix CI failure on PR #{N}: {errorSummary}", `contextNotes.existingBranch` = PR head branch, `contextNotes.prNumber`, `contextNotes.ciError` = truncated error output
+- [x] Nexus: resume-on-branch mode — agent-runner checks `contextNotes.existingBranch`; if set, fetches and checks out that branch instead of creating a new `nexus/auto-*` branch
+- [x] Retry guard — max 3 CI fix attempts per PR; on 4th failure writes `agent_needs_human` event and dispatches notification: "Agent PR #{N} has failing CI after 3 fix attempts — human review needed"
+- [x] QueueButton: `ci_failing` stage shown in the lifecycle UI (yellow, links to the failed check)
+- [x] Agent History tab: `agent_ci_failed` events shown inline with error summary and attempt count
 
 ### Phase 40 — Open-Source Template / Deploy-to-Vercel
 - [x] README rewritten — Deploy to Vercel button, full setup guide (8 steps), all services documented
@@ -514,40 +514,24 @@ Daily 07:00 UTC cron
 - [x] Loop prevention — fix tasks dispatched from scan reports do not re-trigger further scans; max 3 fix tasks per cycle; lifecycle guard prevents parallel duplicates
 - [x] `vercel.json` — `0 7 * * *` schedule added (daily at 07:00 UTC)
 
-### G8 — OpenClaw Orchestration (Fully Agentic Flow)
+### G8 — Agent Coordination: 2-Hop Skill Chaining
 
-The vision: RepoHQ stops being a dispatch system and becomes an **AI workforce coordinator**. Instead of a human clicking "Queue" and one agent running on one repo, OpenClaw orchestrates multiple agents in parallel — sharing context, chaining skills, and re-prioritizing in real-time.
+Phase 57-C/D already delivered the two big pieces of "agentic orchestration" without any external dependency:
 
-**The architecture shift:**
+- **Parallel execution** — BullMQ `concurrency: 3` in Nexus `src/worker.ts` runs up to 3 tasks at once, each in its own isolated git worktree (`var/agent-workspaces/runs/{taskId}-{executionId}`), combined with `autoDispatchAdvisorActions()` queueing up to `autoDispatchMaxPerRun` tasks per Monday run.
+- **1-hop skill chaining** — `queueSuggestedSkill()` (`src/lib/actions/nexus.ts`) tags `contextNotes.{source:'skill-chain', chainDepth:1}`; the `agent-events` webhook `after()` block (`src/app/api/webhooks/agent-events/route.ts`) fires it when `suggestedNextSkill` is present, the task wasn't itself a chained task, `autoDispatchEnabled` is on, and the skill passes `isGstackSkill()`.
 
-Today:
-```
-Monday cron → advisor generates actions → auto-dispatch queues them →
-Nexus runs tasks one at a time → agents are isolated, no shared context
-```
+The "OpenClaw" framing from the original roadmap is retired — OpenClaw was removed in Phase 58-G (not publicly available, required a local-only worker). BullMQ + the existing webhook handler are the coordination primitives going forward.
 
-With OpenClaw:
-```
-Monday cron → advisor generates priority queue →
-OpenClaw spawns N agents in parallel, each on a different repo/skill →
-  Agent A finds an issue → OpenClaw injects finding into Agent B's context
-  Agent C finishes /health → OpenClaw auto-chains /ship if findings warrant it →
-  Agent D finishes → result feeds back into advisor priority queue →
-Human reviews outcomes, not individual tasks
-```
+**Planned:**
+- [ ] **2-hop chaining** — increment `chainDepth` on the second hop; the webhook handler refuses to chain when `chainDepth >= 2` (a real cap, not just the current one-shot `source !== 'skill-chain'` check). Enables sequences like `/health` → `/ship` → `/document-release`. Touches: `queueSuggestedSkill()` (`src/lib/actions/nexus.ts`, ~lines 401-472) to accept/propagate `parentChainDepth`, and the `after()` block in `src/app/api/webhooks/agent-events/route.ts` (~lines 238-281) to check `chainDepth >= 2` instead of the current boolean.
 
-**Planned items:**
-
-- [ ] **Parallel execution**: Replace Nexus single-task dispatch with OpenClaw multi-agent spawn — N agents across N repos simultaneously, bounded by `autoDispatchMaxPerRun`
-- [ ] **Skill chaining**: `/health` findings with TypeScript errors → auto-spawn `/ship "Fix TypeScript errors"` without human click; `/investigate` findings with security issue → auto-spawn `/ship` fix; chainable up to 2 hops to prevent loops
-- [ ] **Cross-repo context sharing**: OpenClaw passes findings from Agent A (e.g. "repo uses deprecated auth pattern") into Agent B's CLAUDE.md brief when B is working on a related repo (detected via `internal_deps` dependency map)
-- [ ] **Live orchestrator on dashboard**: RepoHQ advisor acts as the OpenClaw task planner — continuously re-ranks the queue as agents report back; "Orchestrator running" status in Active Agents card
-- [ ] **Human approval gate**: Before OpenClaw auto-chains a skill, a lightweight approval toast appears in the dashboard — "Agent found TypeScript errors in open-travel. Run /ship to fix? [Approve] [Skip]" — with 10-min auto-approve if `autoDispatchEnabled`
-- [ ] **Termination conditions**: OpenClaw stops when: (a) all tasks complete, (b) 3 consecutive chained failures, (c) a `/investigate` returns `security` severity finding requiring human review, or (d) manual stop from dashboard
-- [ ] **Session history in briefs**: OpenClaw surfaces what other agents learned this session in each new agent's CLAUDE.md brief — "Agent working on Open-Travel found: dead code in utils/format.ts. Review before writing similar utilities."
-- [ ] **Prerequisite**: Phase 55 (CI feedback loop) should ship first — OpenClaw chaining without CI awareness would create PRs that fail silently
-
-**Why OpenClaw over a custom orchestrator:** `OPENCLAW_SESSION=true` is already in every gstack script. The infrastructure recognizes spawned sessions and suppresses interactive prompts. OpenClaw's skill coordination layer is built for exactly this pattern — building a custom orchestrator would replicate it. The integration point is replacing the Nexus worker's single-task spawn with an OpenClaw session that manages the task graph.
+**Deferred — no infrastructure exists yet, revisit if agent volume grows beyond concurrency:3:**
+- Cross-repo context sharing (inject Agent A's findings into Agent B's CLAUDE.md brief via `internal_deps`)
+- Live "Orchestrator running" status in the Active Agents card
+- Human approval gate before auto-chaining (toast + auto-approve timer)
+- Cross-agent session history surfaced in CLAUDE.md briefs
+- Termination conditions beyond existing lifecycle guards (consecutive-failure stop, security-finding stop, manual stop)
 
 ### Phase 56 — G7 UX & Agent Experience Improvements
 
@@ -567,7 +551,7 @@ Following the architecture review of G7, three categories of improvements across
 #### 56-C Architecture Cleanup
 - [x] **Per-taskId polling** — `GstackSkillLauncher` now stores the `taskId` returned by `queueGstackSkill` per skill and polls by `?taskId=...` instead of `?repoId=...`. Eliminates status misattribution when multiple skills run; readies the component for G8 parallel skill execution.
 - [x] **`getSuggestedActions` extracted** — moved from `skill-report-findings.tsx` to `src/lib/skills/suggest-actions.ts`. Tests now import the real function; `gstack-g7.test.ts` was testing a mirrored copy that could silently diverge.
-- [ ] **`SKILLS_BY_PHASE` to nexus-utils** — icon, color, description, and phase grouping data still defined inside `gstack-skill-launcher.tsx`. Moving to `nexus-utils.ts` makes it importable in tests and reduces launcher file size. Planned for G8.
+- [x] **`SKILLS_BY_PHASE` to nexus-utils** — icon (string name), color, description, and phase grouping data now live on `SKILL_META` in `nexus-utils.ts`; `gstack-skill-launcher.tsx` builds `SKILLS_BY_PHASE` by grouping `SKILL_META` entries via a local `ICON_MAP`, importable in tests and reducing launcher file size.
 
 ---
 

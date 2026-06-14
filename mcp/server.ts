@@ -25,7 +25,7 @@ import {
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
 import * as schema from '../src/lib/db/schema.js'
-import { eq, and, desc, inArray } from 'drizzle-orm'
+import { eq, and, desc, inArray, gt, count } from 'drizzle-orm'
 
 const DATABASE_URL = process.env.DATABASE_URL
 const USER_ID = process.env.MCP_USER_ID
@@ -426,7 +426,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const ageMs = Date.now() - new Date(cached.generatedAt).getTime()
           const SIX_HOURS = 6 * 60 * 60 * 1000
           if (ageMs < SIX_HOURS && cached.raw) {
-            return { content: [{ type: 'text', text: cached.raw + '\n\n_[served from cache — regenerates on next sync]_' }] }
+            // Phase 54-T3: count events recorded since the brief was generated, to
+            // flag potential staleness without invalidating the cache entirely.
+            const [{ value: eventsSince }] = await db
+              .select({ value: count() })
+              .from(schema.portfolioEvents)
+              .where(and(
+                eq(schema.portfolioEvents.userId, USER_ID!),
+                eq(schema.portfolioEvents.repoId, cachedRepo.id),
+                gt(schema.portfolioEvents.occurredAt, new Date(cached.generatedAt)),
+              ))
+            const staleNote = eventsSince > 0
+              ? `\n\n⚠ ${eventsSince} event${eventsSince === 1 ? '' : 's'} recorded since this brief was generated — may be slightly out of date.`
+              : ''
+            return { content: [{ type: 'text', text: cached.raw + staleNote + '\n\n_[served from cache — regenerates on next sync]_' }] }
           }
         }
 
@@ -444,8 +457,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return { content: [{ type: 'text', text: `Repo "${repoName}" not found. Make sure it's synced.` }] }
         }
 
-        // Fetch sessions, attempts, open PRs, and last skill report in parallel
-        const [recentSessions, recentAttempts, openPRMap, lastSkillReport] = await Promise.all([
+        // Fetch sessions, open PRs, and last skill report in parallel
+        const [recentSessions, openPRMap, lastSkillReport] = await Promise.all([
           db.query.portfolioEvents.findMany({
             where: and(
               eq(schema.portfolioEvents.userId, USER_ID),
@@ -454,15 +467,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ),
             orderBy: [desc(schema.portfolioEvents.occurredAt)],
             limit: 3,
-          }),
-          db.query.portfolioEvents.findMany({
-            where: and(
-              eq(schema.portfolioEvents.userId, USER_ID),
-              eq(schema.portfolioEvents.repoId, repo.id),
-              eq(schema.portfolioEvents.eventType, 'agent_attempt'),
-            ),
-            orderBy: [desc(schema.portfolioEvents.occurredAt)],
-            limit: 5,
           }),
           getOpenAgentPRMap(),
           db.query.portfolioEvents.findFirst({
@@ -561,21 +565,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           )
         }
 
-        // Attempt history (Phase 51)
-        if (recentAttempts.length > 0) {
-          lines.push(`## Recent Attempts`)
-          for (const a of recentAttempts) {
-            const meta = a.metadata as { action?: string; outcome?: string; reason?: string; agent?: string } | null
-            const emoji = meta?.outcome === 'success' ? '✅' : meta?.outcome === 'partial' ? '⚠️' : '❌'
-            const date = new Date(a.occurredAt).toLocaleDateString()
-            lines.push(`- ${emoji} **${date}**: ${meta?.action ?? a.title}${meta?.reason ? ` — ${meta.reason}` : ''}`)
+        // Attempt history (Phase 51), distilled weekly by the digest cron (Phase 54-T4)
+        if (repo.attemptSummary?.byAction?.length) {
+          const { generatedAt, byAction } = repo.attemptSummary
+          lines.push(`## Recent Attempt History (7d, distilled ${new Date(generatedAt).toLocaleDateString()})`)
+          for (const a of byAction) {
+            const pct = Math.round(a.successRate * 100)
+            const emoji = pct >= 70 ? '✅' : pct >= 40 ? '⚠️' : '❌'
+            lines.push(`- ${emoji} **${a.action}**: ${pct}% success (${a.total} attempt${a.total === 1 ? '' : 's'})${a.commonFailure ? ` — common failure: ${a.commonFailure}` : ''}`)
           }
-          const failCount = recentAttempts.filter(a => {
-            const m = a.metadata as { outcome?: string } | null
-            return m?.outcome === 'failed'
-          }).length
-          if (failCount >= 2) {
-            lines.push(`> ⚠ ${failCount} recent failures — approach with fresh context or escalate to human review.`)
+          const deadEnds = byAction.filter(a => a.successRate === 0 && a.total >= 2)
+          if (deadEnds.length > 0) {
+            lines.push(`> ⚠ ${deadEnds.length} action type${deadEnds.length === 1 ? '' : 's'} with repeated failures — approach with fresh context or escalate to human review.`)
           }
           lines.push(``)
         }

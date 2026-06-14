@@ -4,13 +4,13 @@ import { useState, useEffect, useRef } from 'react'
 import { queueAdvisorAction } from '@/lib/actions/nexus'
 import type { AdvisorAction } from '@/lib/ai/advisor'
 import { toast } from 'sonner'
-import { Bot, Loader2, CheckCircle, ExternalLink, GitPullRequest, AlertCircle, Clock, FileText } from 'lucide-react'
+import { Bot, Loader2, CheckCircle, ExternalLink, GitPullRequest, AlertCircle, Clock, FileText, XCircle } from 'lucide-react'
 
-type Stage = 'idle' | 'launching' | 'queued' | 'preparing' | 'running' | 'pr_ready' | 'ci_failing' | 'needs_human' | 'merged' | 'report_ready' | 'failed' | 'timed_out'
+type Stage = 'idle' | 'launching' | 'queued' | 'preparing' | 'running' | 'pr_ready' | 'ci_failing' | 'needs_human' | 'merged' | 'rejected' | 'report_ready' | 'failed' | 'timed_out'
 
 interface StatusPayload { status: Stage; stage: string; prUrl?: string; nexusUrl?: string }
 
-const TERMINAL: Stage[] = ['pr_ready', 'ci_failing', 'needs_human', 'merged', 'report_ready', 'failed', 'timed_out']
+const TERMINAL: Stage[] = ['pr_ready', 'ci_failing', 'needs_human', 'merged', 'rejected', 'report_ready', 'failed', 'timed_out']
 const POLL_MS  = 5000
 const MAX_POLLS = 180  // 15 min
 
@@ -166,6 +166,23 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
     return (
       <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-600">
         <CheckCircle className="w-3 h-3" />Merged
+      </span>
+    )
+  }
+
+  // ── Rejected (PR closed without merging) ──────────────────────────────────
+  if (stage === 'rejected') {
+    if (prUrl) {
+      return (
+        <a href={prUrl} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-foreground">
+          <XCircle className="w-3 h-3" />PR closed — not merged<ExternalLink className="w-2.5 h-2.5" />
+        </a>
+      )
+    }
+    return (
+      <span className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+        <XCircle className="w-3 h-3" />PR closed — not merged
       </span>
     )
   }

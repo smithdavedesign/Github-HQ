@@ -145,6 +145,11 @@ export const repositories = pgTable('repositories', {
   claudeAnalysisAt: timestamp('claude_analysis_at', { mode: 'date' }),
   // Phase 54-T1: Cached coding brief — written after each sync, served to MCP + Nexus
   cachedBrief: jsonb('cached_brief').$type<{ raw: string; generatedAt: string } | null>(),
+  // Phase 54-T4: Weekly distillation of agent_attempt events, written by the Monday digest cron
+  attemptSummary: jsonb('attempt_summary').$type<{
+    generatedAt: string
+    byAction: Array<{ action: string; successRate: number; total: number; commonFailure: string | null }>
+  } | null>(),
   createdAt: timestamp('created_at', { mode: 'date' }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull(),
   syncedAt: timestamp('synced_at', { mode: 'date' }).defaultNow(),
@@ -182,6 +187,8 @@ export const repositoryMetrics = pgTable('repository_metrics', {
   estimatedValue: integer('estimated_value').default(0),   // USD
   // Phase 29: internal deps — names of repos in this portfolio that this repo depends on
   internalDeps: jsonb('internal_deps').$type<string[]>(),
+  // Phase 33: external deps — prominent shared third-party packages (see PROMINENT_EXTERNAL_DEPS)
+  externalDeps: jsonb('external_deps').$type<string[]>(),
   valuationConfidence: text('valuation_confidence').default('none'), // none|very_low|low|medium|high
   valuationMethod: text('valuation_method').default('signal_based'), // saas_multiple|signal_based|archived
   calculatedAt: timestamp('calculated_at', { mode: 'date' }).defaultNow(),

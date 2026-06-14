@@ -63,7 +63,27 @@ export default async function AnalyticsPage() {
     for (const depName of internalDeps) {
       const targetId = repoNameToId.get(depName)
       if (targetId && targetId !== r.id) {
-        depEdges.push({ source: r.id, target: targetId })
+        depEdges.push({ source: r.id, target: targetId, type: 'internal' })
+      }
+    }
+  }
+
+  // Phase 33: shared external deps — undirected edges between repos that have a
+  // prominent third-party package in common. Capped to avoid edge explosion.
+  const MAX_EXTERNAL_EDGES = 15
+  const reposWithExternalDeps = reposWithMetrics
+    .map(r => ({ id: r.id, externalDeps: r.metrics?.externalDeps as string[] | null | undefined }))
+    .filter(r => r.externalDeps && r.externalDeps.length > 0) as { id: number; externalDeps: string[] }[]
+
+  let externalEdgeCount = 0
+  for (let i = 0; i < reposWithExternalDeps.length && externalEdgeCount < MAX_EXTERNAL_EDGES; i++) {
+    for (let j = i + 1; j < reposWithExternalDeps.length && externalEdgeCount < MAX_EXTERNAL_EDGES; j++) {
+      const a = reposWithExternalDeps[i]
+      const b = reposWithExternalDeps[j]
+      const shared = a.externalDeps.filter(d => b.externalDeps.includes(d))
+      if (shared.length > 0) {
+        depEdges.push({ source: a.id, target: b.id, type: 'external', label: shared.join(', ') })
+        externalEdgeCount++
       }
     }
   }

@@ -22,42 +22,26 @@ interface SkillDef {
   typeBadgeColor: string
 }
 
-const SKILLS_BY_PHASE: { phase: string; skills: SkillDef[] }[] = [
-  {
-    phase: 'Understand',
-    skills: [
-      { id: 'investigate', icon: Search,       iconColor: 'text-red-500',    label: '/investigate',       description: 'Diagnoses root cause then fixes if safe. Best for bugs, security alerts, or failing builds.',             typeLabel: 'Analyze + Fix', typeBadgeColor: 'bg-red-50 text-red-600 border-red-200'     },
-      { id: 'review',      icon: Eye,           iconColor: 'text-slate-500',  label: '/review',            description: 'Pre-merge code review. Surfaces security issues, logic errors, and structural problems — no changes.',  typeLabel: 'Report only',   typeBadgeColor: 'bg-slate-50 text-slate-600 border-slate-200' },
-    ],
-  },
-  {
-    phase: 'Build Quality',
-    skills: [
-      { id: 'qa-only',     icon: FileText,      iconColor: 'text-amber-500',  label: '/qa-only',           description: 'Finds bugs and documents them with repro steps. No fixes — pure report so you decide what to act on.',  typeLabel: 'Report only',   typeBadgeColor: 'bg-amber-50 text-amber-600 border-amber-200'  },
-      { id: 'qa',          icon: Search,        iconColor: 'text-orange-500', label: '/qa',                description: 'Finds bugs and iteratively fixes them with atomic commits. Re-verifies after each fix.',                typeLabel: 'Analyze + Fix', typeBadgeColor: 'bg-orange-50 text-orange-600 border-orange-200' },
-    ],
-  },
-  {
-    phase: 'Ship',
-    skills: [
-      { id: 'ship',              icon: GitPullRequest, iconColor: 'text-indigo-500', label: '/ship',              description: 'Full release pipeline — implement objective, run tests, open PR. Use when you have a clear task.',      typeLabel: 'Creates PR', typeBadgeColor: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
-      { id: 'document-release', icon: BookOpen,        iconColor: 'text-blue-500',   label: '/document-release',  description: 'Updates README, docs, and CHANGELOG to match what was shipped. Run after merging a PR.',                typeLabel: 'Commits',    typeBadgeColor: 'bg-blue-50 text-blue-600 border-blue-200'       },
-    ],
-  },
-  {
-    phase: 'Monitor',
-    skills: [
-      { id: 'health', icon: Heart, iconColor: 'text-emerald-500', label: '/health', description: 'Scores TypeScript, tests, lint, and dead code. Produces a report with findings — no changes.', typeLabel: 'Report only', typeBadgeColor: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-      { id: 'canary', icon: Tv,    iconColor: 'text-violet-500',  label: '/canary', description: 'Checks the live app for console errors and performance regressions. Requires a deployment URL.', typeLabel: 'Report only', typeBadgeColor: 'bg-violet-50 text-violet-600 border-violet-200'   },
-    ],
-  },
-  {
-    phase: 'Reflect',
-    skills: [
-      { id: 'retro', icon: RotateCcw, iconColor: 'text-cyan-500', label: '/retro', description: "Analyses this week's commits — patterns, wins, growth areas. Run on Mondays for a weekly snapshot.", typeLabel: 'Report only', typeBadgeColor: 'bg-cyan-50 text-cyan-600 border-cyan-200' },
-    ],
-  },
-]
+const ICON_MAP: Record<string, typeof Search> = {
+  Search, Heart, GitPullRequest, FileText, Eye, Tv, RotateCcw, BookOpen,
+}
+
+const PHASE_ORDER = ['Understand', 'Build Quality', 'Ship', 'Monitor', 'Reflect']
+
+const SKILLS_BY_PHASE: { phase: string; skills: SkillDef[] }[] = PHASE_ORDER.map(phase => ({
+  phase,
+  skills: (Object.entries(SKILL_META) as [GstackSkill, typeof SKILL_META[GstackSkill]][])
+    .filter(([, meta]) => meta.phase === phase)
+    .map(([id, meta]) => ({
+      id,
+      icon: ICON_MAP[meta.icon],
+      iconColor: meta.iconColor,
+      label: meta.label,
+      description: meta.description,
+      typeLabel: meta.typeLabel,
+      typeBadgeColor: meta.typeBadgeColor,
+    })),
+}))
 
 const STORAGE_KEY = 'gstack-open-phases'
 

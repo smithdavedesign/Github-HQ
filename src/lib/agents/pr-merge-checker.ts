@@ -4,9 +4,11 @@ import { eq, and, inArray, gte, lte } from 'drizzle-orm'
 import { decrypt } from '@/lib/crypto-utils'
 
 /**
- * Polls GitHub API for all open agent PRs (created but not yet merged in portfolio_events).
- * When a PR is found to be merged on GitHub, writes an `agent_pr_merged` event with
- * `healthBefore` captured from the current DB value — before the sync runs.
+ * Polls GitHub API for all open agent PRs (created but not yet merged or rejected in
+ * portfolio_events). When a PR is found to be merged on GitHub, writes an `agent_pr_merged`
+ * event with `healthBefore` captured from the current DB value — before the sync runs.
+ * When a PR is found closed without merging, writes an `agent_pr_rejected` event so it's
+ * not re-checked on subsequent polls.
  *
  * Returns the number of newly detected merges.
  */
@@ -20,23 +22,28 @@ export async function checkMergedAgentPRs(userId: string): Promise<number> {
   const events = await db.query.portfolioEvents.findMany({
     where: and(
       eq(portfolioEvents.userId, userId),
-      inArray(portfolioEvents.eventType, ['agent_pr_created', 'agent_pr_merged']),
+      inArray(portfolioEvents.eventType, ['agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected']),
     ),
     columns: { id: true, eventType: true, repoId: true, metadata: true },
   })
 
   const mergedTaskIds = new Set<string>()
+  const rejectedTaskIds = new Set<string>()
   for (const e of events) {
     if (e.eventType === 'agent_pr_merged') {
       const meta = e.metadata as { taskId?: string } | null
       if (meta?.taskId) mergedTaskIds.add(meta.taskId)
+    }
+    if (e.eventType === 'agent_pr_rejected') {
+      const meta = e.metadata as { taskId?: string } | null
+      if (meta?.taskId) rejectedTaskIds.add(meta.taskId)
     }
   }
 
   const openPRs = events.filter(e => {
     if (e.eventType !== 'agent_pr_created') return false
     const meta = e.metadata as { taskId?: string; prUrl?: string } | null
-    return meta?.taskId && !mergedTaskIds.has(meta.taskId) && meta?.prUrl
+    return meta?.taskId && !mergedTaskIds.has(meta.taskId) && !rejectedTaskIds.has(meta.taskId) && meta?.prUrl
   })
 
   if (openPRs.length === 0) return 0
@@ -59,7 +66,24 @@ export async function checkMergedAgentPRs(userId: string): Promise<number> {
     try {
       const { data: prData } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber })
 
-      if (!prData.merged_at) continue
+      if (!prData.merged_at) {
+        if (prData.state === 'closed') {
+          await db.insert(portfolioEvents).values({
+            userId,
+            repoId: pr.repoId ?? null,
+            eventType: 'agent_pr_rejected',
+            title: `Agent PR closed without merging in ${repo}`,
+            description: `Detected by 6h sync (closed ${prData.closed_at ? new Date(prData.closed_at).toLocaleDateString() : ''})`,
+            metadata: {
+              taskId: meta.taskId,
+              prUrl: meta.prUrl,
+              closedAt: prData.closed_at,
+              source: 'cron-poll',
+            },
+          })
+        }
+        continue
+      }
 
       // Capture health score before the sync runs (used later to compute actualDelta)
       let healthBefore: number | null = null

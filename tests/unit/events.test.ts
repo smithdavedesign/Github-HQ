@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computePortfolioEvents, computeInternalDeps } from '@/lib/health/events'
+import { computePortfolioEvents, computeInternalDeps, computeExternalDeps, PROMINENT_EXTERNAL_DEPS, shouldInvalidateCachedBrief } from '@/lib/health/events'
 
 // ─── computePortfolioEvents ───────────────────────────────────────────────────
 
@@ -175,5 +175,72 @@ describe('computeInternalDeps', () => {
     ])
     expect(result.has(1)).toBe(true)
     expect(result.has(2)).toBe(true)
+  })
+})
+
+// ─── computeExternalDeps ────────────────────────────────────────────────────────
+
+describe('computeExternalDeps', () => {
+  it('filters depNames down to the prominent allowlist', () => {
+    const result = computeExternalDeps([
+      { repoId: 1, repoName: 'app', packageName: 'my-app', depNames: ['react', 'next', 'drizzle-orm', 'stripe'] },
+    ])
+    expect(result.get(1)).toEqual(['drizzle-orm', 'stripe'])
+  })
+
+  it('returns an empty array for repos with no prominent deps', () => {
+    const result = computeExternalDeps([
+      { repoId: 1, repoName: 'app', packageName: 'my-app', depNames: ['react', 'next', 'typescript'] },
+    ])
+    expect(result.get(1)).toEqual([])
+  })
+
+  it('returns all repos in the result map', () => {
+    const result = computeExternalDeps([
+      { repoId: 1, repoName: 'a', packageName: 'pkg-a', depNames: ['stripe'] },
+      { repoId: 2, repoName: 'b', packageName: 'pkg-b', depNames: [] },
+    ])
+    expect(result.has(1)).toBe(true)
+    expect(result.has(2)).toBe(true)
+  })
+
+  it('PROMINENT_EXTERNAL_DEPS excludes ultra-generic deps', () => {
+    expect(PROMINENT_EXTERNAL_DEPS.has('react')).toBe(false)
+    expect(PROMINENT_EXTERNAL_DEPS.has('typescript')).toBe(false)
+    expect(PROMINENT_EXTERNAL_DEPS.has('next')).toBe(false)
+  })
+
+  it('PROMINENT_EXTERNAL_DEPS includes key infra/AI/payments packages', () => {
+    expect(PROMINENT_EXTERNAL_DEPS.has('drizzle-orm')).toBe(true)
+    expect(PROMINENT_EXTERNAL_DEPS.has('stripe')).toBe(true)
+    expect(PROMINENT_EXTERNAL_DEPS.has('@anthropic-ai/sdk')).toBe(true)
+    expect(PROMINENT_EXTERNAL_DEPS.has('bullmq')).toBe(true)
+  })
+})
+
+// ─── shouldInvalidateCachedBrief ────────────────────────────────────────────────
+
+describe('shouldInvalidateCachedBrief', () => {
+  it('returns true when a health_milestone event is present', () => {
+    expect(shouldInvalidateCachedBrief([{ eventType: 'health_milestone', title: 'x' }])).toBe(true)
+  })
+
+  it('returns true when a first_revenue event is present', () => {
+    expect(shouldInvalidateCachedBrief([{ eventType: 'first_revenue', title: 'x' }])).toBe(true)
+  })
+
+  it('returns false for routine events like mrr_changed', () => {
+    expect(shouldInvalidateCachedBrief([{ eventType: 'mrr_changed', title: 'x' }])).toBe(false)
+  })
+
+  it('returns false for an empty event list', () => {
+    expect(shouldInvalidateCachedBrief([])).toBe(false)
+  })
+
+  it('returns true if at least one event among several is high-signal', () => {
+    expect(shouldInvalidateCachedBrief([
+      { eventType: 'mrr_changed', title: 'x' },
+      { eventType: 'health_milestone', title: 'y' },
+    ])).toBe(true)
   })
 })

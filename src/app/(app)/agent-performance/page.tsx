@@ -21,7 +21,7 @@ export default async function AgentPerformancePage() {
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.userId, userId),
-        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_execution_failed']),
+        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected', 'agent_execution_failed']),
       ),
       orderBy: [desc(portfolioEvents.occurredAt)],
       with: { repository: { columns: { name: true } } },
@@ -151,6 +151,7 @@ export default async function AgentPerformancePage() {
             const statusColor =
               event.eventType === 'agent_pr_merged'       ? 'bg-emerald-500/10 text-emerald-600 border-emerald-200' :
               event.eventType === 'agent_pr_created'      ? 'bg-blue-500/10 text-blue-600 border-blue-200' :
+              event.eventType === 'agent_pr_rejected'     ? 'bg-muted text-muted-foreground border-border/60' :
               event.eventType === 'agent_execution_failed'? 'bg-red-500/10 text-red-600 border-red-200' :
                                                             'bg-muted text-muted-foreground border-border/60'
 
@@ -158,6 +159,7 @@ export default async function AgentPerformancePage() {
               event.eventType === 'agent_task_queued'      ? 'Queued' :
               event.eventType === 'agent_pr_created'       ? 'PR Created' :
               event.eventType === 'agent_pr_merged'        ? 'Merged' :
+              event.eventType === 'agent_pr_rejected'      ? 'Rejected' :
               event.eventType === 'agent_execution_failed' ? 'Failed' : event.eventType
 
             const prUrl = meta?.prUrl as string | undefined
