@@ -412,7 +412,7 @@ export default async function RepoDetailPage({ params }: Props) {
               qa:                 `Find and fix bugs in ${repo.name}`,
               ship:               repoActions[0]?.action ?? `Ship latest changes in ${repo.name}`,
               'document-release': `Update README and docs to match what was shipped in ${repo.name}`,
-              health:             `Run code health check on ${repo.name} — report TypeScript errors, test failures, dead code, and lint issues`,
+              health:             `Run a full code health check on ${repo.name}${stack?.language ? ` (${stack.language})` : ''} — type checking, tests, lint, and dead code, covering whichever of these apply to this project's stack`,
               canary:             repo.homepage ? `Check ${repo.homepage} for console errors and performance issues` : `Monitor ${repo.name} deployments for errors`,
               retro:              `Summarise this week's commits and engineering patterns in ${repo.name}`,
             }
@@ -533,11 +533,12 @@ export default async function RepoDetailPage({ params }: Props) {
                           </a>
                         )}
                       </div>
-                      {/* Skill report findings — expandable full list + actionable queue buttons */}
-                      {isReport && Array.isArray(meta?.findings) && (meta.findings as string[]).length > 0 && (
+                      {/* Skill report findings — expandable full list + actionable queue buttons,
+                          or a "clean run" signal when there's nothing to report */}
+                      {isReport && (
                         <SkillReportFindings
-                          findings={meta.findings as string[]}
-                          skillName={meta.skillName as string | undefined}
+                          findings={Array.isArray(meta?.findings) ? (meta.findings as string[]) : []}
+                          skillName={meta?.skillName as string | undefined}
                           repoId={repoId}
                           repoName={repo.name}
                           nexusEnabled={!!(process.env.NEXUS_API_URL && process.env.NEXUS_API_TOKEN)}

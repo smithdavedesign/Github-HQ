@@ -69,7 +69,7 @@ export const SKILL_META: Record<GstackSkill, SkillMeta> = {
   },
   health: {
     label: '/health', phase: 'Monitor', type: 'report',
-    description: 'Scores TypeScript, tests, lint, and dead code. Produces a report with findings — no changes.',
+    description: 'Scores type checking, tests, lint, and dead code — whichever apply to this stack. Produces a report with findings — no changes.',
     icon: 'Heart', iconColor: 'text-emerald-500',
     typeLabel: 'Report only', typeBadgeColor: 'bg-emerald-50 text-emerald-600 border-emerald-200',
   },

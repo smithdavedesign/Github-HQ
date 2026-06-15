@@ -28,6 +28,33 @@ function stripPassingFindings(findings: string[]): string[] {
   })
 }
 
+// Lines describing a check that doesn't apply to this repo's stack
+// (e.g. "TypeScript: N/A — project is plain JavaScript", "Lint: not configured").
+// These carry no actionable signal — they must not trigger suggested actions,
+// default "investigate/fix" prompts, or auto-chaining to another skill.
+const INFORMATIONAL_PATTERNS = [
+  /:\s*n\/a\b/i,
+  /\bnot applicable\b/i,
+  /\bnot configured\b/i,
+  /\(skipped\)/i,
+  /^skipped\b/i,
+]
+
+function isInformational(finding: string): boolean {
+  const trimmed = finding.trim()
+  return INFORMATIONAL_PATTERNS.some(p => p.test(trimmed))
+}
+
+/**
+ * Findings that represent real, actionable problems for this repo — strips
+ * both passing checks (✅ TypeScript: 0 issues) and informational/N-A lines
+ * (TypeScript: N/A — project is plain JavaScript) that don't apply to this
+ * repo's stack.
+ */
+export function getActionableFindings(findings: string[]): string[] {
+  return stripPassingFindings(findings).filter(f => !isInformational(f))
+}
+
 interface MatchRule {
   skills: string[]
   keywords: string[]
@@ -158,10 +185,12 @@ const REPORT_ONLY_SKILLS = new Set(['health', 'qa-only', 'review', 'canary', 're
  */
 export function getDefaultActions(
   skillName: string | undefined,
-  problemFindings: string[],
+  findings: string[],
   repoName: string,
 ): SuggestedAction[] {
-  if (!skillName || !REPORT_ONLY_SKILLS.has(skillName) || problemFindings.length === 0) return []
+  if (!skillName || !REPORT_ONLY_SKILLS.has(skillName)) return []
+  const problemFindings = getActionableFindings(findings)
+  if (problemFindings.length === 0) return []
   const topFindings = problemFindings.slice(0, 3).join('; ')
   return [
     {
@@ -191,7 +220,7 @@ export function getSuggestedActions(
 ): SuggestedAction[] {
   if (!skillName || findings.length === 0) return []
 
-  const problemFindings = stripPassingFindings(findings)
+  const problemFindings = getActionableFindings(findings)
   if (problemFindings.length === 0) return []
 
   const text = problemFindings.join(' ').toLowerCase()

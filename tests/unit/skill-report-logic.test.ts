@@ -3,7 +3,7 @@
  * Imports the real function — not a mirror — so tests are authoritative.
  */
 import { describe, it, expect } from 'vitest'
-import { getSuggestedActions, FINDINGS_PREVIEW_COUNT, MAX_SUGGESTIONS } from '../../src/lib/skills/suggest-actions'
+import { getSuggestedActions, getDefaultActions, getActionableFindings, FINDINGS_PREVIEW_COUNT, MAX_SUGGESTIONS } from '../../src/lib/skills/suggest-actions'
 
 const REPO = 'open-travel'
 
@@ -213,6 +213,81 @@ describe('getSuggestedActions — retro', () => {
       'Highlight: deployment pipeline stabilised',
     ], REPO)
     expect(actions).toHaveLength(0)
+  })
+})
+
+// ─── getActionableFindings — informational/N-A filtering ─────────────────────
+
+describe('getActionableFindings', () => {
+  it('strips ✅ passing findings', () => {
+    expect(getActionableFindings(['✅ TypeScript: 0 compile issues'])).toHaveLength(0)
+  })
+
+  it('strips "TypeScript: N/A — ..." informational findings', () => {
+    const finding = 'TypeScript: N/A — project is plain JavaScript. No tsconfig.json and zero .ts/.tsx files in client or server, so there is no compile-time type checking configured.'
+    expect(getActionableFindings([finding])).toHaveLength(0)
+  })
+
+  it('strips "not configured" findings', () => {
+    expect(getActionableFindings(['Lint: not configured — no eslint config found'])).toHaveLength(0)
+  })
+
+  it('strips "not applicable" findings', () => {
+    expect(getActionableFindings(['Type checking: not applicable for this project'])).toHaveLength(0)
+  })
+
+  it('strips "(skipped)" findings', () => {
+    expect(getActionableFindings(['Dead code analysis (skipped) — knip not installed'])).toHaveLength(0)
+  })
+
+  it('strips findings starting with "Skipped"', () => {
+    expect(getActionableFindings(['Skipped: shellcheck not available'])).toHaveLength(0)
+  })
+
+  it('keeps a real TypeScript error', () => {
+    expect(getActionableFindings(['TypeScript: proxy.ts has a type error on line 12'])).toHaveLength(1)
+  })
+
+  it('returns an empty array for empty input', () => {
+    expect(getActionableFindings([])).toEqual([])
+  })
+
+  it('keeps actionable findings alongside stripped informational ones', () => {
+    const findings = [
+      'TypeScript: N/A — project is plain JavaScript.',
+      '⚠️ Dead code: 3 unused exports detected',
+    ]
+    expect(getActionableFindings(findings)).toEqual(['⚠️ Dead code: 3 unused exports detected'])
+  })
+})
+
+// ─── getSuggestedActions / getDefaultActions — informational findings ────────
+
+describe('getSuggestedActions — informational findings do not trigger suggestions', () => {
+  it('a "TypeScript: N/A" finding does not suggest "Fix TypeScript & lint errors"', () => {
+    const finding = 'TypeScript: N/A — project is plain JavaScript. No tsconfig.json and zero .ts/.tsx files in client or server, so there is no compile-time type checking configured. (Cannot report TS errors because TS is not configured)'
+    const actions = getSuggestedActions('health', [finding], REPO)
+    expect(actions).toHaveLength(0)
+  })
+})
+
+describe('getDefaultActions — informational findings', () => {
+  it('returns no default actions when the only finding is informational', () => {
+    const finding = 'TypeScript: N/A — project is plain JavaScript.'
+    expect(getDefaultActions('health', [finding], REPO)).toHaveLength(0)
+  })
+
+  it('returns no default actions when findings are empty', () => {
+    expect(getDefaultActions('health', [], REPO)).toHaveLength(0)
+  })
+
+  it('returns default actions when at least one finding is actionable', () => {
+    const findings = ['TypeScript: N/A — project is plain JavaScript.', 'Untriaged issue: see report for details']
+    expect(getDefaultActions('health', findings, REPO).length).toBeGreaterThan(0)
+  })
+
+  it('non-report skill → no default actions even with actionable findings', () => {
+    expect(getDefaultActions('ship', ['Untriaged issue: see report for details'], REPO)).toHaveLength(0)
   })
 })
 

@@ -708,6 +708,16 @@ Findings from a full security + production flow audit.
 - [x] Each `process` call handles a single repo job end-to-end via `generateRepoSummary()` with the user's configured LLM adapter
 - [x] Cleaner than the previous per-user chunked approach; jobs are individually retryable and observable via the `ai_summary_jobs` table
 
+### Phase 59 — Skill Report Quality & Auto-Chain Safety ✅
+
+Triggered by a real no-op PR (`smithdavedesign/family-tree` PR #3): a `/health` run on a plain-JS repo produced one informational finding ("TypeScript: N/A — project is plain JavaScript..."), which the 1-hop skill-chain auto-queued as a "fix" objective — the chained agent found nothing to fix and opened a dead PR.
+
+- [x] **`getActionableFindings()`** (`src/lib/skills/suggest-actions.ts`) — new shared filter strips both passing findings (✅/✓/"0 errors") and informational/N-A findings (`TypeScript: N/A — ...`, `not configured`, `not applicable`, `(skipped)`, `Skipped: ...`). Wired into `getSuggestedActions()` and `getDefaultActions()` so informational findings never surface a misleading "Fix TypeScript & lint errors" suggestion.
+- [x] **Don't chain for no reason** — the 1-hop skill-chain auto-queue (`agent-events/route.ts`) and the gstack-self-scan "Fix: ..." loop both now require `getActionableFindings(findings).length > 0` before acting. A report with zero actionable findings never auto-chains or queues fix tasks.
+- [x] **"Ran, nothing found" UI signal** — `SkillReportFindings` now always renders for `agent_skill_report` events. Zero findings → "✅ Check completed — no issues found." Findings present but none actionable → "✅ No action needed — nothing actionable found." instead of a silently empty section.
+- [x] **Tech-stack-aware `/health` objective** — the default `/health` objective (`repos/[id]/page.tsx`) no longer hardcodes "TypeScript errors"; it's now generic ("type checking, tests, lint, and dead code, covering whichever apply to this project's stack") and appends `(${stack.language})` when known.
+- [x] 17 new unit tests (`skill-report-logic.test.ts`, `skill-chain-gate.test.ts`) covering the informational-finding filter and the auto-chain/self-improve gates.
+
 ---
 
 ## Distribution Roadmap

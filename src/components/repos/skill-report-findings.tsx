@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp, GitPullRequest, Search, Wrench } from 'lucide-r
 import { Button } from '@/components/ui/button'
 import { queueGstackSkill } from '@/lib/actions/nexus'
 import type { GstackSkill } from '@/lib/actions/nexus-utils'
-import { getSuggestedActions, getDefaultActions, FINDINGS_PREVIEW_COUNT } from '@/lib/skills/suggest-actions'
+import { getSuggestedActions, getDefaultActions, getActionableFindings, FINDINGS_PREVIEW_COUNT } from '@/lib/skills/suggest-actions'
 import { toast } from 'sonner'
 
 interface SkillReportFindingsProps {
@@ -37,6 +37,20 @@ export function SkillReportFindings({ findings, skillName, repoId, repoName, nex
     ? getDefaultActions(skillName, findings, repoName)
     : []
   const suggestedActions = inferredActions.length > 0 ? inferredActions : defaultActions
+  const hasActionableFindings = getActionableFindings(findings).length > 0
+
+  // Report ran but found nothing — give a clear "clean" signal rather than
+  // an empty/blank section.
+  if (findings.length === 0) {
+    return (
+      <div className="mt-2 pt-2 border-t border-border/40">
+        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+          <span>✅</span>
+          <span>Check completed — no issues found.</span>
+        </p>
+      </div>
+    )
+  }
 
   async function handleQueueAction(skill: GstackSkill, objective: string) {
     setQueuingFor(skill)
@@ -116,6 +130,14 @@ export function SkillReportFindings({ findings, skillName, repoId, repoName, nex
             <p className="text-[9px] text-muted-foreground">Configure Nexus to queue agent tasks from here.</p>
           )}
         </div>
+      )}
+
+      {/* No actionable issues — confirm the check ran and found nothing to do */}
+      {suggestedActions.length === 0 && !hasActionableFindings && (
+        <p className="pt-2 border-t border-border/40 text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+          <span>✅</span>
+          <span>No action needed — nothing actionable found.</span>
+        </p>
       )}
     </div>
   )

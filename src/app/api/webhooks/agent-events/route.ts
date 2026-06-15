@@ -6,6 +6,7 @@ import { after } from 'next/server'
 import { dispatchNotification } from '@/lib/notifications/dispatcher'
 import { isGstackSkill } from '@/lib/actions/nexus-utils'
 import { secretsEqual, decrypt } from '@/lib/crypto-utils'
+import { getActionableFindings } from '@/lib/skills/suggest-actions'
 
 interface AgentEventPayload {
   eventType: 'agent_task_queued' | 'agent_pr_created' | 'agent_pr_merged' | 'agent_execution_failed' | 'agent_skill_report'
@@ -200,12 +201,15 @@ export async function POST(request: Request) {
 
     // Self-improvement loop: convert findings from self-scans into queued fix tasks.
     // Only fires for scans originating from /api/cron/gstack-self (source === 'gstack-self-scan').
-    // Max 3 fix tasks per report cycle to avoid runaway dispatch.
-    if (isSelfScan && repoId && (payload.findings?.length ?? 0) > 0) {
+    // Max 3 fix tasks per report cycle to avoid runaway dispatch. Informational
+    // findings (e.g. "TypeScript: N/A — project is plain JavaScript") carry no
+    // actionable signal and must not produce "Fix: ..." tasks.
+    const selfScanActionable = getActionableFindings(payload.findings ?? [])
+    if (isSelfScan && repoId && selfScanActionable.length > 0) {
       after(async () => {
         try {
           const { queueAdvisorActionForUser } = await import('@/lib/actions/nexus')
-          const findings = (payload.findings ?? []).slice(0, 3)
+          const findings = selfScanActionable.slice(0, 3)
           const repoShortName = repoName ?? 'RepoHQ'
 
           for (const finding of findings) {
@@ -236,15 +240,18 @@ export async function POST(request: Request) {
   }
 
   // Skill-chain: when a skill report includes a suggestedNextSkill, automatically queue it —
-  // but only when autoDispatch is enabled AND the originating task was not itself a chain
-  // (chainDepth check prevents infinite loops).
+  // but only when autoDispatch is enabled, the originating task was not itself a chain
+  // (chainDepth check prevents infinite loops), AND the report actually found something
+  // actionable. Chaining on a purely informational finding (e.g. "TypeScript: N/A —
+  // project is plain JavaScript") produces a dead PR with nothing to fix.
   if (eventType === 'agent_skill_report' && payload.suggestedNextSkill && repoId && userId) {
     const queuedMeta = matched?.metadata as { source?: string; chainDepth?: number } | null
     const isChained = queuedMeta?.source === 'skill-chain'
     const nextSkill = payload.suggestedNextSkill
+    const chainActionable = getActionableFindings(payload.findings ?? [])
 
     // Validate the suggested skill is a known GstackSkill before acting on it
-    if (!isChained && isGstackSkill(nextSkill)) {
+    if (!isChained && isGstackSkill(nextSkill) && chainActionable.length > 0) {
       after(async () => {
         try {
           const { users: usersTable } = await import('@/lib/db/schema')
@@ -262,7 +269,7 @@ export async function POST(request: Request) {
           if (!repo) return
 
           const { queueSuggestedSkill } = await import('@/lib/actions/nexus')
-          const topFindings = (payload.findings ?? []).slice(0, 3).join('; ')
+          const topFindings = chainActionable.slice(0, 3).join('; ')
           const objective = `Auto-chain from /${payload.skillName ?? 'skill'}: ${topFindings.slice(0, 200)}`
 
           await queueSuggestedSkill(
