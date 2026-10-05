@@ -17,7 +17,7 @@ import {
   allowedTiers, canUsePaidTier, chooseTier, classifyRepoData, computeTierStats, nextTier, type ModelTier,
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
-import { detectPackageManager, installCommand, planChecks, readRepoBasics, readmeIssue, runChecks, type CheckResult, type CheckSpec } from './lib/checks'
+import { confirmFailures, detectPackageManager, installCommand, planChecks, readRepoBasics, readmeIssue, runChecks, type CheckResult, type CheckSpec } from './lib/checks'
 import { checkoutNewBranch, cloneRepo, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { harnessFor, runHarness } from './lib/harness'
 import { appendEntry, deadEnds, monthToDateUsd, nextRepos, openPrAttempts, readLedger, summarizeByTier, toAttemptRecords, type AttemptEntry } from './lib/ledger'
@@ -124,6 +124,12 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
       }
       specs = planChecks(basics.pkg, pm, basics.hasTsconfig)
       baseline = await runChecks(specs, dir, cfg.checkTimeoutMs)
+      for (const b of baseline) writeFileSync(path.join(logDir, `${slug(repo)}-baseline-${b.name}.log`), b.output)
+      if (baseline.some(b => !b.ok)) {
+        const confirmed = await confirmFailures(specs, baseline, dir, cfg.checkTimeoutMs)
+        if (confirmed.flaky.length > 0) log(`${repo}: ${confirmed.flaky.join(', ')} failed once then passed — treated as flaky, not a task`)
+        baseline = confirmed.results
+      }
       // Some repos' checks write files (e.g. `eslint . --fix`). Start every attempt from a clean tree.
       const sideEffects = await diffInfo(dir)
       if (sideEffects.files.length > 0) {

@@ -25,8 +25,10 @@ plist() { # label mode calendar-xml
   $3
   <key>StandardOutPath</key><string>$HOME/.repohq-factory/logs/launchd-$2.out</string>
   <key>StandardErrorPath</key><string>$HOME/.repohq-factory/logs/launchd-$2.err</string>
-  <key>ProcessType</key><string>Background</string>
-  <key>LowPriorityIO</key><true/>
+  <!-- Standard, not Background: Background/LowPriorityIO throttling made npm ci take 4.5 min and
+       timing-sensitive test suites fail, which the factory would then try to "fix". -->
+  <key>ProcessType</key><string>Standard</string>
+  <key>Nice</key><integer>5</integer>
 </dict>
 </plist>
 PLIST

@@ -91,6 +91,26 @@ export async function runChecks(specs: CheckSpec[], cwd: string, timeoutMs: numb
   return results
 }
 
+/**
+ * Re-run each failing check once. Only failures that reproduce become tasks —
+ * a flaky or resource-starved failure must never send a model to "fix" working code.
+ */
+export async function confirmFailures(
+  specs: CheckSpec[], results: CheckResult[], cwd: string, timeoutMs: number,
+): Promise<{ results: CheckResult[]; flaky: CheckName[] }> {
+  const flaky: CheckName[] = []
+  const confirmed: CheckResult[] = []
+  for (const r of results) {
+    if (r.ok) { confirmed.push(r); continue }
+    const spec = specs.find(s => s.name === r.name)
+    if (!spec) { confirmed.push(r); continue }
+    const [again] = await runChecks([spec], cwd, timeoutMs)
+    if (again.ok) flaky.push(r.name)
+    confirmed.push(again.ok ? again : r)
+  }
+  return { results: confirmed, flaky }
+}
+
 const SOURCE_EXT = '(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte|astro)'
 
 /** Repo-relative files named in tsc output (both `file(1,2): error` and `file:1:2 - error` styles). */

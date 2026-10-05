@@ -144,8 +144,9 @@ function packageName(raw: string): string {
 /** Template filler small models emit instead of real values. */
 const PLACEHOLDERS = [/your-?user-?name/i, /<your[-_ ]/i, /\byour[-_]repo(sitory)?\b/i, /YOUR_[A-Z_]+_HERE/, /\bTODO: fill/i]
 
+// `test` and `start` are deliberately absent: `npm test` fails unless a test script exists.
 const PM_BUILTINS = new Set([
-  'install', 'ci', 'test', 'start', 'run', 'i', 'add', 'dlx', 'exec', 'create', 'init', 'audit',
+  'install', 'ci', 'run', 'i', 'add', 'dlx', 'exec', 'create', 'init', 'audit',
   'outdated', 'update', 'upgrade', 'link', 'remove', 'uninstall', 'x', 'why', 'version', 'publish', 'login',
 ])
 

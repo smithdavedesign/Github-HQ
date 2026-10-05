@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import {
+  confirmFailures, runChecks, type CheckSpec,
   detectPackageManager, installCommand, planChecks, isPlaceholderTestScript,
   filesFromTscOutput, filesFromEslintOutput, errorExcerpt, readmeIssue, type CheckResult,
 } from '../../factory/lib/checks'
@@ -172,7 +176,7 @@ describe('judge', () => {
   it('README tasks: README only, must grow, no invented scripts', () => {
     const [docs] = tasksFromScan([], [], 'README.md is missing', '/r')
     const scripts = { dev: 'next dev', build: 'next build' }
-    const good = '## Setup\n\n`npm install` then `npm run dev`, build with `npm run build`, test with `npm test`.'
+    const good = '## Setup\n\n`npm install` then `npm run dev`, build with `npm run build`.'
     expect(judge({ task: docs, baseline: [], after: [], diff: diff([['README.md', 20, 2]]), scripts, readmeAfter: good }).ok).toBe(true)
     expect(judge({ task: docs, baseline: [], after: [], diff: diff([['README.md', 1, 5]]), scripts, readmeAfter: good }).reason).toMatch(/did not grow/)
     expect(judge({ task: docs, baseline: [], after: [], diff: diff([['README.md', 9, 0], ['src/a.ts', 1, 0]]), scripts, readmeAfter: good }).reason).toMatch(/non-README/)
@@ -396,7 +400,7 @@ describe('fitLocalContext', () => {
 describe('referencedScripts', () => {
   it('ignores prose like "npm scripts" but catches commands', () => {
     const readme = 'Use the npm scripts below.\n\n```bash\nnpm install\nnpm run dev\npnpm lint\nyarn add x\n```\nThen `npm start`. Deploy with npm run deploy.'
-    expect(referencedScripts(readme).sort()).toEqual(['deploy', 'dev', 'lint'])
+    expect(referencedScripts(readme).sort()).toEqual(['deploy', 'dev', 'lint', 'start'])
   })
 })
 
@@ -426,5 +430,30 @@ describe('README judge — additive only, real tools', () => {
   })
   it('parses npx package names', () => {
     expect(referencedNpxTools('```\nnpx -y @scope/tool@1.2 run\nnpx create-next-app@latest\nnpx tsc --noEmit\n```').sort()).toEqual(['@scope/tool', 'create-next-app', 'tsc'])
+  })
+})
+
+describe('confirmFailures', () => {
+  it('treats a fail-then-pass check as flaky and keeps reproducible failures', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'factory-flaky-'))
+    const flakyScript = "const f=require('fs'),p='marker';if(f.existsSync(p))process.exit(0);f.writeFileSync(p,'');process.exit(1)"
+    const specs: CheckSpec[] = [
+      { name: 'test', cmd: process.execPath, args: ['-e', flakyScript], display: 'flaky test' },
+      { name: 'lint', cmd: process.execPath, args: ['-e', 'process.exit(2)'], display: 'broken lint' },
+    ]
+    const first = await runChecks(specs, dir, 10_000)
+    expect(first.map(r => r.ok)).toEqual([false, false])
+    const { results, flaky } = await confirmFailures(specs, first, dir, 10_000)
+    expect(flaky).toEqual(['test'])
+    expect(results.map(r => [r.name, r.ok])).toEqual([['test', true], ['lint', false]])
+  })
+})
+
+describe('npm test needs a test script', () => {
+  it('rejects documenting `npm test` when there is no test script', () => {
+    const [docs] = tasksFromScan([], [], 'README.md is missing', '/r')
+    const diff = { files: [{ path: 'README.md', added: 5, removed: 0, deleted: false }], addedLines: [], removedLines: [] }
+    const v = judge({ task: docs, baseline: [], after: [], diff, scripts: { dev: 'x' }, readmeAfter: '```\nnpm test\n```' })
+    expect(v.reason).toMatch(/non-existent scripts: test/)
   })
 })
