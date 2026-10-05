@@ -778,6 +778,17 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 - [ ] 1Password `AI-Agent` vault + service account (owner action), then move both secrets into it
 - [ ] Factory PRs authored by the Nexus GitHub App instead of the owner's `gh` login
 
+### Phase 68 — Redundant Free Model Pool ✅
+OpenRouter's 50 free requests/day can't be the single brain. M1 became a LiteLLM pool across independent free providers (design: [autonomous-factory.md §3.1](autonomous-factory.md#31-the-free-model-pool-no-single-quota-is-a-point-of-failure)).
+- [x] Managed LiteLLM members for **Gemini** (AI Studio free tier), **Ollama Cloud** (free plan, OpenAI-compatible endpoint) and **OpenRouter**, alongside local Ollama (`factory/lib/litellm-config.ts`, pool ids like `ollama-cloud:nemotron-3-super`)
+- [x] Scout discovers and probes candidates on all three providers, evaluates them, and writes a **provider-diverse** chain `free-agent → free-agent-b → free-agent-c` (`pickPool`); skips models tested in the last 3 days
+- [x] Explicit fallback ladders (LiteLLM doesn't chain fallbacks recursively): `free-agent` → rest of pool; `cloud-or` → pool; `local-coder` → pool → `cloud-smart` (paid last). Verified live: an exhausted OpenRouter request was served by Ollama Cloud in the same call
+- [x] Factory defers M1 only when no pool member has capacity (`m1Deferred`)
+- [x] OpenClaw default agent: `local-coder → free-agent → cloud-smart` (was `→ cloud-or →`), via OpenClaw's validated config CLI
+- [ ] Route Claude Code's small background calls to local Ollama to save free-tier requests (needs a context-size check first)
+- [ ] Optional: one-time $10 OpenRouter credit (1,000 free requests/day) to deepen the OpenRouter member. Owner decision
+- [ ] Later: move the worker stack into an AI dev VM with the Mac as control plane (§8). Needs more RAM or a second machine
+
 ### Phase 67+ — Horizon 3: Infrastructure Agent
 - [ ] `agent_resources` ledger table (owner, provider, kind, environment, est. cost, `ephemeral`, `ttlAt`, destroy procedure, lifecycle state) + `.infrastructure/resources.json` mirror
 - [ ] Dev-only provisioning in order: GitHub repo → Vercel preview → Neon/Supabase dev branch → Cloudflare preview DNS → AWS/GCP

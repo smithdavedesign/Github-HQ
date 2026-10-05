@@ -1,120 +1,165 @@
 /**
- * Model scout (Phase 64) — weekly, $0.
+ * Model scout (Phase 64/68) — weekly, $0.
  *
- *   npx tsx factory/scout.ts            # evaluate candidates, update free-agent / free-agent-b
+ *   npx tsx factory/scout.ts            # evaluate candidates, update the free-agent pool
  *   npx tsx factory/scout.ts --dry-run  # evaluate only; leave aliases unchanged
  *
- * 1. Lists free, tool-calling models on OpenRouter.
- * 2. Exposes up to 6 candidates (plus incumbents) as scout-N aliases in LiteLLM.
- * 3. Runs the eval suite (factory/eval) through Claude Code on each.
- * 4. Points free-agent / free-agent-b at the two best, keeps local-agent on Ollama,
- *    removes the scout-N aliases, and commits the change in ~/ai-stack.
+ * Maintains a redundant free model pool in LiteLLM so no single provider's quota
+ * stops the agent (docs/autonomous-factory.md §3):
+ *
+ *   free-agent → free-agent-b → free-agent-c      (LiteLLM fallbacks, free-only)
+ *
+ * 1. Discovers candidates on three independent free tiers: Gemini (Google AI
+ *    Studio), Ollama Cloud (free plan, tool-calling models), OpenRouter (:free).
+ * 2. Exposes them as scout-N aliases and runs the eval suite through Claude Code.
+ * 3. Ranks today's results with 21 days of history and writes a provider-diverse
+ *    chain, keeps local-agent on Ollama, and commits the change in ~/ai-stack.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { loadConfig } from './lib/config'
 import { EVAL_CASES, runEval, type EvalOutcome } from './lib/evals'
 import { appendEntry } from './lib/ledger'
-import { readManagedModels, type ManagedModel } from './lib/litellm-config'
+import { memberFor, parsePoolId, poolId, readManagedModels, type ManagedModel, type PoolId } from './lib/litellm-config'
 import { applyLiteLLMModels, commitStackConfig } from './lib/litellm-ops'
-import { historicalOutcomes, isFreeToolModel, pickAliases, rankModels, selectCandidates, type OpenRouterModel } from './lib/scout-select'
+import { discoverGemini, discoverOllamaCloud } from './lib/providers'
+import { historicalOutcomes, isFreeToolModel, pickPool, providerOf, rankModels, selectCandidates, type OpenRouterModel } from './lib/scout-select'
 import { recordScout } from './lib/sink'
 import { freeQuota, SCOUT_REQUESTS_PER_CASE } from './lib/quota'
 import { acquireLock } from './lib/lock'
 
 const LOCAL_AGENT: ManagedModel = { name: 'local-agent', model: 'qwen2.5:7b-coding', kind: 'ollama', numCtx: 16384 }
+const POOL_ALIASES = ['free-agent', 'free-agent-b', 'free-agent-c']
+const RETEST_AFTER_DAYS = 3
 
 const log = (...a: unknown[]) => console.log(`[scout ${new Date().toISOString().slice(11, 19)}]`, ...a)
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run')
-  const limit = Number(process.argv.find(a => a.startsWith('--limit='))?.split('=')[1] ?? 6)
+  const perProvider = Number(process.argv.find(a => a.startsWith('--per-provider='))?.split('=')[1] ?? 2)
   const cfg = loadConfig()
   acquireLock(cfg.home, 'scout')
 
   const configText = readFileSync(cfg.litellm.configPath, 'utf8')
   const current = readManagedModels(configText)
   // First run: the hand-configured cloud-or model is the incumbent, so a scout
-  // that can't evaluate anything (quota) still leaves a working free-agent.
+  // that can't evaluate anything still leaves a working free-agent.
   const cloudOr = /model_name: cloud-or\n\s+litellm_params:\n\s+model: openrouter\/(\S+)/.exec(configText)?.[1]
-  const incumbents = { primary: current['free-agent'] ?? cloudOr, backup: current['free-agent-b'] }
+  const incumbents = POOL_ALIASES.map(a => current[a]).filter((x): x is PoolId => !!x)
+  if (incumbents.length === 0 && cloudOr) incumbents.push(poolId('openrouter', cloudOr))
 
+  // ── Discover candidates on each free provider ──────────────────────────────
   const res = await fetch('https://openrouter.ai/api/v1/models')
-  if (!res.ok) throw new Error(`OpenRouter models API → ${res.status}`)
-  const models = ((await res.json()) as { data: OpenRouterModel[] }).data
+  const orModels = res.ok ? ((await res.json()) as { data: OpenRouterModel[] }).data : []
   const reportDir = path.join(cfg.home, 'scout-reports')
-  const history = historicalOutcomes(readReports(reportDir), new Set(models.filter(isFreeToolModel).map(m => m.id)), new Date())
+  const reports = readReports(reportDir)
+  const tested = lastTested(reports)
 
   const quota = await freeQuota(cfg)
-  const budgetCases = quota ? Math.floor(quota.remaining / SCOUT_REQUESTS_PER_CASE) : Infinity
-  if (quota) log(`OpenRouter free quota: ${quota.remaining}/${quota.limit} requests left today (~${budgetCases} eval cases)`)
-  if (budgetCases < EVAL_CASES.length) {
-    log('not enough free quota to evaluate today — choosing from recent scout history')
-    const pick = pickAliases(rankModels(history.filter(o => !o.rateLimited && o.case !== 'preflight')), incumbents)
-    log('pick:', pick)
-    if (!dryRun && (pick.primary !== current['free-agent'] || pick.backup !== current['free-agent-b'])) {
-      await applyLiteLLMModels(cfg, liveModels(pick), liveFallbacks(pick))
-      await commitStackConfig(cfg, `factory scout (from history): free-agent=${pick.primary} free-agent-b=${pick.backup}`)
-    }
-    return
-  }
-  const affordableModels = Math.max(1, Math.floor(budgetCases / EVAL_CASES.length))
+  const orCases = quota ? Math.floor(quota.remaining / SCOUT_REQUESTS_PER_CASE) : Infinity
+  if (quota) log(`OpenRouter free quota: ${quota.remaining}/${quota.limit} requests left today (~${orCases} eval cases)`)
+  const orAffordable = Math.min(perProvider, Math.floor(orCases / EVAL_CASES.length))
+  const orIncumbents = incumbents.filter(i => providerOf(i) === 'openrouter').map(i => parsePoolId(i).model)
+  const orTested = Object.fromEntries(Object.entries(tested).map(([k, v]) => [parsePoolId(k).model, v]))
+  const openrouter = orAffordable > 0
+    ? selectCandidates(orModels, orIncumbents, orAffordable, orTested).map(m => poolId('openrouter', m))
+    : []
+  const gemini = await discoverGemini(cfg, perProvider)
+  const ollamaCloud = await discoverOllamaCloud(cfg, perProvider)
 
-  const candidates = selectCandidates(models, [incumbents.primary, incumbents.backup].filter((x): x is string => !!x), Math.min(limit, affordableModels), lastTested(reportDir))
-  log(`${candidates.length} candidates:`, candidates.join(', '))
-  if (candidates.length === 0) throw new Error('no free tool-calling candidates found')
+  const available = new Set<PoolId>([
+    ...orModels.filter(isFreeToolModel).map(m => poolId('openrouter', m.id)),
+    ...gemini, ...ollamaCloud,
+  ])
+  // Free quotas are precious: don't re-test anything evaluated in the last few days
+  // (history still ranks it), and only re-test OpenRouter models when its quota allows.
+  const fresh = (id: PoolId) => !!tested[id] && Date.now() - new Date(tested[id]).getTime() < RETEST_AFTER_DAYS * 86_400_000
+  const retest = incumbents.filter(i => providerOf(i) !== 'openrouter' || orAffordable > 0)
+  const candidates = [...new Set([...retest, ...gemini, ...ollamaCloud, ...openrouter])].filter(id => !fresh(id))
+  log(`${candidates.length} candidates: ${candidates.join(', ') || '(none)'}`)
 
-  // Keep the live aliases working while candidates are evaluated.
-  const live = liveModels(incumbents)
-  const scoutAliases = candidates.map((model, i) => ({ name: `scout-${i + 1}`, model, kind: 'openrouter' as const }))
-  await applyLiteLLMModels(cfg, [...live, ...scoutAliases], liveFallbacks(incumbents))
-  log('LiteLLM reloaded with scout aliases')
+  const history = historicalOutcomes(
+    reports.map(r => ({ ...r, outcomes: r.outcomes?.map(o => ({ ...o, model: normalize(o.model) })) })),
+    new Set([...available, ...incumbents]),
+    new Date(),
+  )
 
+  // ── Evaluate ───────────────────────────────────────────────────────────────
+  const scoutAliases = candidates.map((id, i) => memberFor(`scout-${i + 1}`, id))
   const outcomes: EvalOutcome[] = []
-  evaluation: for (const alias of scoutAliases) {
-    const pre = await preflight(cfg.litellm.url, cfg.litellm.key, alias.name)
-    if (pre !== 'ok') {
-      log(`${alias.model.padEnd(48)} skipped — preflight ${pre}`)
-      outcomes.push({ model: alias.model, case: 'preflight', pass: false, detail: pre, durationMs: 0, rateLimited: pre === 'rate_limited' })
-      continue
-    }
-    for (const c of EVAL_CASES) {
-      const o = await runEval(c, alias.name, 'M1', cfg)
-      outcomes.push({ ...o, model: alias.model })
-      log(`${alias.model.padEnd(48)} ${c.name.padEnd(17)} ${o.pass ? 'PASS' : 'fail'} ${(o.durationMs / 1000).toFixed(0)}s ${o.detail}`)
-      if (o.rateLimited) {
-        // Shared free pools throttle per model: stop spending time on this one today.
-        log(`${alias.model} rate limited — skipping its remaining cases`)
-        break
+  if (scoutAliases.length > 0) {
+    // Keep the live pool working while candidates are evaluated.
+    await applyLiteLLMModels(cfg, [...poolMembers(incumbents), ...scoutAliases], poolFallbacks(incumbents))
+    log('LiteLLM reloaded with scout aliases')
+    for (const alias of scoutAliases) {
+      const id = poolId(alias.kind, alias.model)
+      const pre = await preflight(cfg.litellm.url, cfg.litellm.key, alias.name)
+      if (pre !== 'ok') {
+        log(`${id.padEnd(52)} skipped — preflight ${pre}`)
+        outcomes.push({ model: id, case: 'preflight', pass: false, detail: pre, durationMs: 0, rateLimited: pre === 'rate_limited' })
+        continue
       }
-      const q = await freeQuota(cfg)
-      if (q && q.remaining < SCOUT_REQUESTS_PER_CASE) {
-        log(`free quota nearly exhausted (${q.remaining} left) — stopping evaluation`)
-        break evaluation
+      for (const c of EVAL_CASES) {
+        const o = await runEval(c, alias.name, 'M1', cfg)
+        outcomes.push({ ...o, model: id })
+        log(`${id.padEnd(52)} ${c.name.padEnd(17)} ${o.pass ? 'PASS' : 'fail'} ${(o.durationMs / 1000).toFixed(0)}s ${o.detail}`)
+        if (o.rateLimited) {
+          log(`${id} rate limited — skipping its remaining cases`)
+          break
+        }
+        if (alias.kind === 'openrouter') {
+          const q = await freeQuota(cfg)
+          if (q && q.remaining < SCOUT_REQUESTS_PER_CASE) {
+            log(`OpenRouter quota nearly exhausted (${q.remaining} left) — skipping the rest of this model`)
+            break
+          }
+        }
       }
     }
+  } else {
+    log('nothing to evaluate today — choosing from history')
   }
 
-  // Rate-limited cases say nothing about skill; pickAliases needs ≥ 2 completed cases.
-  // Today's results are ranked together with recent history (see historicalOutcomes).
+  // ── Pick a provider-diverse chain ──────────────────────────────────────────
+  // Rate-limited cases say nothing about skill; a member needs ≥ 2 completed cases.
   const scores = rankModels([...history, ...outcomes].filter(o => !o.rateLimited && o.case !== 'preflight'))
-  const pick = pickAliases(scores, incumbents)
-  log('ranking:', scores.map(s => `${s.model} ${s.passes}/${s.total} ~${Math.round(s.avgMs / 1000)}s`).join(' | '))
-  log('pick:', pick)
+  const chain = pickPool(scores, incumbents)
+  log('ranking:', scores.map(s => `${s.model} ${s.passes}/${s.total} ~${Math.round(s.avgMs / 1000)}s`).join(' | ') || '(no data)')
+  log('pool:', chain.map((id, i) => `${POOL_ALIASES[i]}=${id}`).join(' → ') || '(empty)')
 
-  const finalModels = liveModels(pick)
-  const target = dryRun ? live : finalModels
-  await applyLiteLLMModels(cfg, target, liveFallbacks(dryRun ? incumbents : pick))
-  if (!dryRun && (pick.primary !== incumbents.primary || pick.backup !== incumbents.backup)) {
-    await commitStackConfig(cfg, `factory scout: free-agent=${pick.primary} free-agent-b=${pick.backup}`)
+  const final = dryRun ? incumbents : chain
+  await applyLiteLLMModels(cfg, poolMembers(final), poolFallbacks(final))
+  if (!dryRun && chain.join() !== incumbents.join()) {
+    await commitStackConfig(cfg, `factory scout: pool ${chain.map((id, i) => `${POOL_ALIASES[i]}=${id}`).join(' ')}`)
   }
 
   const at = new Date().toISOString()
   mkdirSync(reportDir, { recursive: true })
-  writeFileSync(path.join(reportDir, `${at.slice(0, 19).replace(/:/g, '')}.json`), JSON.stringify({ at, dryRun, candidates, outcomes, scores, pick }, null, 2))
-  appendEntry(cfg.home, { type: 'scout', at, primary: pick.primary, backup: pick.backup, scores })
-  await recordScout(cfg, { primary: pick.primary, backup: pick.backup, scores, dryRun })
-  log(dryRun ? 'dry run — aliases unchanged' : 'aliases updated')
+  writeFileSync(path.join(reportDir, `${at.slice(0, 19).replace(/:/g, '')}.json`), JSON.stringify({ at, dryRun, candidates, outcomes, scores, chain }, null, 2))
+  appendEntry(cfg.home, { type: 'scout', at, primary: chain[0] ?? null, backup: chain[1] ?? null, scores })
+  await recordScout(cfg, { primary: chain[0] ?? null, backup: chain[1] ?? null, scores, dryRun })
+  log(dryRun ? 'dry run — pool unchanged' : 'pool updated')
+}
+
+function poolMembers(chain: PoolId[]): ManagedModel[] {
+  return [...chain.slice(0, POOL_ALIASES.length).map((id, i) => memberFor(POOL_ALIASES[i], id)), LOCAL_AGENT]
+}
+
+/**
+ * Fallbacks (LiteLLM doesn't chain fallbacks recursively, so every ladder is explicit):
+ * - free-agent → the rest of the pool: free-only, across providers (a 429 on one moves to the next).
+ *   local-agent never escalates on its own — the factory decides when to pay.
+ * - cloud-or (hand-maintained OpenRouter alias) → the pool.
+ * - local-coder (interactive agents, OpenClaw) → the pool → cloud-smart. The owner's
+ *   policy: routine work local, free pool next, paid only as the last resort.
+ */
+function poolFallbacks(chain: PoolId[]): Record<string, string[]> {
+  const aliases = POOL_ALIASES.slice(0, Math.min(chain.length, POOL_ALIASES.length))
+  return {
+    ...(aliases.length > 1 ? { 'free-agent': aliases.slice(1) } : {}),
+    ...(aliases.length > 0 ? { 'cloud-or': aliases } : {}),
+    'local-coder': [...aliases, 'cloud-smart'],
+  }
 }
 
 /** One tiny completion through LiteLLM — catches upstream throttling before a 5-minute eval does. */
@@ -123,7 +168,7 @@ async function preflight(url: string, key: string, alias: string): Promise<'ok' 
     const r = await fetch(`${url}/v1/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: alias, messages: [{ role: 'user', content: 'Reply with OK.' }], max_tokens: 16 }),
+      body: JSON.stringify({ model: alias, messages: [{ role: 'user', content: 'Reply with OK.' }], max_tokens: 64 }),
       signal: AbortSignal.timeout(90_000),
     })
     if (r.status === 429) return 'rate_limited'
@@ -146,24 +191,17 @@ function readReports(reportDir: string): ScoutReport[] {
   })
 }
 
-/** model id → last date it was evaluated, from previous scout reports. */
-function lastTested(reportDir: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const r of readReports(reportDir)) for (const id of r.candidates ?? []) out[id] = r.at
+/** Reports written before the pool used bare OpenRouter slugs. */
+function normalize(id: string): PoolId {
+  const { kind, model } = parsePoolId(id)
+  return poolId(kind, model)
+}
+
+/** pool id → last date it was evaluated. */
+function lastTested(reports: ScoutReport[]): Record<PoolId, string> {
+  const out: Record<PoolId, string> = {}
+  for (const r of reports) for (const id of r.candidates ?? []) out[normalize(id)] = r.at
   return out
-}
-
-function liveModels(p: { primary?: string | null; backup?: string | null }): ManagedModel[] {
-  return [
-    ...(p.primary ? [{ name: 'free-agent', model: p.primary, kind: 'openrouter' as const }] : []),
-    ...(p.backup ? [{ name: 'free-agent-b', model: p.backup, kind: 'openrouter' as const }] : []),
-    LOCAL_AGENT,
-  ]
-}
-
-function liveFallbacks(p: { primary?: string | null; backup?: string | null }): Record<string, string[]> {
-  // Free-only: free-agent falls back to free-agent-b; local-agent never escalates on its own.
-  return p.primary && p.backup ? { 'free-agent': ['free-agent-b'] } : {}
 }
 
 main().catch(err => {

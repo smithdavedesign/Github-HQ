@@ -111,3 +111,45 @@ export function historicalOutcomes(
     .flatMap(r => (r.outcomes ?? []).map(o => ({ ...o, at: r.at })))
     .filter(o => available.has(o.model))
 }
+
+// ─── Multi-provider pool (docs/autonomous-factory.md §3 — no single free quota is a point of failure) ──
+
+/** Newest stable Gemini Flash models (no preview/tts/image variants), full Flash before Flash-Lite. */
+export function pickGeminiCandidates(modelNames: string[], limit = 2): string[] {
+  const re = /^gemini-(\d+(?:\.\d+)?)-flash(-lite)?$/
+  return modelNames
+    .map(n => n.replace(/^models\//, ''))
+    .map(n => ({ n, m: re.exec(n) }))
+    .filter((x): x is { n: string; m: RegExpExecArray } => x.m !== null)
+    .sort((a, b) => Number(!!a.m[2]) - Number(!!b.m[2]) || parseFloat(b.m[1]) - parseFloat(a.m[1]))
+    .slice(0, limit)
+    .map(x => x.n)
+}
+
+/** Provider prefix of a pool id ("gemini:gemini-2.5-flash" → "gemini"); bare ids are OpenRouter. */
+export function providerOf(id: string): string {
+  const p = /^(gemini|ollama-cloud|openrouter|ollama):/.exec(id)?.[1]
+  return p ?? 'openrouter'
+}
+
+/**
+ * Ordered fallback chain of up to `size` members. The best qualified model leads;
+ * the next slots prefer *different providers* so one provider's quota or outage
+ * can't take out the whole chain; then remaining qualified models; then
+ * incumbents (demoted rather than dropped).
+ */
+export function pickPool(
+  scores: ModelScore[],
+  incumbents: string[],
+  size = 3,
+  minPassRate = 2 / 3,
+  minCases = 2,
+): string[] {
+  const qualified = scores.filter(s => s.total >= minCases && s.passes / s.total >= minPassRate).map(s => s.model)
+  const chain: string[] = []
+  const add = (id: string) => { if (chain.length < size && !chain.includes(id)) chain.push(id) }
+  for (const id of qualified) if (!chain.some(c => providerOf(c) === providerOf(id))) add(id)
+  for (const id of qualified) add(id)
+  for (const id of incumbents) add(id)
+  return chain
+}

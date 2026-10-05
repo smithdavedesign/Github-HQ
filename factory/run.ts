@@ -26,7 +26,8 @@ import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
 import { run } from './lib/proc'
 import { recordApprovalNeeded, recordAttempt, recordResolution } from './lib/sink'
 import { acquireLock } from './lib/lock'
-import { freeQuota, M1_MIN_REQUESTS } from './lib/quota'
+import { freeQuota, m1Deferred } from './lib/quota'
+import { readManagedModels } from './lib/litellm-config'
 import { buildPrompt, filterTasks, fitLocalContext, tasksFromScan, type FactoryTask } from './lib/tasks'
 import { judge } from './lib/verify'
 
@@ -208,10 +209,12 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
       return 'stop'
     }
     if (tier === 'M1') {
-      const quota = await freeQuota(cfg)
-      if (quota && quota.remaining < M1_MIN_REQUESTS) {
-        // Out of free requests is "wait", never "escalate to paid" (docs/autonomous-factory.md §3).
-        log(`${repo}: free quota ${quota.remaining}/${quota.limit} < ${M1_MIN_REQUESTS} — deferring ${task.kind} to the next cycle`)
+      const pool = Object.entries(readManagedModels(readFileSync(cfg.litellm.configPath, 'utf8')))
+        .filter(([alias]) => alias.startsWith('free-agent')).map(([, id]) => id)
+      const deferred = m1Deferred(pool, await freeQuota(cfg))
+      if (deferred) {
+        // No free capacity is "wait", never "escalate to paid" (docs/autonomous-factory.md §3).
+        log(`${repo}: ${deferred} — deferring ${task.kind} to the next cycle`)
         return 'deferred'
       }
     }

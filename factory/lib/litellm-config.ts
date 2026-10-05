@@ -5,25 +5,56 @@
  * touches anything outside them, so hand-maintained entries and comments survive.
  */
 
+/**
+ * Providers a pool member can come from. Free tiers on three independent
+ * providers mean one provider's quota (e.g. OpenRouter's 50/day) never stops the agent.
+ */
+export type ProviderKind = 'gemini' | 'ollama-cloud' | 'openrouter' | 'ollama'
+
 export interface ManagedModel {
   /** LiteLLM alias, e.g. free-agent. */
   name: string
-  /** Provider model id: an OpenRouter slug or an Ollama tag. */
+  /** Provider model id: Gemini model, Ollama Cloud tag, OpenRouter slug, or local Ollama tag. */
   model: string
-  kind: 'openrouter' | 'ollama'
+  kind: ProviderKind
   numCtx?: number
 }
 
+/** "gemini:gemini-2.5-flash", "ollama-cloud:gpt-oss:120b", "openrouter:cohere/north-mini-code:free". */
+export type PoolId = string
+
+export function poolId(kind: ProviderKind, model: string): PoolId {
+  return `${kind}:${model}`
+}
+
+const KINDS: ProviderKind[] = ['gemini', 'ollama-cloud', 'openrouter', 'ollama']
+
+export function parsePoolId(id: PoolId): { kind: ProviderKind; model: string } {
+  const kind = KINDS.find(k => id.startsWith(`${k}:`))
+  // Bare ids predate the pool and were always OpenRouter slugs.
+  return kind ? { kind, model: id.slice(kind.length + 1) } : { kind: 'openrouter', model: id }
+}
+
+export function memberFor(name: string, id: PoolId): ManagedModel {
+  return { name, ...parsePoolId(id) }
+}
+
+export const OLLAMA_CLOUD_BASE = 'https://ollama.com/v1'
+
 const MODELS_START = '  # >>> repohq-factory models (managed by RepoHQ factory/scout.ts — edit via the scout, not by hand)'
 const MODELS_END = '  # <<< repohq-factory models'
-const FALLBACKS_START = '    # >>> repohq-factory fallbacks (free-only — the factory decides when to pay)'
+const FALLBACKS_START = '    # >>> repohq-factory fallbacks (pool ladders; only local-coder ends at paid cloud-smart — see factory/scout.ts)'
 const FALLBACKS_END = '    # <<< repohq-factory fallbacks'
 
 export function renderModelsBlock(models: ManagedModel[]): string {
   const entries = models.map(m => {
-    const params = m.kind === 'openrouter'
-      ? [`      model: openrouter/${m.model}`, '      api_key: os.environ/OPENROUTER_API_KEY']
-      : [`      model: ollama_chat/${m.model}`, '      api_base: http://host.docker.internal:11434', `      num_ctx: ${m.numCtx ?? 16384}`]
+    const params = {
+      'openrouter': [`      model: openrouter/${m.model}`, '      api_key: os.environ/OPENROUTER_API_KEY'],
+      'gemini': [`      model: gemini/${m.model}`, '      api_key: os.environ/GEMINI_API_KEY'],
+      // Ollama Cloud's OpenAI-compatible endpoint (supports tool calls).
+      'ollama-cloud': [`      model: openai/${m.model}`, `      api_base: ${OLLAMA_CLOUD_BASE}`, '      api_key: os.environ/OLLAMA_API_KEY'],
+      'ollama': [`      model: ollama_chat/${m.model}`, '      api_base: http://host.docker.internal:11434', `      num_ctx: ${m.numCtx ?? 16384}`],
+    }[m.kind]
     return [`  - model_name: ${m.name}`, '    litellm_params:', ...params].join('\n')
   })
   return [MODELS_START, ...entries, MODELS_END].join('\n')
@@ -36,9 +67,16 @@ export function renderFallbacksBlock(fallbacks: Record<string, string[]>): strin
   return [FALLBACKS_START, ...lines, FALLBACKS_END].join('\n')
 }
 
+/** Header lines may be reworded between versions; blocks are found by their stable marker prefix. */
+function markerIndex(text: string, marker: string): number {
+  const prefix = marker.trim().split(' (')[0]
+  const m = new RegExp(`^[ \\t]*${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*$`, 'm').exec(text)
+  return m ? m.index : -1
+}
+
 function replaceOrInsert(text: string, start: string, end: string, block: string, insertAt: (t: string) => number, label: string): string {
-  const s = text.indexOf(start)
-  const e = text.indexOf(end)
+  const s = markerIndex(text, start)
+  const e = text.indexOf(end, Math.max(s, 0))
   if (s !== -1 && e !== -1 && e > s) {
     return text.slice(0, s) + block + text.slice(e + end.length)
   }
@@ -60,14 +98,22 @@ export function applyManagedBlocks(text: string, models: ManagedModel[], fallbac
   return replaceOrInsert(withModels, FALLBACKS_START, FALLBACKS_END, renderFallbacksBlock(fallbacks), afterLine(/^  fallbacks:\n/m), 'fallbacks')
 }
 
-/** alias → provider model currently in the managed block (for reporting). */
-export function readManagedModels(text: string): Record<string, string> {
-  const s = text.indexOf(MODELS_START)
+/** alias → pool id currently in the managed block. */
+export function readManagedModels(text: string): Record<string, PoolId> {
+  const s = markerIndex(text, MODELS_START)
   const e = text.indexOf(MODELS_END)
   if (s === -1 || e === -1) return {}
-  const block = text.slice(s, e)
-  const out: Record<string, string> = {}
-  const re = /- model_name: (\S+)\n\s+litellm_params:\n\s+model: (?:openrouter|ollama_chat)\/(\S+)/g
-  for (let m = re.exec(block); m; m = re.exec(block)) out[m[1]] = m[2]
+  const out: Record<string, PoolId> = {}
+  for (const entry of text.slice(s, e).split(/\n(?=  - model_name: )/)) {
+    const name = /- model_name: (\S+)/.exec(entry)?.[1]
+    const model = /\n\s+model: (\S+)/.exec(entry)?.[1]
+    if (!name || !model) continue
+    const [prefix, ...rest] = model.split('/')
+    const id = rest.join('/')
+    if (prefix === 'openrouter') out[name] = poolId('openrouter', id)
+    else if (prefix === 'gemini') out[name] = poolId('gemini', id)
+    else if (prefix === 'openai' && entry.includes(OLLAMA_CLOUD_BASE)) out[name] = poolId('ollama-cloud', id)
+    else if (prefix === 'ollama_chat') out[name] = poolId('ollama', id)
+  }
   return out
 }

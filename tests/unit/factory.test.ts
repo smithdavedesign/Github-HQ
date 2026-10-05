@@ -13,9 +13,9 @@ import {
   parseLedger, toAttemptRecords, monthToDateUsd, openPrAttempts, deadEnds, nextRepos, summarizeByTier,
   type AttemptEntry, type LedgerEntry,
 } from '../../factory/lib/ledger'
-import { selectCandidates, rankModels, pickAliases, isFreeToolModel, historicalOutcomes, type OpenRouterModel } from '../../factory/lib/scout-select'
-import { parseFreeQuota } from '../../factory/lib/quota'
-import { applyManagedBlocks, readManagedModels, renderFallbacksBlock } from '../../factory/lib/litellm-config'
+import { selectCandidates, rankModels, pickAliases, isFreeToolModel, historicalOutcomes, pickGeminiCandidates, pickPool, providerOf, type OpenRouterModel } from '../../factory/lib/scout-select'
+import { parseFreeQuota, m1Deferred } from '../../factory/lib/quota'
+import { applyManagedBlocks, readManagedModels, renderFallbacksBlock, renderModelsBlock, memberFor, parsePoolId } from '../../factory/lib/litellm-config'
 import { parseClaudeResult, parseTokenCount, harnessFor } from '../../factory/lib/harness'
 import { branchName, prBody, prTitle } from '../../factory/lib/pr'
 import { attemptEventValues } from '../../factory/lib/sink'
@@ -290,12 +290,12 @@ describe('litellm managed blocks', () => {
     expect(once).toContain('      api_key: os.environ/OPENROUTER_API_KEY')
     expect(once.indexOf('free-agent')).toBeLessThan(once.indexOf('litellm_settings:'))
     expect(applyManagedBlocks(once, models, { 'free-agent': ['free-agent-b'] })).toBe(once)
-    expect(readManagedModels(once)).toEqual({ 'free-agent': 'q/q:free', 'local-agent': 'qwen2.5:7b' })
+    expect(readManagedModels(once)).toEqual({ 'free-agent': 'openrouter:q/q:free', 'local-agent': 'ollama:qwen2.5:7b' })
   })
   it('replaces the managed block on update', () => {
     const once = applyManagedBlocks(base, models, {})
     const twice = applyManagedBlocks(once, [{ name: 'free-agent', model: 'new/m:free', kind: 'openrouter' }], {})
-    expect(readManagedModels(twice)).toEqual({ 'free-agent': 'new/m:free' })
+    expect(readManagedModels(twice)).toEqual({ 'free-agent': 'openrouter:new/m:free' })
     expect(twice.match(/repohq-factory models/g)).toHaveLength(2)
   })
   it('renders free-only fallbacks and drops empty ones', () => {
@@ -455,5 +455,82 @@ describe('npm test needs a test script', () => {
     const diff = { files: [{ path: 'README.md', added: 5, removed: 0, deleted: false }], addedLines: [], removedLines: [] }
     const v = judge({ task: docs, baseline: [], after: [], diff, scripts: { dev: 'x' }, readmeAfter: '```\nnpm test\n```' })
     expect(v.reason).toMatch(/non-existent scripts: test/)
+  })
+})
+
+describe('multi-provider pool', () => {
+  it('picks the newest stable Gemini Flash models, full before lite', () => {
+    const names = ['models/gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-3.8-flash-tts', 'gemini-3-flash-preview', 'gemini-3.5-flash-lite', 'gemini-2.5-pro', 'gemini-3.6-flash']
+    expect(pickGeminiCandidates(names)).toEqual(['gemini-3.8-flash', 'gemini-3.6-flash'])
+    expect(pickGeminiCandidates(['gemini-3.5-flash-lite'])).toEqual(['gemini-3.5-flash-lite'])
+  })
+  it('reads providers from pool ids', () => {
+    expect(providerOf('gemini:gemini-3.8-flash')).toBe('gemini')
+    expect(providerOf('ollama-cloud:gpt-oss:120b')).toBe('ollama-cloud')
+    expect(providerOf('cohere/north-mini-code:free')).toBe('openrouter')
+  })
+  it('spreads the chain across providers before stacking one provider', () => {
+    const r = (model: string, passes: number, ms: number) => Array.from({ length: 3 }, (_, i) => ({ model, pass: i < passes, durationMs: ms }))
+    const scores = rankModels([
+      ...r('openrouter:a', 3, 10), ...r('openrouter:b', 3, 20), ...r('gemini:g', 3, 40), ...r('ollama-cloud:o', 2, 30), ...r('openrouter:bad', 0, 1),
+    ])
+    expect(pickPool(scores, [])).toEqual(['openrouter:a', 'gemini:g', 'ollama-cloud:o'])
+  })
+  it('fills with demoted incumbents when too few qualify', () => {
+    const scores = rankModels([{ model: 'gemini:g', pass: true, durationMs: 1 }, { model: 'gemini:g', pass: true, durationMs: 1 }])
+    expect(pickPool(scores, ['openrouter:old', 'gemini:g'])).toEqual(['gemini:g', 'openrouter:old'])
+  })
+})
+
+describe('pool members render for every provider', () => {
+  it('round-trips gemini, ollama-cloud, openrouter and local members', () => {
+    const members = [
+      memberFor('free-agent', 'gemini:gemini-3.8-flash'),
+      memberFor('free-agent-b', 'ollama-cloud:gpt-oss:120b'),
+      memberFor('free-agent-c', 'openrouter:cohere/north-mini-code:free'),
+      memberFor('local-agent', 'ollama:qwen2.5:7b-coding'),
+    ]
+    const block = renderModelsBlock(members)
+    expect(block).toContain('model: gemini/gemini-3.8-flash')
+    expect(block).toContain('api_key: os.environ/GEMINI_API_KEY')
+    expect(block).toContain('model: openai/gpt-oss:120b')
+    expect(block).toContain('api_base: https://ollama.com/v1')
+    expect(block).toContain('api_key: os.environ/OLLAMA_API_KEY')
+    const text = applyManagedBlocks('model_list:\nlitellm_settings:\nrouter_settings:\n  fallbacks:\n', members, {})
+    expect(readManagedModels(text)).toEqual({
+      'free-agent': 'gemini:gemini-3.8-flash',
+      'free-agent-b': 'ollama-cloud:gpt-oss:120b',
+      'free-agent-c': 'openrouter:cohere/north-mini-code:free',
+      'local-agent': 'ollama:qwen2.5:7b-coding',
+    })
+  })
+  it('treats legacy bare ids as OpenRouter', () => {
+    expect(parsePoolId('nvidia/nemotron:free')).toEqual({ kind: 'openrouter', model: 'nvidia/nemotron:free' })
+    expect(parsePoolId('ollama-cloud:gpt-oss:20b')).toEqual({ kind: 'ollama-cloud', model: 'gpt-oss:20b' })
+  })
+})
+
+describe('m1Deferred', () => {
+  const spent = { used: 50, limit: 50, remaining: 0 }
+  it('defers an OpenRouter-only pool when its quota is spent', () => {
+    expect(m1Deferred(['openrouter:a', 'b/legacy:free'], spent)).toMatch(/no other provider/)
+  })
+  it('keeps working when another provider is in the pool', () => {
+    expect(m1Deferred(['openrouter:a', 'gemini:gemini-3.8-flash'], spent)).toBeNull()
+    expect(m1Deferred(['ollama-cloud:gpt-oss:120b'], spent)).toBeNull()
+  })
+  it('defers with an empty pool; proceeds when quota is unknown', () => {
+    expect(m1Deferred([], null)).toMatch(/empty/)
+    expect(m1Deferred(['openrouter:a'], null)).toBeNull()
+  })
+})
+
+describe('managed block markers', () => {
+  it('replaces a block whose header text was reworded in an older version', () => {
+    const old = 'model_list:\nlitellm_settings:\nrouter_settings:\n  fallbacks:\n    # >>> repohq-factory fallbacks (old wording)\n    - x: ["y"]\n    # <<< repohq-factory fallbacks\n'
+    const out = applyManagedBlocks(old, [], { a: ['b'] })
+    expect(out.match(/>>> repohq-factory fallbacks/g)).toHaveLength(1)
+    expect(out).toContain('- a: ["b"]')
+    expect(out).not.toContain('- x: ["y"]')
   })
 })

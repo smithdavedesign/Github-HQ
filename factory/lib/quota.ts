@@ -47,3 +47,16 @@ export async function freeQuota(cfg: FactoryConfig): Promise<FreeQuota | null> {
     return null
   }
 }
+
+/**
+ * Should M1 wait? Only when the free pool has no capacity left. OpenRouter's quota
+ * is the only one we can read; Gemini / Ollama Cloud members are assumed available
+ * and LiteLLM falls through them on 429. An all-OpenRouter pool defers when its
+ * daily quota can't cover a task.
+ */
+export function m1Deferred(pool: string[], quota: FreeQuota | null, min = M1_MIN_REQUESTS): string | null {
+  if (pool.length === 0) return 'free-agent pool is empty'
+  const onlyOpenRouter = pool.every(id => !/^(gemini|ollama-cloud|ollama):/.test(id))
+  if (onlyOpenRouter && quota && quota.remaining < min) return `OpenRouter free quota ${quota.remaining}/${quota.limit} < ${min} and the pool has no other provider`
+  return null
+}

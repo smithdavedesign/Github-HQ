@@ -94,7 +94,7 @@ Every task is assigned a **model tier** before dispatch. The dispatcher always s
 | Tier | Harness → model | Cost | Good for | Not for |
 |---|---|---|---|---|
 | **M0 Local** | **Aider** → `local-coder` / `local-coder-14b`; direct LiteLLM calls → `local-qwen3` | $0, unlimited | README/doc sections, single-file fixes with a known target, commit/PR text, classifying findings, summarising CI logs | Anything needing repo exploration or tool loops; >16k context (8k for 14B) |
-| **M1 Free cloud** | **Claude Code + gstack** with `ANTHROPIC_BASE_URL=http://localhost:4000` → alias `free-agent` | $0, rate-limited | gstack report-only skills (`/health /review /qa-only /retro`), Tier 1–2 `/ship` (docs, deps, CI/test fixes) on **public** repos | Private repos (default, §4); Tier 3 security; long-context refactors |
+| **M1 Free cloud** | **Claude Code + gstack** with `ANTHROPIC_BASE_URL=http://localhost:4000` → alias `free-agent`, a **redundant pool across three free providers** (§3.1) | $0; each provider rate-limited, the pool isn't | gstack report-only skills (`/health /review /qa-only /retro`), Tier 1–2 `/ship` (docs, deps, CI/test fixes) on **public** repos | Private repos (default, §4); Tier 3 security; long-context refactors |
 | **M2 Paid** | Claude Code → Anthropic (`cloud-smart` or direct key) | $ | Tier 3 (`/investigate` security), tasks that failed twice on M1, private repos where free is disallowed | Default path. **Never reached implicitly.** |
 
 **The RepoHQ intelligence layer** (advisor, digest, CEO report, summaries) runs on Vercel and can't reach `localhost`. It gets its own free path:
@@ -102,6 +102,35 @@ Every task is assigned a **model tier** before dispatch. The dispatcher always s
 - **Gemini free tier**: the existing `gemini` adapter already works with a free AI Studio key. Zero code.
 - **OpenRouter free models** via a new OpenAI-compatible `openrouter` provider (base URL + model in settings). Locally the same provider can point at LiteLLM.
 - Free models are worse at strict JSON. Every structured call gets **schema validation → one repair retry → fallback to `claude-haiku-4-5`**, and fallbacks are counted toward budget.
+
+### 3.1 The free model pool: no single quota is a point of failure
+
+A $0 OpenRouter account gets **50 free-model requests per day**, and one Claude Code task uses about 10–30. Building M1 on OpenRouter alone made the whole free tier stop after two tasks (it did, on day one). M1 is therefore a **pool** inside LiteLLM, spread across independent free providers, and every client goes through LiteLLM rather than talking to a provider directly:
+
+```
+          Factory (Claude Code / Aider)      OpenClaw agents      OpenCode · Aider · Continue
+                       │                           │                        │
+                       └───────────── Headroom → LiteLLM :4000 ─────────────┘
+                                             │
+        local-coder / local-agent ── Ollama on the M1 Pro ($0, unlimited) ← routine work
+                                             │ error
+        free-agent ── Ollama Cloud (free plan) ─429→ free-agent-b ── OpenRouter :free ─429→ free-agent-c ── Gemini (AI Studio free)
+                                             │ all exhausted
+        factory: defer to next cycle (never pays)        interactive / OpenClaw: cloud-smart (paid, last resort)
+```
+
+| Policy (owner's) | Alias | Where it runs |
+|---|---|---|
+| Routine: classify, summarise, read an error, small scoped edits | `local-coder` / `local-agent` | Ollama on the Mac, $0, unlimited |
+| Medium: agentic coding, reviews, multi-file fixes | `free-agent` → `-b` → `-c` | Free pool: Ollama Cloud · OpenRouter · Gemini, chosen by the scout |
+| OpenRouter | member of the pool | One provider among three, no longer the brain |
+| Hard / production-critical | `cloud-smart` | Paid Claude: explicit choice, budget-gated in the factory, last resort for interactive use |
+
+- **The scout picks members by eval, not by brand.** It discovers free candidates on each provider: Gemini models that answer right now (newest Flash models often return 503 "high demand" on the free tier); Ollama Cloud models available on the free plan *with tool calling*, probed per model since many are Pro-only; and OpenRouter `:free` models with `tools`. It runs the eval suite on each, ranks with 21 days of history, and fills the chain **best model first, then different providers** (`pickPool`). It doesn't re-test models evaluated in the last 3 days.
+- **Fallback is LiteLLM's job, inside one request.** A 429 on one provider moves to the next without the caller noticing. Verified live: a request to quota-exhausted `cloud-or` came back from Ollama Cloud with `x-litellm-attempted-fallbacks: 1`. LiteLLM doesn't chain fallbacks recursively, so every ladder (`free-agent`, `cloud-or`, `local-coder`) is written out in full by the scout.
+- **The factory only defers M1 when no member has capacity.** OpenRouter's quota is the only one it can read (`/api/v1/key`), so a pool with any other provider proceeds and relies on LiteLLM to fall through (`m1Deferred`).
+- **OpenClaw** already talked to LiteLLM through Headroom. Its default agent is now `local-coder` → `free-agent` → `cloud-smart` instead of `local-coder` → `cloud-or` → `cloud-smart`. The companion agent stays on `cloud-smart` by choice.
+- **Data policy is unchanged.** Every pool member is a free tier that may log or train on prompts (Google states this for the AI Studio free tier), so the §4 rule stands: only public repos reach M1 unless a private repo opts in.
 
 ### Escalation ladder
 
@@ -282,6 +311,16 @@ flowchart TB
 | Does a human need to say yes? | `awaiting_approval` → OpenClaw → signed link |
 | Did it work? | CI loop (Phase 55) + merge → health delta → accuracy (Phase 52) |
 
+### Later: the AI dev VM
+
+When the Mac stops being enough, or isolation matters more than RAM, the whole worker stack moves into one VM and the Mac becomes the **control plane** (RepoHQ dashboard, approvals, owner's browser):
+
+```
+AI DEV VM: OpenClaw · Chrome · LiteLLM · Ollama · MCP servers · git · Docker · 1Password CLI (AI-Agent vault) · project workspace
+```
+
+The factory needs no change for that move. It already talks to everything through LiteLLM, keeps its state in one directory, and is deployed from a pinned checkout. On a 16 GB M1 Pro the VM can't also host local models, so this waits for more RAM or a separate box (ai-stack roadmap: hardware upgrade).
+
 ### Running locally on 16 GB
 
 - **Isolation (phase 1):** a dedicated macOS user `ai-agent` runs the worker via launchd. It has its own `~/.claude` (gstack installed there), its own `gh` auth via the GitHub App token, and no read access to the owner's home. Zero RAM overhead.
@@ -361,6 +400,8 @@ The first implementation ran against all ten allowlisted repos. These findings c
 | Restarting LiteLLM drops in-flight agent calls | An Aider run hung 15 min during a scout reload | Scout and cycle share a process lock |
 | launchd jobs can't read `~/Documents` (macOS TCC) | Scheduled run failed: `factory.sh: Operation not permitted` | `install-launchd.sh` deploys the committed HEAD to `~/.repohq-factory/app` (outside the owner's workspace); the sink's DB secret moves to the login keychain |
 | Background launchd priority starves the checks | `ProcessType=Background` made `npm ci` take 4.5 min and RepoHQ's own tests fail | Standard priority (`Nice 5`); every failing check is re-run once and only reproducible failures become tasks |
+| **One free provider is a single point of failure** | OpenRouter's 50/day was gone after one scout run; every M1 task deferred | M1 became a pool across Ollama Cloud (free plan), OpenRouter and Gemini (§3.1). A request to the exhausted provider now falls through within the same call |
+| Free tiers expose different models than their catalogues list | Gemini 3.5–3.8 Flash: 503 "high demand"; 2.5 Flash: retired for new users. Ollama Cloud: 11 of 16 models Pro-only | Discovery probes each candidate (one tiny call) before it's evaluated |
 | Not every README is documentation | gitHub-cron-job-app's README is a cron heartbeat file | Removed from the allowlist. The allowlist is the owner's statement of intent. |
 
 **First live PR (scheduled run, 2026-10-05):** [AI-Took-My-Job#10](https://github.com/smithdavedesign/AI-Took-My-Job/pull/10), produced by M0 (local Qwen2.5-Coder 7B) at $0. It adds an Installation and Setup section (+30/−0) with the real clone URL and real scripts. It also documented `npm test` for a repo without a test script, which the judge now rejects.

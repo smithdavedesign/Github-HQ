@@ -49,7 +49,7 @@ export function tasksFromScan(results: CheckResult[], specs: CheckSpec[], readme
     tasks.push({
       kind: 'fix-types', taskTier: 2,
       scoped: files.length > 0 && files.length <= SCOPED_MAX_FILES, files,
-      title: `Fix type errors (${files.length || '?'} file${files.length === 1 ? '' : 's'})`,
+      title: 'Fix type errors',
       objective: `\`${cmd('typecheck')}\` fails. Fix the type errors so it passes.`,
       evidence: errorExcerpt(tc.output), verify: ['typecheck'],
     })
@@ -61,7 +61,7 @@ export function tasksFromScan(results: CheckResult[], specs: CheckSpec[], readme
     tasks.push({
       kind: 'fix-lint', taskTier: 2,
       scoped: files.length > 0 && files.length <= SCOPED_MAX_FILES, files,
-      title: `Fix lint errors (${files.length || '?'} file${files.length === 1 ? '' : 's'})`,
+      title: 'Fix lint errors',
       objective: `\`${cmd('lint')}\` fails. Fix the lint errors so it passes.`,
       evidence: errorExcerpt(lint.output), verify: ['lint'],
     })
