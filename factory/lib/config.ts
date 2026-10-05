@@ -20,6 +20,14 @@ export interface FactoryConfig {
   /** $/M tokens for computing M2 cost from Claude Code usage (alias names have no price in Claude Code). */
   m2PricePerMTok: { input: number; output: number }
   maxPrsPerCycle: number
+  /** Ceiling across all cycles in a local day (the morning target is 3–8 PRs). */
+  maxPrsPerDay: number
+  /**
+   * GitHub Copilot (prepaid seat). MC tier = Copilot CLI as a builder; reviews =
+   * Copilot code review requested on every factory PR (the independent Reviewer).
+   * Both spend premium requests, so each has a daily cap.
+   */
+  copilot: { enabled: boolean; model: string; maxTasksPerDay: number; review: boolean; maxReviewsPerDay: number }
   harnessTimeoutMs: number
   /** M0 (local 7B) either finishes fast or not at all. */
   m0TimeoutMs: number
@@ -46,11 +54,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FactoryConfig 
       configPath: env.FACTORY_LITELLM_CONFIG ?? path.join(homedir(), 'ai-stack/litellm/config.yaml'),
       composeFile: env.FACTORY_LITELLM_COMPOSE ?? path.join(homedir(), 'ai-stack/litellm/docker-compose.yml'),
     },
-    models: { M0: 'local-agent', M1: 'free-agent', M2: 'cloud-smart', ...json.models },
+    // MC is a Copilot CLI model name, not a LiteLLM alias. gpt-5-mini is an included
+    // (0x premium) model on paid Copilot plans; set copilot.model for a stronger one.
+    models: { M0: 'local-agent', M1: 'free-agent', MC: json.copilot?.model ?? 'gpt-5-mini', M2: 'cloud-smart', ...json.models },
     monthlyBudgetUsd: num(env.FACTORY_MONTHLY_BUDGET_USD, json.monthlyBudgetUsd ?? 0),
     m2EstimateUsd: json.m2EstimateUsd ?? 0.5,
     m2PricePerMTok: json.m2PricePerMTok ?? { input: 3, output: 15 },
     maxPrsPerCycle: num(env.FACTORY_MAX_PRS, json.maxPrsPerCycle ?? 1),
+    maxPrsPerDay: json.maxPrsPerDay ?? 8,
+    copilot: {
+      enabled: json.copilot?.enabled ?? true,
+      model: json.copilot?.model ?? 'gpt-5-mini',
+      maxTasksPerDay: json.copilot?.maxTasksPerDay ?? 6,
+      review: json.copilot?.review ?? true,
+      maxReviewsPerDay: json.copilot?.maxReviewsPerDay ?? 8,
+    },
     harnessTimeoutMs: json.harnessTimeoutMs ?? 15 * 60_000,
     m0TimeoutMs: json.m0TimeoutMs ?? 4 * 60_000,
     checkTimeoutMs: json.checkTimeoutMs ?? 8 * 60_000,

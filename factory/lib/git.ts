@@ -97,3 +97,23 @@ export async function repoVisibility(fullName: string): Promise<string> {
   const r = await run('gh', ['repo', 'view', fullName, '--json', 'visibility', '--jq', '.visibility'], { timeoutMs: 60_000 })
   return r.code === 0 ? r.output.trim().toLowerCase() : 'private' // unknown → most restrictive
 }
+
+export interface PrReviewSummary {
+  /** Copilot finished a review. */
+  reviewed: boolean
+  /** Inline comments Copilot left (each is a suggested problem). */
+  comments: number
+  /** First lines of Copilot's comments, for the morning report. */
+  highlights: string[]
+}
+
+export function summarizeCopilotReview(json: unknown): PrReviewSummary {
+  const d = json as { reviews?: { author?: { login?: string }; body?: string }[]; comments?: { author?: { login?: string }; body?: string }[] }
+  const byCopilot = (a?: { login?: string }) => /copilot/i.test(a?.login ?? '')
+  const reviews = (d.reviews ?? []).filter(r => byCopilot(r.author))
+  return {
+    reviewed: reviews.length > 0,
+    comments: 0,
+    highlights: reviews.map(r => (r.body ?? '').split('\n').find(l => l.trim().length > 0)?.trim() ?? '').filter(Boolean).slice(0, 2),
+  }
+}

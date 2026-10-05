@@ -168,3 +168,30 @@ function normalize(p: string): string {
 function unique<T>(xs: T[]): T[] {
   return [...new Set(xs)]
 }
+
+export interface AuditCounts {
+  critical: number
+  high: number
+  moderate: number
+  low: number
+}
+
+/** Severity counts from `npm audit --json` (v7+ format); null when unparseable. */
+export function parseAudit(output: string): AuditCounts | null {
+  const start = output.indexOf('{')
+  if (start < 0) return null
+  try {
+    const j = JSON.parse(output.slice(start)) as { metadata?: { vulnerabilities?: Partial<AuditCounts> } }
+    const v = j.metadata?.vulnerabilities
+    if (!v) return null
+    return { critical: v.critical ?? 0, high: v.high ?? 0, moderate: v.moderate ?? 0, low: v.low ?? 0 }
+  } catch {
+    return null
+  }
+}
+
+/** npm-only (needs package-lock.json). Network call to the registry; no code runs. */
+export async function runAudit(cwd: string, timeoutMs = 120_000): Promise<AuditCounts | null> {
+  const r = await run('npm', ['audit', '--json'], { cwd, timeoutMs, maxOutput: 2_000_000 })
+  return parseAudit(r.output)
+}

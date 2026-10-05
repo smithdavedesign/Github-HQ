@@ -3,20 +3,22 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
-  confirmFailures, runChecks, type CheckSpec,
+  confirmFailures, runChecks, parseAudit, type CheckSpec,
   detectPackageManager, installCommand, planChecks, isPlaceholderTestScript,
   filesFromTscOutput, filesFromEslintOutput, errorExcerpt, readmeIssue, type CheckResult,
 } from '../../factory/lib/checks'
-import { tasksFromScan, filterTasks, buildPrompt, fitLocalContext, M0_MAX_BYTES } from '../../factory/lib/tasks'
+import { tasksFromScan, filterTasks, buildPrompt, fitLocalContext, M0_MAX_BYTES, isEnvironmentFailure } from '../../factory/lib/tasks'
 import { judge, parseDiff, referencedScripts, referencedNpxTools, type DiffInfo } from '../../factory/lib/verify'
 import {
+  todaysUsage, pendingReviews, localDay, factoryDay,
   parseLedger, toAttemptRecords, monthToDateUsd, openPrAttempts, deadEnds, nextRepos, summarizeByTier,
   type AttemptEntry, type LedgerEntry,
 } from '../../factory/lib/ledger'
 import { selectCandidates, rankModels, pickAliases, isFreeToolModel, historicalOutcomes, pickGeminiCandidates, pickPool, providerOf, type OpenRouterModel } from '../../factory/lib/scout-select'
 import { parseFreeQuota, m1Deferred } from '../../factory/lib/quota'
 import { applyManagedBlocks, readManagedModels, renderFallbacksBlock, renderModelsBlock, memberFor, parsePoolId } from '../../factory/lib/litellm-config'
-import { parseClaudeResult, parseTokenCount, harnessFor } from '../../factory/lib/harness'
+import { parseClaudeResult, parseTokenCount, harnessFor, copilotArgs } from '../../factory/lib/harness'
+import { summarizeCopilotReview } from '../../factory/lib/git'
 import { branchName, prBody, prTitle } from '../../factory/lib/pr'
 import { attemptEventValues } from '../../factory/lib/sink'
 
@@ -532,5 +534,112 @@ describe('managed block markers', () => {
     expect(out.match(/>>> repohq-factory fallbacks/g)).toHaveLength(1)
     expect(out).toContain('- a: ["b"]')
     expect(out).not.toContain('- x: ["y"]')
+  })
+})
+
+describe('Copilot tier + reviewer', () => {
+  it('routes MC to the Copilot CLI', () => {
+    expect(harnessFor('MC')).toBe('copilot')
+  })
+  it('locks Copilot down: no GitHub MCP, no git writes, deny beats allow', () => {
+    const a = copilotArgs({ model: 'gpt-5-mini', prompt: 'fix it' })
+    expect(a).toContain('--disable-builtin-mcps')
+    expect(a).toContain('--no-ask-user')
+    expect(a).toContain('--deny-tool=shell(git push)')
+    expect(a).toContain('--deny-tool=shell(gh:*)')
+    expect(a).not.toContain('--allow-all-tools')
+    expect(a.slice(0, 4)).toEqual(['-p', 'fix it', '--model', 'gpt-5-mini'])
+  })
+  it('summarizes only Copilot reviews', () => {
+    const s = summarizeCopilotReview({ reviews: [
+      { author: { login: 'copilot-pull-request-reviewer' }, body: '\n## Pull request overview\nAdds setup docs.' },
+      { author: { login: 'someone' }, body: 'lgtm' },
+    ] })
+    expect(s).toEqual({ reviewed: true, comments: 0, highlights: ['## Pull request overview'] })
+    expect(summarizeCopilotReview({ reviews: [] }).reviewed).toBe(false)
+  })
+  it('counts today\'s PRs, Copilot tasks and reviews for the daily caps', () => {
+    const now = new Date()
+    const yesterday = new Date(now.getTime() - 36 * 3600_000).toISOString()
+    const entries: LedgerEntry[] = [
+      att({ prUrl: 'u1', reviewRequested: true, at: now.toISOString() }),
+      att({ tier: 'MC', outcome: 'failed', at: now.toISOString() }),
+      att({ tier: 'MC', outcome: 'rate_limited', at: now.toISOString() }),
+      att({ prUrl: 'u0', at: yesterday }),
+    ]
+    expect(todaysUsage(entries, now)).toEqual({ prs: 1, copilotTasks: 1, copilotReviews: 1 })
+    expect(localDay(now)).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+  it('pending reviews: requested, PR still open, not yet recorded', () => {
+    const entries: LedgerEntry[] = [
+      att({ id: 'a', prUrl: 'u1', reviewRequested: true }),
+      att({ id: 'b', prUrl: 'u2', reviewRequested: true }),
+      att({ id: 'c', prUrl: 'u3' }),
+      { type: 'review', attemptId: 'b', at: '', reviewer: 'copilot', comments: 2, highlights: [] },
+    ]
+    expect(pendingReviews(entries).map(a => a.id)).toEqual(['a'])
+  })
+})
+
+describe('deps-audit', () => {
+  const counts = (critical: number, high: number) => ({ critical, high, moderate: 3, low: 1 })
+  it('parses npm audit --json (with leading noise)', () => {
+    const out = 'npm warn something\n' + JSON.stringify({ metadata: { vulnerabilities: { critical: 1, high: 2, moderate: 3, low: 4, info: 0, total: 10 } } })
+    expect(parseAudit(out)).toEqual({ critical: 1, high: 2, moderate: 3, low: 4 })
+    expect(parseAudit('not json')).toBeNull()
+  })
+  it('creates a deps task only for high/critical', () => {
+    expect(tasksFromScan([], [], null, '/r', counts(0, 0)).map(t => t.kind)).toEqual([])
+    const [t] = tasksFromScan([], [], null, '/r', counts(1, 2))
+    expect(t).toMatchObject({ kind: 'deps-audit', taskTier: 2, scoped: false })
+    expect(t.objective).toContain('never --force')
+  })
+  it('judge: package files only, high+critical must drop, no regressions; lockfile size exempt', () => {
+    const [t] = tasksFromScan([], [], null, '/r', counts(1, 2))
+    const lock = { files: [{ path: 'package-lock.json', added: 900, removed: 700, deleted: false }, { path: 'package.json', added: 1, removed: 1, deleted: false }], addedLines: [] }
+    const base = [ok('test')]
+    expect(judge({ task: t, baseline: base, after: [ok('test')], diff: lock, audit: { before: counts(1, 2), after: counts(0, 1) } }).ok).toBe(true)
+    expect(judge({ task: t, baseline: base, after: [ok('test')], diff: lock, audit: { before: counts(1, 2), after: counts(1, 2) } }).reason).toMatch(/did not drop/)
+    expect(judge({ task: t, baseline: base, after: [ok('test', false)], diff: lock, audit: { before: counts(1, 2), after: counts(0, 0) } }).reason).toMatch(/regressed/)
+    const src = { files: [{ path: 'src/a.ts', added: 1, removed: 0, deleted: false }], addedLines: [] }
+    expect(judge({ task: t, baseline: base, after: [ok('test')], diff: src, audit: { before: counts(1, 2), after: counts(0, 0) } }).reason).toMatch(/non-package/)
+    expect(judge({ task: t, baseline: base, after: [ok('test')], diff: lock }).reason).toMatch(/unavailable/)
+  })
+})
+
+describe('factoryDay', () => {
+  it('overnight cycles before and after midnight share one day; it rolls over at 07:00 local', () => {
+    const at = (h: number, day = 6) => new Date(2026, 9, day, h, 30)
+    expect(factoryDay(at(23, 5))).toBe(factoryDay(at(3, 6)))
+    expect(factoryDay(at(6, 6))).not.toBe(factoryDay(at(8, 6)))
+  })
+})
+
+describe('environment-dependent test failures', () => {
+  it('recognises missing secrets and network errors', () => {
+    expect(isEnvironmentFailure('AssertionError: NPS_API_KEY must be set: expected undefined to be truthy')).toBe(true)
+    expect(isEnvironmentFailure('TypeError: fetch failed\n  cause: getaddrinfo ENOTFOUND api.example.com')).toBe(true)
+    expect(isEnvironmentFailure('expected 3 to equal 4')).toBe(false)
+  })
+  it('does not turn them into fix-tests tasks', () => {
+    const specs = planChecks({ scripts: { test: 'vitest run' } }, 'npm', false)
+    expect(tasksFromScan([ok('test', false, 'FAIL smoke.test.ts > NPS_API_KEY must be set')], specs, null, '/r')).toEqual([])
+  })
+})
+
+describe('judge: silent test skips', () => {
+  const specs = planChecks({ scripts: { test: 'vitest run' } }, 'npm', false)
+  const [testTask] = tasksFromScan([ok('test', false, 'expected 3 to equal 4')], specs, null, '/r')
+  it('rejects an added early return inside a test file', () => {
+    const d = parseDiff('3\t0\tsrc/smoke.test.ts\n', '+++ b/src/smoke.test.ts\n+    if (!hasKey) return;\n', new Set())
+    expect(judge({ task: testTask, baseline: [ok('test', false)], after: [ok('test')], diff: d }).reason).toMatch(/early return in src\/smoke.test.ts/)
+  })
+  it('allows early returns in source files', () => {
+    const d = parseDiff('3\t0\tsrc/util.ts\n', '+++ b/src/util.ts\n+  if (!input) return null\n', new Set())
+    expect(judge({ task: testTask, baseline: [ok('test', false)], after: [ok('test')], diff: d }).ok).toBe(true)
+  })
+  it('catches skipIf / todo variants', () => {
+    const d = parseDiff('1\t0\tsrc/a.test.ts\n', '+++ b/src/a.test.ts\n+it.skipIf(!key)("x", () => {})\n', new Set())
+    expect(judge({ task: testTask, baseline: [ok('test', false)], after: [ok('test')], diff: d }).ok).toBe(false)
   })
 })

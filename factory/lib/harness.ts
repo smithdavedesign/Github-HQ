@@ -2,7 +2,7 @@ import type { ModelTier } from '../../src/lib/agents/model-router'
 import type { FactoryConfig } from './config'
 import { run } from './proc'
 
-export type HarnessName = 'aider' | 'claude-code'
+export type HarnessName = 'aider' | 'claude-code' | 'copilot' | 'npm-audit-fix'
 
 export interface HarnessRequest {
   tier: ModelTier
@@ -44,11 +44,51 @@ const DENY_TOOLS = ['Bash(git commit:*)', 'Bash(git push:*)', 'Bash(git reset:*)
 const RATE_LIMIT_RE = /\b429\b|rate[ _-]?limit|too many requests|quota exceeded/i
 
 export function harnessFor(tier: ModelTier): HarnessName {
-  return tier === 'M0' ? 'aider' : 'claude-code'
+  if (tier === 'M0') return 'aider'
+  if (tier === 'MC') return 'copilot'
+  return 'claude-code'
 }
 
 export async function runHarness(req: HarnessRequest, cfg: FactoryConfig): Promise<HarnessResult> {
-  return harnessFor(req.tier) === 'aider' ? runAider(req, cfg) : runClaudeCode(req, cfg)
+  const h = harnessFor(req.tier)
+  if (h === 'aider') return runAider(req, cfg)
+  if (h === 'copilot') return runCopilot(req, cfg)
+  return runClaudeCode(req, cfg)
+}
+
+/** Copilot CLI permissions: deny rules beat allow rules; file access is confined to the cwd by default. */
+export function copilotArgs(req: Pick<HarnessRequest, 'model' | 'prompt' | 'readOnly'>): string[] {
+  const shellAllow = ['npm:*', 'npx:*', 'node:*', 'ls', 'cat', 'grep', 'find', 'git diff', 'git status', 'git log']
+  const shellDeny = ['git push', 'git commit', 'git reset', 'git checkout', 'rm', 'gh:*', 'curl', 'wget', 'npm publish', 'npm install']
+  return [
+    '-p', req.prompt,
+    '--model', req.model,
+    '--silent', '--no-ask-user', '--no-auto-update', '--no-color',
+    // The built-in GitHub MCP server can write to GitHub — the factory owns git and PRs.
+    '--disable-builtin-mcps',
+    ...shellAllow.map(c => `--allow-tool=shell(${c})`),
+    // Writes stay allowed even for read-only runs: callers verify protected files afterwards.
+    '--allow-tool=write',
+    ...shellDeny.map(c => `--deny-tool=shell(${c})`),
+  ]
+}
+
+async function runCopilot(req: HarnessRequest, cfg: FactoryConfig): Promise<HarnessResult> {
+  const r = await run('copilot', copilotArgs(req), { cwd: req.cwd, timeoutMs: req.timeoutMs ?? cfg.harnessTimeoutMs })
+  return {
+    ok: r.code === 0 && !r.timedOut,
+    harness: 'copilot',
+    model: req.model,
+    output: r.output,
+    durationMs: r.durationMs,
+    // Copilot bills premium requests per prompt (× model multiplier), not tokens; the
+    // ledger counts MC attempts per day against copilot.maxTasksPerDay instead.
+    inputTokens: 0,
+    outputTokens: 0,
+    costUsd: 0,
+    rateLimited: RATE_LIMIT_RE.test(r.output) || /premium request|usage limit/i.test(r.output),
+    timedOut: r.timedOut,
+  }
 }
 
 async function runAider(req: HarnessRequest, cfg: FactoryConfig): Promise<HarnessResult> {

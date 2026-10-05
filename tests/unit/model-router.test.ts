@@ -43,17 +43,20 @@ describe('allowedTiers', () => {
     expect(allowedTiers({ taskTier: 3, scoped: true }, 'public')).toEqual(['M2'])
   })
   it('scoped public task can use every tier, cheapest first', () => {
-    expect(allowedTiers({ taskTier: 1, scoped: true }, 'public')).toEqual(['M0', 'M1', 'M2'])
+    expect(allowedTiers({ taskTier: 1, scoped: true }, 'public')).toEqual(['M0', 'M1', 'MC', 'M2'])
   })
   it('unscoped task skips M0', () => {
-    expect(allowedTiers({ taskTier: 2, scoped: false }, 'public')).toEqual(['M1', 'M2'])
+    expect(allowedTiers({ taskTier: 2, scoped: false }, 'public')).toEqual(['M1', 'MC', 'M2'])
   })
   it('private repos skip free cloud unless opted in', () => {
-    expect(allowedTiers({ taskTier: 2, scoped: true }, 'private')).toEqual(['M0', 'M2'])
-    expect(allowedTiers({ taskTier: 2, scoped: true }, 'private', { allowFreeCloud: true })).toEqual(['M0', 'M1', 'M2'])
+    expect(allowedTiers({ taskTier: 2, scoped: true }, 'private')).toEqual(['M0', 'MC', 'M2'])
+    expect(allowedTiers({ taskTier: 2, scoped: true }, 'private', { allowFreeCloud: true })).toEqual(['M0', 'M1', 'MC', 'M2'])
   })
-  it('sensitive repos never use free cloud, even when opted in', () => {
+  it('sensitive repos never use free cloud or Copilot, even when opted in', () => {
     expect(allowedTiers({ taskTier: 2, scoped: false }, 'sensitive', { allowFreeCloud: true })).toEqual(['M2'])
+  })
+  it('Copilot tier drops out when disabled or over its daily cap', () => {
+    expect(allowedTiers({ taskTier: 2, scoped: false }, 'public', { copilot: false })).toEqual(['M1', 'M2'])
   })
 })
 
@@ -69,6 +72,7 @@ describe('computeTierStats', () => {
     expect(s.M1.attempts).toBe(4)
     expect(s.M1.rate).toBeCloseTo(0.75)
     expect(s.M0).toEqual({ attempts: 0, rate: 0 })
+    expect(s.MC).toEqual({ attempts: 0, rate: 0 })
   })
   it('decays old attempts so recent results dominate', () => {
     const recs = [...attempts('M1', 0, 4, 'k', 120), ...attempts('M1', 4, 0, 'k', 0)]
@@ -125,6 +129,7 @@ describe('chooseTier', () => {
 describe('nextTier', () => {
   it('climbs the ladder within the allowed set', () => {
     expect(nextTier('M0', ['M0', 'M1', 'M2'])).toBe('M1')
+    expect(nextTier('M1', ['M0', 'M1', 'MC', 'M2'])).toBe('MC')
     expect(nextTier('M0', ['M0', 'M2'])).toBe('M2')
     expect(nextTier('M2', ['M0', 'M1', 'M2'])).toBeNull()
     expect(nextTier('M1', ['M0'])).toBeNull()

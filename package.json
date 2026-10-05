@@ -18,7 +18,8 @@
     "db:generate": "drizzle-kit generate",
     "factory": "tsx factory/run.ts",
     "factory:scout": "tsx factory/scout.ts",
-    "factory:report": "tsx factory/run.ts --report"
+    "factory:report": "tsx factory/run.ts --report",
+    "factory:morning": "tsx factory/report.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",

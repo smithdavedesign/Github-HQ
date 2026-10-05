@@ -4,15 +4,16 @@
  * Pure (no DB, no network) — safe to import from unit tests, server code and
  * the local factory runner (`factory/`). See docs/autonomous-factory.md §3–§5.
  *
- *   M0  Local       Aider → Ollama (Qwen2.5-Coder)         $0, unlimited
- *   M1  Free cloud  Claude Code → LiteLLM → OpenRouter free  $0, rate-limited
- *   M2  Paid        Claude Code → Anthropic                 $, budget-gated
+ *   M0  Local         Aider → Ollama (Qwen2.5-Coder)                 $0, unlimited
+ *   M1  Free cloud    Claude Code → LiteLLM free pool                 $0, rate-limited
+ *   MC  Subscription  GitHub Copilot CLI (prepaid seat)               $0 marginal, daily cap
+ *   M2  Paid          Claude Code → Anthropic                         $, budget-gated
  */
 
-export type ModelTier = 'M0' | 'M1' | 'M2'
+export type ModelTier = 'M0' | 'M1' | 'MC' | 'M2'
 
-/** Cheapest first. */
-export const TIER_ORDER: readonly ModelTier[] = ['M0', 'M1', 'M2']
+/** Cheapest first. MC is prepaid (Copilot seat): no marginal cost, but its premium requests are finite. */
+export const TIER_ORDER: readonly ModelTier[] = ['M0', 'M1', 'MC', 'M2']
 
 /** Task risk tier — mirrors architecture.md "Risk Tiers & Safety Gates". */
 export type TaskTier = 1 | 2 | 3 | 'blocked'
@@ -44,6 +45,8 @@ export interface TaskShape {
 export interface TierPolicy {
   /** Per-repo opt-in to send private code to free cloud models. Ignored for `sensitive`. */
   allowFreeCloud?: boolean
+  /** Copilot tier available (installed + enabled + under its daily cap). Default true. */
+  copilot?: boolean
 }
 
 /** Tiers a task may run on, before learned stats and budget are considered. Cheapest first. */
@@ -59,6 +62,8 @@ export function allowedTiers(task: TaskShape, dataClass: DataClass, policy: Tier
       if (dataClass === 'private') return policy.allowFreeCloud === true
       return false
     }
+    // Copilot is built for private code (no training on it), but sensitive work stays off it.
+    if (tier === 'MC') return dataClass !== 'sensitive' && policy.copilot !== false
     return true
   })
 }
@@ -95,7 +100,7 @@ export const ROUTING_DEFAULTS: Readonly<RoutingConfig> = {
 }
 
 export function emptyTierStats(): Record<ModelTier, TierStats> {
-  return { M0: { attempts: 0, rate: 0 }, M1: { attempts: 0, rate: 0 }, M2: { attempts: 0, rate: 0 } }
+  return { M0: { attempts: 0, rate: 0 }, M1: { attempts: 0, rate: 0 }, MC: { attempts: 0, rate: 0 }, M2: { attempts: 0, rate: 0 } }
 }
 
 /** Success rate per tier for one task kind, with exponential time decay. */
@@ -106,7 +111,7 @@ export function computeTierStats(
   halfLifeDays: number = ROUTING_DEFAULTS.halfLifeDays,
 ): Record<ModelTier, TierStats> {
   const acc: Record<ModelTier, { n: number; w: number; ws: number }> = {
-    M0: { n: 0, w: 0, ws: 0 }, M1: { n: 0, w: 0, ws: 0 }, M2: { n: 0, w: 0, ws: 0 },
+    M0: { n: 0, w: 0, ws: 0 }, M1: { n: 0, w: 0, ws: 0 }, MC: { n: 0, w: 0, ws: 0 }, M2: { n: 0, w: 0, ws: 0 },
   }
   for (const a of attempts) {
     if (a.taskKind !== taskKind) continue

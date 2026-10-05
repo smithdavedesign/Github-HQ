@@ -17,10 +17,11 @@ import {
   allowedTiers, canUsePaidTier, chooseTier, classifyRepoData, computeTierStats, nextTier, type ModelTier,
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
-import { confirmFailures, detectPackageManager, installCommand, planChecks, readRepoBasics, readmeIssue, runChecks, type CheckResult, type CheckSpec } from './lib/checks'
+import { confirmFailures, detectPackageManager, installCommand, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
 import { checkoutNewBranch, cloneRepo, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
-import { harnessFor, runHarness } from './lib/harness'
-import { appendEntry, deadEnds, monthToDateUsd, nextRepos, openPrAttempts, readLedger, summarizeByTier, toAttemptRecords, type AttemptEntry } from './lib/ledger'
+import { copilotReview, requestCopilotReview } from './lib/copilot-review'
+import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
+import { appendEntry, deadEnds, monthToDateUsd, nextRepos, openPrAttempts, pendingReviews, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry } from './lib/ledger'
 import { listAliases } from './lib/litellm-ops'
 import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
 import { run } from './lib/proc'
@@ -28,7 +29,7 @@ import { recordApprovalNeeded, recordAttempt, recordResolution } from './lib/sin
 import { acquireLock } from './lib/lock'
 import { freeQuota, m1Deferred } from './lib/quota'
 import { readManagedModels } from './lib/litellm-config'
-import { buildPrompt, filterTasks, fitLocalContext, tasksFromScan, type FactoryTask } from './lib/tasks'
+import { buildPrompt, filterTasks, fitLocalContext, isEnvironmentFailure, tasksFromScan, type FactoryTask } from './lib/tasks'
 import { judge } from './lib/verify'
 
 interface Args { dryRun: boolean; repo: string | null; maxRepos: number; report: boolean; keep: boolean }
@@ -46,6 +47,7 @@ function parseArgs(argv: string[]): Args {
 
 const runId = `${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12)}-${randomUUID().slice(0, 4)}`
 let logDir = ''
+let copilotInstalled = false
 const log = (...a: unknown[]) => console.log(`[factory ${new Date().toISOString().slice(11, 19)}]`, ...a)
 
 async function main() {
@@ -63,6 +65,7 @@ async function main() {
   mkdirSync(logDir, { recursive: true })
   log(`run ${runId}${args.dryRun ? ' (dry run)' : ''}`)
 
+  copilotInstalled = (await run('copilot', ['--version'], { timeoutMs: 30_000 })).code === 0
   await reconcile(cfg)
 
   const aliases = await listAliases(cfg).catch((): string[] => [])
@@ -73,8 +76,13 @@ async function main() {
 
   const queue = args.repo ? [args.repo] : nextRepos(readLedger(cfg.home), cfg.repos).slice(0, args.maxRepos)
   let prs = 0
+  const openedToday = todaysUsage(readLedger(cfg.home), new Date()).prs
+  if (openedToday >= cfg.maxPrsPerDay) {
+    log(`daily PR cap reached (${openedToday}/${cfg.maxPrsPerDay}) — reconcile only`)
+    return printReport(cfg)
+  }
   for (const repo of queue) {
-    if (prs >= cfg.maxPrsPerCycle) break
+    if (prs >= cfg.maxPrsPerCycle || openedToday + prs >= cfg.maxPrsPerDay) break
     try {
       prs += await improveRepo(cfg, repo, args, aliases)
     } catch (err) {
@@ -85,8 +93,15 @@ async function main() {
   printReport(cfg)
 }
 
-/** Learn step: merged/closed factory PRs become resolutions the router reads. */
+/** Learn step: merged/closed factory PRs become resolutions the router reads; Copilot reviews are recorded. */
 async function reconcile(cfg: FactoryConfig) {
+  for (const a of pendingReviews(readLedger(cfg.home))) {
+    const r = await copilotReview(a.prUrl!)
+    if (r.reviewed) {
+      appendEntry(cfg.home, { type: 'review', attemptId: a.id, at: new Date().toISOString(), reviewer: 'copilot', comments: r.comments, highlights: r.highlights })
+      log(`Copilot reviewed ${a.prUrl}: ${r.comments} comment(s)`)
+    }
+  }
   const open = openPrAttempts(readLedger(cfg.home))
   for (const a of open) {
     const state = await prState(a.prUrl!)
@@ -109,6 +124,7 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     const basics = readRepoBasics(dir)
     let specs: CheckSpec[] = []
     let baseline: CheckResult[] = []
+    let audit: AuditCounts | null = null
 
     if (basics.pkg && !basics.pkg.workspaces) {
       const pm = detectPackageManager(basics.files)
@@ -139,24 +155,27 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
         log(`${repo}: checks modified ${sideEffects.files.length} tracked file(s) (auto-fixing lint/format script) — discarded`)
         await resetWorktree(dir)
       }
+      if (pm === 'npm' && basics.files.has('package-lock.json')) audit = await runAudit(dir)
     }
 
     const ledger = readLedger(cfg.home)
     const now = new Date()
     const openKinds = new Set(openPrAttempts(ledger).map(a => `${a.repo}:${a.kind}`))
-    const allTasks = tasksFromScan(baseline, specs, readmeIssue(basics.readme), dir)
+    const allTasks = tasksFromScan(baseline, specs, readmeIssue(basics.readme), dir, audit)
     const tasks = filterTasks(allTasks, repo, openKinds, deadEnds(ledger, now))
     appendEntry(cfg.home, {
       type: 'scan', runId, at: now.toISOString(), repo,
       checks: Object.fromEntries(baseline.map(b => [b.name, b.ok])),
       tasks: allTasks.map(t => t.kind),
+      audit,
+      envFailures: baseline.filter(b => !b.ok && isEnvironmentFailure(b.output)).map(b => b.name),
     })
     log(`${repo}: checks ${baseline.map(b => `${b.name}=${b.ok ? 'ok' : 'FAIL'}`).join(' ') || '(none)'}; tasks: ${tasks.map(t => t.kind).join(', ') || 'none'}${allTasks.length > tasks.length ? ` (${allTasks.length - tasks.length} skipped: open PR or dead end)` : ''}`)
 
     const sizeOf = (f: string) => { try { return statSync(path.join(dir, f)).size } catch { return 0 } }
     const visibility = await repoVisibility(repo)
     const dataClass = classifyRepoData({ visibility })
-    const ctx: TaskContext = { cfg, repo, dir, base, pkg: basics.pkg, specs, baseline, args, aliases, dataClass }
+    const ctx: TaskContext = { cfg, repo, dir, base, pkg: basics.pkg, specs, baseline, args, aliases, dataClass, audit }
 
     // Try at most two tasks per repo: when free cloud quota defers the first,
     // local (M0) work on the next task still gets done this cycle.
@@ -182,6 +201,7 @@ interface TaskContext {
   args: Args
   aliases: string[]
   dataClass: ReturnType<typeof classifyRepoData>
+  audit: AuditCounts | null
 }
 
 /**
@@ -193,8 +213,17 @@ interface TaskContext {
  */
 async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType<typeof readLedger>, now: Date): Promise<'pr' | 'verified' | 'deferred' | 'failed' | 'stop'> {
   const { cfg, repo } = ctx
-  const allowed = allowedTiers(task, ctx.dataClass, { allowFreeCloud: cfg.allowFreeCloud.includes(repo) })
-    .filter(t => t === 'M2' || ctx.aliases.includes(cfg.models[t]))
+  if (task.kind === 'deps-audit') {
+    // Deterministic: `npm audit fix` (no model, no quota), judged like any other change.
+    log(`${repo}: deps-audit → npm audit fix (no model)`)
+    const r = await attempt(cfg, repo, ctx.dir, ctx.base, task, 'M0', false, ctx.pkg, ctx.specs, ctx.baseline, ctx.args, ctx.audit)
+    return r === 'rate_limited' ? 'deferred' : r
+  }
+  const usage = todaysUsage(ledger, now)
+  const copilot = cfg.copilot.enabled && copilotInstalled && usage.copilotTasks < cfg.copilot.maxTasksPerDay
+  const allowed = allowedTiers(task, ctx.dataClass, { allowFreeCloud: cfg.allowFreeCloud.includes(repo), copilot })
+    // M0/M1 need their LiteLLM alias; MC is the Copilot CLI and M2 is gated by budget below.
+    .filter(t => t === 'M2' || t === 'MC' || ctx.aliases.includes(cfg.models[t]))
   const decision = chooseTier({ allowed, stats: computeTierStats(toAttemptRecords(ledger), task.kind, now) })
   log(`${repo}: ${task.kind}${task.scoped ? '' : ' (unscoped)'} → ${decision.tier ?? 'none'} (${decision.reason}); allowed ${allowed.join(',') || 'none'}; data=${ctx.dataClass}`)
 
@@ -230,15 +259,17 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
 async function attempt(
   cfg: FactoryConfig, repo: string, dir: string, base: string, task: FactoryTask, tier: ModelTier, exploring: boolean,
   pkg: ReturnType<typeof readRepoBasics>['pkg'], specs: CheckSpec[], baseline: CheckResult[], args: Args,
+  auditBefore: AuditCounts | null = null,
 ): Promise<'pr' | 'verified' | 'failed' | 'rate_limited'> {
+  const deps = task.kind === 'deps-audit'
   const now = new Date()
   const branch = branchName(task, now, runId)
   await checkoutNewBranch(dir, base, branch)
-  const model = cfg.models[tier]
-  const prompt = buildPrompt(task, tier, pkg, specs.filter(s => task.verify.includes(s.name)).map(s => s.display), repo)
-  log(`${repo}: ${tier} ${harnessFor(tier)} → ${model}`)
+  const model = deps ? 'npm' : cfg.models[tier]
+  const prompt = deps ? 'npm audit fix' : buildPrompt(task, tier, pkg, specs.filter(s => task.verify.includes(s.name)).map(s => s.display), repo)
+  if (!deps) log(`${repo}: ${tier} ${harnessFor(tier)} → ${model}`)
 
-  const h = await runHarness({
+  const h: HarnessResult = deps ? await npmAuditFix(dir, cfg) : await runHarness({
     tier, model, cwd: dir, prompt, files: task.scoped ? task.files : undefined,
     timeoutMs: tier === 'M0' ? cfg.m0TimeoutMs : undefined,
     // Claude Code's small-model role → local Ollama (falls back to the pool). Measured: zero
@@ -279,7 +310,10 @@ async function attempt(
   const diff = edits.files.length > 0 ? await diffAgainst(dir, baseSha) : edits
   const readmeAfter = existsSync(path.join(dir, 'README.md')) ? readFileSync(path.join(dir, 'README.md'), 'utf8') : null
   const verdict = diff.files.length > 0
-    ? judge({ task, baseline, after, diff, scripts: pkg?.scripts, deps: Object.keys({ ...pkg?.dependencies, ...pkg?.devDependencies }), readmeAfter })
+    ? judge({
+      task, baseline, after, diff, scripts: pkg?.scripts, deps: Object.keys({ ...pkg?.dependencies, ...pkg?.devDependencies }), readmeAfter,
+      audit: deps ? { before: auditBefore, after: await runAudit(dir) } : undefined,
+    })
     : { ok: false, reason: h.ok ? 'no changes made' : `harness failed${h.timedOut ? ' (timeout)' : ''}` }
   entry.reason = verdict.reason
   log(`${repo}: ${tier} ${verdict.ok ? 'VERIFIED' : 'rejected'} — ${verdict.reason}`)
@@ -301,10 +335,23 @@ async function attempt(
       body: prBody({ task, tier, model, harness: h.harness, verdict: verdict.reason, baseline, after, diff, durationMs: h.durationMs, costUsd: h.costUsd, exploring }),
     })
     log(`${repo}: draft PR ${entry.prUrl}`)
+    if (cfg.copilot.review && todaysUsage(readLedger(cfg.home), new Date()).copilotReviews < cfg.copilot.maxReviewsPerDay) {
+      entry.reviewRequested = await requestCopilotReview(entry.prUrl)
+      if (entry.reviewRequested) log(`${repo}: Copilot review requested`)
+    }
   }
   appendEntry(cfg.home, entry)
   await recordAttempt(cfg, entry, task.title)
   return args.dryRun ? 'verified' : 'pr'
+}
+
+/** Non-breaking dependency fixes only — never `--force` (that would allow semver-major upgrades). */
+async function npmAuditFix(dir: string, cfg: FactoryConfig): Promise<HarnessResult> {
+  const r = await run('npm', ['audit', 'fix', '--no-fund'], { cwd: dir, timeoutMs: cfg.checkTimeoutMs })
+  return {
+    ok: r.code === 0 || /fixed \d+ of \d+/i.test(r.output), harness: 'npm-audit-fix', model: 'npm', output: r.output,
+    durationMs: r.durationMs, inputTokens: 0, outputTokens: 0, costUsd: 0, rateLimited: false, timedOut: r.timedOut,
+  }
 }
 
 function printReport(cfg: FactoryConfig) {

@@ -789,6 +789,18 @@ OpenRouter's 50 free requests/day can't be the single brain. M1 became a LiteLLM
 - [ ] Optional: one-time $10 OpenRouter credit (1,000 free requests/day) to deepen the OpenRouter member. Owner decision
 - [ ] Later: move the worker stack into an AI dev VM with the Mac as control plane (§8). Needs more RAM or a second machine
 
+### Phase 69 — Copilot, Reviewer, Morning Report, Agent Lockdown ✅
+Toward the Architect / Builder / Reviewer / Operator team (docs/autonomous-factory.md §13), starting with the roles that are measurable today.
+- [x] **OpenClaw agent lockdown** (before adding any agents): `tools.agentToAgent = {enabled: false, allow: []}`, `tools.sessions.visibility = "tree"`, `session.agentToAgent.maxPingPongTurns = 1`, each agent may spawn only its own sub-agents. Applied via the validated config CLI; `openclaw doctor`: 0 errors
+- [x] **MC tier = GitHub Copilot CLI** (prepaid seat) between free cloud and paid: locked down (`--disable-builtin-mcps`, no git writes, deny beats allow), ≤ 6 tasks/day; passed 2/2 fix evals with `gpt-5-mini`
+- [x] **Reviewer = GitHub Copilot code review**, requested on every factory PR (works on drafts), ≤ 8/day; results recorded in the ledger during reconcile
+- [x] **deps-audit**: every npm scan runs `npm audit`; high/critical → deterministic `npm audit fix` (no model, never `--force`), judged on package files only, advisories must drop, no regressions
+- [x] **Morning report**: one update per gstack role (PM → Architect plan, Builder, QA, Reviewer, Security, Ops, Retro) from the ledger, with local-model headlines; saved to `~/.repohq-factory/reports/` and emailed via himalaya + Gmail app password in the keychain
+- [x] Schedule: cycles hourly 20:00–05:00 plus 12:00/16:00, ≤ 1 PR per cycle, ≤ 8 per factory day (07:00–07:00); report 06:45
+- [ ] Owner: run `bash factory/bin/setup-email.sh <gmail>` once (needs a Gmail app password)
+- [ ] Builder ← Reviewer loop: turn Copilot's line comments into a follow-up commit on the same branch
+- [ ] Copilot coding agent (assign an issue to `@copilot`) for tasks every local tier failed
+
 ### Phase 67+ — Horizon 3: Infrastructure Agent
 - [ ] `agent_resources` ledger table (owner, provider, kind, environment, est. cost, `ephemeral`, `ttlAt`, destroy procedure, lifecycle state) + `.infrastructure/resources.json` mirror
 - [ ] Dev-only provisioning in order: GitHub repo → Vercel preview → Neon/Supabase dev branch → Cloudflare preview DNS → AWS/GCP

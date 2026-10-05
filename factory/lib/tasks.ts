@@ -1,5 +1,5 @@
 import type { ModelTier, TaskTier } from '../../src/lib/agents/model-router'
-import { errorExcerpt, filesFromEslintOutput, filesFromTscOutput, type CheckName, type CheckResult, type CheckSpec, type PackageJson } from './checks'
+import { errorExcerpt, filesFromEslintOutput, filesFromTscOutput, type AuditCounts, type CheckName, type CheckResult, type CheckSpec, type PackageJson } from './checks'
 
 /**
  * Turn scan results into concrete, verifiable tasks. Only work with an
@@ -7,7 +7,7 @@ import { errorExcerpt, filesFromEslintOutput, filesFromTscOutput, type CheckName
  * auth, payments and migrations never are.
  */
 
-export type TaskKind = 'fix-types' | 'fix-lint' | 'fix-tests' | 'docs-readme'
+export type TaskKind = 'fix-types' | 'fix-lint' | 'fix-tests' | 'deps-audit' | 'docs-readme'
 
 export interface FactoryTask {
   kind: TaskKind
@@ -38,7 +38,7 @@ export function fitLocalContext(task: FactoryTask, sizeOf: (file: string) => num
   return total <= M0_MAX_BYTES ? task : { ...task, scoped: false }
 }
 
-export function tasksFromScan(results: CheckResult[], specs: CheckSpec[], readmeProblem: string | null, root: string): FactoryTask[] {
+export function tasksFromScan(results: CheckResult[], specs: CheckSpec[], readmeProblem: string | null, root: string, audit: AuditCounts | null = null): FactoryTask[] {
   const tasks: FactoryTask[] = []
   const cmd = (n: CheckName) => specs.find(s => s.name === n)?.display ?? n
   const failed = (n: CheckName) => results.find(r => r.name === n && !r.ok)
@@ -68,12 +68,24 @@ export function tasksFromScan(results: CheckResult[], specs: CheckSpec[], readme
   }
 
   const test = failed('test')
-  if (test && !test.timedOut) {
+  // Failures caused by missing secrets / network (live-API smoke tests) aren't code bugs —
+  // a model can only "fix" them by skipping assertions. Report them, don't task them.
+  if (test && !test.timedOut && !isEnvironmentFailure(test.output)) {
     tasks.push({
       kind: 'fix-tests', taskTier: 2, scoped: false, files: [],
       title: 'Fix failing tests',
       objective: `\`${cmd('test')}\` fails. Find the root cause and fix the code so the tests pass. Fix the code, not the tests, unless a test is clearly wrong.`,
       evidence: errorExcerpt(test.output), verify: ['test'],
+    })
+  }
+
+  if (audit && audit.critical + audit.high > 0) {
+    tasks.push({
+      kind: 'deps-audit', taskTier: 2, scoped: false, files: ['package.json', 'package-lock.json'],
+      title: 'Fix vulnerable dependencies',
+      objective: `\`npm audit\` reports ${audit.critical} critical and ${audit.high} high severity vulnerabilities. Apply the non-breaking fixes (\`npm audit fix\`, never --force).`,
+      evidence: `critical=${audit.critical} high=${audit.high} moderate=${audit.moderate} low=${audit.low}`,
+      verify: [],
     })
   }
 
@@ -131,4 +143,11 @@ export function buildPrompt(task: FactoryTask, tier: ModelTier, pkg: PackageJson
   }
   if (task.scoped && task.files.length > 0) lines.push(`- The errors are in: ${task.files.join(', ')}.`)
   return lines.join('\n')
+}
+
+const ENV_FAILURE = /\b[A-Z][A-Z0-9_]*_(API_KEY|KEY|TOKEN|SECRET)\b.*(must be set|not set|missing|undefined|required)|(must be set|not set|missing|required)\b.*\b[A-Z][A-Z0-9_]*_(API_KEY|KEY|TOKEN|SECRET)\b|ENOTFOUND|ECONNREFUSED|EAI_AGAIN|fetch failed|getaddrinfo/i
+
+/** A test failure caused by the factory's environment (no secrets, no network), not by the code. */
+export function isEnvironmentFailure(output: string): boolean {
+  return ENV_FAILURE.test(output)
 }

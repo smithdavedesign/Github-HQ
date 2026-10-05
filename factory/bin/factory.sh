@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# launchd entry point for the RepoHQ factory: `factory.sh cycle` or `factory.sh scout`.
+# launchd entry point for the RepoHQ factory: `factory.sh cycle|scout|report`.
 #
 # - launchd has a minimal PATH, so the tool locations are set here.
 # - Optional env (FACTORY_DATABASE_URL, FACTORY_USER_ID, FACTORY_MONTHLY_BUDGET_USD, …)
@@ -33,7 +33,8 @@ fi
 case "$MODE" in
   cycle) CMD=(npx --no-install tsx factory/run.ts) ;;
   scout) CMD=(npx --no-install tsx factory/scout.ts) ;;
-  *) echo "usage: factory.sh cycle|scout" >&2; exit 2 ;;
+  report) CMD=(npx --no-install tsx factory/report.ts) ;;
+  *) echo "usage: factory.sh cycle|scout|report" >&2; exit 2 ;;
 esac
 
 cd "$ROOT"

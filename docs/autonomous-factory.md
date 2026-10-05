@@ -409,6 +409,24 @@ The first implementation ran against all ten allowlisted repos. These findings c
 
 First sweep (dry run, 10 repos): RepoHQ and AI-CLI-Social-Autoposter green; real failures in Open-Travel (lint), AI-Trend-Tracker (lint + tests), go-adventure (tests), Figma-Jira (lint), ai-brand-context (tests); README gaps in several. All M1 work was deferred that day on quota, with nothing escalated to paid.
 
+## 13. Toward an AI engineering team
+
+The owner's target is a small team rather than one agent: **Architect** (thinks, decides, reviews), **Builder** (codes), **Reviewer** (independent, tries to break it), **Operator** (OpenClaw: browser, cloud, infra). They exchange structured handoffs instead of chatting. Status:
+
+| Role | Implemented as | Why this way |
+|---|---|---|
+| PM / Architect | RepoHQ advisor + factory scans and router; owner reviews the plan in the morning report | Planning is cheap and deterministic today; the paid model is reserved for decisions that need it |
+| Builder | M0 Aider (local) · M1 Claude Code on the free pool · MC Copilot CLI · M2 Claude (paid, budget-gated) | Cheapest proven tier first, escalating on failure |
+| QA | The judge: the repo's own checks, re-run, plus anti-cheat rules | Rule-based checks beat model agreement as verification |
+| Reviewer | GitHub Copilot code review on every PR | Different vendor and model family from the Builder. Costs one premium request, not a debate |
+| Security | `npm audit` on every scan + deterministic `deps-audit` fixes | No model needed |
+| Operator | Not yet (Horizon 3) | Needs trust levels, approvals and the resource ledger first; CLIs/APIs before browser clicking |
+
+**Rules carried over from the design discussion:**
+- Handoffs are structured (task JSON in, verdict JSON out), never open-ended chat. OpenClaw's `maxPingPongTurns` is pinned to 1 for when agent-to-agent is enabled.
+- Agent-to-agent access is explicitly locked down before any new agent is added (§ roadmap Phase 69). When the team agents arrive, the allowlist is architect↔builder, architect↔operator, reviewer→architect. The reviewer never holds production credentials; the builder never holds the vault.
+- The morning report is the team's standup: one section per gstack role, numbers from the ledger only.
+
 ---
 
 _Related: [architecture.md](architecture.md) · [agentic-full-flow.md](agentic-full-flow.md) · [roadmap.md](roadmap.md#autonomous-factory-roadmap) · local stack docs: [smithdavedesign/ai-stack-docs](https://github.com/smithdavedesign/ai-stack-docs)_

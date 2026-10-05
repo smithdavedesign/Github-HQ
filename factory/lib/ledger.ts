@@ -29,6 +29,18 @@ export interface AttemptEntry {
   outputTokens: number
   prUrl?: string
   branch?: string
+  /** Copilot code review was requested on the PR. */
+  reviewRequested?: boolean
+}
+
+export interface ReviewEntry {
+  type: 'review'
+  attemptId: string
+  at: string
+  reviewer: 'copilot'
+  /** Inline comments left by the reviewer (0 = clean review). */
+  comments: number
+  highlights: string[]
 }
 
 export interface ResolutionEntry {
@@ -46,6 +58,10 @@ export interface ScanEntry {
   repo: string
   checks: Record<string, boolean | null>
   tasks: string[]
+  /** Checks failing because of the factory's environment (missing secrets / network), not code. */
+  envFailures?: string[]
+  /** npm audit severity counts (npm repos with a lockfile). */
+  audit?: { critical: number; high: number; moderate: number; low: number } | null
 }
 
 export interface ScoutEntry {
@@ -65,7 +81,7 @@ export interface ApprovalEntry {
   reason: string
 }
 
-export type LedgerEntry = AttemptEntry | ResolutionEntry | ScanEntry | ScoutEntry | ApprovalEntry
+export type LedgerEntry = AttemptEntry | ResolutionEntry | ScanEntry | ScoutEntry | ApprovalEntry | ReviewEntry
 
 export function ledgerPath(home: string): string {
   return path.join(home, 'ledger.jsonl')
@@ -161,7 +177,7 @@ export interface TierSummary {
 /** Per-tier rollup for reports: shows the $0 share of verified work. */
 export function summarizeByTier(entries: LedgerEntry[]): TierSummary[] {
   const res = resolutionsOf(entries)
-  const tiers: ModelTier[] = ['M0', 'M1', 'M2']
+  const tiers: ModelTier[] = ['M0', 'M1', 'MC', 'M2']
   return tiers.map(tier => {
     const as = attemptsOf(entries).filter(a => a.tier === tier && a.outcome !== 'rate_limited')
     return {
@@ -173,4 +189,33 @@ export function summarizeByTier(entries: LedgerEntry[]): TierSummary[] {
       costUsd: as.reduce((s, a) => s + (a.costUsd || 0), 0),
     }
   })
+}
+
+/** Local calendar day, e.g. "2026-10-05". */
+export function localDay(d: Date): string {
+  return d.toLocaleDateString('en-CA')
+}
+
+/** The factory's day starts after the morning report (07:00 local), so overnight cycles share one cap. */
+export const FACTORY_DAY_STARTS_AT_HOUR = 7
+
+export function factoryDay(d: Date, startHour = FACTORY_DAY_STARTS_AT_HOUR): string {
+  return localDay(new Date(d.getTime() - startHour * 3_600_000))
+}
+
+/** Usage in the current factory day (07:00–07:00 local) that daily caps apply to. */
+export function todaysUsage(entries: LedgerEntry[], now: Date): { prs: number; copilotTasks: number; copilotReviews: number } {
+  const today = factoryDay(now)
+  const as = attemptsOf(entries).filter(a => factoryDay(new Date(a.at)) === today)
+  return {
+    prs: as.filter(a => a.prUrl).length,
+    copilotTasks: as.filter(a => a.tier === 'MC' && a.outcome !== 'rate_limited').length,
+    copilotReviews: as.filter(a => a.reviewRequested).length,
+  }
+}
+
+/** Open PRs whose requested Copilot review hasn't been recorded yet. */
+export function pendingReviews(entries: LedgerEntry[]): AttemptEntry[] {
+  const reviewed = new Set(entries.filter((e): e is ReviewEntry => e.type === 'review').map(r => r.attemptId))
+  return openPrAttempts(entries).filter(a => a.reviewRequested && !reviewed.has(a.id))
 }

@@ -1,4 +1,4 @@
-import type { CheckResult } from './checks'
+import type { AuditCounts, CheckResult } from './checks'
 import type { FactoryTask } from './tasks'
 
 /**
@@ -20,6 +20,8 @@ export interface DiffInfo {
   addedLines: string[]
   /** Removed lines (without the leading '-'). Optional for callers that only track additions. */
   removedLines?: string[]
+  /** Added lines per file (from the `+++ b/<path>` headers). */
+  addedLinesByFile?: Record<string, string[]>
 }
 
 export interface Verdict {
@@ -40,8 +42,14 @@ const FORBIDDEN_PATHS = [
 const CHEATS: [RegExp, string][] = [
   [/@ts-(ignore|nocheck|expect-error)/, 'adds a TypeScript suppression'],
   [/eslint-disable/, 'disables ESLint'],
-  [/\b(it|test|describe)\.(skip|only)\s*\(|\bx(it|describe)\s*\(/, 'skips or focuses tests'],
+  [/\b(it|test|describe)\.(skip|only|todo|skipIf|runIf)\b|\bx(it|describe)\s*\(/, 'skips or focuses tests'],
 ]
+
+/**
+ * An added `if (…) return` inside a test file makes assertions silently not run — the
+ * same as .skip without saying so (a free model "fixed" key-dependent smoke tests this way).
+ */
+const TEST_EARLY_RETURN = /^\s*if\s*\(.*\)\s*(\{\s*)?return\b/
 
 const TEST_FILE = /(^|\/)(__tests__|tests?)\/|\.(test|spec)\.[cm]?[jt]sx?$/
 
@@ -54,10 +62,13 @@ export function judge(input: {
   /** Names of the repo's dependencies + devDependencies (for `npx <tool>` checks). */
   deps?: string[]
   readmeAfter?: string | null
+  /** deps-audit only: npm audit before/after. */
+  audit?: { before: AuditCounts | null; after: AuditCounts | null }
 }): Verdict {
   const { task, baseline, after, diff } = input
 
   if (diff.files.length === 0) return { ok: false, reason: 'no changes made' }
+  if (task.kind === 'deps-audit') return judgeDeps(diff, baseline, after, input.audit)
 
   const forbidden = diff.files.find(f => FORBIDDEN_PATHS.some(re => re.test(f.path)))
   if (forbidden) return { ok: false, reason: `touched forbidden path ${forbidden.path}` }
@@ -67,6 +78,11 @@ export function judge(input: {
 
   for (const [re, what] of CHEATS) {
     if (diff.addedLines.some(l => re.test(l))) return { ok: false, reason: `change ${what}` }
+  }
+  for (const [file, lines] of Object.entries(diff.addedLinesByFile ?? {})) {
+    if (TEST_FILE.test(file) && lines.some(l => TEST_EARLY_RETURN.test(l))) {
+      return { ok: false, reason: `adds an early return in ${file}, so assertions silently don't run` }
+    }
   }
 
   const deletedTest = diff.files.find(f => f.deleted && TEST_FILE.test(f.path))
@@ -177,5 +193,26 @@ export function parseDiff(numstat: string, patch: string, deleted: Set<string>):
   const lines = patch.split('\n')
   const addedLines = lines.filter(l => l.startsWith('+') && !l.startsWith('+++')).map(l => l.slice(1))
   const removedLines = lines.filter(l => l.startsWith('-') && !l.startsWith('---')).map(l => l.slice(1))
-  return { files, addedLines, removedLines }
+  const addedLinesByFile: Record<string, string[]> = {}
+  let current: string | null = null
+  for (const l of lines) {
+    if (l.startsWith('+++ ')) current = l.startsWith('+++ b/') ? l.slice(6) : null
+    else if (current && l.startsWith('+')) (addedLinesByFile[current] ??= []).push(l.slice(1))
+  }
+  return { files, addedLines, removedLines, addedLinesByFile }
+}
+
+/**
+ * deps-audit: only package.json + package-lock.json may change (lockfile diffs are
+ * exempt from the size cap), high+critical must drop, and no check may regress.
+ */
+function judgeDeps(diff: DiffInfo, baseline: CheckResult[], after: CheckResult[], audit?: { before: AuditCounts | null; after: AuditCounts | null }): Verdict {
+  const other = diff.files.filter(f => f.path !== 'package.json' && f.path !== 'package-lock.json')
+  if (other.length > 0) return { ok: false, reason: `deps task edited non-package files: ${other.map(f => f.path).join(', ')}` }
+  if (!audit?.before || !audit.after) return { ok: false, reason: 'npm audit result unavailable' }
+  const serious = (a: AuditCounts) => a.critical + a.high
+  if (serious(audit.after) >= serious(audit.before)) return { ok: false, reason: `high+critical did not drop (${serious(audit.before)} → ${serious(audit.after)})` }
+  const regressed = baseline.filter(b => b.ok).filter(b => !after.find(a => a.name === b.name)?.ok)
+  if (regressed.length > 0) return { ok: false, reason: `regressed: ${regressed.map(r => r.name).join(', ')} now fail` }
+  return { ok: true, reason: `high+critical ${serious(audit.before)} → ${serious(audit.after)}; no regressions` }
 }

@@ -122,3 +122,12 @@ export async function recordResolution(cfg: FactoryConfig, attemptId: string, re
       .where(and(eq(schema.portfolioEvents.userId, cfg.repohq.userId!), eq(schema.portfolioEvents.dedupKey, `factory:${attemptId}`)))
   })
 }
+
+/** Generic in-app notification (morning report fallback when email isn't configured). */
+export async function recordNotification(cfg: FactoryConfig, title: string, body: string): Promise<void> {
+  const d = db(cfg)
+  if (!d) return
+  await safely('recordNotification', async () => {
+    await d.insert(schema.notifications).values({ userId: cfg.repohq.userId!, eventType: 'agent_pr_ready', title, body, metadata: { source: 'factory', kind: 'morning_report' } })
+  })
+}

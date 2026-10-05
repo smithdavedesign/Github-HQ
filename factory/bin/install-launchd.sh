@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Deploy the factory to ~/.repohq-factory/app and install (or remove with --uninstall) its launchd schedules.
 # Re-run after committing factory changes to redeploy.
-#   com.repohq.factory.cycle  — daily 18:00 and 03:00 local (after OpenRouter's 00:00 UTC free-quota reset)
+#   com.repohq.factory.cycle  — hourly 20:00–05:00 plus 12:00 and 16:00 local (≤ 1 PR per cycle,
+#                               ≤ maxPrsPerDay per factory day) → 3–8 draft PRs by morning
+#   com.repohq.factory.report — 06:45 local: one update per gstack role, emailed
 #   com.repohq.factory.scout  — Sundays 17:10 local
 set -euo pipefail
 
@@ -34,7 +36,8 @@ plist() { # label mode calendar-xml
 PLIST
 }
 
-for label in com.repohq.factory.cycle com.repohq.factory.scout; do
+LABELS="com.repohq.factory.cycle com.repohq.factory.report com.repohq.factory.scout"
+for label in $LABELS; do
   launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
   rm -f "$AGENTS/$label.plist"
 done
@@ -65,13 +68,15 @@ if [ -f "$ROOT/.env.local" ] && ! security find-generic-password -s repohq-facto
   fi
   unset DB_URL
 fi
-plist com.repohq.factory.cycle cycle '<array>
-    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
-  </array>' > "$AGENTS/com.repohq.factory.cycle.plist"
+CYCLE_HOURS="20 21 22 23 0 1 2 3 4 5 12 16"
+CYCLE_TIMES="$(for h in $CYCLE_HOURS; do printf '    <dict><key>Hour</key><integer>%s</integer><key>Minute</key><integer>5</integer></dict>\n' "$h"; done)"
+plist com.repohq.factory.cycle cycle "<array>
+$CYCLE_TIMES
+  </array>" > "$AGENTS/com.repohq.factory.cycle.plist"
+plist com.repohq.factory.report report '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>' > "$AGENTS/com.repohq.factory.report.plist"
 plist com.repohq.factory.scout scout '<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>10</integer></dict>' > "$AGENTS/com.repohq.factory.scout.plist"
 
-for label in com.repohq.factory.cycle com.repohq.factory.scout; do
+for label in $LABELS; do
   plutil -lint "$AGENTS/$label.plist" >/dev/null
   launchctl bootstrap "$DOMAIN" "$AGENTS/$label.plist"
 done
