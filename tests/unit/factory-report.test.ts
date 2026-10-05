@@ -67,6 +67,10 @@ describe('buildMorningReport', () => {
     expect(section('pm').lines.join('\n')).toContain('app — fill README gaps')
     expect(section('pm').lines.join('\n')).not.toContain('fix lint errors') // open PR already
   })
+  it('Builder marks PRs that were already closed', () => {
+    const closed = buildMorningReport(input([...entries, { type: 'resolution', attemptId: 'p2', at: hoursAgo(1), outcome: 'rejected' }]))
+    expect(closed.sections.find(s => s.id === 'builder')!.lines.join('\n')).toContain('patch vulnerable dependencies (closed)')
+  })
   it('Builder lists new PRs with tier and model; deps fixes show npm audit fix', () => {
     expect(section('builder').lines.join('\n')).toContain('https://github.com/o/app/pull/7')
     expect(section('builder').lines.join('\n')).toContain('M0 · npm audit fix')
@@ -74,7 +78,7 @@ describe('buildMorningReport', () => {
   it('QA calls out environment-dependent failures instead of tasking them', () => {
     const env: LedgerEntry = { type: 'scan', runId: 'r', at: hoursAgo(1), repo: 'o/api', checks: { test: false }, tasks: [], envFailures: ['test'] }
     const q = buildMorningReport(input([env])).sections.find(s => s.id === 'qa')!
-    expect(q.lines.join('\n')).toContain('api: test need secrets or network')
+    expect(q.lines.join('\n')).toContain('api: the test check needs secrets or network')
   })
   it('QA shows the check matrix and judge rejections', () => {
     expect(section('qa').lines).toContain('app: ✓ ✗ –')

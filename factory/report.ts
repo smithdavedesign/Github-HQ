@@ -3,7 +3,7 @@
  *
  *   npx tsx factory/report.ts               # build, save, email (if configured)
  *   npx tsx factory/report.ts --no-send     # build + save only (prints the text version)
- *   npx tsx factory/report.ts --no-headlines
+ *   npx tsx factory/report.ts --headlines   # add local-model one-liners (off by default: they paraphrase loosely)
  *
  * Email: himalaya + Gmail SMTP with an app password kept in the login keychain
  * (one-time `bash factory/bin/setup-email.sh`). Without it the report is saved to
@@ -45,7 +45,9 @@ async function main() {
     cycles: recentCycles(cfg, now),
   }
   let report = buildMorningReport(input)
-  if (!argv.includes('--no-headlines') && input.liteLLMUp) {
+  // Opt-in: the local 7B model mis-paraphrased numbers in testing ("4 of 8 reviews completed"
+  // for 4 *requested*), and a report the owner trusts can't misstate its own facts.
+  if (argv.includes('--headlines') && input.liteLLMUp) {
     const headlines = await writeHeadlines(cfg, report.sections)
     if (headlines) report = buildMorningReport({ ...input, headlines })
   }

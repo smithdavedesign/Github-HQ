@@ -128,7 +128,11 @@ export function buildMorningReport(input: ReportInput): MorningReport {
     id: 'builder', role: 'Builder', skill: '/ship', title: 'Draft PRs opened (last 24h)',
     lines: newPrs.length === 0
       ? ['No new PRs in the last 24 hours.']
-      : newPrs.map(a => `${short(a.repo)}: ${KIND_LABEL[a.kind] ?? a.kind} — ${a.tier} · ${a.harness === 'npm-audit-fix' ? 'npm audit fix' : a.model} · ${Math.round(a.durationMs / 60000)} min — ${a.prUrl}`),
+      : newPrs.map(a => {
+        const state = resolutions.get(a.id)?.outcome
+        const tag = state === 'merged' ? ' (merged)' : state === 'rejected' ? ' (closed)' : ''
+        return `${short(a.repo)}: ${KIND_LABEL[a.kind] ?? a.kind}${tag} — ${a.tier} · ${a.harness === 'npm-audit-fix' ? 'npm audit fix' : a.model} · ${Math.round(a.durationMs / 60000)} min — ${a.prUrl}`
+      }),
   })
 
   // ── QA: checks + judge ──────────────────────────────────────────────────────
@@ -139,7 +143,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
     lines: [
       'Latest scan per repo (typecheck / lint / test):',
       ...scans.map(s => `${short(s.repo)}: ${s.checks.install === false ? 'install failed' : `${mark(s.checks.typecheck)} ${mark(s.checks.lint)} ${mark(s.checks.test)}`}`),
-      ...scans.filter(s => s.envFailures?.length).map(s => `${short(s.repo)}: ${s.envFailures!.join(', ')} need secrets or network the factory doesn't have — not a code task; run them in CI with keys.`),
+      ...scans.filter(s => s.envFailures?.length).map(s => `${short(s.repo)}: the ${s.envFailures!.join(' and ')} check${s.envFailures!.length > 1 ? 's need' : ' needs'} secrets or network the factory doesn't have — not a code task; run it in CI with keys.`),
       rejections.length === 0 ? 'Judge rejected nothing in the last 24h.' : `Judge rejected ${plural(rejections.length, 'attempt')}:`,
       ...rejections.slice(0, 6).map(a => `${short(a.repo)} ${a.kind} (${a.tier}): ${a.reason}`),
     ],
