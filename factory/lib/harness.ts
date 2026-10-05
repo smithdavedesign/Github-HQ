@@ -12,6 +12,8 @@ export interface HarnessRequest {
   prompt: string
   /** Files Aider may edit (M0 only — Aider needs explicit targets). */
   files?: string[]
+  /** LiteLLM alias for Claude Code's small-model role (background calls). Defaults to `model`. */
+  smallModel?: string
   /** Report-only: no Edit tool, and no Bash beyond read-only checks. */
   readOnly?: boolean
   timeoutMs?: number
@@ -102,7 +104,8 @@ async function runClaudeCode(req: HarnessRequest, cfg: FactoryConfig): Promise<H
       ANTHROPIC_BASE_URL: cfg.litellm.url,
       ANTHROPIC_API_KEY: cfg.litellm.key,
       ANTHROPIC_AUTH_TOKEN: '',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: req.model,
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: req.smallModel ?? req.model,
+      ANTHROPIC_SMALL_FAST_MODEL: req.smallModel ?? req.model,
       ANTHROPIC_DEFAULT_SONNET_MODEL: req.model,
       ANTHROPIC_DEFAULT_OPUS_MODEL: req.model,
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',

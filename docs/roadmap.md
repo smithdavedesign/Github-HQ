@@ -785,7 +785,7 @@ OpenRouter's 50 free requests/day can't be the single brain. M1 became a LiteLLM
 - [x] Explicit fallback ladders (LiteLLM doesn't chain fallbacks recursively): `free-agent` → rest of pool; `cloud-or` → pool; `local-coder` → pool → `cloud-smart` (paid last). Verified live: an exhausted OpenRouter request was served by Ollama Cloud in the same call
 - [x] Factory defers M1 only when no pool member has capacity (`m1Deferred`)
 - [x] OpenClaw default agent: `local-coder → free-agent → cloud-smart` (was `→ cloud-or →`), via OpenClaw's validated config CLI
-- [ ] Route Claude Code's small background calls to local Ollama to save free-tier requests (needs a context-size check first)
+- [x] Route Claude Code's small-model role to local Ollama: `local-small` alias (same resident Qwen as `local-agent`, falls back to the pool), wired via `ANTHROPIC_DEFAULT_HAIKU_MODEL` / `ANTHROPIC_SMALL_FAST_MODEL` for M1. **Measured saving: zero.** In headless `--bare` runs Claude Code makes *no* small-model calls (a bogus alias there never reached LiteLLM). Free requests are spent one per agent turn (11–19 per task), so the levers are fewer turns and more providers, not offloading background calls. Kept as insurance.
 - [ ] Optional: one-time $10 OpenRouter credit (1,000 free requests/day) to deepen the OpenRouter member. Owner decision
 - [ ] Later: move the worker stack into an AI dev VM with the Mac as control plane (§8). Needs more RAM or a second machine
 

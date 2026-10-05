@@ -29,6 +29,12 @@ import { freeQuota, SCOUT_REQUESTS_PER_CASE } from './lib/quota'
 import { acquireLock } from './lib/lock'
 
 const LOCAL_AGENT: ManagedModel = { name: 'local-agent', model: 'qwen2.5:7b-coding', kind: 'ollama', numCtx: 16384 }
+/**
+ * Claude Code's small-model role (bash-prefix checks, titles, summaries) on local Ollama:
+ * same resident model as local-agent (no extra RAM), but it falls back to the free pool
+ * on error so a local hiccup never fails an M1 run.
+ */
+const LOCAL_SMALL: ManagedModel = { ...LOCAL_AGENT, name: 'local-small' }
 const POOL_ALIASES = ['free-agent', 'free-agent-b', 'free-agent-c']
 const RETEST_AFTER_DAYS = 3
 
@@ -142,7 +148,7 @@ async function main() {
 }
 
 function poolMembers(chain: PoolId[]): ManagedModel[] {
-  return [...chain.slice(0, POOL_ALIASES.length).map((id, i) => memberFor(POOL_ALIASES[i], id)), LOCAL_AGENT]
+  return [...chain.slice(0, POOL_ALIASES.length).map((id, i) => memberFor(POOL_ALIASES[i], id)), LOCAL_AGENT, LOCAL_SMALL]
 }
 
 /**
@@ -159,6 +165,7 @@ function poolFallbacks(chain: PoolId[]): Record<string, string[]> {
     ...(aliases.length > 1 ? { 'free-agent': aliases.slice(1) } : {}),
     ...(aliases.length > 0 ? { 'cloud-or': aliases } : {}),
     'local-coder': [...aliases, 'cloud-smart'],
+    ...(aliases.length > 0 ? { 'local-small': aliases } : {}),
   }
 }
 

@@ -238,7 +238,13 @@ async function attempt(
   const prompt = buildPrompt(task, tier, pkg, specs.filter(s => task.verify.includes(s.name)).map(s => s.display), repo)
   log(`${repo}: ${tier} ${harnessFor(tier)} → ${model}`)
 
-  const h = await runHarness({ tier, model, cwd: dir, prompt, files: task.scoped ? task.files : undefined, timeoutMs: tier === 'M0' ? cfg.m0TimeoutMs : undefined }, cfg)
+  const h = await runHarness({
+    tier, model, cwd: dir, prompt, files: task.scoped ? task.files : undefined,
+    timeoutMs: tier === 'M0' ? cfg.m0TimeoutMs : undefined,
+    // Claude Code's small-model role → local Ollama (falls back to the pool). Measured: zero
+    // such calls in headless --bare runs today, so this is insurance, not a saving.
+    smallModel: tier === 'M1' ? 'local-small' : undefined,
+  }, cfg)
   writeFileSync(path.join(logDir, `${slug(repo)}-${task.kind}-${tier}.log`), `${prompt}\n\n=====\n${h.output}`)
 
   const entry: AttemptEntry = {
