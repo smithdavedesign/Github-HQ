@@ -740,7 +740,8 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 - [x] Harness (`factory/lib/harness.ts`): M0 → Aider (`--edit-format diff`) on `local-agent`; M1/M2 → Claude Code `--bare --strict-mcp-config` through LiteLLM with tool allow/deny lists (no commit/push/rm/web)
 - [x] Cost + model telemetry per attempt (`tier, harness, model, tokens, costUsd, durationMs, exploring`) in the ledger and RepoHQ `agent_attempt` metadata
 - [x] Free-tier 429 / quota exhaustion → defer to the next cycle; **never** escalates to paid. Quota is read from OpenRouter's `/api/v1/key` before every M1 task
-- [x] launchd schedules (`factory/bin/install-launchd.sh`): cycles 18:00 + 03:00 local (after OpenRouter's 00:00 UTC reset), `caffeinate -i` per run
+- [x] launchd schedules (`factory/bin/install-launchd.sh`): cycles 18:00 + 03:00 local (after OpenRouter's 00:00 UTC reset), `caffeinate -i` per run, standard priority; deployed to `~/.repohq-factory/app` because launchd can't read `~/Documents`
+- [x] First live draft PR from the scheduled loop: [AI-Took-My-Job#10](https://github.com/smithdavedesign/AI-Took-My-Job/pull/10) (M0, $0)
 - [ ] 61-B: Nexus BullMQ lanes `agent-local` / `agent-cloud` so RepoHQ-dispatched advisor tasks can also use the free lane (deferred — see above)
 - [ ] Dedicated `ai-agent` macOS user for the runner (needs sudo; runs as the owner today, confined to `~/.repohq-factory/work`)
 
