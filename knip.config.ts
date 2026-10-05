@@ -7,7 +7,8 @@ const config: KnipConfig = {
     // MCP server — run as a standalone process via `node mcp/server.ts`
     'mcp/server.ts',
   ],
-  project: ['src/**/*.{ts,tsx}', 'mcp/**/*.ts'],
+  // factory/ entry points come from the package.json factory* scripts
+  project: ['src/**/*.{ts,tsx}', 'mcp/**/*.ts', 'factory/**/*.ts'],
   ignore: [
     // shadcn/ui components export their full public API — consumers may import any member.
     // Knip can't know which exports are used externally, so we exclude the ui/ barrel.

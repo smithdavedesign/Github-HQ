@@ -25,7 +25,12 @@ const PROVIDERS: { value: LLMProvider; label: string; hint: string }[] = [
   {
     value: 'gemini',
     label: 'Gemini (Google)',
-    hint: 'Uses Gemini 2.5 Pro for analysis and Gemini 2.0 Flash for fast tasks. Get key at aistudio.google.com',
+    hint: 'Uses Gemini 2.5 Pro for analysis and Gemini 2.0 Flash for fast tasks. Has a free tier. Get key at aistudio.google.com',
+  },
+  {
+    value: 'openrouter',
+    label: 'OpenRouter (free models)',
+    hint: '$0 — routes to currently-free models. Weaker at strict JSON; invalid output is repaired once, then retried on Claude Haiku if the server has an Anthropic key. Get key at openrouter.ai/keys',
   },
 ]
 

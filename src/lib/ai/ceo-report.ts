@@ -2,7 +2,8 @@ import { toNum } from '@/lib/utils'
 import { db } from '@/lib/db'
 import { digests, repositories, repositoryMetrics, securityFindings, deployments } from '@/lib/db/schema'
 import { eq, desc } from 'drizzle-orm'
-import { getLLMAdapter } from './adapter'
+import { getLLMAdapter, getFallbackAdapter } from './adapter'
+import { generateJson } from './structured'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -130,11 +131,6 @@ export async function generateCeoReport(userId: string): Promise<CeoReportConten
   const prompt = `Portfolio: ${userRepos.length} repos · MRR $${totalMrr.toFixed(0)} · avg health ${avgHealth.toFixed(0)}/100 · total value $${totalValue.toLocaleString()}\n\n${repoLines}`
 
   const adapter = await getLLMAdapter(userId)
-  const text = await adapter.generate({
-    system: SYSTEM_PROMPT, user: prompt, fast: true, maxTokens: 1024, cacheSystem: true,
-  })
-  const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-
   type ClaudeOutput = {
     biggestWins: CeoReportWin[]
     biggestRisks: CeoReportRisk[]
@@ -143,10 +139,12 @@ export async function generateCeoReport(userId: string): Promise<CeoReportConten
   }
   let parsed: ClaudeOutput
   try {
-    parsed = JSON.parse(jsonStr)
-  } catch {
-    console.error('[ceo-report] failed to parse Claude response:', text.slice(0, 200))
-    throw new Error('CEO report: Claude returned non-JSON response')
+    ({ value: parsed } = await generateJson<ClaudeOutput>(adapter, {
+      system: SYSTEM_PROMPT, user: prompt, fast: true, maxTokens: 1024, cacheSystem: true,
+    }, { fallback: getFallbackAdapter(adapter.provider), label: 'ceo-report' }))
+  } catch (err) {
+    console.error('[ceo-report] failed to parse model response:', err instanceof Error ? err.message : err)
+    throw new Error('CEO report: model returned non-JSON response')
   }
 
   const result: CeoReportContent = {

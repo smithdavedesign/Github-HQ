@@ -6,6 +6,7 @@ import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { testLLMKey } from '@/lib/ai/adapter'
 import type { LLMProvider } from '@/lib/ai/adapter'
+import { PROVIDER_SHORT_NAME } from '@/lib/ai/providers'
 import { encrypt, decrypt } from '@/lib/crypto-utils'
 
 type LLMKeys = Partial<Record<LLMProvider, string>>
@@ -31,7 +32,8 @@ export async function getLLMSettings(): Promise<{
   const hasEnvKey = (
     (provider === 'anthropic' && !!process.env.ANTHROPIC_API_KEY) ||
     (provider === 'openai'    && !!process.env.OPENAI_API_KEY) ||
-    (provider === 'gemini'    && !!process.env.GEMINI_API_KEY)
+    (provider === 'gemini'    && !!process.env.GEMINI_API_KEY) ||
+    (provider === 'openrouter' && !!process.env.OPENROUTER_API_KEY)
   )
 
   const savedProviders = (Object.entries(keys) as [LLMProvider, string][])
@@ -55,8 +57,7 @@ export async function saveLLMSettings(provider: LLMProvider, apiKey: string) {
     await testLLMKey(provider, apiKey)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    const name = provider === 'gemini' ? 'Gemini' : provider === 'openai' ? 'OpenAI' : 'Anthropic'
-    throw new Error(`${name} key invalid: ${msg.slice(0, 200)}`)
+    throw new Error(`${PROVIDER_SHORT_NAME[provider]} key invalid: ${msg.slice(0, 200)}`)
   }
 
   // Fetch current keys, merge in the new one — other providers keep their keys

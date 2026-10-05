@@ -64,6 +64,29 @@ function createOpenAIAdapter(apiKey: string): LLMAdapter {
   }
 }
 
+function createOpenRouterAdapter(apiKey: string): LLMAdapter {
+  return {
+    provider: 'openrouter',
+    async generate({ system, user, fast = false, maxTokens = 1000 }) {
+      const OpenAI = (await import('openai')).default
+      // OPENROUTER_BASE_URL lets local dev point this at the LiteLLM gateway (http://localhost:4000/v1).
+      const client = new OpenAI({ apiKey, baseURL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1' })
+      const model = fast
+        ? process.env.OPENROUTER_MODEL_FAST || PROVIDER_MODELS.openrouter.fast
+        : process.env.OPENROUTER_MODEL_CAPABLE || PROVIDER_MODELS.openrouter.capable
+      const response = await client.chat.completions.create({
+        model,
+        max_tokens: maxTokens,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user',   content: user },
+        ],
+      })
+      return response.choices[0]?.message.content?.trim() ?? '{}'
+    },
+  }
+}
+
 function createGeminiAdapter(apiKey: string): LLMAdapter {
   return {
     provider: 'gemini',
@@ -109,7 +132,8 @@ export async function getLLMAdapter(userId: string): Promise<LLMAdapter> {
   const envKey =
     provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY :
     provider === 'openai'    ? process.env.OPENAI_API_KEY :
-    provider === 'gemini'    ? process.env.GEMINI_API_KEY : null
+    provider === 'gemini'    ? process.env.GEMINI_API_KEY :
+    provider === 'openrouter' ? process.env.OPENROUTER_API_KEY : null
 
   // Priority: per-provider key > legacy single key > env var. Both key fields may be
   // AES-GCM encrypted (enc: prefix) or legacy plaintext — decrypt handles both.
@@ -122,16 +146,29 @@ export async function getLLMAdapter(userId: string): Promise<LLMAdapter> {
     )
   }
 
-  if (provider === 'openai') return createOpenAIAdapter(apiKey)
-  if (provider === 'gemini') return createGeminiAdapter(apiKey)
+  return createAdapter(provider, apiKey)
+}
+
+function createAdapter(provider: LLMProvider, apiKey: string): LLMAdapter {
+  if (provider === 'openai')     return createOpenAIAdapter(apiKey)
+  if (provider === 'gemini')     return createGeminiAdapter(apiKey)
+  if (provider === 'openrouter') return createOpenRouterAdapter(apiKey)
   return createAnthropicAdapter(apiKey)
 }
 
-export async function testLLMKey(provider: LLMProvider, apiKey: string): Promise<void> {
-  let adapter: LLMAdapter
-  if (provider === 'openai')      adapter = createOpenAIAdapter(apiKey)
-  else if (provider === 'gemini') adapter = createGeminiAdapter(apiKey)
-  else                            adapter = createAnthropicAdapter(apiKey)
+/**
+ * Fallback for structured-output calls when a (usually free) primary model
+ * returns unusable JSON twice. Uses the server's Anthropic key so a user on a
+ * free provider still gets a result; returns null when no key is configured or
+ * the primary already is Anthropic.
+ */
+export function getFallbackAdapter(primary: LLMProvider): LLMAdapter | null {
+  if (primary === 'anthropic') return null
+  const key = process.env.ANTHROPIC_API_KEY
+  return key ? createAnthropicAdapter(key) : null
+}
 
+export async function testLLMKey(provider: LLMProvider, apiKey: string): Promise<void> {
+  const adapter = createAdapter(provider, apiKey)
   await adapter.generate({ system: 'Reply with OK.', user: 'OK?', fast: true, maxTokens: 5 })
 }

@@ -342,5 +342,6 @@ npm run db:generate   # Generate migration files
 - [Roadmap](docs/roadmap.md) — all phases shipped + upcoming, gstack roadmap, distribution roadmap
 - [Agentic Full Flow](docs/agentic-full-flow.md) — mermaid architecture + sequence diagrams for the agent pipeline
 - [Agentic Execution Flow](docs/agentic-execution-flow.md) — quick reference for the execution pipeline
+- [Autonomous Factory](docs/autonomous-factory.md) — free-model-first self-improvement loop: local AI stack lane, model-tier routing, trust levels, approvals, budget, infra agent (Horizon 3)
 - [gstack Findings](docs/gstack-findings.md) — running log of skill run findings and resolutions
 - [MCP Setup](mcp/README.md) — IDE integration guide with all 14 tools

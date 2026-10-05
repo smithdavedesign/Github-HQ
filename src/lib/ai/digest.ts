@@ -1,7 +1,8 @@
 import { db } from '@/lib/db'
 import { digests, repositories, repositoryMetrics, securityFindings } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { getLLMAdapter } from './adapter'
+import { getLLMAdapter, getFallbackAdapter } from './adapter'
+import { generateJson } from './structured'
 import { getAccuracyByImpactType, getDowngradedRepos } from '@/lib/actions/advisor-accuracy'
 
 export interface DigestPriority {
@@ -93,16 +94,14 @@ export async function generateDigest(userId: string): Promise<DigestContent> {
   const prompt = `Portfolio: ${userRepos.length} repos, avg health ${avgHealth.toFixed(0)}/100\n\n${repoLines}`
 
   const adapter = await getLLMAdapter(userId)
-  const text = await adapter.generate({
-    system: SYSTEM_PROMPT, user: prompt, fast: false, maxTokens: 1024, cacheSystem: true,
-  })
-  const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
   let parsed: Omit<DigestContent, 'generatedAt'>
   try {
-    parsed = JSON.parse(jsonStr)
-  } catch {
-    console.error('[digest] failed to parse LLM response:', text.slice(0, 200))
-    throw new Error('Digest: Claude returned non-JSON response')
+    ({ value: parsed } = await generateJson<Omit<DigestContent, 'generatedAt'>>(adapter, {
+      system: SYSTEM_PROMPT, user: prompt, fast: false, maxTokens: 1024, cacheSystem: true,
+    }, { fallback: getFallbackAdapter(adapter.provider), label: 'digest' }))
+  } catch (err) {
+    console.error('[digest] failed to parse model response:', err instanceof Error ? err.message : err)
+    throw new Error('Digest: model returned non-JSON response')
   }
 
   const result: DigestContent = { ...parsed, generatedAt: new Date().toISOString() }

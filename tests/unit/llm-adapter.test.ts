@@ -6,7 +6,7 @@ import {
 } from '@/lib/ai/providers'
 import type { LLMProvider } from '@/lib/ai/providers'
 
-const ALL_PROVIDERS: LLMProvider[] = ['anthropic', 'openai', 'gemini']
+const ALL_PROVIDERS: LLMProvider[] = ['anthropic', 'openai', 'gemini', 'openrouter']
 
 describe('PROVIDER_LABELS', () => {
   it('has a label for every provider', () => {

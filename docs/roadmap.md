@@ -720,6 +720,72 @@ Triggered by a real no-op PR (`smithdavedesign/family-tree` PR #3): a `/health` 
 
 ---
 
+## Autonomous Factory Roadmap
+
+Turns the closed loop into a cost-aware autonomous factory: a local lane on the Mac running against the local AI stack (`~/ai-stack`), a local → free cloud → paid model ladder, learned routing, and the PRD's trust/identity/budget guardrails. Design: [autonomous-factory.md](autonomous-factory.md). Operator guide: [factory/README.md](../factory/README.md).
+
+**Shipped approach (2026-10-05):** rather than first splitting Nexus into queue lanes, the local lane shipped as a standalone runner (`factory/`) that reuses RepoHQ's pure routing code and mirrors its activity into `portfolio_events`. The Nexus lane split (61-B) is deferred until the local runner proves its merge rate.
+
+**Gate to start Horizon 3 (Phase 67):** ≥ 80% of merged agent PRs produced at $0 over 30 days, and zero unapproved L4 actions.
+
+### Phase 60 — Foundation Fixes
+- [x] **Nexus: gstack scripts never invoked `claude` when it was installed.** Commit `1e9210e` left the `--print` call inside the `else` branch of all 9 `scripts/gstack-*.sh`. Fixed on `AI-Took-My-Job` branch `fix/gstack-claude-invocation` with regression test `tests/integration/gstack-claude-invocation-check.sh` (0/9 on old code → 9/9). **Remaining: merge + deploy the Render worker.**
+- [x] Removed the stale `tests/integration/gstack-openclaw-routing-check.sh`
+- [ ] Set the Anthropic console monthly spend limit (provider-side hard cap). Owner action.
+- [x] LiteLLM: factory aliases `free-agent`, `free-agent-b`, `local-agent` live in a managed block with **free-only** fallbacks (`free-agent → free-agent-b`); the hand-maintained `local-coder → cloud-or → cloud-smart` ladder stays for interactive use only
+
+### Phase 61 — Free Model Lane (local runner)
+- [x] `free-agent` / `free-agent-b` selected by eval (Phase 64), not by hand
+- [x] Local runner `factory/run.ts`: sense (repo's own typecheck/lint/test + README) → task → route → execute → verify → draft PR → learn; allowlist, kill switch (`~/.repohq-factory/PAUSE`), one PR per cycle, process lock shared with the scout
+- [x] Harness (`factory/lib/harness.ts`): M0 → Aider (`--edit-format diff`) on `local-agent`; M1/M2 → Claude Code `--bare --strict-mcp-config` through LiteLLM with tool allow/deny lists (no commit/push/rm/web)
+- [x] Cost + model telemetry per attempt (`tier, harness, model, tokens, costUsd, durationMs, exploring`) in the ledger and RepoHQ `agent_attempt` metadata
+- [x] Free-tier 429 / quota exhaustion → defer to the next cycle; **never** escalates to paid. Quota is read from OpenRouter's `/api/v1/key` before every M1 task
+- [x] launchd schedules (`factory/bin/install-launchd.sh`): cycles 18:00 + 03:00 local (after OpenRouter's 00:00 UTC reset), `caffeinate -i` per run
+- [ ] 61-B: Nexus BullMQ lanes `agent-local` / `agent-cloud` so RepoHQ-dispatched advisor tasks can also use the free lane (deferred — see above)
+- [ ] Dedicated `ai-agent` macOS user for the runner (needs sudo; runs as the owner today, confined to `~/.repohq-factory/work`)
+
+### Phase 62 — Free Intelligence Layer (RepoHQ on Vercel)
+- [x] `openrouter` provider (`src/lib/ai/providers.ts`, `adapter.ts`, Settings → AI Provider). OpenAI-compatible; `OPENROUTER_BASE_URL` / `OPENROUTER_MODEL_FAST` / `OPENROUTER_MODEL_CAPABLE` overrides (point at LiteLLM in dev)
+- [x] Gemini free tier noted in the provider hint (zero-code free option)
+- [x] Structured-output guard `src/lib/ai/structured.ts`: extract (fences, `<think>`, prose) → validate → one repair retry → `claude-haiku-4-5` fallback via the server key. Wired into advisor, digest, CEO report, analysis and summary
+
+### Phase 63 — Learned Routing + Escalation Ladder
+- [x] `src/lib/agents/model-router.ts` (pure, 22 tests): `classifyRepoData`, `allowedTiers`, time-decayed `computeTierStats`, `chooseTier` (cheapest proven ≥ 80% over ≥ 10, cold start cheapest, ~10% exploration one tier down), `nextTier`, `canUsePaidTier`
+- [x] Escalation M0 → M1 → M2 within a cycle; M2 blocked unless `monthlyBudgetUsd > 0` (default 0) → `approval_needed` + RepoHQ notification
+- [x] Data-classification gate: private repos skip M1 unless `allowFreeCloud`; `Client Work` / `sensitive` never use M1; unknown visibility treated as private
+- [x] Dead-end detection: ≥ 2 M1+ failures per repo+kind in 14 days (M0 failures don't count; they escalate)
+- [x] Verification judge (`factory/lib/verify.ts`): target check passes, no regressions, no `@ts-ignore`/`eslint-disable`/`.skip`/`.only`, no lockfile/CI/env edits, ≤ 400 lines; README edits must be additive with only real scripts/tools and no placeholders
+- [ ] `/agent-performance`: per-tier success, cost per merged PR, $0 share (CLI today: `npm run factory:report`)
+- [ ] Feed factory tier stats into the RepoHQ advisor accuracy table
+
+### Phase 64 — Model Scout + Eval Harness
+- [x] `factory/scout.ts`: OpenRouter free + `tools` models → preflight → eval suite (seeded bug, multi-file fix, read-only report) → rank with 21-day history → update `free-agent` / `free-agent-b` → commit `~/ai-stack` → `model_scout_report` event
+- [x] Quota-aware: evaluates only as many models as today's free requests allow; rotates untested models in; falls back to history when quota is exhausted; keeps (or demotes) incumbents rather than leaving no alias
+- [x] `factory/eval/e2e.sh`: full cycle against a local fixture repo (M0 fixes a seeded type error → judge → squashed commit)
+
+### Phase 65 — Trust, Approvals & Budget
+- [x] Budget ledger: monthly paid cap (default $0) enforced before every M2 attempt; M2 cost computed from token usage
+- [x] Human boundary: `approval_needed` ledger entry + RepoHQ in-app notification (fans out via the existing outbound webhook)
+- [x] Draft-only PRs; the factory never merges, force-pushes or deletes branches
+- [ ] Signed, single-use approval links (`/approve/[token]`) and an `awaiting_approval` lifecycle stage in RepoHQ
+- [ ] OpenClaw → WhatsApp relay for approvals (needs owner sign-off before any outbound WhatsApp)
+- [ ] Branch protection on `main` for every allowlisted repo (L4 backstop). Owner action via GitHub settings
+
+### Phase 66 — Agent Identity & Secrets
+- [x] Secrets read at runtime only: the OpenRouter key from `~/ai-stack/litellm/.env` (into an HTTP header), the RepoHQ DB URL from `.env.local`; never written to prompts, logs or new files
+- [x] `op run` support in the launchd wrapper (`FACTORY_OP_ENV_FILE`)
+- [ ] 1Password `AI-Agent` vault + service account (owner action), then move both secrets into it
+- [ ] Factory PRs authored by the Nexus GitHub App instead of the owner's `gh` login
+
+### Phase 67+ — Horizon 3: Infrastructure Agent
+- [ ] `agent_resources` ledger table (owner, provider, kind, environment, est. cost, `ephemeral`, `ttlAt`, destroy procedure, lifecycle state) + `.infrastructure/resources.json` mirror
+- [ ] Dev-only provisioning in order: GitHub repo → Vercel preview → Neon/Supabase dev branch → Cloudflare preview DNS → AWS/GCP
+- [ ] IaC-first (Terraform / provider-native), plan → review → apply-to-dev → commit
+- [ ] Disposable environments with "destroy what you created" exception; TTL sweeper proposes teardown of everything else
+- [ ] Mission mode (PRD §21.19): starts in `awaiting_approval` with cost estimate; unlocked only after Tier 1–3 accuracy gates
+
+---
+
 ## Distribution Roadmap
 
 Features required to open RepoHQ to other users. Tracked separately because they each touch auth, data isolation, billing, or GitHub platform constraints.

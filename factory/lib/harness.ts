@@ -1,0 +1,165 @@
+import type { ModelTier } from '../../src/lib/agents/model-router'
+import type { FactoryConfig } from './config'
+import { run } from './proc'
+
+export type HarnessName = 'aider' | 'claude-code'
+
+export interface HarnessRequest {
+  tier: ModelTier
+  /** LiteLLM alias (normally config.models[tier]; the scout passes candidates directly). */
+  model: string
+  cwd: string
+  prompt: string
+  /** Files Aider may edit (M0 only — Aider needs explicit targets). */
+  files?: string[]
+  /** Report-only: no Edit tool, and no Bash beyond read-only checks. */
+  readOnly?: boolean
+  timeoutMs?: number
+}
+
+export interface HarnessResult {
+  ok: boolean
+  harness: HarnessName
+  model: string
+  output: string
+  durationMs: number
+  inputTokens: number
+  outputTokens: number
+  costUsd: number
+  rateLimited: boolean
+  timedOut: boolean
+}
+
+/** Tools a fixing agent may use. No commit/push, no network fetch — the factory owns git. */
+const FIX_TOOLS = [
+  'Read', 'Edit', 'Write', 'Glob', 'Grep',
+  'Bash(npm run:*)', 'Bash(npm test:*)', 'Bash(npx tsc:*)', 'Bash(npx eslint:*)',
+  'Bash(npx vitest:*)', 'Bash(npx jest:*)', 'Bash(node:*)', 'Bash(git diff:*)', 'Bash(git status:*)', 'Bash(ls:*)',
+]
+const READ_ONLY_TOOLS = ['Read', 'Glob', 'Grep', 'Write', 'Bash(npm run:*)', 'Bash(npm test:*)', 'Bash(node:*)', 'Bash(ls:*)']
+const DENY_TOOLS = ['Bash(git commit:*)', 'Bash(git push:*)', 'Bash(git reset:*)', 'Bash(rm:*)', 'WebFetch', 'WebSearch']
+
+const RATE_LIMIT_RE = /\b429\b|rate[ _-]?limit|too many requests|quota exceeded/i
+
+export function harnessFor(tier: ModelTier): HarnessName {
+  return tier === 'M0' ? 'aider' : 'claude-code'
+}
+
+export async function runHarness(req: HarnessRequest, cfg: FactoryConfig): Promise<HarnessResult> {
+  return harnessFor(req.tier) === 'aider' ? runAider(req, cfg) : runClaudeCode(req, cfg)
+}
+
+async function runAider(req: HarnessRequest, cfg: FactoryConfig): Promise<HarnessResult> {
+  const args = [
+    '--model', `openai/${req.model}`,
+    // Search/replace edits. Aider's default "whole" format makes the 7B model re-emit
+    // entire files, which truncates anything large (a 37KB README came back as 376 tokens).
+    '--edit-format', 'diff',
+    '--no-git', '--yes-always', '--no-auto-commits', '--no-show-model-warnings',
+    // Note: no --no-stream — with LiteLLM→Ollama, Aider's non-streaming path reports "Empty response".
+    '--no-check-update', '--no-analytics', '--no-pretty', '--map-tokens', '0',
+    '--message', req.prompt,
+    ...(req.files ?? []),
+  ]
+  const r = await run('aider', args, {
+    cwd: req.cwd,
+    timeoutMs: req.timeoutMs ?? cfg.harnessTimeoutMs,
+    env: { ...process.env, OPENAI_API_BASE: `${cfg.litellm.url}/v1`, OPENAI_API_KEY: cfg.litellm.key },
+  })
+  const tokens = /Tokens:\s*([\d.,]+k?)\s*sent,\s*([\d.,]+k?)\s*received/i.exec(r.output)
+  return {
+    ok: r.code === 0 && !r.timedOut && !/litellm\.\w*Error|APIConnectionError|Empty response received/i.test(r.output),
+    harness: 'aider',
+    model: req.model,
+    output: r.output,
+    durationMs: r.durationMs,
+    inputTokens: tokens ? parseTokenCount(tokens[1]) : 0,
+    outputTokens: tokens ? parseTokenCount(tokens[2]) : 0,
+    costUsd: 0,
+    rateLimited: RATE_LIMIT_RE.test(r.output),
+    timedOut: r.timedOut,
+  }
+}
+
+async function runClaudeCode(req: HarnessRequest, cfg: FactoryConfig): Promise<HarnessResult> {
+  const args = [
+    '-p', req.prompt,
+    '--bare', '--strict-mcp-config',
+    '--model', req.model,
+    '--output-format', 'json',
+    '--permission-mode', 'acceptEdits',
+    '--allowedTools', ...(req.readOnly ? READ_ONLY_TOOLS : FIX_TOOLS),
+    '--disallowedTools', ...(req.readOnly ? [...DENY_TOOLS, 'Edit'] : DENY_TOOLS),
+  ]
+  if (req.tier === 'M2') args.push('--max-budget-usd', String(cfg.m2EstimateUsd * 2))
+
+  const r = await run('claude', args, {
+    cwd: req.cwd,
+    timeoutMs: req.timeoutMs ?? cfg.harnessTimeoutMs,
+    env: {
+      ...process.env,
+      // Every tier goes through the LiteLLM gateway; --bare reads only ANTHROPIC_API_KEY.
+      ANTHROPIC_BASE_URL: cfg.litellm.url,
+      ANTHROPIC_API_KEY: cfg.litellm.key,
+      ANTHROPIC_AUTH_TOKEN: '',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: req.model,
+      ANTHROPIC_DEFAULT_SONNET_MODEL: req.model,
+      ANTHROPIC_DEFAULT_OPUS_MODEL: req.model,
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    },
+  })
+  const result = parseClaudeResult(r.output)
+  const inputTokens = result?.inputTokens ?? 0
+  const outputTokens = result?.outputTokens ?? 0
+  const costUsd = req.tier === 'M2'
+    ? (inputTokens * cfg.m2PricePerMTok.input + outputTokens * cfg.m2PricePerMTok.output) / 1_000_000
+    : 0
+  return {
+    ok: r.code === 0 && !r.timedOut && result !== null && !result.isError,
+    harness: 'claude-code',
+    model: req.model,
+    output: result?.text ? `${result.text}\n---\n${r.output.slice(-4000)}` : r.output,
+    durationMs: r.durationMs,
+    inputTokens,
+    outputTokens,
+    costUsd,
+    rateLimited: RATE_LIMIT_RE.test(r.output),
+    timedOut: r.timedOut,
+  }
+}
+
+export interface ClaudeResultSummary {
+  isError: boolean
+  text: string
+  inputTokens: number
+  outputTokens: number
+}
+
+/** Parse the final `--output-format json` result object out of mixed stdout/stderr. */
+export function parseClaudeResult(output: string): ClaudeResultSummary | null {
+  const lines = output.split('\n').filter(l => l.trimStart().startsWith('{') && l.includes('"type":"result"'))
+  const last = lines[lines.length - 1]
+  if (!last) return null
+  try {
+    const j = JSON.parse(last.trim()) as {
+      is_error?: boolean
+      result?: string
+      usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
+    }
+    const u = j.usage ?? {}
+    return {
+      isError: j.is_error === true,
+      text: j.result ?? '',
+      inputTokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+      outputTokens: u.output_tokens ?? 0,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** "651" → 651, "1.2k" → 1200, "12,345" → 12345 */
+export function parseTokenCount(s: string): number {
+  const clean = s.replace(/,/g, '')
+  return clean.endsWith('k') ? Math.round(parseFloat(clean) * 1000) : parseInt(clean, 10) || 0
+}
