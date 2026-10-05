@@ -18,7 +18,10 @@ export const PROVIDER_SHORT_NAME: Record<LLMProvider, string> = {
 export const PROVIDER_MODELS: Record<LLMProvider, { fast: string; capable: string }> = {
   anthropic: { fast: 'claude-haiku-4-5-20251001', capable: 'claude-sonnet-4-6' },
   openai:    { fast: 'gpt-4o-mini',               capable: 'gpt-4o' },
-  gemini:    { fast: 'gemini-2.0-flash',           capable: 'gemini-1.5-pro' },
+  // Stable "-latest" pointers track Google's current Flash models (versioned ids get retired:
+  // gemini-2.0-flash and gemini-1.5-pro now 404). Pro has no free-tier quota. Override with
+  // GEMINI_MODEL_FAST / GEMINI_MODEL_CAPABLE.
+  gemini:    { fast: 'gemini-flash-lite-latest',   capable: 'gemini-flash-latest' },
   // Free slugs rotate — override with OPENROUTER_MODEL_FAST / OPENROUTER_MODEL_CAPABLE.
   // `openrouter/free` is OpenRouter's router across currently-free models.
   openrouter: { fast: 'openrouter/free',          capable: 'nvidia/nemotron-3-super-120b-a12b:free' },

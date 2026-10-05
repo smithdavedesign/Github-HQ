@@ -25,7 +25,7 @@ const PROVIDERS: { value: LLMProvider; label: string; hint: string }[] = [
   {
     value: 'gemini',
     label: 'Gemini (Google)',
-    hint: 'Uses Gemini 2.5 Pro for analysis and Gemini 2.0 Flash for fast tasks. Has a free tier. Get key at aistudio.google.com',
+    hint: 'Free tier available. Uses the current Gemini Flash for analysis and Flash-Lite for fast tasks. Get key at aistudio.google.com',
   },
   {
     value: 'openrouter',

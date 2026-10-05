@@ -6,7 +6,8 @@ import type { GenerateParams, LLMAdapter } from './adapter'
  * Free models are noticeably worse at "return only JSON": they wrap it in
  * prose, ```json fences, or <think> reasoning blocks. Every structured call goes
  * through generateJson(): extract → validate → one repair retry → optional
- * fallback adapter (Claude Haiku). Pure except for the adapter calls.
+ * fallback adapter (Claude Haiku). A provider error (429/503) skips straight to the
+ * fallback. Pure except for the adapter calls.
  */
 
 /** Pull the first complete JSON object/array out of a model response. Throws if none. */
@@ -86,7 +87,17 @@ export async function generateJson<T>(
 
   const tryParse = (text: string): T => validate(extractJson(text))
 
-  const first = await adapter.generate(params)
+  // Provider errors (429 quota, 503 overloaded) go straight to the fallback: a free
+  // tier being busy must not fail the advisor or digest.
+  let first: string
+  try {
+    first = await adapter.generate(params)
+  } catch (err) {
+    if (!options.fallback) throw err
+    console.warn(`[${label}] ${adapter.provider} failed (${err instanceof Error ? err.message.slice(0, 120) : err}); falling back to ${options.fallback.provider}`)
+    const fb = await options.fallback.generate({ ...params, fast: true })
+    return { value: tryParse(fb), attempts: 3, usedFallback: true }
+  }
   try {
     return { value: tryParse(first), attempts: 1, usedFallback: false }
   } catch (err) {

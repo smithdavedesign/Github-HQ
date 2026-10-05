@@ -77,6 +77,18 @@ describe('generateJson', () => {
     expect(fb.calls[0].fast).toBe(true)
   })
 
+  it('falls back immediately when the provider itself errors (quota / overload)', async () => {
+    const failing: LLMAdapter = { provider: 'gemini', generate: vi.fn(async () => { throw new Error('503 UNAVAILABLE: high demand') }) }
+    const fb = scripted('anthropic', ['{"ok":true}'])
+    const r = await generateJson(failing, PARAMS, { fallback: fb })
+    expect(r).toEqual({ value: { ok: true }, attempts: 3, usedFallback: true })
+  })
+
+  it('rethrows provider errors when there is no fallback', async () => {
+    const failing: LLMAdapter = { provider: 'gemini', generate: vi.fn(async () => { throw new Error('429') }) }
+    await expect(generateJson(failing, PARAMS)).rejects.toThrow('429')
+  })
+
   it('throws when repair fails and there is no fallback', async () => {
     const a = scripted('openrouter', ['nope', 'still nope'])
     await expect(generateJson(a, PARAMS, { fallback: null })).rejects.toThrow()

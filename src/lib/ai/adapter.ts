@@ -92,7 +92,9 @@ function createGeminiAdapter(apiKey: string): LLMAdapter {
     provider: 'gemini',
     async generate({ system, user, fast = false, maxTokens = 1000 }) {
       // Direct REST API — no SDK, no Node.js compatibility issues on Vercel
-      const model = fast ? PROVIDER_MODELS.gemini.fast : PROVIDER_MODELS.gemini.capable
+      const model = fast
+        ? process.env.GEMINI_MODEL_FAST || PROVIDER_MODELS.gemini.fast
+        : process.env.GEMINI_MODEL_CAPABLE || PROVIDER_MODELS.gemini.capable
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
 
       const body = {
