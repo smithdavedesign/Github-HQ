@@ -756,7 +756,7 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 - [x] Data-classification gate: private repos skip M1 unless `allowFreeCloud`; `Client Work` / `sensitive` never use M1; unknown visibility treated as private
 - [x] Dead-end detection: ≥ 2 M1+ failures per repo+kind in 14 days (M0 failures don't count; they escalate)
 - [x] Verification judge (`factory/lib/verify.ts`): target check passes, no regressions, no `@ts-ignore`/`eslint-disable`/`.skip`/`.only`, no lockfile/CI/env edits, ≤ 400 lines; README edits must be additive with only real scripts/tools and no placeholders
-- [ ] `/agent-performance`: per-tier success, cost per merged PR, $0 share (CLI today: `npm run factory:report`)
+- [x] `/agent-performance`: "Autonomous Factory by Model Tier" table (attempts / verified / merged / closed / cost), free-tier share, current `free-agent` (`src/lib/agents/factory-stats.ts`); merge/close outcomes are stamped onto the RepoHQ event during reconcile
 - [ ] Feed factory tier stats into the RepoHQ advisor accuracy table
 
 ### Phase 64 — Model Scout + Eval Harness

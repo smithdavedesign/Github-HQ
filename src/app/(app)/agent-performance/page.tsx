@@ -10,6 +10,7 @@ import { CheckCircle, XCircle, Clock, TrendingUp, Target, Cpu, ExternalLink, Bar
 import Link from 'next/link'
 import { getAccuracyByImpactType, getDowngradedRepos } from '@/lib/actions/advisor-accuracy'
 import { AccuracyTable } from '@/components/dashboard/accuracy-table'
+import { summarizeFactoryEvents } from '@/lib/agents/factory-stats'
 
 export default async function AgentPerformancePage() {
   const session = await auth()
@@ -17,7 +18,7 @@ export default async function AgentPerformancePage() {
 
   const userId = session.user.id
 
-  const [events, accuracyStats, downgradedRepos] = await Promise.all([
+  const [events, accuracyStats, downgradedRepos, factoryEvents] = await Promise.all([
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.userId, userId),
@@ -28,7 +29,14 @@ export default async function AgentPerformancePage() {
     }),
     getAccuracyByImpactType(userId),
     getDowngradedRepos(userId),
+    db.query.portfolioEvents.findMany({
+      where: and(eq(portfolioEvents.userId, userId), inArray(portfolioEvents.eventType, ['agent_attempt', 'model_scout_report'])),
+      columns: { eventType: true, occurredAt: true, metadata: true },
+      orderBy: [desc(portfolioEvents.occurredAt)],
+      limit: 500,
+    }),
   ])
+  const factory = summarizeFactoryEvents(factoryEvents)
 
   // Compute stats
   const queued  = events.filter(e => e.eventType === 'agent_task_queued').length
@@ -125,6 +133,48 @@ export default async function AgentPerformancePage() {
           Accuracy data builds up as more PRs merge and repos resync. Check back after a few more merges.
         </div>
       ) : null}
+
+      {/* Autonomous factory (local free-model lane — docs/autonomous-factory.md) */}
+      {(factory.totalAttempts > 0 || factory.scout) && (
+        <div className="space-y-2">
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <Cpu className="w-3.5 h-3.5 text-emerald-500" />
+              Autonomous Factory by Model Tier
+            </h2>
+            <p className="text-[10px] text-muted-foreground max-w-xs text-right">
+              M0 local · M1 free cloud · M2 paid. Verified = passed the repo&apos;s own checks and opened a draft PR.
+            </p>
+          </div>
+          <div className="rounded-lg border border-border/50 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/30 text-muted-foreground">
+                <tr>
+                  {['Tier', 'Attempts', 'Verified', 'Merged', 'Closed', 'Cost'].map(h => (
+                    <th key={h} className="text-left font-medium px-3 py-2">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {factory.rows.map(r => (
+                  <tr key={r.tier} className="border-t border-border/40">
+                    <td className="px-3 py-2 font-medium">{r.tier}</td>
+                    <td className="px-3 py-2 tabular-nums">{r.attempts}</td>
+                    <td className="px-3 py-2 tabular-nums">{r.verified}</td>
+                    <td className="px-3 py-2 tabular-nums">{r.merged}</td>
+                    <td className="px-3 py-2 tabular-nums">{r.rejected}</td>
+                    <td className="px-3 py-2 tabular-nums">${r.costUsd.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {factory.freeSharePct != null ? <>Free-tier share of verified fixes: <span className="font-medium text-foreground">{factory.freeSharePct}%</span> · </> : null}
+            {factory.scout ? <>free-agent: <span className="font-mono">{factory.scout.primary ?? '—'}</span> (scouted {formatDistanceToNow(factory.scout.at)})</> : null}
+          </p>
+        </div>
+      )}
 
       {/* Cost */}
       {totalCostUsd > 0 && (

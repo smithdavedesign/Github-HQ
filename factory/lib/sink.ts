@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
-import { and, eq, ilike } from 'drizzle-orm'
+import { and, eq, ilike, sql } from 'drizzle-orm'
 import * as schema from '../../src/lib/db/schema'
 import type { FactoryConfig } from './config'
 import type { AttemptEntry } from './ledger'
@@ -109,5 +109,16 @@ export async function recordApprovalNeeded(cfg: FactoryConfig, repo: string, tit
       body,
       metadata: { source: 'factory', awaitingApproval: true },
     })
+  })
+}
+
+/** Learn step mirror: stamp the attempt's RepoHQ event with how the PR ended. */
+export async function recordResolution(cfg: FactoryConfig, attemptId: string, resolution: 'merged' | 'rejected'): Promise<void> {
+  const d = db(cfg)
+  if (!d) return
+  await safely('recordResolution', async () => {
+    await d.update(schema.portfolioEvents)
+      .set({ metadata: sql`coalesce(${schema.portfolioEvents.metadata}, '{}'::jsonb) || ${JSON.stringify({ resolution })}::jsonb` })
+      .where(and(eq(schema.portfolioEvents.userId, cfg.repohq.userId!), eq(schema.portfolioEvents.dedupKey, `factory:${attemptId}`)))
   })
 }

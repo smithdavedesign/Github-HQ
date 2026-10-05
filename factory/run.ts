@@ -24,7 +24,7 @@ import { appendEntry, deadEnds, monthToDateUsd, nextRepos, openPrAttempts, readL
 import { listAliases } from './lib/litellm-ops'
 import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
 import { run } from './lib/proc'
-import { recordApprovalNeeded, recordAttempt } from './lib/sink'
+import { recordApprovalNeeded, recordAttempt, recordResolution } from './lib/sink'
 import { acquireLock } from './lib/lock'
 import { freeQuota, M1_MIN_REQUESTS } from './lib/quota'
 import { buildPrompt, filterTasks, fitLocalContext, tasksFromScan, type FactoryTask } from './lib/tasks'
@@ -90,7 +90,9 @@ async function reconcile(cfg: FactoryConfig) {
   for (const a of open) {
     const state = await prState(a.prUrl!)
     if (state === 'MERGED' || state === 'CLOSED') {
-      appendEntry(cfg.home, { type: 'resolution', attemptId: a.id, at: new Date().toISOString(), outcome: state === 'MERGED' ? 'merged' : 'rejected' })
+      const outcome = state === 'MERGED' ? 'merged' : 'rejected'
+      appendEntry(cfg.home, { type: 'resolution', attemptId: a.id, at: new Date().toISOString(), outcome })
+      await recordResolution(cfg, a.id, outcome)
       log(`reconciled ${a.prUrl} → ${state.toLowerCase()}`)
     }
   }
