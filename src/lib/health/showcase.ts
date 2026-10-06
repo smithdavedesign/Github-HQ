@@ -52,3 +52,19 @@ export function getShowcaseRecommendations(repos: ShowcaseInput[], topN = 6): Sh
     .sort((a, b) => b.showcaseScore - a.showcaseScore)
     .slice(0, topN)
 }
+
+/**
+ * Which public repos a public page features by default. Archived, sunsetting and abandoned
+ * low-health repos stay reachable behind "show all", but they no longer fill the page: in the
+ * 2026-10 audit the public profile led with dozens of red "45 · Abandoned" coursework repos.
+ */
+export function isFeaturedPublicRepo(r: {
+  isArchived: boolean | null
+  lifecycleStatus: string | null
+  healthScore: number | null | undefined
+  hasLiveDeployment: boolean
+  isFocused?: boolean | null
+}): boolean {
+  if (r.isArchived || r.lifecycleStatus === 'archived' || r.lifecycleStatus === 'sunsetting') return false
+  return !!r.isFocused || r.hasLiveDeployment || (r.healthScore ?? 0) >= 55
+}

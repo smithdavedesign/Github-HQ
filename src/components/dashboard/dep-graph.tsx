@@ -44,10 +44,10 @@ function runForceLayout(
   const idxById = new Map(nodes.map((n, i) => [n.id, i]))
 
   const ITERS = 180
-  const REPULSION = 1800
+  const REPULSION = 6000
   const SPRING_K = 0.08
-  const IDEAL_LEN = 140
-  const CENTER_K = 0.012
+  const IDEAL_LEN = 210
+  const CENTER_K = 0.006
   const DAMPING = 0.80
 
   for (let iter = 0; iter < ITERS; iter++) {
@@ -166,7 +166,8 @@ export function DepGraph({ nodes, edges }: Props) {
                 strokeWidth={isHighlighted ? 2 : 1}
                 strokeDasharray="4 3"
               />
-              {edge.label && (
+              {/* Labels only on hover: with every repo sharing @anthropic-ai/sdk they all overlapped. */}
+              {edge.label && isHighlighted && (
                 <text
                   x={mx} y={my - 4}
                   textAnchor="middle"
@@ -285,9 +286,9 @@ export function DepGraphCard({ nodes, edges }: Props) {
         <DepGraph nodes={displayNodes} edges={edges} />
         {displayNodes.length > 0 && (
           <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground flex-wrap">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> ≥90</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> 70–89</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> &lt;70</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> ≥75</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> 55–74</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> &lt;55</span>
             {edges.some(e => e.type === 'external') && (
               <span className="flex items-center gap-1">
                 <span className="w-3 border-t border-dashed border-indigo-400 inline-block" /> Shared dependency

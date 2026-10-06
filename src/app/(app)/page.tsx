@@ -1,4 +1,5 @@
 import { toNum } from '@/lib/utils'
+import { loadFactoryKpis } from '@/lib/agents/factory-kpis-query'
 import { getDashboardStats, getRepositories, getRepositoriesSlim, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk, getProfileRecommendations, getShipItWarnings, getAgentStats, getPortfolioCostBreakdown } from '@/lib/actions/repositories'
 import { getPortfolioScoreTrend } from '@/lib/health/portfolio-snapshot'
 import { getWeeklyDiff } from '@/lib/actions/weekly-diff'
@@ -48,7 +49,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats, activeAgents, costBreakdown] = await Promise.all([
+  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats, activeAgents, costBreakdown, factoryKpis] = await Promise.all([
     getDashboardStats(),
     getRepositoriesSlim(),
     getOpportunityData(),
@@ -69,6 +70,7 @@ export default async function DashboardPage() {
     getMyAccuracyStats(),
     getActiveAgentSummary(),
     getPortfolioCostBreakdown(),
+    loadFactoryKpis(session.user.id).catch(() => null),
   ])
 
   const topRepos = repos
@@ -90,19 +92,20 @@ export default async function DashboardPage() {
       {/* ── STATUS ────────────────────────────────────────────────── */}
       <SectionLabel label="Status" />
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4">
-        <MetricCard title="Total Repos" value={stats.total} icon={GitFork} />
+      <div className="grid grid-cols-2 sm:grid-cols-4 2xl:grid-cols-8 gap-3 sm:gap-4">
+        <MetricCard title="Total Repos" value={stats.total} icon={GitFork} description={stats.archived ? `${stats.total - stats.archived} active · ${stats.archived} archived` : undefined} />
         <MetricCard title="Private" value={stats.private} icon={Lock} />
         <MetricCard title="Public" value={stats.public} icon={Globe} />
-        <MetricCard title="Healthy" value={stats.healthy} icon={Smile} variant="success" description="Score ≥ 75" />
-        <MetricCard title="At Risk" value={stats.atRisk} icon={AlertTriangle} variant="warning" description="Score 55–74" />
-        <MetricCard title="Dead" value={stats.dead} icon={Skull} variant="danger" description="Score < 55" />
+        <MetricCard title="Healthy" value={stats.healthy} icon={Smile} variant="success" description="Active, score ≥ 75" />
+        <MetricCard title="At Risk" value={stats.atRisk} icon={AlertTriangle} variant="warning" description="Active, score 55–74" />
+        <MetricCard title="Dead" value={stats.dead} icon={Skull} variant="danger" description="Active, score < 55" />
         <MetricCard title="Security Issues" value={stats.securityIssues} icon={Shield} variant={stats.securityIssues > 0 ? 'danger' : 'default'} description="Critical + High" />
         <MetricCard
           title="Avg Health"
           value={stats.avgHealth ? `${Math.round(stats.avgHealth)}` : '—'}
           icon={Rocket}
           variant={stats.avgHealth >= 75 ? 'success' : stats.avgHealth >= 55 ? 'warning' : 'danger'}
+          description="Active repos"
         />
       </div>
 
@@ -136,12 +139,10 @@ export default async function DashboardPage() {
         <ConcentrationRiskCard risk={concentrationRisk} />
       </div>
 
-      {agentStats && agentStats.merged > 0 && (
+      {((agentStats && agentStats.merged > 0) || (factoryKpis && factoryKpis.prsOpened > 0)) && (
         <AgentImpactCard
-          merged={agentStats.merged}
-          totalScoreGained={agentStats.totalScoreGained}
-          recentMergeCount={agentStats.recentMergeCount}
-          successRate={agentStats.successRate}
+          nexus={agentStats}
+          factory={factoryKpis ? { merged: factoryKpis.merged, closed: factoryKpis.closed, prsOpened: factoryKpis.prsOpened, acceptance: factoryKpis.acceptance } : null}
         />
       )}
 

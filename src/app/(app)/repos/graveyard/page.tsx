@@ -84,7 +84,8 @@ export default async function GraveyardPage() {
                     <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                       {repo.language && <span>{repo.language}</span>}
                       {(repo.stars ?? 0) > 0 && <span>⭐ {repo.stars}</span>}
-                      <span>Last updated {formatDistanceToNow(repo.updatedAt)}</span>
+                      {/* GitHub's updated_at moves on any metadata change (archiving touched all of them at once); the last push is what matters here. */}
+                      <span>{repo.metrics?.lastPush ? `Last push ${formatDistanceToNow(repo.metrics.lastPush)}` : `Last updated ${formatDistanceToNow(repo.updatedAt)}`}</span>
                     </div>
 
                     {repo.abandonmentReason && (

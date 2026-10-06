@@ -1,4 +1,5 @@
 import { auth } from '@/lib/auth'
+import { collapseRepeats, repeatKey } from '@/lib/feed/collapse'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { portfolioEvents } from '@/lib/db/schema'
@@ -99,7 +100,10 @@ export default async function AgentPerformancePage() {
         )}
       </div>
 
-      {/* Stats */}
+      {/* Stats — Nexus only; the factory's numbers are in "Factory KPIs" below */}
+      <h2 className="text-sm font-semibold" data-testid="nexus-stats-heading">
+        Nexus (remote executor) <span className="font-normal text-muted-foreground">· all time · factory results are under Factory KPIs</span>
+      </h2>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <StatCard label="Tasks queued"  value={queued}  icon={Clock}       color="text-indigo-500" />
         <StatCard label="PRs merged"    value={merged}  icon={CheckCircle} color="text-emerald-500" />
@@ -282,7 +286,7 @@ export default async function AgentPerformancePage() {
             <Link href="/" className="underline text-xs mt-3 inline-block hover:text-foreground">← Back to dashboard</Link>
           </div>
         ) : (
-          events.slice(0, 50).map(event => {
+          collapseRepeats(events, e => repeatKey(e.eventType, e.repoId, e.title, e.description)).slice(0, 50).map(({ item: event, count }) => {
             const meta = event.metadata as Record<string, unknown> | null
             const repoName = event.repository?.name ?? (meta?.repoHQRepoName as string) ?? '—'
 
@@ -305,7 +309,7 @@ export default async function AgentPerformancePage() {
             return (
               <div key={event.id} className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-muted/10 text-sm">
                 <Badge variant="outline" className={`text-[10px] px-1.5 shrink-0 mt-0.5 ${statusColor}`}>
-                  {label}
+                  {label}{count > 1 ? ` ×${count}` : ''}
                 </Badge>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{event.title}</p>

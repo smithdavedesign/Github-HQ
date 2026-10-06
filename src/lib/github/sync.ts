@@ -1,4 +1,4 @@
-'use server'
+import 'server-only'
 
 import { db } from '@/lib/db'
 import { toNum } from '@/lib/utils'
@@ -6,11 +6,12 @@ import { repositories, repositoryMetrics, scans, users, portfolioEvents, digests
 import type { InsertRepository, InsertRepositoryMetrics } from '@/lib/db/schema'
 import { createOctokit } from './client'
 import { scanRepository } from './scanner'
+import { planPrune } from './prune'
 import { calculateHealthScore, calculateOpportunityScore, calculateArchiveScore } from '@/lib/health/scoring'
 import { calculateValuation } from '@/lib/health/valuation'
 import { computePortfolioEvents, computeInternalDeps, computeExternalDeps, shouldInvalidateCachedBrief } from '@/lib/health/events'
 import type { RepoDepInfo } from '@/lib/health/events'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import { decrypt } from '@/lib/crypto-utils'
 
 type ExistingRepoState = {
@@ -103,6 +104,15 @@ export async function syncAllRepos(userId: string): Promise<void> {
       } catch (err) {
         console.error(`[sync] failed ${repo.full_name}:`, err instanceof Error ? err.message : err)
       }
+    }
+
+    // Repos deleted on GitHub (or transferred away) would otherwise stay tracked forever and keep
+    // showing up in counts, the public profile and agent targets.
+    const prune = planPrune(existingRepos, new Set(repos.map(r => r.id)))
+    if (prune.skipped) console.warn(`[sync] ${prune.skipped}`)
+    if (prune.ids.length) {
+      await db.delete(repositories).where(and(eq(repositories.userId, userId), inArray(repositories.id, prune.ids)))
+      console.log(`[sync] pruned ${prune.ids.length} repo(s) no longer on GitHub`)
     }
 
     // Phase 29: cross-reference internal deps using pure function

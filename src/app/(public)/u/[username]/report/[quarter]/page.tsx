@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { users, repositories, repositoryMetrics, healthScoreHistory, securityFindings } from '@/lib/db/schema'
 import { eq, and, gte, lte, avg, count, inArray } from 'drizzle-orm'
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { GitBranch, TrendingUp, TrendingDown, Minus, Shield, GitFork } from 'lucide-react'
 import Link from 'next/link'
 import Anthropic from '@anthropic-ai/sdk'
+import { plainText } from '@/lib/ai/plain-text'
 import type { Metadata } from 'next'
 
 export const revalidate = 86400  // 24h cache — reports are historic
@@ -41,6 +42,9 @@ export default async function QuarterlyReportPage({ params }: Props) {
 
   const parsed = parseQuarter(quarter)
   if (!parsed) notFound()
+  // One canonical URL per quarter: "2026-Q3" and "2026-q3" were cached (and AI-generated) separately.
+  const canonical = `${parsed.year}-q${parsed.q}`
+  if (quarter !== canonical) permanentRedirect(`/u/${encodeURIComponent(username)}/report/${canonical}`)
 
   const user = await db.query.users.findFirst({
     where: and(eq(users.githubLogin, username), eq(users.publicProfile, true)),
@@ -114,6 +118,13 @@ export default async function QuarterlyReportPage({ params }: Props) {
 
   const newAlerts = newSecFindings[0]?.count ?? 0
 
+  // Open alerts today, so the commentary can't call the portfolio clean while one is open.
+  const openSecFindings = repoIds.length > 0 ? await db
+    .select({ count: count() })
+    .from(securityFindings)
+    .where(and(inArray(securityFindings.repoId, repoIds), eq(securityFindings.state, 'open'))) : [{ count: 0 }]
+  const openAlerts = openSecFindings[0]?.count ?? 0
+
   const hasHistory = startAvg !== null || endAvg !== null
   const healthDelta = startAvg && endAvg ? Math.round(endAvg - startAvg) : null
 
@@ -132,11 +143,12 @@ Data:
 - ${allPublicRepos.length} public repos total
 - ${reposAdded.length} new repos added this quarter
 - Current avg health: ${currentAvg}/100${healthDelta !== null ? `, changed ${healthDelta > 0 ? '+' : ''}${healthDelta} pts` : ' (no trend data yet)'}
-- ${newAlerts} new security alerts this quarter
-Be concise, specific, and encouraging. Focus on what's notable.`,
+- ${newAlerts} new security alerts this quarter; ${openAlerts} open right now
+Be concise, specific, and encouraging. Focus on what's notable. Don't describe security as clean while alerts are open.
+Plain prose only: no title, no headings, no markdown.`,
         }],
       })
-      aiCommentary = msg.content[0].type === 'text' ? msg.content[0].text : null
+      aiCommentary = msg.content[0].type === 'text' ? plainText(msg.content[0].text) || null : null
     } catch {
       // Non-fatal
     }
