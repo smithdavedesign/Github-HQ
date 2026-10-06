@@ -34,7 +34,8 @@ import { acquireLock } from './lib/lock'
 import { nightShiftReadiness, readinessLine, scheduledPolicy } from './lib/night-shift'
 import { freeQuota, m1Deferred } from './lib/quota'
 import { readManagedModels } from './lib/litellm-config'
-import { buildPrompt, filterTasks, fitLocalContext, investigationPrompt, isEnvironmentFailure, parseFindings, redCiTask, tasksFromScan, type FactoryTask } from './lib/tasks'
+import { buildPrompt, filterTasks, fitLocalContext, investigationPrompt, isEnvironmentFailure, ownerRequestedTask, parseFindings, redCiTask, tasksFromScan, type FactoryTask } from './lib/tasks'
+import { pendingOwnerRequests, recordOwnerBlocked, recordOwnerResult, type OwnerRequest } from './lib/owner-requests'
 import { judge, type DiffInfo, type Verdict } from './lib/verify'
 import { NEEDS_REVIEW_LABEL, adversaryAction, adversarySection, runAdversary, type AdversaryResult } from './lib/adversary'
 import { trimCheck, type JudgeInputRecord } from './lib/judge-fixture'
@@ -134,10 +135,16 @@ async function main() {
     log(`daily PR cap reached (${openedToday}/${cfg.maxPrsPerDay}) — reconcile only`)
     return printReport(cfg)
   }
-  for (const repo of queue) {
+  // Front door (ai-stack/repohq/CONTRACT.md): owner requests are explicit human intent, so their
+  // repos jump the sensed queue (deduped, respecting --repo). One owner task per repo per cycle.
+  const ownerReqs = pendingOwnerRequests(cfg.home, readLedger(cfg.home))
+    .filter(r => !args.repo || r.repo === args.repo)
+  if (ownerReqs.length > 0) log(`owner requests: ${ownerReqs.map(r => `${r.repo.split('/')[1]}(${r.taskId})`).join(' · ')}`)
+  const fullQueue = [...new Set([...ownerReqs.map(r => r.repo), ...queue])]
+  for (const repo of fullQueue) {
     if (prs >= cfg.maxPrsPerCycle || openedToday + prs >= cfg.maxPrsPerDay) break
     try {
-      prs += await improveRepo(cfg, repo, args, aliases, sensed.find(x => x.repo === repo) ?? null)
+      prs += await improveRepo(cfg, repo, args, aliases, sensed.find(x => x.repo === repo) ?? null, ownerReqs.find(r => r.repo === repo) ?? null)
     } catch (err) {
       log(`${repo}: ${err instanceof Error ? err.message : err}`)
     }
@@ -189,7 +196,7 @@ async function reconcile(cfg: FactoryConfig) {
 }
 
 /** Returns the number of PRs opened (0 or 1). */
-async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases: string[], signals: SignalsEntry | null): Promise<number> {
+async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases: string[], signals: SignalsEntry | null, ownerReq: OwnerRequest | null = null): Promise<number> {
   const dir = path.join(cfg.home, 'work', runId, repo.replace('/', '__'))
   log(`${repo}: cloning`)
   await cloneRepo(repo, dir)
@@ -253,7 +260,15 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     const red = signals?.base === base ? signals.redCi?.[0] : undefined
     if (red && cfg.capabilities['red-ci'] !== 'observe') allTasks.unshift(redCiTask(red, base, await failedLog(repo, red.runId)))
     else if (red) allTasks.unshift(redCiTask(red, base, ''))
+    // Owner request goes to the very front — explicit human intent outranks sensed work.
+    if (ownerReq) allTasks.unshift(ownerRequestedTask(repo, ownerReq.task, ownerReq.taskId))
     const tasks = filterTasks(allTasks, repo, openKinds, deadEnds(ledger, now))
+    // If the owner task was filtered (an owner-requested PR is already open, or it's a dead end),
+    // close the loop so the front door reports it instead of re-queuing it every cycle.
+    if (ownerReq && !tasks.some(t => t.ownerTaskId === ownerReq.taskId)) {
+      recordOwnerBlocked(cfg.home, { ownerTaskId: ownerReq.taskId, repo, runId, now,
+        reason: openKinds.has(`${repo}:owner-requested`) ? 'an owner-requested PR is already open for this repo — review or close it first' : 'blocked as a dead end (repeated failures) — try a more specific request' })
+    }
     appendEntry(cfg.home, {
       type: 'scan', runId, at: now.toISOString(), repo,
       checks: Object.fromEntries(baseline.map(b => [b.name, b.ok])),
@@ -276,6 +291,10 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     const runnable = tasks.filter(t => cfg.capabilities[t.kind] !== 'observe')
     for (const t of runnable.slice(0, 2)) {
       const result = await runLadder(ctx, fitLocalContext(t, sizeOf), ledger, now)
+      // Front door: record the terminal result so OpenClaw's `report` can deliver it (skips on 'deferred').
+      if (t.kind === 'owner-requested' && t.ownerTaskId) {
+        recordOwnerResult(cfg.home, { ownerTaskId: t.ownerTaskId, repo, runId, result, ledger: readLedger(cfg.home), now })
+      }
       if (result === 'pr') return 1
       if (result === 'verified' || result === 'stop') return 0
       // 'reported' (an investigation) / 'deferred' / 'failed': try the next task.
@@ -407,6 +426,7 @@ async function attempt(
     type: 'attempt', id: randomUUID(), runId, at: now.toISOString(), repo, kind: task.kind, taskTier: task.taskTier,
     tier, model, harness: h.harness, outcome: 'failed', reason: '', exploring, isolation: ws.sandbox ? 'docker' : 'host',
     ...(task.ci ? { ciWorkflow: task.ci.workflow } : {}),
+    ...(task.ownerTaskId ? { ownerTaskId: task.ownerTaskId } : {}),
     durationMs: h.durationMs, costUsd: h.costUsd, inputTokens: h.inputTokens, outputTokens: h.outputTokens,
     requests: h.requests, ...(parentId ? { parentId } : {}),
   }
@@ -516,6 +536,9 @@ async function attempt(
       body: prBody({ task, tier, model, harness: h.harness, verdict: verdict.reason, baseline, after, diff, durationMs: h.durationMs, costUsd: h.costUsd, exploring }) + adversarySection(adversary).join('\n'),
     })
     log(`${repo}: draft PR ${entry.prUrl}`)
+    if (task.ownerTaskId && await addPrLabel(entry.prUrl, repo, 'owner-requested')) {
+      log(`${repo}: labelled owner-requested (reviewed as owner intent, never auto-merged)`)
+    }
     if (adversaryAction(adversary, cfg.capabilities['adversarial-veto']) === 'label' && await addPrLabel(entry.prUrl, repo, NEEDS_REVIEW_LABEL)) {
       log(`${repo}: labelled ${NEEDS_REVIEW_LABEL} (adversarial review ${adversary?.verdict})`)
     }

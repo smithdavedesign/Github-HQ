@@ -7,7 +7,7 @@ import { errorExcerpt, filesFromEslintOutput, filesFromTscOutput, type AuditCoun
  * auth, payments and migrations never are.
  */
 
-export type TaskKind = 'fix-types' | 'lint-autofix' | 'fix-lint' | 'fix-tests' | 'deps-audit' | 'docs-readme' | 'red-ci'
+export type TaskKind = 'fix-types' | 'lint-autofix' | 'fix-lint' | 'fix-tests' | 'deps-audit' | 'docs-readme' | 'red-ci' | 'owner-requested'
 
 /**
  * Fixed pipelines (roadmap Phase 78): every task kind is sense → one worker step → verify → PR.
@@ -21,6 +21,7 @@ export const PIPELINES: Record<TaskKind, string> = {
   'deps-audit': 'npm audit high/critical → npm audit fix (no model) → judge → PR',
   'docs-readme': 'README gaps → model edit → README judge → PR',
   'red-ci': 'base-branch workflow failing → investigate (report) or fix (pr; oracle: the workflow passes on the PR)',
+  'owner-requested': 'owner asks (front door) → model (sandbox, free-pool) → judge (checks pass, no regress, diff ≤ budget) → draft PR labeled owner-requested',
 }
 
 export interface FactoryTask {
@@ -36,6 +37,8 @@ export interface FactoryTask {
   verify: CheckName[]
   /** red-ci: the failing workflow (its passing on the PR is the oracle). */
   ci?: { workflow: string; url: string; base: string }
+  /** owner-requested: the front-door queue taskId, carried through to the ledger so results correlate back. */
+  ownerTaskId?: string
 }
 
 /** Max files for a task to count as scoped (M0-eligible). */
@@ -140,6 +143,24 @@ export function redCiTask(run: { workflow: string; url: string; conclusion: stri
   }
 }
 
+/**
+ * A free-form task the owner asked for via the front door (ai-stack/repohq/CONTRACT.md).
+ * Unscoped (the change may span files) with no acceptance oracle of its own — the judge's
+ * generic gate is the whole safety story: non-empty diff, no forbidden paths (.github/,
+ * lockfiles, .env), ≤ MAX_CHANGED_LINES, no check-silencing, no test deletion/edits, and
+ * no regression of any previously-passing check. It never auto-merges: the draft PR is
+ * labeled `owner-requested` and reviewed as owner intent.
+ */
+export function ownerRequestedTask(repo: string, task: string, ownerTaskId: string): FactoryTask {
+  const text = task.trim()
+  return {
+    kind: 'owner-requested', taskTier: 2, scoped: false, files: [],
+    title: `Owner request: ${text.length > 60 ? `${text.slice(0, 57)}…` : text}`,
+    objective: `${text}\n\nThis is an owner request for ${repo}. Make the smallest change that satisfies it. Keep all existing checks (typecheck, lint, tests) passing — do not break anything that works today.`,
+    evidence: '', verify: [], ownerTaskId,
+  }
+}
+
 /** Read-only root-cause investigation prompt (gstack /investigate, as a fixed single step). */
 export function investigationPrompt(task: FactoryTask): string {
   return [
@@ -195,6 +216,17 @@ export function buildPrompt(task: FactoryTask, tier: ModelTier, pkg: PackageJson
       tier === 'M0' ? 'Only mention tools and commands that appear in the project files you were given.' : 'Read the code and config (package.json, .env.example, config files) so setup steps are accurate.',
       'Only edit README.md.',
     ].join('\n')
+  }
+
+  if (task.kind === 'owner-requested') {
+    const lines = [
+      task.objective,
+      ...(repo ? ['', `Repository: https://github.com/${repo} (use this exact URL for git clone).`] : []),
+      '',
+      ...RULES.map(r => `- ${r}`),
+    ]
+    if (checkCommands.length > 0) lines.push(`- When done, run ${checkCommands.map(c => `\`${c}\``).join(' and ')} and iterate until they pass.`)
+    return lines.join('\n')
   }
 
   const lines = [
