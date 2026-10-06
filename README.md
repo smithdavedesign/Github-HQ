@@ -384,6 +384,7 @@ npm run db:generate   # Generate migration files
 
 - [Architecture](docs/architecture.md) — system design, scoring formulas, DB schema, risk tiers, design decisions
 - [Roadmap](docs/roadmap.md) — all phases shipped + upcoming, gstack roadmap, distribution roadmap
+- [Audit (2026-10)](docs/audit-2026-10.md) — whole-system audit: live site, security, architecture, roadmap triage
 - [Agentic Full Flow](docs/agentic-full-flow.md) — mermaid architecture + sequence diagrams for the agent pipeline
 - [Agentic Execution Flow](docs/agentic-execution-flow.md) — quick reference for the execution pipeline
 - [Autonomous Factory](docs/autonomous-factory.md) — free-model-first self-improvement loop: local AI stack lane, model-tier routing, Docker-sandboxed worker, Judge v2 + adversarial review, capability stages, sensors and a ranked queue, job record and KPIs, night shift, infra agent (Horizon 3). Operator guide: [factory/README.md](factory/README.md)

@@ -241,9 +241,6 @@ export async function POST(request: Request) {
 
   // Phase G4: gstack skill completed with findings but no code changes
   if (eventType === 'agent_skill_report') {
-    const queuedMeta = matched.metadata as { source?: string } | null
-    const isSelfScan = queuedMeta?.source === 'gstack-self-scan'
-
     await db.insert(portfolioEvents).values({
       userId,
       repoId,
@@ -259,48 +256,8 @@ export async function POST(request: Request) {
         suggestedNextSkill: payload.suggestedNextSkill ?? null,
         agentName,
         durationMs,
-        source: isSelfScan ? 'gstack-self-scan' : undefined,
       },
     })
-
-    // Self-improvement loop: convert findings from self-scans into queued fix tasks.
-    // Only fires for scans originating from /api/cron/gstack-self (source === 'gstack-self-scan').
-    // Max 3 fix tasks per report cycle to avoid runaway dispatch. Informational
-    // findings (e.g. "TypeScript: N/A — project is plain JavaScript") carry no
-    // actionable signal and must not produce "Fix: ..." tasks.
-    const selfScanActionable = getActionableFindings(payload.findings ?? [])
-    if (isSelfScan && repoId && selfScanActionable.length > 0) {
-      after(async () => {
-        try {
-          const { queueAdvisorActionForUser } = await import('@/lib/actions/nexus')
-          const findings = selfScanActionable.slice(0, 3)
-          const repoShortName = repoName ?? 'RepoHQ'
-
-          for (const finding of findings) {
-            const impactType: 'health' | 'security' | 'opportunity' =
-              /secret|vuln|cve|injection|xss|auth/i.test(finding)
-                ? 'security'
-                : /opportunity|feature|perf|speed|ux/i.test(finding)
-                ? 'opportunity'
-                : 'health'
-
-            await queueAdvisorActionForUser(userId, {
-              repoId,
-              repoName:        repoShortName,
-              action:          `Fix: ${finding}`,
-              impactType,
-              effort:          'quick',
-              estimatedImpact: 'Improve code quality score',
-              reasoning:       `Gstack self-scan (/${payload.skillName ?? 'skill'}) finding: ${finding}`,
-            }).catch(err =>
-              console.warn('[gstack-self] fix task queue failed:', err instanceof Error ? err.message : err)
-            )
-          }
-        } catch (err) {
-          console.error('[gstack-self] self-improve dispatch failed:', err)
-        }
-      })
-    }
   }
 
   // Skill-chain: when a skill report includes a suggestedNextSkill, automatically queue it —
@@ -332,7 +289,7 @@ export async function POST(request: Request) {
           })
           if (!repo) return
 
-          const { queueSuggestedSkill } = await import('@/lib/actions/nexus')
+          const { queueSuggestedSkill } = await import('@/lib/agents/nexus-dispatch')
           const parentSkill = payload.skillName ?? 'unknown'
           const inheritedFindings = chainActionable.slice(0, 5)
           const unresolvedBlockers = extractUnresolvedBlockers(inheritedFindings, summary)

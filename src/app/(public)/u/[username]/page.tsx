@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Card, CardContent } from '@/components/ui/card'
 import { ExternalLink, GitFork, Star, Globe, Lock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
+import { isFeaturedPublicRepo } from '@/lib/health/showcase'
 
 // Revalidate every hour — this is a public semi-static page
 export const revalidate = 3600
@@ -44,19 +45,24 @@ export default async function PublicPortfolioPage({ params }: Props) {
     columns: {
       id: true, name: true, fullName: true, description: true,
       visibility: true, language: true, stars: true, forks: true,
-      homepage: true, isArchived: true, aiSummary: true,
+      homepage: true, isArchived: true, aiSummary: true, lifecycleStatus: true, isFocused: true,
     },
   })
 
-  const sorted = publicRepos
-    .filter(r => !r.isArchived)
-    .sort((a, b) => (b.metrics?.healthScore ?? 0) - (a.metrics?.healthScore ?? 0))
+  const byHealth = [...publicRepos].sort((a, b) => (b.metrics?.healthScore ?? 0) - (a.metrics?.healthScore ?? 0))
+  const featured = (r: (typeof publicRepos)[number]) => isFeaturedPublicRepo({
+    isArchived: r.isArchived, lifecycleStatus: r.lifecycleStatus, healthScore: r.metrics?.healthScore, isFocused: r.isFocused,
+    hasLiveDeployment: r.deployments.some(d => d.status === 'healthy' || d.status === 'slow'),
+  })
+  // Featured first; the rest (archived, sunsetting, abandoned) stays one click away.
+  const sorted = byHealth.filter(featured)
+  const others = byHealth.filter(r => !featured(r))
 
   const total = publicRepos.length
   const avgHealth = sorted.length > 0
     ? Math.round(sorted.reduce((sum, r) => sum + (r.metrics?.healthScore ?? 0), 0) / sorted.length)
     : 0
-  const healthy = sorted.filter(r => (r.metrics?.healthScore ?? 0) >= 90).length
+  const healthy = sorted.filter(r => (r.metrics?.healthScore ?? 0) >= 75).length
 
   // Language breakdown (top 4)
   const langCounts: Record<string, number> = {}
@@ -81,6 +87,73 @@ export default async function PublicPortfolioPage({ params }: Props) {
         : status === 'down'
           ? <span title="Deployment down"><XCircle className="w-3 h-3 text-red-500" /></span>
           : null
+  }
+
+  function RepoCard({ repo }: { repo: (typeof publicRepos)[number] }) {
+    const summary = repo.aiSummary as { what_it_does?: string } | null
+    const stack = repo.techStack
+    const stackPills = [
+      stack?.frontend, stack?.language, stack?.database, stack?.hosting,
+    ].filter(Boolean).slice(0, 3)
+
+    return (
+      <Card key={repo.id} className="hover:shadow-sm transition-shadow">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3 flex-wrap">
+            <div className="flex-1 min-w-0 space-y-1.5">
+              {/* Name row */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <a
+                  href={`https://github.com/${repo.fullName}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-sm hover:underline"
+                >
+                  {repo.name}
+                </a>
+                <DeploymentDot deps={repo.deployments} />
+                {repo.homepage && (
+                  <a
+                    href={repo.homepage}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Live
+                  </a>
+                )}
+              </div>
+
+              {/* Description or AI summary */}
+              {(summary?.what_it_does ?? repo.description) && (
+                <p className="text-xs text-muted-foreground line-clamp-2">
+                  {summary?.what_it_does ?? repo.description}
+                </p>
+              )}
+
+              {/* Stack + stats */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {stackPills.map(p => (
+                  <Badge key={p} variant="outline" className="text-xs">{p}</Badge>
+                ))}
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Star className="w-3 h-3" /> {repo.stars}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {repo.metrics?.activityStatus ?? ''}
+                </span>
+              </div>
+            </div>
+
+            {/* Health badge */}
+            {repo.metrics?.healthScore != null && (
+              <HealthBadge score={repo.metrics.healthScore} />
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -109,7 +182,7 @@ export default async function PublicPortfolioPage({ params }: Props) {
             <div className="flex items-center gap-5 mt-3 flex-wrap text-sm">
               <span className="flex items-center gap-1.5">
                 <GitFork className="w-4 h-4 text-muted-foreground" />
-                <strong>{total}</strong> public repos
+                <strong>{sorted.length}</strong> featured · {total} public repos
               </span>
               {sorted.length > 0 && (
                 <span className="flex items-center gap-1.5">
@@ -146,74 +219,20 @@ export default async function PublicPortfolioPage({ params }: Props) {
               </CardContent>
             </Card>
           ) : (
-            sorted.map(repo => {
-              const summary = repo.aiSummary as { what_it_does?: string } | null
-              const stack = repo.techStack
-              const stackPills = [
-                stack?.frontend, stack?.language, stack?.database, stack?.hosting,
-              ].filter(Boolean).slice(0, 3)
-
-              return (
-                <Card key={repo.id} className="hover:shadow-sm transition-shadow">
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-3 flex-wrap">
-                      <div className="flex-1 min-w-0 space-y-1.5">
-                        {/* Name row */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <a
-                            href={`https://github.com/${repo.fullName}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-semibold text-sm hover:underline"
-                          >
-                            {repo.name}
-                          </a>
-                          <DeploymentDot deps={repo.deployments} />
-                          {repo.homepage && (
-                            <a
-                              href={repo.homepage}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5"
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              Live
-                            </a>
-                          )}
-                        </div>
-
-                        {/* Description or AI summary */}
-                        {(summary?.what_it_does ?? repo.description) && (
-                          <p className="text-xs text-muted-foreground line-clamp-2">
-                            {summary?.what_it_does ?? repo.description}
-                          </p>
-                        )}
-
-                        {/* Stack + stats */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {stackPills.map(p => (
-                            <Badge key={p} variant="outline" className="text-xs">{p}</Badge>
-                          ))}
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Star className="w-3 h-3" /> {repo.stars}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {repo.metrics?.activityStatus ?? ''}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Health badge */}
-                      {repo.metrics?.healthScore != null && (
-                        <HealthBadge score={repo.metrics.healthScore} />
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })
+            sorted.map(repo => <RepoCard key={repo.id} repo={repo} />)
           )}
         </div>
+
+        {others.length > 0 && (
+          <details className="group" data-testid="other-repos">
+            <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+              Show {others.length} more (archived, sunsetting or inactive)
+            </summary>
+            <div className="space-y-3 mt-3">
+              {others.map(repo => <RepoCard key={repo.id} repo={repo} />)}
+            </div>
+          </details>
+        )}
 
         <p className="text-center text-xs text-muted-foreground pt-4">
           Portfolio health monitored by{' '}

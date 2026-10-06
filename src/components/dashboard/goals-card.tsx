@@ -38,12 +38,14 @@ export function GoalsCard({ goals }: GoalsCardProps) {
   if (goals.length === 0) {
     return (
       <Card className="card-elevated border-border/60">
-        <CardContent className="py-8 text-center space-y-2">
-          <Target className="w-7 h-7 text-muted-foreground/40 mx-auto" />
-          <p className="text-sm font-medium">No goals set</p>
-          <p className="text-xs text-muted-foreground">
-            <Link href="/settings" className="underline hover:text-foreground">Add a goal in Settings</Link>
-            {' '}to track progress toward your targets
+        <CardContent className="py-4 flex items-center gap-3">
+          <Target className="w-5 h-5 text-muted-foreground/50 shrink-0" />
+          <p className="text-sm">
+            <span className="font-medium">No goals set.</span>{' '}
+            <span className="text-xs text-muted-foreground">
+              <Link href="/settings" className="underline hover:text-foreground">Add a goal in Settings</Link>
+              {' '}to track progress toward your targets
+            </span>
           </p>
         </CardContent>
       </Card>

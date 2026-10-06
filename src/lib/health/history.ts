@@ -70,6 +70,16 @@ export function buildHealthTrendSeries(
   return series
 }
 
+/** Newest health snapshot date (YYYY-MM-DD) across the user's repos, or null if none yet. */
+export async function latestSnapshotDate(userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ latest: sql<string | null>`max(${healthScoreHistory.recordedDate})::text` })
+    .from(healthScoreHistory)
+    .innerJoin(repositories, eq(healthScoreHistory.repoId, repositories.id))
+    .where(eq(repositories.userId, userId))
+  return row?.latest ?? null
+}
+
 export async function getPortfolioHealthTrend(userId: string, days = 30): Promise<PortfolioHealthTrend> {
   const since = new Date(Date.now() - days * 86400_000)
 

@@ -70,7 +70,7 @@ test.describe('Agent task status API', () => {
     const sql = neon(DB_URL)
     const fakeTaskId = `playwright-status-test-${Date.now()}`
 
-    const [user] = await sql`SELECT id FROM users LIMIT 1`
+    const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     if (!user) test.skip(true, 'No user in DB')
 
     await sql`
@@ -99,7 +99,7 @@ test.describe('Agent task status API', () => {
 
     const sql = neon(DB_URL)
     const fakeTaskId = `playwright-merged-test-${Date.now()}`
-    const [user] = await sql`SELECT id FROM users LIMIT 1`
+    const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     if (!user) test.skip(true, 'No user')
 
     await sql`
@@ -123,7 +123,7 @@ test.describe('Webhook + status pipeline (full loop)', () => {
     test.skip(!DB_URL, 'DATABASE_URL not set')
 
     const sql = neon(DB_URL)
-    const [user] = await sql`SELECT id FROM users LIMIT 1`
+    const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     if (!user) test.skip(true, 'No user')
 
     // 1. Simulate Nexus firing agent_pr_created webhook
@@ -184,7 +184,7 @@ test.describe('Agent Performance — automated run lifecycle', () => {
     test.skip(!DB_URL, 'DATABASE_URL not set')
 
     const sql = neon(DB_URL)
-    const [user] = await sql`SELECT id FROM users LIMIT 1`
+    const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     if (!user) test.skip(true, 'No user')
 
     const fakeTaskId = `playwright-perf-${Date.now()}`

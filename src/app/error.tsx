@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle } from 'lucide-react'
 
@@ -28,8 +29,8 @@ export default function RootError({
         <Button size="sm" variant="outline" onClick={reset}>
           Try again
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => window.location.href = '/'}>
-          Go home
+        <Button asChild size="sm" variant="ghost">
+          <Link href="/">Go home</Link>
         </Button>
       </div>
     </div>

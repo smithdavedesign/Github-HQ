@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { AccuracyStats } from '../../src/lib/actions/advisor-accuracy'
-import type { AutoDispatchSettings } from '../../src/lib/actions/nexus'
+import type { AutoDispatchSettings } from '../../src/lib/agents/nexus-dispatch'
 import { MIN_DATA_POINTS } from '../../src/lib/actions/advisor-accuracy-utils'
 
 // ─── Mirror of autoDispatchAdvisorActions filter logic ───────────────────────

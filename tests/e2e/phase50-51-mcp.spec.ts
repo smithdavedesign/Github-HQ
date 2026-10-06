@@ -23,7 +23,7 @@ test.describe('Agent History tab — attempt events (Phase 51)', () => {
     test.skip(!DB_URL, 'DATABASE_URL not set')
 
     const sql = neon(DB_URL)
-    const [user] = await sql`SELECT id FROM users LIMIT 1`
+    const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     if (!user) test.skip(true, 'No user')
 
     const [repo] = await sql`SELECT id FROM repositories WHERE user_id = ${user.id} LIMIT 1`
@@ -51,7 +51,7 @@ test.describe('Agent History tab — attempt events (Phase 51)', () => {
     test.skip(!DB_URL, 'DATABASE_URL not set')
 
     const sql = neon(DB_URL)
-    const [user] = await sql`SELECT id FROM users LIMIT 1`
+    const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     if (!user) test.skip(true, 'No user')
 
     // Find a repo with no agent events
@@ -86,7 +86,7 @@ test.describe('Phase 50 — active work signal in MCP (API-level)', () => {
     test.skip(!DB_URL, 'DATABASE_URL not set')
 
     const sql = neon(DB_URL)
-    const [user] = await sql`SELECT id FROM users LIMIT 1`
+    const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     if (!user) test.skip(true, 'No user')
 
     const [repo] = await sql`SELECT id, name FROM repositories WHERE user_id = ${user.id} LIMIT 1`

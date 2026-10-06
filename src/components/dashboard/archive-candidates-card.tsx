@@ -73,8 +73,8 @@ export function ArchiveCandidatesCard({ candidates: initial }: ArchiveCandidates
                 >
                   {c.name}
                 </Link>
-                <Badge variant="outline" className={`text-xs shrink-0 ${scoreBadge(c.archiveScore)}`}>
-                  {c.archiveScore}
+                <Badge variant="outline" className={`text-xs shrink-0 ${scoreBadge(c.archiveScore)}`} title="Archive risk (0–100): higher means more likely abandoned">
+                  Archive risk {c.archiveScore}
                 </Badge>
               </div>
               {c.description && (

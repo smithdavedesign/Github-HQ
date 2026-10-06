@@ -184,7 +184,7 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
         },
       })
 
-      const { queueCIFix } = await import('@/lib/actions/nexus')
+      const { queueCIFix } = await import('@/lib/agents/nexus-dispatch')
       const queued = await queueCIFix(
         userId,
         prEvent.repoId,

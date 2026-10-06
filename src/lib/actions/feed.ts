@@ -1,6 +1,7 @@
 'use server'
 
 import { auth } from '@/lib/auth'
+import { collapseRepeats, repeatKey } from '@/lib/feed/collapse'
 import { db } from '@/lib/db'
 import {
   repositories, repositoryMetrics, deployments,
@@ -39,7 +40,7 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
       deployments: true,
       securityFindings: { where: eq(securityFindings.state, 'open') },
     },
-    columns: { id: true, name: true },
+    columns: { id: true, name: true, isArchived: true, lifecycleStatus: true },
   })
 
   const repoIds = userRepos.map(r => r.id)
@@ -153,6 +154,8 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
   // ── Dormant repos ──────────────────────────────────────────────────────────
   const ninetyDaysAgo = new Date(Date.now() - 90 * 86400_000)
   for (const repo of userRepos) {
+    // Archived and sunsetting repos are meant to be quiet; flagging them drowned out the rest.
+    if (repo.isArchived || repo.lifecycleStatus === 'archived' || repo.lifecycleStatus === 'sunsetting') continue
     const lastPush = repo.metrics?.lastPush
     if (lastPush && new Date(lastPush) < ninetyDaysAgo) {
       const daysAgo = Math.floor((Date.now() - new Date(lastPush).getTime()) / 86400_000)
@@ -220,12 +223,16 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
     ),
     orderBy: [desc(portfolioEvents.occurredAt)],
     with: { repository: { columns: { name: true } } },
-    limit: 20,
+    limit: 200,
   })
 
   const repoNamesById = new Map(userRepos.map(r => [r.id, r.name]))
 
-  for (const ae of agentEvents) {
+  // One row per distinct failure (×N), not one per retry of the same broken task.
+  const collapsed = collapseRepeats(agentEvents, ae =>
+    ae.eventType === 'agent_execution_failed' ? repeatKey(ae.eventType, ae.repoId, ae.description) : `id:${ae.id}`).slice(0, 20)
+
+  for (const { item: ae, count } of collapsed) {
     const meta = ae.metadata as Record<string, unknown> | null
     const repoName = ae.repository?.name ?? (meta?.repoHQRepoName as string) ?? (ae.repoId ? (repoNamesById.get(ae.repoId) ?? '—') : '—')
     const repoId = ae.repoId ?? 0
@@ -264,7 +271,7 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
         type: 'agent_failed',
         repoId,
         repoName,
-        description: 'Agent execution failed',
+        description: count > 1 ? `Agent execution failed ×${count} (30 days)` : 'Agent execution failed',
         detail: ae.description ?? (meta?.error as string | undefined),
         severity: 'warning',
         date: ae.occurredAt,

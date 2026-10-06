@@ -217,6 +217,20 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
       },
     },
     {
+      id: 'healthScore',
+      accessorFn: (row) => row.metrics?.healthScore ?? -1,
+      header: ({ column }) => (
+        <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}>
+          Health <ArrowUpDown className="w-3 h-3" />
+        </Button>
+      ),
+      cell: ({ getValue }) => {
+        const score = getValue<number>()
+        return score >= 0 ? <HealthBadge score={score} /> : <span className="text-muted-foreground text-xs">—</span>
+      },
+      sortDescFirst: true,
+    },
+    {
       id: 'visibility',
       accessorKey: 'visibility',
       header: 'Visibility',
@@ -238,20 +252,6 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
         const rounded = Math.round(score)
         const color = rounded >= 55 ? 'text-violet-600' : rounded >= 30 ? 'text-blue-600' : 'text-muted-foreground'
         return <span className={`text-xs font-mono tabular-nums ${color}`}>{rounded}</span>
-      },
-      sortDescFirst: true,
-    },
-    {
-      id: 'healthScore',
-      accessorFn: (row) => row.metrics?.healthScore ?? -1,
-      header: ({ column }) => (
-        <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}>
-          Health <ArrowUpDown className="w-3 h-3" />
-        </Button>
-      ),
-      cell: ({ getValue }) => {
-        const score = getValue<number>()
-        return score >= 0 ? <HealthBadge score={score} /> : <span className="text-muted-foreground text-xs">—</span>
       },
       sortDescFirst: true,
     },
@@ -692,8 +692,8 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
           </span>
           {/* Prev / Next */}
           <div className="flex gap-1">
-            <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>←</Button>
-            <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>→</Button>
+            <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} aria-label="Previous">←</Button>
+            <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} aria-label="Next">→</Button>
           </div>
         </div>
       </div>

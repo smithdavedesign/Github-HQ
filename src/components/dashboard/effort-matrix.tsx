@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Grid2x2 } from 'lucide-react'
-import { getQuadrant, type EffortLevel } from '@/lib/effort'
+import { getQuadrant, highOpportunityThreshold, type EffortLevel } from '@/lib/effort'
 
 interface MatrixRepo {
   id: number
@@ -23,9 +23,10 @@ const QUADRANT_STYLES = {
 }
 
 export function EffortMatrix({ repos }: EffortMatrixProps) {
+  const threshold = highOpportunityThreshold(repos.map(r => r.opportunityScore))
   const categorized = repos.map(r => ({
     ...r,
-    quadrant: getQuadrant(r.opportunityScore, (r.estimatedEffort ?? 'medium') as EffortLevel),
+    quadrant: getQuadrant(r.opportunityScore, (r.estimatedEffort ?? 'medium') as EffortLevel, threshold),
   }))
 
   const quadrants = ['Quick Win', 'Invest', 'Fill-In', 'Deprioritize'] as const
@@ -100,7 +101,7 @@ export function EffortMatrix({ repos }: EffortMatrixProps) {
         </div>
 
         <p className="text-[10px] text-muted-foreground mt-3 text-center">
-          Opportunity score ≥ 50 = High. Set effort on repo detail Overview tab.
+          Opportunity ≥ {Math.round(threshold)} = High (top quarter of your active repos). Set effort on repo detail Overview tab.
         </p>
       </CardContent>
     </Card>
