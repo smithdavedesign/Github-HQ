@@ -1,0 +1,28 @@
+{
+  "name": "readme-deleted-features",
+  "source": "\u00a712: M0 replaced a Features list with Usage",
+  "expect": "reject",
+  "reason": "deleted 3 existing lines",
+  "task": {
+    "kind": "docs-readme",
+    "taskTier": 1,
+    "scoped": true,
+    "files": [
+      "README.md"
+    ],
+    "title": "docs-readme",
+    "objective": "docs-readme",
+    "evidence": "",
+    "verify": []
+  },
+  "baseline": [],
+  "after": [],
+  "patch": "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-- Fast search\n-- Offline mode\n-- Export to CSV\n+## Usage\n+Run `npm run dev`.\n+Open the browser.\n+Use the app.\n+Enjoy.",
+  "scripts": {
+    "dev": "vite"
+  },
+  "deps": [
+    "vite"
+  ],
+  "readmeAfter": "# App\n\nAn app that does things for people who need things done, with enough words to pass length.\n\n## Features\n## Usage\nRun `npm run dev`.\nOpen the browser.\nUse the app.\nEnjoy."
+}

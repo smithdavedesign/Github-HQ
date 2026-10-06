@@ -18,13 +18,14 @@ import {
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
 import { collectPackageInfo, confirmFailures, detectPackageManager, installCommand, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
-import { applyPatchAndCommit, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
+import { addPrLabel, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { copilotHasQuota, copilotQuota } from './lib/copilot-quota'
 import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
 import { appendEntry, deadEnds, monthToDateUsd, nextRepos, openPrAttempts, pendingReviews, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry } from './lib/ledger'
 import { listAliases } from './lib/litellm-ops'
 import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
+
 import { run, type Runner } from './lib/proc'
 import { Sandbox, dockerAvailable, ensureSandboxImages, sandboxModels, sweepSandboxes } from './lib/sandbox'
 import { recordApprovalNeeded, recordAttempt, recordResolution } from './lib/sink'
@@ -32,7 +33,9 @@ import { acquireLock } from './lib/lock'
 import { freeQuota, m1Deferred } from './lib/quota'
 import { readManagedModels } from './lib/litellm-config'
 import { buildPrompt, filterTasks, fitLocalContext, isEnvironmentFailure, tasksFromScan, type FactoryTask } from './lib/tasks'
-import { judge } from './lib/verify'
+import { judge, type DiffInfo, type Verdict } from './lib/verify'
+import { NEEDS_REVIEW_LABEL, adversaryAction, adversarySection, runAdversary, type AdversaryResult } from './lib/adversary'
+import { trimCheck, type JudgeInputRecord } from './lib/judge-fixture'
 
 interface Args { dryRun: boolean; repo: string | null; maxRepos: number; report: boolean; keep: boolean }
 
@@ -215,7 +218,11 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
 
     // Try at most two tasks per repo: when free cloud quota defers the first,
     // local (M0) work on the next task still gets done this cycle.
-    for (const t of tasks.slice(0, 2)) {
+    // Promotion ladder (Phase 75): `observe` capabilities are sensed and logged, never attempted.
+    const observed = tasks.filter(t => cfg.capabilities[t.kind] === 'observe')
+    if (observed.length > 0) log(`${repo}: observe-only: ${observed.map(t => t.kind).join(', ')} (capability stage)`)
+    const runnable = tasks.filter(t => cfg.capabilities[t.kind] !== 'observe')
+    for (const t of runnable.slice(0, 2)) {
       const result = await runLadder(ctx, fitLocalContext(t, sizeOf), ledger, now)
       if (result === 'pr') return 1
       if (result === 'verified' || result === 'stop') return 0
@@ -377,16 +384,43 @@ async function attempt(
   }
   const diff = edits.files.length > 0 ? await diffAgainst(dir, hostBase) : edits
   const readmeAfter = existsSync(path.join(dir, 'README.md')) ? readFileSync(path.join(dir, 'README.md'), 'utf8') : null
-  const verdict = diff.files.length > 0
-    ? judge({
-      // Scripts/deps from every package.json (root + sub-packages like client/, server/).
-      task, baseline, after, diff, ...collectPackageInfo(dir), readmeAfter, repo,
-      audit: deps ? { before: auditBefore, after: await runAudit(ws.dir, undefined, ws.run) } : undefined,
-      lintProblems: lintFix ? { before: lintProblems(baseline.find(b => b.name === 'lint')), after: lintProblems(after.find(a => a.name === 'lint')) } : undefined,
-    })
+  // Scripts/deps from every package.json (root + sub-packages like client/, server/).
+  const judgeInputs = diff.files.length > 0 ? {
+    ...collectPackageInfo(dir), readmeAfter, repo, repoFiles: await listFiles(dir), modelEdits: edits as DiffInfo,
+    audit: deps ? { before: auditBefore, after: await runAudit(ws.dir, undefined, ws.run) } : undefined,
+    lintProblems: lintFix ? { before: lintProblems(baseline.find(b => b.name === 'lint')), after: lintProblems(after.find(a => a.name === 'lint')) } : undefined,
+  } : null
+  const verdict = judgeInputs
+    ? judge({ task, baseline, after, diff, ...judgeInputs })
     : { ok: false, reason: h.ok ? 'no changes made' : `harness failed${h.timedOut ? ' (timeout)' : ''}` }
   entry.reason = verdict.reason
+  if (judgeInputs) {
+    // Kept so any verdict later shown wrong can become a regression fixture (npm run factory:judge-fixture).
+    const record: JudgeInputRecord = {
+      attemptId: entry.id, repo, task, baseline: baseline.map(trimCheck), after: after.map(trimCheck),
+      patch: await patchText(dir, hostBase), scripts: judgeInputs.scripts, deps: judgeInputs.deps, readmeAfter,
+      repoFiles: judgeInputs.repoFiles, lintProblems: judgeInputs.lintProblems, audit: judgeInputs.audit, verdict,
+    }
+    writeFileSync(path.join(logDir, `${slug(repo)}-${task.kind}-${tier}.judge.json`), JSON.stringify(record))
+  }
   log(`${repo}: ${tier} ${verdict.ok ? 'VERIFIED' : 'rejected'} — ${verdict.reason}`)
+
+  // Advisory adversarial pass (Phase 77): only after the deterministic judge passed, only for
+  // model-written changes, and it can never approve, only label or (once promoted) veto.
+  let adversary: AdversaryResult | null = null
+  if (verdict.ok && !deps && !lintFix) {
+    adversary = await runAdversary(cfg, tier, task, await patchText(dir, hostBase, 3))
+    if (adversary) {
+      entry.adversary = { model: adversary.model, verdict: adversary.verdict, issues: adversary.issues.length }
+      log(`${repo}: adversarial review (${adversary.model}): ${adversary.verdict}${adversary.issues.length ? ` — ${adversary.issues.map(i => i.why).join('; ').slice(0, 200)}` : ''}`)
+      if (adversaryAction(adversary, cfg.capabilities['adversarial-veto']) === 'reject') {
+        const veto: Verdict = { ok: false, reason: `adversarial review vetoed: ${adversary.issues[0]?.why ?? 'FAIL'}` }
+        verdict.ok = veto.ok
+        verdict.reason = veto.reason
+        entry.reason = veto.reason
+      }
+    }
+  }
 
   if (!verdict.ok) {
     appendEntry(cfg.home, entry)
@@ -399,13 +433,22 @@ async function attempt(
   entry.outcome = 'verified'
   entry.branch = branch
   await squashOnto(dir, hostBase, commitMessage(task, tier, model))
-  if (!args.dryRun) {
+  // Promotion ladder (Phase 75): a `report` capability proves itself in the morning report first.
+  const reportOnly = cfg.capabilities[task.kind] === 'report'
+  if (reportOnly) {
+    entry.reported = true
+    log(`${repo}: ${task.kind} is at stage "report" — verified result recorded for the morning report, no PR`)
+  }
+  if (!args.dryRun && !reportOnly) {
     await pushBranch(dir, branch)
     entry.prUrl = await createDraftPr(dir, {
       base, head: branch, title: prTitle(task),
-      body: prBody({ task, tier, model, harness: h.harness, verdict: verdict.reason, baseline, after, diff, durationMs: h.durationMs, costUsd: h.costUsd, exploring }),
+      body: prBody({ task, tier, model, harness: h.harness, verdict: verdict.reason, baseline, after, diff, durationMs: h.durationMs, costUsd: h.costUsd, exploring }) + adversarySection(adversary).join('\n'),
     })
     log(`${repo}: draft PR ${entry.prUrl}`)
+    if (adversaryAction(adversary, cfg.capabilities['adversarial-veto']) === 'label' && await addPrLabel(entry.prUrl, repo, NEEDS_REVIEW_LABEL)) {
+      log(`${repo}: labelled ${NEEDS_REVIEW_LABEL} (adversarial review ${adversary?.verdict})`)
+    }
     if (cfg.copilot.review && copilotQuotaLeft && todaysUsage(readLedger(cfg.home), new Date()).copilotReviews < cfg.copilot.maxReviewsPerDay) {
       entry.reviewRequested = await requestCopilotReview(entry.prUrl)
       if (entry.reviewRequested) log(`${repo}: Copilot review requested`)
@@ -413,7 +456,7 @@ async function attempt(
   }
   appendEntry(cfg.home, entry)
   await recordAttempt(cfg, entry, task.title)
-  return args.dryRun ? 'verified' : 'pr'
+  return args.dryRun || reportOnly ? 'verified' : 'pr'
 }
 
 /** Non-breaking dependency fixes only — never `--force` (that would allow semver-major upgrades). */

@@ -67,6 +67,12 @@ export async function diffInfo(dir: string, runner: Runner = run): Promise<DiffI
   return parseDiff(numstat, patch, deleted)
 }
 
+/** Tracked files (repo-relative). */
+export async function listFiles(dir: string): Promise<string[]> {
+  const r = await run('git', ['-C', dir, 'ls-files', '-z'], { timeoutMs: 60_000, maxOutput: 20_000_000 })
+  return r.output.split('\0').filter(Boolean)
+}
+
 export async function headSha(dir: string, runner: Runner = run): Promise<string> {
   return (await must('rev-parse HEAD', git(dir, ['rev-parse', 'HEAD'], undefined, runner))).output.trim()
 }
@@ -77,6 +83,11 @@ export async function diffAgainst(dir: string, sha: string): Promise<DiffInfo> {
   const patch = (await git(dir, ['diff', '-U0', sha, 'HEAD'])).output
   const deleted = new Set((await git(dir, ['diff', '--name-only', '--diff-filter=D', sha, 'HEAD'])).output.split('\n').filter(Boolean))
   return parseDiff(numstat, patch, deleted)
+}
+
+/** `git diff -U<context> <sha> HEAD` as text (fixtures, the adversarial reviewer). */
+export async function patchText(dir: string, sha: string, context = 0): Promise<string> {
+  return (await run('git', ['-C', dir, 'diff', `-U${context}`, sha, 'HEAD'], { timeoutMs: 60_000, maxOutput: 2_000_000 })).output
 }
 
 /** Collapse everything since `sha` into one commit. */
@@ -124,6 +135,12 @@ export async function createDraftPr(dir: string, opts: { base: string; head: str
   const url = r.output.match(/https:\/\/github\.com\/\S+\/pull\/\d+/)?.[0]
   if (!url) throw new Error(`gh pr create returned no URL: ${r.output.slice(-200)}`)
   return url
+}
+
+/** Add a label to a PR, creating it in the repo first if needed. Best-effort: false on failure. */
+export async function addPrLabel(prUrl: string, repo: string, label: string): Promise<boolean> {
+  await run('gh', ['label', 'create', label, '--repo', repo, '--color', 'FBCA04', '--description', 'RepoHQ factory: the adversarial reviewer raised concerns', '--force'], { timeoutMs: 60_000 })
+  return (await run('gh', ['pr', 'edit', prUrl, '--add-label', label], { timeoutMs: 60_000 })).code === 0
 }
 
 export type PrState = 'OPEN' | 'MERGED' | 'CLOSED' | 'UNKNOWN'

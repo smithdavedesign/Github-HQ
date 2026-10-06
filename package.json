@@ -22,7 +22,8 @@
     "factory:morning": "tsx factory/report.ts",
     "factory:sandbox:build": "tsx factory/bin/build-sandbox.ts",
     "factory:sandbox:check": "tsx factory/eval/sandbox-smoke.ts",
-    "factory:e2e": "bash factory/eval/e2e.sh"
+    "factory:e2e": "bash factory/eval/e2e.sh",
+    "factory:judge-fixture": "tsx factory/bin/judge-fixture.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",

@@ -4,6 +4,8 @@
  * optional one-line role headlines (written by the local model) only rephrase them.
  */
 import type { ModelTier } from '../../src/lib/agents/model-router'
+import type { Capability, CapabilityStage } from './config'
+import { ladderStatus } from './ladder'
 import type { AttemptEntry, LedgerEntry, ResolutionEntry, ReviewEntry, ScanEntry } from './ledger'
 
 export interface ReportInput {
@@ -25,9 +27,11 @@ export interface ReportInput {
   cycles: { at: string; exit: number | null }[]
   /** Optional one-line headline per role id. */
   headlines?: Partial<Record<RoleId, string>>
+  /** Capability stages (promotion ladder, Phase 75). */
+  capabilities?: Record<Capability, CapabilityStage>
 }
 
-export type RoleId = 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro'
+export type RoleId = 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro' | 'ladder'
 
 export interface RoleSection {
   id: RoleId
@@ -126,15 +130,19 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   })
 
   // ── Builder: what shipped ───────────────────────────────────────────────────
+  const held = last24.filter(a => a.reported && a.outcome === 'verified')
   sections.push({
     id: 'builder', role: 'Builder', skill: '/ship', title: 'Draft PRs opened (last 24h)',
-    lines: newPrs.length === 0
+    lines: [...(newPrs.length === 0
       ? ['No new PRs in the last 24 hours.']
       : newPrs.map(a => {
         const state = resolutions.get(a.id)?.outcome
         const tag = state === 'merged' ? ' (merged)' : state === 'rejected' ? ' (closed)' : ''
-        return `${short(a.repo)}: ${KIND_LABEL[a.kind] ?? a.kind}${tag} — ${a.tier} · ${a.harness === 'npm-audit-fix' ? 'npm audit fix' : a.harness === 'lint-autofix' ? 'lint autofix' : a.model} · ${Math.round(a.durationMs / 60000)} min — ${a.prUrl}`
-      }),
+        const flag = a.adversary && a.adversary.verdict !== 'PASS' ? ` [reviewer: ${a.adversary.verdict}]` : ''
+        return `${short(a.repo)}: ${KIND_LABEL[a.kind] ?? a.kind}${tag}${flag} — ${a.tier} · ${a.harness === 'npm-audit-fix' ? 'npm audit fix' : a.harness === 'lint-autofix' ? 'lint autofix' : a.model} · ${Math.round(a.durationMs / 60000)} min — ${a.prUrl}`
+      })),
+    ...(held.length ? [`Held back (capability at stage "report", verified, no PR): ${held.map(a => `${short(a.repo)} ${a.kind}`).join(', ')} — patches in ~/.repohq-factory/logs/${held[0].runId}/.`] : []),
+    ],
   })
 
   // ── QA: checks + judge ──────────────────────────────────────────────────────
@@ -213,6 +221,20 @@ export function buildMorningReport(input: ReportInput): MorningReport {
         : 'Merge or close the open PRs: that is how the router learns which tier to trust.',
     ],
   })
+
+  // ── Director: promotion ladder ──────────────────────────────────────────────
+  if (input.capabilities) {
+    const status = ladderStatus(input.capabilities, entries, now)
+    const ready = status.filter(c => c.advice !== 'hold')
+    sections.push({
+      id: 'ladder', role: 'Director', skill: 'promotion ladder', title: 'What each capability may do (observe → report → pr)',
+      lines: [
+        ...(ready.length ? ready.map(c => `${c.advice === 'promote' ? '⬆' : '⬇'} ${c.capability} (${c.stage}): ${c.next}.`) : ['No promotions or demotions suggested.']),
+        ...status.map(c => `${c.capability}: ${c.stage} — ${c.evidence}${c.advice === 'hold' ? `; ${c.next}` : ''}.`),
+        'Stages change only when you edit "capabilities" in factory/factory.config.json.',
+      ],
+    })
+  }
 
   for (const s of sections) {
     const h = input.headlines?.[s.id]

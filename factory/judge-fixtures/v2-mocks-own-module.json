@@ -1,0 +1,33 @@
+{
+  "name": "v2-mocks-own-module",
+  "source": "Phase 77 rule: mocking the code under test",
+  "expect": "reject",
+  "reason": "mocks the project's own code",
+  "task": {
+    "kind": "fix-tests",
+    "taskTier": 2,
+    "scoped": false,
+    "files": [],
+    "title": "fix-tests",
+    "objective": "fix-tests",
+    "evidence": "",
+    "verify": [
+      "test"
+    ]
+  },
+  "baseline": [
+    {
+      "name": "test",
+      "ok": false,
+      "output": ""
+    }
+  ],
+  "after": [
+    {
+      "name": "test",
+      "ok": true,
+      "output": ""
+    }
+  ],
+  "patch": "diff --git a/src/price.test.ts b/src/price.test.ts\n--- a/src/price.test.ts\n+++ b/src/price.test.ts\n@@ -1 +1 @@\n+vi.mock('./price', () => ({ total: () => 3 }))"
+}

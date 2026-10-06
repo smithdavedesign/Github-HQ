@@ -44,8 +44,39 @@ export interface FactoryConfig {
    * the host. `off` runs on the host — only for trusted fixtures (the e2e checks).
    */
   sandbox: SandboxConfig
+  /**
+   * Promotion ladder (roadmap Phase 75): what each capability may do.
+   *   observe → sensed and logged only · report → runs, result goes to the morning report, no PR
+   *   pr      → opens draft PRs (for `adversarial-veto`: its FAIL rejects instead of only labelling)
+   * New capabilities start at `report`; only the owner promotes them (edit factory.config.json).
+   */
+  capabilities: Record<Capability, CapabilityStage>
+  judge: {
+    /** Advisory "prove this should NOT merge" pass after the deterministic judge (Phase 77). */
+    adversarial: { enabled: boolean; timeoutMs: number; reviewers: Partial<Record<ModelTier, string>> }
+  }
   /** Optional RepoHQ sink — mirrors attempts into portfolio_events. */
   repohq: { databaseUrl: string | null; userId: string | null }
+}
+
+export type CapabilityStage = 'observe' | 'report' | 'pr'
+
+export const CAPABILITIES = [
+  'fix-types', 'fix-lint', 'fix-tests', 'lint-autofix', 'deps-audit', 'docs-readme',
+  'red-ci', 'security-alerts', 'adversarial-veto',
+] as const
+export type Capability = typeof CAPABILITIES[number]
+
+export const DEFAULT_CAPABILITIES: Record<Capability, CapabilityStage> = {
+  // Proven: verified fixes merged in the first nights.
+  'fix-types': 'pr', 'fix-lint': 'pr', 'fix-tests': 'pr', 'lint-autofix': 'pr', 'deps-audit': 'pr', 'docs-readme': 'pr',
+  // New (Phases 77–78): earn promotion with evidence first.
+  'red-ci': 'report', 'security-alerts': 'report', 'adversarial-veto': 'report',
+}
+
+/** Builder tier → reviewer alias from a different model family (local = Qwen; free-agent = Nemotron → Cohere → Gemini). */
+export const DEFAULT_REVIEWERS: Partial<Record<ModelTier, string>> = {
+  M0: 'free-agent', M1: 'local-qwen3', MC: 'local-qwen3', M2: 'local-qwen3',
 }
 
 export interface SandboxConfig {
@@ -115,6 +146,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FactoryConfig 
       ...DEFAULT_SANDBOX,
       ...json.sandbox,
       mode: env.FACTORY_SANDBOX === 'off' ? 'off' : json.sandbox?.mode ?? DEFAULT_SANDBOX.mode,
+    },
+    capabilities: { ...DEFAULT_CAPABILITIES, ...json.capabilities },
+    judge: {
+      adversarial: {
+        enabled: json.judge?.adversarial?.enabled ?? true,
+        timeoutMs: json.judge?.adversarial?.timeoutMs ?? 180_000,
+        reviewers: { ...DEFAULT_REVIEWERS, ...json.judge?.adversarial?.reviewers },
+      },
     },
     repohq: {
       // Reuse RepoHQ's own .env.local rather than copying the DB secret elsewhere.

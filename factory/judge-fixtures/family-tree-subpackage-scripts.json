@@ -1,0 +1,30 @@
+{
+  "name": "family-tree-subpackage-scripts",
+  "source": "family-tree: verdict voided (judge bug) \u2014 scripts live in client/ and server/ package.json",
+  "expect": "accept",
+  "task": {
+    "kind": "docs-readme",
+    "taskTier": 1,
+    "scoped": true,
+    "files": [
+      "README.md"
+    ],
+    "title": "docs-readme",
+    "objective": "docs-readme",
+    "evidence": "",
+    "verify": []
+  },
+  "baseline": [],
+  "after": [],
+  "patch": "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n+## Development\n+```\n+cd client && npm run dev\n+cd server && npm run start:dev\n+```",
+  "scripts": {
+    "dev": "vite",
+    "start:dev": "nodemon index.js"
+  },
+  "deps": [
+    "vite",
+    "nodemon",
+    "express"
+  ],
+  "readmeAfter": "# App\n\nAn app that does things for people who need things done, with enough words to pass length.\n\n## Features\n- Fast search\n- Offline mode\n- Export to CSV\n## Development\n```\ncd client && npm run dev\ncd server && npm run start:dev\n```"
+}

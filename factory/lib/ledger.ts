@@ -33,6 +33,10 @@ export interface AttemptEntry {
   reviewRequested?: boolean
   /** Where the repo's code ran: a Docker sandbox (Phase 76) or the host. Absent on older entries (host). */
   isolation?: 'docker' | 'host'
+  /** Verified but held back because the capability is at stage `report` (Phase 75): no PR. */
+  reported?: boolean
+  /** Advisory adversarial review of a verified change (Phase 77). */
+  adversary?: { model: string; verdict: 'PASS' | 'FAIL' | 'UNCERTAIN'; issues: number }
   /**
    * Set when the verdict itself was wrong (a judge bug, not the model's fault): the attempt
    * stays in the ledger for history but no longer counts for routing, dead ends or stats.

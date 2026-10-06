@@ -1,0 +1,29 @@
+{
+  "name": "readme-invented-npx-prisma",
+  "source": "\u00a712: M0 invented `npx prisma` for a repo without Prisma",
+  "expect": "reject",
+  "reason": "doesn't depend on",
+  "task": {
+    "kind": "docs-readme",
+    "taskTier": 1,
+    "scoped": true,
+    "files": [
+      "README.md"
+    ],
+    "title": "docs-readme",
+    "objective": "docs-readme",
+    "evidence": "",
+    "verify": []
+  },
+  "baseline": [],
+  "after": [],
+  "patch": "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n+## Setup\n+```\n+npm install\n+npx prisma migrate dev\n+```",
+  "scripts": {
+    "dev": "next dev"
+  },
+  "deps": [
+    "next",
+    "react"
+  ],
+  "readmeAfter": "# App\n\nAn app that does things for people who need things done, with enough words to pass length.\n\n## Features\n- Fast search\n- Offline mode\n- Export to CSV\n## Setup\n```\nnpm install\nnpx prisma migrate dev\n```"
+}
