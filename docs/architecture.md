@@ -327,17 +327,18 @@ All agent tasks are classified by risk tier. Do not route to a higher tier until
 | Auto-queue causing unreviewed work | Auto-dispatch gated by effort/accuracy/security settings; master toggle defaults off |
 | Duplicate agent tasks | Server-side lifecycle guard in `queueAdvisorAction` and `queueGstackSkill` — both check `BLOCKING_STAGES` before posting to Nexus |
 
-## Agent Execution — Lanes & Model Tiers (planned, Phases 60–66)
+## Agent Execution — Lanes & Model Tiers (shipped, Phases 60–80)
 
-Execution is moving from one paid lane (Render worker → Anthropic) to a **cost ladder**:
+Execution moved from one paid lane (Render worker → Anthropic) to a **cost ladder** run by the local factory (`factory/`), with every target repo's code in a throwaway Docker sandbox:
 
 | Tier | Lane | Harness → model | Cost |
 |------|------|-----------------|------|
-| M0 Local | local Mac worker | Aider → `local-coder` (Qwen2.5-Coder) via LiteLLM `:4000` | $0 |
-| M1 Free cloud | local Mac worker | Claude Code + gstack, `ANTHROPIC_BASE_URL=http://localhost:4000` → `free-agent` (OpenRouter free) | $0, rate-limited |
-| M2 Paid | Render worker | Claude Code + gstack → Anthropic | $ (budget-gated, never implicit) |
+| M0 Local | factory sandbox | Aider → `local-agent` (Qwen2.5-Coder 7B) via the egress relay → LiteLLM `:4000` | $0 |
+| M1 Free cloud | factory sandbox | Claude Code `--bare` → `free-agent` pool (Ollama Cloud → OpenRouter → Gemini free tiers) | $0, quota-bound |
+| MC Copilot | factory host only | GitHub Copilot CLI (prepaid seat); skipped while the sandbox is on | prepaid |
+| M2 Paid | factory sandbox | Claude Code → `cloud-smart` (Anthropic) | $ (budget-gated; never in scheduled cycles) |
 
-The router picks the cheapest tier with proven success for `(impactType, skill, tier)`, subject to a data-classification gate (private repos skip M1 by default) and action-level approvals (L4 = merge/delete/force-push always need a human). Full design: [autonomous-factory.md](autonomous-factory.md).
+The router picks the cheapest tier with proven success per task difficulty (simple / medium / hard), subject to a data-classification gate (private repos skip M1 by default) and action-level approvals (L4 = merge/delete/force-push always need a human). A deterministic judge plus an advisory adversarial reviewer gate every PR, and merging is always human. Nexus's Render lane still runs paid gstack skills for RepoHQ-dispatched tasks. Full design: [autonomous-factory.md](autonomous-factory.md); operator guide: [factory/README.md](../factory/README.md).
 
 ## Agent Execution — Success Metrics
 

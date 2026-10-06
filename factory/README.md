@@ -46,7 +46,7 @@ npm run factory:migrate                 # apply factory/sql/*.sql to the RepoHQ 
 npm run factory:backfill-jobs           # copy ledger history into agent_jobs (needs ~/.repohq-factory/env sourced)
 npm run factory:morning -- --no-send   # build the morning report and print it
 bash factory/bin/setup-email.sh you@gmail.com   # one-time: Gmail app password → keychain, test email
-bash factory/bin/install-launchd.sh     # schedule: cycles hourly 20:00–05:00 + 12:00/16:00, report 06:45, scout Sun 17:10
+bash factory/bin/install-launchd.sh     # schedule: cycles hourly 20:00–06:00 + 12:00/16:00 (AC power only), report 06:45, scout Sun 17:10
 bash factory/bin/install-launchd.sh --uninstall
 touch ~/.repohq-factory/PAUSE           # kill switch (rm to resume)
 ```

@@ -13,7 +13,7 @@
 ## 0. TL;DR
 
 RepoHQ already runs a closed improvement loop: **score → advise → dispatch → execute → PR → measure → recalibrate**
-(see [agentic-full-flow.md](agentic-full-flow.md)). Every execution today runs on **paid Claude** on a Render worker.
+(see [agentic-full-flow.md](agentic-full-flow.md)). Before this doc, every execution ran on **paid Claude** on a Render worker; the factory below now does that work on this Mac at $0.
 
 This doc turns that loop into a **cost-aware autonomous factory**:
 
@@ -22,11 +22,13 @@ This doc turns that loop into a **cost-aware autonomous factory**:
 3. **The existing accuracy loop is extended to models**, so the system learns its own routing policy. That is self-improvement of the factory, as well as of the repos. It changes routing *data* only: the factory never edits its own judge, loop or router (§14).
 4. **Trust, secrets, identity and budget guardrails** from the PRD get mapped onto existing RepoHQ primitives instead of a parallel system.
 5. **Infrastructure provisioning** (the PRD's headline) is kept, but moved to Horizon 3. It's high-blast-radius and only pays off once the repo loop is cheap and trusted.
-6. **Next (§14, Phases 75–80):** sandbox the worker, harden the judge, fixed pipelines, measure accepted PRs per free request. Target: one good, human-approved PR every night, then more.
+6. **Factory v2 (§14, Phases 75–80) shipped 2026-10-06:** repo code runs only in a Docker sandbox, a stronger judge plus an adversarial reviewer, capability stages (observe → report → pr), sensors and one ranked queue, the `agent_jobs` record with KPIs, and the night-shift policy. What's left is time: the night shift's gate of 7 consecutive fully-sandboxed nights. Target: one good, human-approved PR every night, then more.
 
 ---
 
-## 1. What exists today (verified 2026-10-04)
+## 1. What existed at the start (verified 2026-10-04)
+
+This is the starting point the design was built on. For what the factory became, see §12 (first build), §13 (team roles) and §14 (Factory v2).
 
 | Layer | Component | Where | State |
 |---|---|---|---|
@@ -44,7 +46,7 @@ This doc turns that loop into a **cost-aware autonomous factory**:
 | IaC | Terraform 1.5.7, `gh` (authed) | this Mac | installed |
 | Agent identity (GitHub) | Nexus `GITHUB_AUTH_MODE=app` (GitHub App) | Render | ✅ (PRs come from the app) |
 
-> **Bug found during this review (fixed on `AI-Took-My-Job` branch `fix/gstack-claude-invocation`, with a regression test; not yet deployed):** commit `1e9210e`
+> **Bug found during this review (fixed with a regression test; merged in AI-Took-My-Job #19 and released to `main` in #23):** commit `1e9210e`
 > ("remove OpenClaw") left the `claude --print` call *inside the `else` branch* of all nine
 > `scripts/gstack-*.sh`. On any machine where `claude` is on `PATH`, which includes Render after
 > `npm install -g @anthropic-ai/claude-code`, the skill never ran. Report-only skills then produced
@@ -335,6 +337,8 @@ The factory needs no change for that move. It already talks to everything throug
 
 ## 9. The loop, end to end
 
+As designed (2026-10-04):
+
 ```
 [Sense]     6h sync → health, CI, alerts, deployments          (exists)
 [Decide]    Monday advisor / daily gstack-self → actions        (exists)
@@ -347,12 +351,28 @@ The factory needs no change for that move. It already talks to everything throug
 [Repeat]    next cycle starts from a higher baseline and a cheaper policy
 ```
 
+As built (Factory v2, 2026-10-06):
+
+```
+[Sense]     gh sensors: red CI, Dependabot alerts, stale bot PRs → one ranked queue        (Phase 78)
+            + each repo's own typecheck / lint / test, run in the sandbox
+[Decide]    task kinds with an oracle, gated by capability stage observe → report → pr   (Phases 75, 78)
+[Route]     cheapest proven tier per difficulty × data class                             (Phases 63, 79)
+[Execute]   Docker sandbox: Aider (M0) / Claude Code (M1) via the egress relay           (Phase 76)
+[Verify]    repo checks + Judge v2 rules, then an advisory adversarial review            (Phase 77)
+[Gate]      draft PR → integration/agent; you merge; human-reviewed-release for main      (Phase 70)
+[Measure]   agent_jobs + KPIs: overnight yield, acceptance, requests per merge, autonomy (Phase 79)
+[Learn]     merge/close → routing data; wrong verdicts → judge regression fixtures        (Phases 63, 77)
+[Schedule]  20:00–06:00 on AC power, sandboxed, $0                                        (Phase 80)
+```
+
 ### Success metrics
 
 | Metric | Target |
 |---|---|
 | Share of merged agent PRs produced at $0 (M0+M1) | ≥ 80% |
-| Paid spend per month | ≤ configured budget (default $10) |
+| Paid spend per month | ≤ configured budget (default $0; scheduled cycles always run at $0) |
+| Overnight yield (merged PRs per night) | rising over 30 nights (Phase 80) |
 | Merge rate, M1 Tier 1–2 | ≥ 75% (same bar as today's paid path) |
 | Escalation rate M1 → M2 | trending down |
 | Unapproved L4 actions | **0, always** |
@@ -425,11 +445,14 @@ The owner's target is a small team rather than one agent: **Architect** (thinks,
 
 | Role | Implemented as | Why this way |
 |---|---|---|
-| PM / Architect | RepoHQ advisor + factory scans and router; owner reviews the plan in the morning report | Planning is cheap and deterministic today; the paid model is reserved for decisions that need it |
-| Builder | M0 Aider (local) · M1 Claude Code on the free pool · MC Copilot CLI · M2 Claude (paid, budget-gated) | Cheapest proven tier first, escalating on failure |
-| QA | The judge: the repo's own checks, re-run, plus anti-cheat rules | Rule-based checks beat model agreement as verification |
-| Reviewer | GitHub Copilot code review on every PR (paused automatically when the seat's premium requests are spent) | Different vendor and model family from the Builder. Costs one premium request, not a debate |
-| Security | `npm audit` on every scan + deterministic `deps-audit` fixes | No model needed |
+| Director | Promotion ladder: each capability's stage (observe → report → pr) and the evidence to promote it, in the morning report | The factory earns autonomy capability by capability; only the owner changes a stage |
+| PM / Architect | Sensors + one ranked queue across repos (red CI > security > failing checks > docs, weighted by health); router per difficulty | Deterministic and cheap; no model decides what to work on |
+| Builder | M0 Aider (local) · M1 Claude Code on the free pool · M2 Claude (paid, budget-gated), all in the Docker sandbox · MC Copilot CLI (host-only, so skipped while sandboxed) | Cheapest proven tier first, escalating on failure; repo code never runs on the host |
+| QA | The judge: the repo's own checks re-run, plus Judge v2 rules (test integrity, type escapes, diff sanity, imports, coverage) and an 18-case regression suite | Rule-based checks beat model agreement as verification |
+| Reviewer | Advisory adversarial review by a different model family on every verified change (labels; may veto once promoted) + GitHub Copilot code review on PRs while premium requests last | It can only find reasons not to merge, never approve |
+| Investigator | `red-ci`: sandboxed root-cause reports for failing CI on the base branch, in the morning report | Report first; fixes only once its reports hold up |
+| Security | `npm audit` on every scan + deterministic `deps-audit` fixes; Dependabot alerts sensor | No model needed |
+| Ops | Night shift policy (AC power, sandbox, $0), readiness gate, KPIs and trend | Measures the factory, not just the models |
 | Operator | Not yet (Horizon 3) | Needs trust levels, approvals and the resource ledger first; CLIs/APIs before browser clicking |
 
 **Rules carried over from the design discussion:**
@@ -463,6 +486,8 @@ sense → select one task → fixed pipeline → sandboxed worker → verify (de
 | 8 | **Promotion ladder per capability**: observe → report → draft PR → auto-verified PR → human merge | A new capability (e.g. red-CI investigation) enters at *report* and moves up only with evidence. **Merge stays human indefinitely**: it's the final control and the router's best learning signal |
 | 9 | **Measure what the factory costs, not just what the model scores** | KPIs in Phase 79: accepted PRs per free request, merge rate, review-load proxies, autonomy |
 | 10 | **Keep scheduled one-shot cycles** rather than a `while (!paused)` daemon | launchd starts a fresh process each cycle: crashes and leaks don't accumulate, `PAUSE` is checked at start, and "nothing worth doing" already means the cycle exits. Same loop shape, more robust host |
+
+**Status (2026-10-06):** all ten are in code (Phases 75–80), with two exceptions. #2: Nexus's `suggestedNextSkill` auto-chain is still dynamic; whether to keep it is the owner's decision (roadmap Phase 78). #10: concurrency stays 1 until the night-shift gate passes.
 
 ### 14.2 KPIs
 
