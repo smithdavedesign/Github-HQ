@@ -3,8 +3,9 @@ import type { CheckResult } from './checks'
 import type { FactoryTask } from './tasks'
 import type { DiffInfo } from './verify'
 
+/** Roadmap Phase 70 standard for autonomous work: feature/bot/{taskId}-{slug}. */
 export function branchName(task: FactoryTask, now: Date, runId: string): string {
-  return `factory/${task.kind}-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${runId.slice(-4)}`
+  return `feature/bot/factory-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${runId.slice(-4)}-${task.kind}`
 }
 
 export function commitMessage(task: FactoryTask, tier: ModelTier, model: string): string {

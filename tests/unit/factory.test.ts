@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
-  confirmFailures, runChecks, parseAudit, type CheckSpec,
+  confirmFailures, runChecks, parseAudit, collectPackageInfo, lintScriptAutofixes, lintProblems, type CheckSpec,
   detectPackageManager, installCommand, planChecks, isPlaceholderTestScript,
   filesFromTscOutput, filesFromEslintOutput, errorExcerpt, readmeIssue, type CheckResult,
 } from '../../factory/lib/checks'
@@ -157,6 +157,14 @@ describe('judge', () => {
     expect(judge({ task: typeTask, baseline, after: baseline, diff: diff([['.github/workflows/ci.yml', 1, 1]]) }).reason).toMatch(/forbidden/)
     expect(judge({ task: typeTask, baseline, after: baseline, diff: diff([['src/a.ts', 300, 200]]) }).reason).toMatch(/too large/)
   })
+  it('never lets the factory edit its own judge, loop or router', () => {
+    const after = [ok('typecheck'), ok('test')]
+    const unscoped = { ...typeTask, scoped: false, files: [] }
+    for (const f of ['factory/lib/verify.ts', 'factory/run.ts', 'src/lib/agents/model-router.ts']) {
+      expect(judge({ task: unscoped, baseline, after, diff: diff([[f, 1, 1]]), repo: 'smithdavedesign/Github-HQ' }).reason).toMatch(/factory-owned/)
+    }
+    expect(judge({ task: unscoped, baseline, after, diff: diff([['factory/x.ts', 1, 1]]), repo: 'smithdavedesign/other' }).ok).toBe(true)
+  })
   it('rejects check-silencing changes', () => {
     for (const line of ['// @ts-ignore', '/* eslint-disable */', "it.skip('x', () => {})", "describe.only('x')", "xit('y')"]) {
       expect(judge({ task: typeTask, baseline, after: [ok('typecheck'), ok('test')], diff: diff([['src/a.ts', 1, 0]], [line]) }).ok).toBe(false)
@@ -229,6 +237,8 @@ describe('ledger', () => {
     expect([...deadEnds(entries, NOW)]).toEqual(['o/r:fix-lint'])
     expect(deadEnds([...entries, att({ outcome: 'verified', at: NOW.toISOString() })], NOW).size).toBe(0)
     expect(deadEnds([att({ tier: 'M0', outcome: 'failed' }), att({ tier: 'M0', outcome: 'failed' })], NOW).size).toBe(0)
+    const deps = { tier: 'M0' as const, harness: 'npm-audit-fix', kind: 'deps-audit', outcome: 'failed' as const }
+    expect([...deadEnds([att(deps), att(deps)], NOW)]).toEqual(['o/r:deps-audit'])
   })
   it('nextRepos puts never-scanned first, then least recent', () => {
     const entries: LedgerEntry[] = [
@@ -319,7 +329,7 @@ describe('harness helpers', () => {
   })
   it('parses the Claude Code JSON result out of mixed output', () => {
     const out = 'warning: unknown model\n{"type":"result","is_error":false,"result":"DONE","usage":{"input_tokens":10,"cache_read_input_tokens":90,"output_tokens":5}}\n'
-    expect(parseClaudeResult(out)).toEqual({ isError: false, text: 'DONE', inputTokens: 100, outputTokens: 5 })
+    expect(parseClaudeResult(out)).toEqual({ isError: false, text: 'DONE', turns: 0, inputTokens: 100, outputTokens: 5 })
     expect(parseClaudeResult('no json here')).toBeNull()
   })
   it('parses Aider token counts', () => {
@@ -332,7 +342,7 @@ describe('harness helpers', () => {
 describe('pr + sink rendering', () => {
   const [task] = tasksFromScan([ok('lint', false, 'src/a.ts\n  1:1  error  x  rule')], planChecks({ scripts: { lint: 'eslint .' } }, 'npm', false), null, '/r')
   it('names branches and titles', () => {
-    expect(branchName(task, NOW, 'run-abcd')).toBe('factory/fix-lint-20261005-abcd')
+    expect(branchName(task, NOW, 'run-abcd')).toBe('feature/bot/factory-20261005-abcd-fix-lint')
     expect(prTitle(task)).toMatch(/^\[factory\] Fix lint errors/)
   })
   it('PR body shows before/after checks and provenance', () => {
@@ -641,5 +651,74 @@ describe('judge: silent test skips', () => {
   it('catches skipIf / todo variants', () => {
     const d = parseDiff('1\t0\tsrc/a.test.ts\n', '+++ b/src/a.test.ts\n+it.skipIf(!key)("x", () => {})\n', new Set())
     expect(judge({ task: testTask, baseline: [ok('test', false)], after: [ok('test')], diff: d }).ok).toBe(false)
+  })
+})
+
+describe('sub-package scripts', () => {
+  it('collects scripts and deps from client/ and server/ when there is no root package.json', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'factory-pkgs-'))
+    const write = (p: string, j: object) => { mkdirSync(path.dirname(path.join(dir, p)), { recursive: true }); writeFileSync(path.join(dir, p), JSON.stringify(j)) }
+    write('client/package.json', { scripts: { dev: 'vite', 'test:e2e': 'playwright test' }, devDependencies: { vite: '1' } })
+    write('server/package.json', { scripts: { start: 'node index.js' }, dependencies: { express: '4' } })
+    write('client/node_modules/x/package.json', { scripts: { evil: 'x' } })
+    const info = collectPackageInfo(dir)
+    expect(Object.keys(info.scripts).sort()).toEqual(['dev', 'start', 'test:e2e'])
+    expect(info.deps.sort()).toEqual(['express', 'vite'])
+  })
+})
+
+describe('lint-autofix', () => {
+  const specs = planChecks({ scripts: { lint: 'eslint . --fix' } }, 'npm', false)
+  const failingLint = ok('lint', false, '/r/a.js\n  1:1  error  x  rule\n\n✖ 120 problems (40 errors, 80 warnings)')
+  it('detects fixer lint scripts and parses problem totals', () => {
+    expect(lintScriptAutofixes({ scripts: { lint: 'eslint . --fix' } })).toBe(true)
+    expect(lintScriptAutofixes({ scripts: { lint: 'prettier --write . && eslint .' } })).toBe(true)
+    expect(lintScriptAutofixes({ scripts: { lint: 'eslint .' } })).toBe(false)
+    expect(lintProblems(failingLint)).toBe(120)
+    expect(lintProblems(ok('lint'))).toBe(0)
+    expect(lintProblems(undefined)).toBeNull()
+  })
+  it('offers the mechanical autofix instead of a model lint fix', () => {
+    expect(tasksFromScan([failingLint], specs, null, '/r', null, { lintAutofixes: true }).map(t => t.kind)).toEqual(['lint-autofix'])
+    expect(tasksFromScan([failingLint], specs, null, '/r', null, {}).map(t => t.kind)).toEqual(['fix-lint'])
+  })
+  it('judge: size-exempt, problems must drop, no other regressions, no suppressions', () => {
+    const [t] = tasksFromScan([failingLint], specs, null, '/r', null, { lintAutofixes: true })
+    const big: DiffInfo = { files: [{ path: 'src/a.js', added: 1500, removed: 1400, deleted: false }], addedLines: ['const a = 1;'] }
+    const base = [failingLint, ok('test')]
+    expect(judge({ task: t, baseline: base, after: [ok('lint', false), ok('test')], diff: big, lintProblems: { before: 120, after: 7 } }).ok).toBe(true)
+    // eslint --fix reports post-fix counts, so "unchanged" is the normal case
+    expect(judge({ task: t, baseline: base, after: [ok('lint', false), ok('test')], diff: big, lintProblems: { before: 120, after: 120 } }).ok).toBe(true)
+    expect(judge({ task: t, baseline: base, after: [ok('lint', false), ok('test')], diff: big, lintProblems: { before: 120, after: 130 } }).reason).toMatch(/increased/)
+    expect(judge({ task: t, baseline: base, after: [ok('lint'), ok('test', false)], diff: big, lintProblems: { before: 120, after: 0 } }).reason).toMatch(/regressed: test/)
+    const cheat: DiffInfo = { ...big, addedLines: ['/* eslint-disable */'] }
+    expect(judge({ task: t, baseline: base, after: [ok('lint'), ok('test')], diff: cheat, lintProblems: { before: 120, after: 0 } }).reason).toMatch(/disables ESLint/)
+  })
+  it('deterministic lint-autofix failures count toward dead ends', () => {
+    const lf = { tier: 'M0' as const, harness: 'lint-autofix', kind: 'lint-autofix', outcome: 'failed' as const }
+    expect([...deadEnds([att(lf), att(lf)], NOW)]).toEqual(['o/r:lint-autofix'])
+  })
+})
+
+describe('voided attempts', () => {
+  it('are ignored by routing, dead ends and stats', () => {
+    const bad = { kind: 'docs-readme', outcome: 'failed' as const, voided: 'judge read root package.json only' }
+    const entries = [att(bad), att(bad)]
+    expect(deadEnds(entries, NOW).size).toBe(0)
+    expect(toAttemptRecords(entries)).toEqual([])
+    expect(summarizeByTier(entries).every(r => r.attempts === 0)).toBe(true)
+  })
+})
+
+describe('Copilot premium-request quota', () => {
+  it('parses the quota snapshot and pauses Copilot when spent without overage', async () => {
+    const { parseCopilotQuota, copilotHasQuota } = await import('../../factory/lib/copilot-quota')
+    const spent = parseCopilotQuota({ copilot_plan: 'individual', quota_reset_date: '2026-11-01', quota_snapshots: { premium_interactions: { percent_remaining: 0, overage_permitted: false } } })
+    expect(spent).toEqual({ plan: 'individual', percentRemaining: 0, overagePermitted: false, resetDate: '2026-11-01' })
+    expect(copilotHasQuota(spent)).toBe(false)
+    expect(copilotHasQuota({ ...spent!, overagePermitted: true })).toBe(true)
+    expect(copilotHasQuota(parseCopilotQuota({ quota_snapshots: { premium_interactions: { percent_remaining: 42 } } }))).toBe(true)
+    expect(copilotHasQuota(null)).toBe(true) // unknown → rely on "no quota" detection
+    expect(parseCopilotQuota({})).toBeNull()
   })
 })

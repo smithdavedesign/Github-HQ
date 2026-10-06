@@ -3,20 +3,28 @@
 The local self-improvement loop from [docs/autonomous-factory.md](../docs/autonomous-factory.md). It runs on this Mac against the local AI stack (`~/ai-stack`: Ollama → LiteLLM), finds verifiable problems in allowlisted repos, fixes them with the cheapest model that has proven it can, and opens **draft** PRs. Merging is always yours, and each merge or close teaches the router.
 
 ```
-Sense    clone → install → the repo's own typecheck / lint / test + README check
-Decide   tasks: fix-types · fix-lint · fix-tests · deps-audit · docs-readme (Tier 1–2 only)
+Sense    every allowlisted repo: red CI on the base branch, Dependabot alerts, stale bot PRs (gh, host)
+         → one ranked queue → clone (host) → install → the repo's own typecheck / lint / test + README (sandbox)
+Decide   tasks: red-ci · fix-types · lint-autofix · fix-lint · fix-tests · deps-audit · docs-readme
+         gated by each capability's stage: observe → report → pr (see "Promotion ladder")
 Route    src/lib/agents/model-router.ts: cheapest proven tier, data-class gate, ~10% exploration
-Execute  M0 Aider → local-agent (Qwen2.5-Coder 7B)   $0
+Execute  in the Docker sandbox (no credentials, allowlisted egress; see "Sandbox" below)
+         M0 Aider → local-agent (Qwen2.5-Coder 7B)   $0
          M1 Claude Code --bare → free-agent pool: Ollama Cloud · OpenRouter · Gemini   $0
             (picked by the scout; a 429 on one provider falls through to the next)
          MC GitHub Copilot CLI (your seat, gpt-5-mini by default)   prepaid, ≤ 6 tasks/day
+            (host-only: needs your GitHub login, so it is skipped while the sandbox is on)
          M2 Claude Code --bare → cloud-smart (Anthropic)   only with a budget > 0
-         deps-audit runs `npm audit fix` (no model, never --force)
-Verify   lib/verify.ts judge: target check passes, nothing regresses, no check-silencing,
+         deps-audit runs `npm audit fix` (no model, never --force); lint-autofix runs the
+         repo's own fixer (eslint --fix / prettier --write) as a mechanical PR
+Verify   (host) the sandbox's result comes back as a patch, applied to the host clone; then the
+         lib/verify.ts judge (Judge v2 rules in lib/judge-rules.ts, then an advisory adversarial review): target check passes, nothing regresses, no check-silencing,
          no forbidden paths, size cap; README edits additive with real scripts/tools only
-Gate     draft PR (never merges), ≤ 1 per cycle, ≤ 8 per factory day (07:00–07:00)
-Review   GitHub Copilot code review requested on every PR (independent Reviewer, ≤ 8/day)
-Learn    PR merged → success, closed → failure → ledger → router
+Gate     draft PR on a feature/bot/factory-… branch, targeting integration/agent when the repo
+         has it (else the default branch); never merges; ≤ 1 per cycle, ≤ 8 per factory day
+Review   GitHub Copilot code review requested on every PR (independent Reviewer, ≤ 8/day;
+         paused while the seat's premium requests are spent)
+Learn    PR merged → success, closed → failure → ledger → router (per difficulty) → agent_jobs → KPIs
 Report   06:45 email: one update per gstack role (PM → Architect plan, Builder, QA, Reviewer,
          Security, Ops, Retro), built from the ledger; headlines by the local model
 ```
@@ -29,7 +37,13 @@ npm run factory -- --repo=owner/name    # one repo (must be allowlisted)
 npm run factory                         # real cycle: may open one draft PR
 npm run factory:report                  # per-tier attempts / verified / merged / cost
 npm run factory:scout                   # re-evaluate free models, update LiteLLM aliases
-bash factory/eval/e2e.sh                # end-to-end check against a local fixture repo
+npm run factory:e2e                     # end-to-end check against a local fixture repo (sandboxed)
+FACTORY_SANDBOX=off npm run factory:e2e # the same on the host (trusted fixture only)
+npm run factory:sandbox:check           # live isolation checks: no host env/creds/mounts, egress allowlist, cleanup
+npm run factory:sandbox:build           # build the sandbox images (install-launchd.sh does this too)
+npm run factory:judge-fixture -- <attemptId> --expect=reject --source="PR #12 closed: …"   # wrong verdict → regression fixture
+npm run factory:migrate                 # apply factory/sql/*.sql to the RepoHQ DB (agent_jobs; idempotent)
+npm run factory:backfill-jobs           # copy ledger history into agent_jobs (needs ~/.repohq-factory/env sourced)
 npm run factory:morning -- --no-send   # build the morning report and print it
 bash factory/bin/setup-email.sh you@gmail.com   # one-time: Gmail app password → keychain, test email
 bash factory/bin/install-launchd.sh     # schedule: cycles hourly 20:00–05:00 + 12:00/16:00, report 06:45, scout Sun 17:10
@@ -40,9 +54,100 @@ touch ~/.repohq-factory/PAUSE           # kill switch (rm to resume)
 ## Configuration
 
 - `factory/factory.config.json`: `copilot.{enabled, model, maxTasksPerDay, review, maxReviewsPerDay}` and `maxPrsPerDay` (default 8). Copilot tasks and reviews spend your seat's premium requests (× the model's multiplier); `gpt-5-mini` is an included model on paid plans, so set a stronger `copilot.model` only if your allowance covers it.
+- `factory/factory.config.json`: `integrationBranch` (default `integration/agent`): repos that have it get their PRs there, per the release policy (agent work → `integration/agent` → human-labelled release → `main`).
+- Ledger hygiene: if a verdict turns out to be a judge bug, set `"voided": "<why>"` on that attempt in `~/.repohq-factory/ledger.jsonl`. It stays for history but stops counting for routing, dead ends and stats.
 - `factory/factory.config.json`: the **allowlist** (`repos`). The factory never touches a repo that isn't listed. Also `allowFreeCloud` (private repos allowed on M1), `monthlyBudgetUsd` (M2; default 0, which means never pay) and `maxPrsPerCycle`.
 - `~/.repohq-factory/env`: runtime settings sourced by the launchd wrapper. `FACTORY_USER_ID` mirrors attempts into RepoHQ (`portfolio_events`). The DB URL is read from RepoHQ's own `.env.local` at runtime, not copied. Set `FACTORY_OP_ENV_FILE` to resolve secrets through 1Password (`op run`).
 - State lives in `~/.repohq-factory/`: `ledger.jsonl` (source of truth), `logs/<run>/` (prompts + harness output per attempt), `scout-reports/`.
+
+## Sandbox
+
+Since Phase 76 (docs/autonomous-factory.md §14), nothing from a target repo runs on this Mac. `npm ci`, the repo's checks and the model harness run in a throwaway Docker container per repo; the host only clones, judges, commits and pushes.
+
+```
+host ──clone (gh auth)──▶ tar stream ──▶ worker container ──internal network──▶ egress container ──▶ registries, LiteLLM
+host ◀──────────────── patch (file contents only) ◀── worker          (nothing else leaves the worker)
+```
+
+| Property | How |
+|---|---|
+| No credentials | No GitHub token, no `gh`, no `~/.ssh` / `~/.aws` / keychain; the worker gets only the per-command env the factory passes (never the host's environment, so `FACTORY_DATABASE_URL` etc. stay out) |
+| No host access | No bind mounts, no Docker socket; the clone is streamed in with `tar` and owned by a non-root `worker` user |
+| Least privilege | `--cap-drop ALL`, `no-new-privileges`, `--cpus 4`, `--memory 4g` (no extra swap), `--pids-limit 1024` |
+| Egress allowlist | The worker is on an `--internal` network with no route out. Its only peer, the egress container, proxies `sandbox.allowHosts` (default `registry.npmjs.org`, `registry.yarnpkg.com`) and refuses every other host |
+| Free models only | Model calls go to the egress relay, which forwards only the factory's aliases (`local-agent`, `free-agent`, `local-small`; the paid alias only when `monthlyBudgetUsd > 0`). The LiteLLM key is a known constant, so this is what stops repo code from spending on `cloud-smart` |
+| Time limits | Every command runs under `timeout` inside the container; the container's PID 1 is a 90-minute `sleep`, so it exits on its own even if the factory dies |
+| Cleanup | Containers and the network are removed after each repo; leftovers from a crashed run are swept at the next cycle start (label `repohq.factory.sandbox`) |
+| No fallback to the host | If Docker isn't running, the cycle is **skipped** (logged), never run on the host |
+
+Configure under `sandbox` in `factory/factory.config.json`: `mode` (`docker` | `off`), `cpus`, `memory`, `pidsLimit`, `lifetimeMs`, `allowHosts`. `FACTORY_SANDBOX=off` is for trusted fixtures (the e2e check), not for real repos.
+
+Images (`factory/docker/`): `worker.Dockerfile` (Node 22, git, Aider, Claude Code, pnpm; ~1.8 GB) and `egress.Dockerfile` (tinyproxy + the model relay; ~235 MB). Tags are a hash of the Dockerfiles, so an edit rebuilds them on the next cycle and older tags are removed. `install-launchd.sh` prebuilds them.
+
+Known limits:
+- **Disk** isn't capped per container (Docker Desktop's overlay2 doesn't support `--storage-opt size`); the container's writable layer is deleted after each repo, and the Docker VM disk is the ceiling.
+- **Copilot (MC)** needs your GitHub login, so it doesn't run in the sandbox; while the sandbox is on, routing skips MC (Copilot *review* of PRs still runs, on the host, against GitHub).
+- Installs that download binaries from other hosts (e.g. Playwright browsers, some native modules from GitHub releases) fail inside the sandbox; the repo is then skipped as `install failed`. Add the host to `allowHosts` only if you trust what it serves.
+- Concurrency is 1: on a 16 GB Mac, Docker's VM has 8 GB and Ollama keeps a 7B model resident.
+
+## Judge v2
+
+Rules run before anything model-based, and each exists because a weak model can turn a check green without fixing anything (`lib/judge-rules.ts`):
+
+| Rule | Rejects |
+|---|---|
+| Test integrity | snapshot rewrites; a touched test file losing assertions; `vi.mock`/`jest.mock` of the project's own modules |
+| Type escapes | new `as any` / `: any` in source files for type and lint fixes |
+| Diff sanity | deleted source files; removed exports; unscoped fixes touching > 3 files beyond the ones their errors named; the model reformatting code it didn't need to touch |
+| Imports | new bare imports that aren't declared dependencies or Node builtins; relative imports of files that don't exist |
+| Coverage | a drop of more than 0.5 points, where the test script already prints coverage |
+
+Then the **adversarial reviewer** (`lib/adversary.ts`): a model from a different family than the builder (M0 → `free-agent`; M1/MC/M2 → `local-qwen3`, configurable under `judge.adversarial` in `factory.config.json`) tries to argue the PR should not merge. Every issue must quote the diff, or it's dropped. It can never approve: PASS does nothing; UNCERTAIN or FAIL adds the `needs-careful-review` label and an "Adversarial review" section to the PR; FAIL rejects only after you promote `adversarial-veto` to `pr`. If it errors or times out, nothing happens.
+
+**Regression suite.** `factory/judge-fixtures/*.json` are verdicts the judge once got wrong or rules it must keep; `tests/unit/judge-regression.test.ts` replays them. Every attempt now saves its judge inputs (`logs/<run>/<repo>-<kind>-<tier>.judge.json`), so when you close a PR the judge passed (or void a verdict it got wrong), run `npm run factory:judge-fixture -- <attemptId> --expect=reject|accept --source="…"`. The new fixture fails until the judge is fixed.
+
+## Promotion ladder
+
+Each capability has a stage under `capabilities` in `factory.config.json`:
+
+| Stage | Means |
+|---|---|
+| `observe` | Sensed and logged only |
+| `report` | Runs and is judged; no PR. Results appear in the morning report ("Held back"; red-CI root causes under Ops) |
+| `pr` | Opens draft PRs (for `adversarial-veto`: a FAIL rejects instead of only labelling) |
+
+Defaults: the six proven task kinds at `pr`; `red-ci`, `security-alerts`, `adversarial-veto` at `report`. The morning report's **Director** section shows each capability's evidence and says when one has earned promotion (e.g. 5 verified at ≥ 80%) or should drop back (you close most of its PRs). Only you change stages.
+
+## Sensors and the queue
+
+At the start of each cycle the factory senses every allowlisted repo with read-only `gh` calls: the latest run of each workflow on the base branch (red CI), Dependabot alerts, and bot PRs. It then ranks repos (`rankOpportunities`): red CI > security > npm audit > failing checks > never scanned > docs, raised for low RepoHQ health scores, with clean repos coming round again as their last scan ages.
+
+- **Red CI** becomes a `red-ci` task. At `report` it's a sandboxed root-cause investigation on the free pool. At `pr` it's a fix whose oracle is the failing workflow passing on the PR.
+- **Dependabot alerts** are reported (enable them per repo under Settings → Code security; all 9 repos had them off on 2026-10-06). Fixes go through `deps-audit`.
+- **Stale bot PRs** (autonomous branch, open 7+ days, nobody reviewed) are listed, and **that repo gets no new factory PRs until you review or close them** (`blockOnStaleBotPrs: false` turns this off).
+
+## KPIs and the job record
+
+Every attempt is a row in RepoHQ's `agent_jobs` table (parent job for escalations, requests, reviewer, isolation, outcome, the commits you added). `/agent-performance` and the morning report show the KPIs (`src/lib/agents/factory-kpis.ts`):
+
+| KPI | Definition |
+|---|---|
+| Overnight yield | merged PRs ÷ nights the factory ran (the number the project optimises) |
+| Acceptance | merged ÷ (merged + closed) |
+| Per 100 free requests | merged PRs per 100 free-cloud requests (M1 turns + `free-agent` reviews) |
+| Review time | median hours from PR to your decision; PRs you had to edit |
+| Autonomy | merged without your edits ÷ (every resolved PR + every approval request) |
+
+Routing learns per difficulty (simple: docs/lint-autofix/deps; medium: lint/types; hard: tests/red CI), so evidence accumulates three times faster than per task kind.
+
+## Night shift
+
+Scheduled cycles (launchd → `factory.sh` → `run.ts --scheduled`) run hourly 20:00–06:00 plus 12:00 and 16:00, and:
+- are **skipped on battery** (`FACTORY_REQUIRE_AC=0` overrides): on battery the Mac sleeps mid-cycle;
+- **refuse to run with the sandbox off**;
+- **always run at $0**, even if `monthlyBudgetUsd` allows paid work for manual runs.
+
+The Night Shift v2 gate is 7 consecutive nights with every attempt sandboxed; `npm run factory:report` and the morning report show the count. After that, success is the 30-night trend in yield and acceptance (shown in the report), not PR count.
 
 ## Free-tier facts that shape the design
 
@@ -52,3 +157,13 @@ touch ~/.repohq-factory/PAUSE           # kill switch (rm to resume)
 - M0 (7B, 16k context) is good for small scoped edits: one-file fixes run in seconds. It can't host Claude Code (the system prompt alone overflows 16k), whole-file rewrites truncate large files (so Aider runs with `--edit-format diff`), and files over 12KB are routed past M0.
 - Repos whose `lint` script auto-fixes (`eslint --fix`) mutate the tree during checks. The factory discards that after the baseline scan and folds it into the judged diff after a fix, so what's judged is exactly what ships.
 - The scout and the cycle share a lock: the scout restarts LiteLLM, which would drop an in-flight agent request.
+
+## Overnight runs need power
+
+The first scheduled night showed the Mac on battery dropping into Deep Idle sleep between steps: a 10-minute cycle took three hours and its push failed with the network down. `caffeinate -ims` keeps the system awake **only on AC power**. For 3–8 PRs by morning:
+
+- leave the Mac **plugged in** overnight;
+- System Settings → Battery → Options → turn on **"Prevent automatic sleeping on power adapter when the display is off"**;
+- optional, so the first cycle runs even if the Mac slept: `sudo pmset repeat wakeorpoweron MTWRFSU 19:58:00`.
+
+Since Phase 80, scheduled cycles check this themselves: on battery they log "skipped — on battery power" and exit. Missed launchd slots run once on wake (launchd coalesces them), pushes and PR creation retry on network errors, and the Ops section of the morning report shows how many cycles actually ran.

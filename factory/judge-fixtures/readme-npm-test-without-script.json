@@ -1,0 +1,28 @@
+{
+  "name": "readme-npm-test-without-script",
+  "source": "AI-Took-My-Job#10: documented `npm test` in a repo with no test script",
+  "expect": "reject",
+  "reason": "non-existent scripts: test",
+  "task": {
+    "kind": "docs-readme",
+    "taskTier": 1,
+    "scoped": true,
+    "files": [
+      "README.md"
+    ],
+    "title": "docs-readme",
+    "objective": "docs-readme",
+    "evidence": "",
+    "verify": []
+  },
+  "baseline": [],
+  "after": [],
+  "patch": "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n+## Testing\n+```\n+npm test\n+```",
+  "scripts": {
+    "build": "tsc"
+  },
+  "deps": [
+    "typescript"
+  ],
+  "readmeAfter": "# App\n\nAn app that does things for people who need things done, with enough words to pass length.\n\n## Features\n- Fast search\n- Offline mode\n- Export to CSV\n## Testing\n```\nnpm test\n```"
+}

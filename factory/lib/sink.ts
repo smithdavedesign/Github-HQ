@@ -4,6 +4,7 @@ import { and, eq, ilike, sql } from 'drizzle-orm'
 import * as schema from '../../src/lib/db/schema'
 import type { FactoryConfig } from './config'
 import type { AttemptEntry } from './ledger'
+import { PIPELINES, type TaskKind } from './tasks'
 
 /**
  * Optional mirror of factory activity into RepoHQ (same direct-to-Neon pattern
@@ -40,6 +41,21 @@ async function safely(label: string, fn: () => Promise<void>): Promise<void> {
   }
 }
 
+/** RepoHQ health score per repo (lower-cased full name) for opportunity ranking; empty without the sink. */
+export async function healthScores(cfg: FactoryConfig): Promise<Map<string, number>> {
+  const d = db(cfg)
+  const out = new Map<string, number>()
+  if (!d) return out
+  await safely('healthScores', async () => {
+    const rows = await d.select({ fullName: schema.repositories.fullName, health: schema.repositoryMetrics.healthScore })
+      .from(schema.repositories)
+      .innerJoin(schema.repositoryMetrics, eq(schema.repositoryMetrics.repoId, schema.repositories.id))
+      .where(eq(schema.repositories.userId, cfg.repohq.userId!))
+    for (const r of rows) if (r.health != null) out.set(r.fullName.toLowerCase(), r.health)
+  })
+  return out
+}
+
 export function attemptEventValues(a: AttemptEntry, userId: string, repoId: number | null, objective: string) {
   const outcome = a.outcome === 'verified' ? 'success' : 'failed'
   const emoji = outcome === 'success' ? '✅' : '❌'
@@ -61,6 +77,12 @@ export function attemptEventValues(a: AttemptEntry, userId: string, repoId: numb
       harness: a.harness,
       kind: a.kind,
       exploring: a.exploring,
+      isolation: a.isolation ?? 'host',
+      requests: a.requests ?? null,
+      parentId: a.parentId ?? null,
+      reported: a.reported ?? false,
+      adversaryModel: a.adversary?.model ?? null,
+      adversaryVerdict: a.adversary?.verdict ?? null,
       prUrl: a.prUrl ?? null,
       costUsd: a.costUsd,
       durationMs: a.durationMs,
@@ -75,7 +97,39 @@ export async function recordAttempt(cfg: FactoryConfig, a: AttemptEntry, objecti
   await safely('recordAttempt', async () => {
     const repoId = await repoIdFor(d, cfg.repohq.userId!, a.repo)
     await d.insert(schema.portfolioEvents).values(attemptEventValues(a, cfg.repohq.userId!, repoId, objective)).onConflictDoNothing()
+    await d.insert(schema.agentJobs).values(agentJobValues(a, cfg.repohq.userId!, repoId)).onConflictDoNothing()
   })
+}
+
+/** Copy ledger history into `agent_jobs` (idempotent: existing rows are left alone). Returns rows written. */
+export async function backfillJobs(cfg: FactoryConfig, attempts: AttemptEntry[], resolutions: Map<string, { outcome: 'merged' | 'rejected'; at: string; humanCommits?: number }>): Promise<number> {
+  const d = db(cfg)
+  if (!d) throw new Error('RepoHQ sink not configured (FACTORY_USER_ID + database URL)')
+  const repoIds = new Map<string, number | null>()
+  let written = 0
+  for (const a of attempts.filter(x => x.outcome !== 'rate_limited')) {
+    if (!repoIds.has(a.repo)) repoIds.set(a.repo, await repoIdFor(d, cfg.repohq.userId!, a.repo))
+    const r = resolutions.get(a.id)
+    const rows = await d.insert(schema.agentJobs).values({
+      ...agentJobValues(a, cfg.repohq.userId!, repoIds.get(a.repo) ?? null),
+      ...(r ? { outcome: r.outcome, resolvedAt: new Date(r.at), humanCommits: r.humanCommits ?? null } : {}),
+    }).onConflictDoNothing().returning({ id: schema.agentJobs.id })
+    written += rows.length
+  }
+  return written
+}
+
+/** The `agent_jobs` row for one attempt (Phase 79). */
+export function agentJobValues(a: AttemptEntry, userId: string, repoId: number | null): typeof schema.agentJobs.$inferInsert {
+  return {
+    id: a.id, userId, repoId, repo: a.repo, parentJobId: a.parentId ?? null, runId: a.runId,
+    taskKind: a.kind, pipeline: PIPELINES[a.kind as TaskKind] ?? null, tier: a.tier, model: a.model, harness: a.harness,
+    isolation: a.isolation ?? 'host', status: a.outcome, reason: a.reason, requests: a.requests ?? null,
+    inputTokens: a.inputTokens, outputTokens: a.outputTokens, costUsd: a.costUsd, durationMs: a.durationMs,
+    reported: a.reported ?? false, prUrl: a.prUrl ?? null,
+    adversaryModel: a.adversary?.model ?? null, adversaryVerdict: a.adversary?.verdict ?? null,
+    startedAt: new Date(a.at),
+  }
 }
 
 export async function recordScout(
@@ -113,13 +167,17 @@ export async function recordApprovalNeeded(cfg: FactoryConfig, repo: string, tit
 }
 
 /** Learn step mirror: stamp the attempt's RepoHQ event with how the PR ended. */
-export async function recordResolution(cfg: FactoryConfig, attemptId: string, resolution: 'merged' | 'rejected'): Promise<void> {
+export async function recordResolution(cfg: FactoryConfig, attemptId: string, resolution: 'merged' | 'rejected', humanCommits: number | null = null): Promise<void> {
   const d = db(cfg)
   if (!d) return
+  const resolvedAt = new Date()
   await safely('recordResolution', async () => {
     await d.update(schema.portfolioEvents)
-      .set({ metadata: sql`coalesce(${schema.portfolioEvents.metadata}, '{}'::jsonb) || ${JSON.stringify({ resolution })}::jsonb` })
+      .set({ metadata: sql`coalesce(${schema.portfolioEvents.metadata}, '{}'::jsonb) || ${JSON.stringify({ resolution, resolvedAt: resolvedAt.toISOString(), humanCommits })}::jsonb` })
       .where(and(eq(schema.portfolioEvents.userId, cfg.repohq.userId!), eq(schema.portfolioEvents.dedupKey, `factory:${attemptId}`)))
+    await d.update(schema.agentJobs)
+      .set({ outcome: resolution, resolvedAt, humanCommits })
+      .where(and(eq(schema.agentJobs.userId, cfg.repohq.userId!), eq(schema.agentJobs.id, attemptId)))
   })
 }
 

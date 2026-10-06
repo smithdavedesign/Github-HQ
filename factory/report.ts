@@ -20,6 +20,7 @@ import { run } from './lib/proc'
 import { freeQuota } from './lib/quota'
 import { buildMorningReport, toMime, type MorningReport, type RoleId, type RoleSection } from './lib/report'
 import { recordNotification } from './lib/sink'
+import { copilotQuota } from './lib/copilot-quota'
 
 const log = (...a: unknown[]) => console.log(`[report ${new Date().toISOString().slice(11, 19)}]`, ...a)
 
@@ -38,8 +39,9 @@ async function main() {
     pool: existsSync(cfg.litellm.configPath) ? readManagedModels(readFileSync(cfg.litellm.configPath, 'utf8')) : {},
     liteLLMUp: aliases.length > 0,
     openRouterQuota: await freeQuota(cfg),
-    copilot: { ...cfg.copilot, tasksToday: usage.copilotTasks, reviewsToday: usage.copilotReviews },
+    copilot: { ...cfg.copilot, tasksToday: usage.copilotTasks, reviewsToday: usage.copilotReviews, quota: await copilotQuota() },
     prTarget: { min: 3, max: cfg.maxPrsPerDay },
+    capabilities: cfg.capabilities,
     monthToDateUsd: monthToDateUsd(entries, now),
     monthlyBudgetUsd: cfg.monthlyBudgetUsd,
     cycles: recentCycles(cfg, now),

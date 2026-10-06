@@ -1,8 +1,9 @@
 # RepoHQ — Personal Autonomous Software Factory
 
-> **Status:** Phases 60–64 shipped, 65–66 partial, 67 not started ([roadmap.md](roadmap.md#autonomous-factory-roadmap)).
-> The local lane runs as `factory/` on a launchd schedule; operator guide in [factory/README.md](../factory/README.md).
-> §12 records what building it changed.
+> **Status:** Phases 60–64, 68 and 69 shipped; 65–66 partial; 67 not started ([roadmap.md](roadmap.md#autonomous-factory-roadmap)).
+> The local lane runs as `factory/` on a launchd schedule (hourly overnight, 06:45 morning report); operator guide in [factory/README.md](../factory/README.md).
+> Agent work lands on `integration/agent`; only human-labelled releases reach `main` (roadmap Phase 70).
+> §12 records what building it changed, including the first scheduled night.
 > Adapted from the *"Personal Autonomous Software Factory — Infrastructure Provisioning & Identity"* PRD (§21),
 > reconciled with what RepoHQ, Nexus, gstack and the local AI stack actually do today, and
 > re-prioritised around one constraint: **use free models wherever they're good enough.**
@@ -18,9 +19,10 @@ This doc turns that loop into a **cost-aware autonomous factory**:
 
 1. **A local worker lane on the Mac** executes most tasks against the local AI stack (`~/ai-stack`: Ollama → Headroom → LiteLLM), at **$0**.
 2. **A model-tier ladder** (local → free cloud → paid) picks the cheapest model that has *proven* it can do each task type, and escalates on failure.
-3. **The existing accuracy loop is extended to models**, so the system learns its own routing policy. That is self-improvement of the factory, as well as of the repos.
+3. **The existing accuracy loop is extended to models**, so the system learns its own routing policy. That is self-improvement of the factory, as well as of the repos. It changes routing *data* only: the factory never edits its own judge, loop or router (§14).
 4. **Trust, secrets, identity and budget guardrails** from the PRD get mapped onto existing RepoHQ primitives instead of a parallel system.
 5. **Infrastructure provisioning** (the PRD's headline) is kept, but moved to Horizon 3. It's high-blast-radius and only pays off once the repo loop is cheap and trusted.
+6. **Next (§14, Phases 75–80):** sandbox the worker, harden the judge, fixed pipelines, measure accepted PRs per free request. Target: one good, human-approved PR every night, then more.
 
 ---
 
@@ -404,6 +406,14 @@ The first implementation ran against all ten allowlisted repos. These findings c
 | "Offload Claude Code's background calls to local" saves nothing headless | `modelUsage` showed only the main model; pointing the small-model role at a non-existent alias still passed, with 0 requests for it in LiteLLM | `local-small` kept as insurance. The real request cost is one per agent turn (11–19 per task), so the levers are the provider pool and fewer turns |
 | Free tiers expose different models than their catalogues list | Gemini 3.5–3.8 Flash: 503 "high demand"; 2.5 Flash: retired for new users. Ollama Cloud: 11 of 16 models Pro-only | Discovery probes each candidate (one tiny call) before it's evaluated |
 | Not every README is documentation | gitHub-cron-job-app's README is a cron heartbeat file | Removed from the allowlist. The allowlist is the owner's statement of intent. |
+| **Injected context leaked into commits** | Nexus's gstack scripts wrote the RepoHQ brief (with a "Last push" timestamp) into `CLAUDE.md`; 12 open agent PRs across 6 repos contained *only* that change and conflicted with each other | AI-Took-My-Job #19: the brief is stripped by an EXIT trap before anything is committed. `CLAUDE.md` back to `@AGENTS.md` (Github-HQ #12) |
+| Agent branches escaped the release policy | Nexus names branches `nexus/agent-task-*`; the policy matched `nexus/auto-*`, so agent PRs targeted `main` | Policy matches `nexus/*` and `factory/*`; factory branches follow the `feature/bot/…` standard and target `integration/agent` when a repo has it |
+| A Mac on battery doesn't run overnight | Deep Idle sleep stretched a 10-minute cycle to 3 hours and a verified fix was lost to a failed push | `caffeinate -ims` (AC only), push / PR creation retry on network errors, overnight runs documented as needing power |
+| A lint script that fixes files can't host model fixes | Figma-Jira's `eslint --fix` rewrite is 2,493 lines; every model fix exceeded the size cap | New deterministic `lint-autofix` task lands the fixer's own rewrite first; deps PRs discard check side effects |
+| The judge can be wrong too | family-tree keeps scripts in `client/` and `server/`; README attempts on two tiers were rejected for "invented" scripts that exist | Scripts and deps are read from sub-package `package.json` files; verdicts later shown to be judge bugs are marked `voided` (kept for history, ignored for routing) |
+| A prepaid seat still runs out | Copilot Pro's premium requests hit 0% (overage off): the CLI answered "You have no quota", logged as a model failure | The factory reads the Copilot quota before builder tasks and review requests and pauses both until the reset; "no quota" counts as rate-limited |
+
+**First scheduled night (2026-10-05 → 06):** 3 draft PRs from one verification cycle (AI-Trend-Tracker lint, an `npm audit fix` on AI-CLI-Social-Autoposter, and a go-adventure test "fix" that was closed in review: it skipped key-dependent smoke tests via early returns, which the judge now rejects). The owner merged 3 factory PRs, giving the router its first merge signal. Overnight cycles then opened AI-Trend-Tracker #6 (a real Vitest config fix) despite the sleep problems above.
 
 **First live PR (scheduled run, 2026-10-05):** [AI-Took-My-Job#10](https://github.com/smithdavedesign/AI-Took-My-Job/pull/10), produced by M0 (local Qwen2.5-Coder 7B) at $0. It adds an Installation and Setup section (+30/−0) with the real clone URL and real scripts. It also documented `npm test` for a repo without a test script, which the judge now rejects.
 
@@ -418,7 +428,7 @@ The owner's target is a small team rather than one agent: **Architect** (thinks,
 | PM / Architect | RepoHQ advisor + factory scans and router; owner reviews the plan in the morning report | Planning is cheap and deterministic today; the paid model is reserved for decisions that need it |
 | Builder | M0 Aider (local) · M1 Claude Code on the free pool · MC Copilot CLI · M2 Claude (paid, budget-gated) | Cheapest proven tier first, escalating on failure |
 | QA | The judge: the repo's own checks, re-run, plus anti-cheat rules | Rule-based checks beat model agreement as verification |
-| Reviewer | GitHub Copilot code review on every PR | Different vendor and model family from the Builder. Costs one premium request, not a debate |
+| Reviewer | GitHub Copilot code review on every PR (paused automatically when the seat's premium requests are spent) | Different vendor and model family from the Builder. Costs one premium request, not a debate |
 | Security | `npm audit` on every scan + deterministic `deps-audit` fixes | No model needed |
 | Operator | Not yet (Horizon 3) | Needs trust levels, approvals and the resource ledger first; CLIs/APIs before browser clicking |
 
@@ -426,6 +436,83 @@ The owner's target is a small team rather than one agent: **Architect** (thinks,
 - Handoffs are structured (task JSON in, verdict JSON out), never open-ended chat. OpenClaw's `maxPingPongTurns` is pinned to 1 for when agent-to-agent is enabled.
 - Agent-to-agent access is explicitly locked down before any new agent is added (§ roadmap Phase 69). When the team agents arrive, the allowlist is architect↔builder, architect↔operator, reviewer→architect. The reviewer never holds production credentials; the builder never holds the vault.
 - The morning report is the team's standup: one section per gstack role, numbers from the ledger only.
+
+## 14. Factory v2: one good PR while the owner sleeps (2026-10-06)
+
+A proposal for a "Director + many specialist agents" architecture (CEO, engineering, QA, security and release agents spawning each other) was reviewed against what the factory had actually run and taught us. Its revised form is the plan of record. The full proposal isn't reproduced here; this section keeps the decisions.
+
+**North star.** Not "a team of autonomous agents" but *an autonomous software factory that safely produces one high-quality, human-approved PR at a time, continuously*. The metric the whole project optimises: **how many human-approved improvements the factory produced overnight.** Then raise it from one to two to three, and raise the share that get merged.
+
+**Why not more agents.** The binding constraints, in order, are verification, free-model requests, the owner's review time, then local compute. More roles add output that nothing can verify mechanically, and a 9-skill chain costs ~9 agent sessions per task on a free pool that affords one or two pipelines a night (§12). So effort goes into the boxes of the loop that already exists:
+
+```
+sense → select one task → fixed pipeline → sandboxed worker → verify (deterministic) → judge (advisory) → draft PR → human merge → learn (data only)
+```
+
+### 14.1 Decisions
+
+| # | Decision | Concretely |
+|---|---|---|
+| 1 | **Sandbox before intelligence** (shipped, §14.3). The worker was too trusted: `npm ci` and test suites of target repos run on the owner's Mac with `gh`, keychain and `~/.ssh` in reach | Docker job container per repo (Phase 76). The **container gets no GitHub credential at all**: the host already commits, pushes and opens the PR *after* the judge passes (`factory/lib/git.ts`), so the container only needs the repo copy, the LiteLLM endpoint and the package registry. No host mounts, no Docker socket, CPU/memory/time limits, destroyed after the job. Checks run *inside* the container too, since the untrusted code is the repo's install and test scripts, not just the model |
+| 2 | **Spawning depth = 1.** Director → worker → done | Workers return a structured result; they never pick the next step. Nexus's `suggestedNextSkill` auto-chain (one hop, behind `autoDispatchEnabled`) is the pattern this rules out for unattended work (open item in Phase 78) |
+| 3 | **Fixed pipelines per task kind**, chosen by the Director; no dynamic skill chains | Pipelines map to task kinds with an oracle, not to gstack skill names (Phase 78). gstack `/qa` drives a browser against a running app, not a failing unit test; `/benchmark` needs baselines none of the repos have; a feature pipeline has no oracle, so it stays report-only |
+| 4 | **Deterministic verification first; the LLM judge last and advisory** | The rule-based judge (`verify.ts`) gets harder to fool (Phase 77). An adversarial LLM pass ("prove this should not merge") runs only after the rules pass, on a different model family from the builder, and can only **veto or flag** `UNCERTAIN`, never approve. `UNCERTAIN` = a PR label asking for a careful human read, not a block |
+| 5 | **The factory never modifies its own judge, loop or router** | Shipped 2026-10-06: in the factory's home repo (Github-HQ is on its own allowlist), the judge rejects any diff touching `factory/**` or `src/lib/agents/model-router.ts`; the Autonomous PR policy workflow fails autonomous branches that touch them, as a backstop. Changes there are human-only |
+| 6 | **Learning changes data, not code** | Merge / close / judge-reject / human-edit outcomes adjust routing statistics. Self-modification of factory code is out of scope indefinitely |
+| 7 | **Coarse routing** | Task difficulty (simple / medium / hard) × tier (local / free cloud / Copilot / paid). No per-skill × model × repo cells until there are thousands of jobs; today a cell needs ≥ 10 attempts to count |
+| 8 | **Promotion ladder per capability**: observe → report → draft PR → auto-verified PR → human merge | A new capability (e.g. red-CI investigation) enters at *report* and moves up only with evidence. **Merge stays human indefinitely**: it's the final control and the router's best learning signal |
+| 9 | **Measure what the factory costs, not just what the model scores** | KPIs in Phase 79: accepted PRs per free request, merge rate, review-load proxies, autonomy |
+| 10 | **Keep scheduled one-shot cycles** rather than a `while (!paused)` daemon | launchd starts a fresh process each cycle: crashes and leaks don't accumulate, `PAUSE` is checked at start, and "nothing worth doing" already means the cycle exits. Same loop shape, more robust host |
+
+### 14.2 KPIs
+
+| KPI | Definition | Source |
+|---|---|---|
+| Factory efficiency | accepted (merged) PRs ÷ free-model requests spent | ledger: request count per attempt (new field) |
+| Acceptance | merged ÷ (merged + closed) factory PRs | reconcile (exists) |
+| Review load (proxy) | median hours from PR open to merge/close; human commits pushed onto bot branches | GitHub (new) |
+| Autonomy | verified tasks ÷ tasks that ended in `approval_needed`, dead-end or a human edit | ledger |
+| Overnight yield | human-approved PRs produced per night | ledger + reconcile; headline of the morning report |
+
+"Minutes of human review" can't be measured directly, so the proxies stand in for it.
+
+### 14.3 The sandbox as built (Phase 76)
+
+Shipped 2026-10-06; operator details in [factory/README.md "Sandbox"](../factory/README.md#sandbox).
+
+```
+host:  clone (gh) ─▶ tar ─▶ ┌ worker (no creds, no mounts, non-root, caps dropped) ┐ ─internal net─▶ ┌ egress ┐ ─▶ npm/yarn registries
+                            │ install · checks · Aider / Claude Code · re-checks   │               │ proxy  │
+host:  judge ◀─ patch ◀──── └──────────────────────────────────────────────────────┘               │ relay  │ ─▶ LiteLLM (allowed models only)
+host:  commit · push · draft PR                                                                     └────────┘
+```
+
+What building it decided:
+- **Overrides-only environments.** `run()` used to take a full environment and every caller spread `process.env`. Now `env` holds overrides, the host runner merges them and the sandbox runner forwards exactly those, so host secrets such as `FACTORY_DATABASE_URL` can't reach repo code by construction (unit-tested).
+- **A model allowlist at the relay, not only a host allowlist.** LiteLLM's key is a fixed, published default, so "reach LiteLLM" meant "reach the paid alias too". The relay reads each request's `model` and forwards only the factory's free aliases. The same gap exists for anything on the host that can reach `localhost:4000`; the Anthropic console spend cap (Phase 60) is still the provider-side backstop.
+- **The host judges its own copy.** The worker's result comes back as a patch and is applied to the host clone before the judge runs, so the judged tree, the committed tree and the pushed tree are one tree. Only file contents cross the boundary; git hooks never run (`--no-verify`).
+- **Skip, don't degrade.** Docker down means no cycle, not a host run.
+- **Measured cost:** ~3 s per repo to create the network, egress and worker; isolation smoke 8 s; the e2e cycle 34 s sandboxed vs 25 s on the host. Images: worker 1.8 GB, egress 235 MB.
+
+### 14.4 Phases 75, 77–80 as built (2026-10-06)
+
+Operator details: [factory/README.md](../factory/README.md) ("Judge v2", "Promotion ladder", "Sensors and the queue", "KPIs and the job record", "Night shift"). Decisions #3–#9 in §14.1 are now in code; the night shift's 7-clean-nights gate is counting.
+
+| Finding | Evidence | Change |
+|---|---|---|
+| **The reviewer found a hole the rules didn't have** | Live test: the seeded e2e type error "fixed" with `as any` passed every deterministic rule; both reviewers (`free-agent`, `local-qwen3`) failed it with quoted evidence and passed the honest fix | New deterministic rule (no new `any` casts in source for type/lint fixes) plus a regression fixture. What the reviewer catches repeatedly should become a rule, which is free and certain |
+| Evidence quoting needs normalising | `free-agent` quoted diff lines with their `+` markers, across two lines; the substring check dropped a correct issue | Markers are stripped from both the quote and the diff before matching; invented quotes are still dropped |
+| Reproducing a failure can rewrite files | The first red-CI investigation (Figma-Jira) ran the repo's `eslint --fix` and was failed for "editing files", though its report was right | Investigations discard file changes and are judged on the report; nothing from them ships either way |
+| A queue bonus outranked real work | A never-scanned repo (50 + age bonus 21) ranked above failing checks (60) | Age bonus capped at 8.75 points, below the 10-point gap between categories (unit-tested invariant) |
+| **Old bot PRs block most repos** | First live sense: 5 of 9 repos have bot PRs unreviewed for 7+ days, mostly the pre-fix Nexus no-op PRs | Working as designed: no new factory PRs there until they're handled. Closing them is the owner action with the biggest yield effect |
+| Dependabot is off everywhere | `dependabot/alerts` → "disabled" on 9/9 repos | Reported as an owner action instead of being read as "no alerts" |
+| Per-kind routing would take months to learn | ≥ 10 attempts per kind × tier; 22 attempts in total so far | Routing per difficulty (simple/medium/hard). Deterministic fixes and investigations are excluded: they'd credit M0 with `npm audit fix`'s success |
+| A schema push could carry drift | `db:push` applies every difference between schema and database | `agent_jobs` DDL generated by drizzle-kit, wrapped in `IF NOT EXISTS`, applied by `npm run factory:migrate` (ran twice, no change the second time) |
+| Battery nights stall | §12: a 10-minute cycle took 3 hours on battery | Scheduled cycles skip on battery, refuse to run unsandboxed, and run at $0 whatever the manual budget |
+
+### 14.5 Capacity on this Mac
+
+16 GB RAM: Docker Desktop's VM has 8 GB and Ollama keeps a 7B model (~5 GB) resident on the host. Realistic concurrency is **one container**, two for light repos. The cycle is serial, and stays serial until the sandbox has run a week of nights cleanly.
 
 ---
 

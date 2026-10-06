@@ -3,6 +3,7 @@ import {
   classifyRepoData,
   allowedTiers,
   computeTierStats,
+  difficultyOf,
   chooseTier,
   nextTier,
   canUsePaidTier,
@@ -61,12 +62,13 @@ describe('allowedTiers', () => {
 })
 
 describe('computeTierStats', () => {
-  it('counts only terminal outcomes for the requested kind', () => {
+  it('counts only terminal outcomes for the requested kind\'s difficulty bucket', () => {
     const recs: AttemptRecord[] = [
       ...attempts('M1', 3, 1),
       { taskKind: 'fix-lint', tier: 'M1', outcome: 'pending', at: NOW },
       { taskKind: 'fix-lint', tier: 'M1', outcome: 'partial', at: NOW },
-      ...attempts('M1', 5, 0, 'docs'),
+      // docs-readme is 'simple', fix-lint is 'medium': a different bucket.
+      ...attempts('M1', 5, 0, 'docs-readme'),
     ]
     const s = computeTierStats(recs, 'fix-lint', NOW)
     expect(s.M1.attempts).toBe(4)
@@ -143,5 +145,21 @@ describe('canUsePaidTier', () => {
   it('allows spend within budget and blocks overruns', () => {
     expect(canUsePaidTier({ monthToDateUsd: 3, monthlyBudgetUsd: 10 }, 2)).toBe(true)
     expect(canUsePaidTier({ monthToDateUsd: 9.5, monthlyBudgetUsd: 10 }, 1)).toBe(false)
+  })
+})
+
+describe('difficulty buckets (coarse routing key, Phase 79)', () => {
+  it('maps task kinds to simple / medium / hard, unknown → medium', () => {
+    expect(difficultyOf('docs-readme')).toBe('simple')
+    expect(difficultyOf('fix-types')).toBe('medium')
+    expect(difficultyOf('fix-tests')).toBe('hard')
+    expect(difficultyOf('red-ci')).toBe('hard')
+    expect(difficultyOf('something-new')).toBe('medium')
+  })
+  it('pools evidence across kinds of the same difficulty', () => {
+    const recs = [...attempts('M0', 6, 0, 'fix-lint'), ...attempts('M0', 4, 0, 'fix-types'), ...attempts('M0', 0, 9, 'fix-tests')]
+    const s = computeTierStats(recs, 'fix-types', NOW)
+    expect(s.M0.attempts).toBe(10)
+    expect(s.M0.rate).toBeCloseTo(1)
   })
 })

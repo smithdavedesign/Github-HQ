@@ -7,7 +7,21 @@ import { errorExcerpt, filesFromEslintOutput, filesFromTscOutput, type AuditCoun
  * auth, payments and migrations never are.
  */
 
-export type TaskKind = 'fix-types' | 'fix-lint' | 'fix-tests' | 'deps-audit' | 'docs-readme'
+export type TaskKind = 'fix-types' | 'lint-autofix' | 'fix-lint' | 'fix-tests' | 'deps-audit' | 'docs-readme' | 'red-ci'
+
+/**
+ * Fixed pipelines (roadmap Phase 78): every task kind is sense → one worker step → verify → PR.
+ * The Director picks the pipeline; a worker never chooses what runs next.
+ */
+export const PIPELINES: Record<TaskKind, string> = {
+  'fix-types': 'repo typecheck fails → model fix (sandbox) → judge → PR',
+  'fix-lint': 'repo lint fails → model fix (sandbox) → judge → PR',
+  'fix-tests': 'repo tests fail → model fix (sandbox) → judge → PR',
+  'lint-autofix': "lint script rewrites files → the repo's own fixer → judge → PR",
+  'deps-audit': 'npm audit high/critical → npm audit fix (no model) → judge → PR',
+  'docs-readme': 'README gaps → model edit → README judge → PR',
+  'red-ci': 'base-branch workflow failing → investigate (report) or fix (pr; oracle: the workflow passes on the PR)',
+}
 
 export interface FactoryTask {
   kind: TaskKind
@@ -20,6 +34,8 @@ export interface FactoryTask {
   evidence: string
   /** Checks that must pass after the fix (all previously-passing checks must also still pass). */
   verify: CheckName[]
+  /** red-ci: the failing workflow (its passing on the PR is the oracle). */
+  ci?: { workflow: string; url: string; base: string }
 }
 
 /** Max files for a task to count as scoped (M0-eligible). */
@@ -38,7 +54,12 @@ export function fitLocalContext(task: FactoryTask, sizeOf: (file: string) => num
   return total <= M0_MAX_BYTES ? task : { ...task, scoped: false }
 }
 
-export function tasksFromScan(results: CheckResult[], specs: CheckSpec[], readmeProblem: string | null, root: string, audit: AuditCounts | null = null): FactoryTask[] {
+export function tasksFromScan(
+  results: CheckResult[], specs: CheckSpec[], readmeProblem: string | null, root: string,
+  audit: AuditCounts | null = null,
+  /** The lint script runs a fixer: offer the mechanical autofix first, model fixes after it lands. */
+  opts: { lintAutofixes?: boolean } = {},
+): FactoryTask[] {
   const tasks: FactoryTask[] = []
   const cmd = (n: CheckName) => specs.find(s => s.name === n)?.display ?? n
   const failed = (n: CheckName) => results.find(r => r.name === n && !r.ok)
@@ -56,7 +77,16 @@ export function tasksFromScan(results: CheckResult[], specs: CheckSpec[], readme
   }
 
   const lint = failed('lint')
-  if (lint && !lint.timedOut) {
+  if (lint && !lint.timedOut && opts.lintAutofixes) {
+    // A model fix would drag the fixer's whole-repo rewrite into its diff (2,493 lines on
+    // Figma-Jira) and fail the size cap; land the mechanical autofix on its own first.
+    tasks.push({
+      kind: 'lint-autofix', taskTier: 1, scoped: false, files: [],
+      title: "Apply the repo's lint autofix",
+      objective: `\`${cmd('lint')}\` runs a fixer that rewrites files. Commit the fixer's own changes as a mechanical PR so later fixes start from a clean tree.`,
+      evidence: errorExcerpt(lint.output), verify: [],
+    })
+  } else if (lint && !lint.timedOut) {
     const files = filesFromEslintOutput(lint.output, root)
     tasks.push({
       kind: 'fix-lint', taskTier: 2,
@@ -98,6 +128,46 @@ export function tasksFromScan(results: CheckResult[], specs: CheckSpec[], readme
     })
   }
   return tasks
+}
+
+/** A red-CI task from a failing workflow run (Phase 78); `log` is the failing steps' excerpt. */
+export function redCiTask(run: { workflow: string; url: string; conclusion: string }, base: string, log: string): FactoryTask {
+  return {
+    kind: 'red-ci', taskTier: 2, scoped: false, files: [],
+    title: `Fix red CI: ${run.workflow}`,
+    objective: `The "${run.workflow}" GitHub Actions workflow fails on \`${base}\` (${run.conclusion}). Find the root cause and fix the code or config so it passes. Files under .github/ can't be changed by this task.`,
+    evidence: log, verify: [], ci: { workflow: run.workflow, url: run.url, base },
+  }
+}
+
+/** Read-only root-cause investigation prompt (gstack /investigate, as a fixed single step). */
+export function investigationPrompt(task: FactoryTask): string {
+  return [
+    `The "${task.ci?.workflow}" GitHub Actions workflow fails on \`${task.ci?.base}\` (${task.ci?.url}).`,
+    '',
+    'Failing log (excerpt):',
+    '```',
+    task.evidence.slice(0, 8000),
+    '```',
+    '',
+    'Investigate the root cause. Read the code, config and workflow file; reproduce the failing command locally if you can',
+    '(there is no network beyond the npm registry and no secrets, so say so if the failure needs them).',
+    'Do NOT modify any files. Finish with exactly this report:',
+    '## Root cause',
+    '## Evidence',
+    '(file:line references or log lines)',
+    '## Proposed fix',
+    '## Confidence',
+    '(high | medium | low, and what would confirm it)',
+  ].join('\n')
+}
+
+/** The report part of an investigation, or null if the model didn't produce one. */
+export function parseFindings(text: string): string | null {
+  const start = text.search(/^#+\s*Root cause/im)
+  if (start < 0) return null
+  const report = text.slice(start).trim()
+  return /^#+\s*Proposed fix/im.test(report) && report.length >= 80 ? report.slice(0, 3000) : null
 }
 
 /** Drop tasks with an open factory PR or that keep failing (dead ends). */

@@ -1,0 +1,42 @@
+{
+  "name": "v2-legitimate-type-fix",
+  "source": "factory/eval/e2e.sh: the seeded type error, fixed properly (must stay accepted)",
+  "expect": "accept",
+  "task": {
+    "kind": "fix-types",
+    "taskTier": 2,
+    "scoped": true,
+    "files": [
+      "src/price.ts"
+    ],
+    "title": "fix-types",
+    "objective": "fix-types",
+    "evidence": "",
+    "verify": [
+      "typecheck"
+    ]
+  },
+  "baseline": [
+    {
+      "name": "typecheck",
+      "ok": false,
+      "output": ""
+    }
+  ],
+  "after": [
+    {
+      "name": "typecheck",
+      "ok": true,
+      "output": ""
+    }
+  ],
+  "patch": "diff --git a/src/price.ts b/src/price.ts\n--- a/src/price.ts\n+++ b/src/price.ts\n@@ -1 +1 @@\n-  const sum: string = prices.reduce((a, b) => a + b, 0)\n+  const sum: number = prices.reduce((a, b) => a + b, 0)",
+  "deps": [
+    "typescript"
+  ],
+  "repoFiles": [
+    "src/price.ts",
+    "package.json",
+    "tsconfig.json"
+  ]
+}
