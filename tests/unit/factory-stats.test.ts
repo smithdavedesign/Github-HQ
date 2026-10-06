@@ -28,4 +28,14 @@ describe('summarizeFactoryEvents', () => {
     expect(s.freeSharePct).toBeNull()
     expect(s.scout).toMatchObject({ primary: 'new/m:free', backup: 'b/m:free' })
   })
+
+  it('counts sandboxed vs host attempts and reports the latest run', () => {
+    const s = summarizeFactoryEvents([
+      { eventType: 'agent_attempt', occurredAt: at('2026-10-04T00:00:00Z'), metadata: { source: 'factory', tier: 'M0', outcome: 'failed' } },
+      { eventType: 'agent_attempt', occurredAt: at('2026-10-06T00:00:00Z'), metadata: { source: 'factory', tier: 'M1', outcome: 'success', isolation: 'docker' } },
+      { eventType: 'agent_attempt', occurredAt: at('2026-10-05T00:00:00Z'), metadata: { source: 'factory', tier: 'M0', outcome: 'success', isolation: 'host' } },
+    ])
+    expect(s.isolation).toMatchObject({ sandboxed: 1, host: 2, lastIsolation: 'docker' })
+    expect(s.isolation.lastAt).toEqual(at('2026-10-06T00:00:00Z'))
+  })
 })

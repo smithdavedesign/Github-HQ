@@ -59,6 +59,13 @@ git -C "$APP" checkout -q --detach "$SHA"
 (cd "$APP" && npm ci --no-audit --no-fund --silent >/dev/null)
 echo "deployed $(git -C "$APP" log -1 --format='%h %s') → $APP"
 
+# ── Sandbox images (Phase 76): build now so the first scheduled cycle doesn't spend minutes on it ─
+if docker info >/dev/null 2>&1; then
+  (cd "$APP" && npx --no-install tsx factory/bin/build-sandbox.ts) || echo "warning: sandbox image build failed — cycles will retry it, and skip until Docker can build"
+else
+  echo "warning: Docker is not running — scheduled cycles are skipped until it is (repo code never runs on the host)"
+fi
+
 # ── Secret for the optional RepoHQ sink: macOS keychain, not a plaintext file ─
 if [ -f "$ROOT/.env.local" ] && ! security find-generic-password -s repohq-factory-database-url >/dev/null 2>&1; then
   DB_URL="$(sed -nE 's/^DATABASE_URL=["'"'"']?([^"'"'"']+)["'"'"']?$/\1/p' "$ROOT/.env.local" | head -1)"

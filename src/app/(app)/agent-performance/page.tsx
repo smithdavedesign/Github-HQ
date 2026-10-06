@@ -6,7 +6,7 @@ import { eq, and, inArray, desc } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDistanceToNow } from '@/lib/utils'
-import { CheckCircle, XCircle, Clock, TrendingUp, Target, Cpu, ExternalLink, BarChart2 } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, TrendingUp, Target, Cpu, ExternalLink, BarChart2, ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
 import { getAccuracyByImpactType, getDowngradedRepos } from '@/lib/actions/advisor-accuracy'
 import { AccuracyTable } from '@/components/dashboard/accuracy-table'
@@ -173,6 +173,17 @@ export default async function AgentPerformancePage() {
               </tbody>
             </table>
           </div>
+          {factory.totalAttempts > 0 && (
+            <p className="text-xs text-muted-foreground" data-testid="factory-isolation">
+              <ShieldCheck className="inline w-3 h-3 mr-1 -mt-0.5 text-emerald-500" />
+              Isolation: latest run{' '}
+              <span className="font-medium text-foreground">
+                {factory.isolation.lastIsolation === 'docker' ? 'sandboxed (Docker)' : 'on the host'}
+              </span>
+              {' · '}
+              {factory.isolation.sandboxed} of {factory.totalAttempts} attempts ran repo code in the sandbox (no credentials, allowlisted egress)
+            </p>
+          )}
           <p className="text-xs text-muted-foreground">
             {factory.freeSharePct != null ? <>Free-tier share of verified fixes: <span className="font-medium text-foreground">{factory.freeSharePct}%</span> · </> : null}
             {factory.scout ? <>free-agent: <span className="font-mono">{factory.scout.primary ?? '—'}</span> (scouted {formatDistanceToNow(factory.scout.at)})</> : null}
