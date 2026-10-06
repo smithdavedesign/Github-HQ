@@ -853,11 +853,11 @@ Plan of record from the 2026-10-06 architecture review: harden and measure the e
 
 **Standing limits for every phase below:** spawning depth 1 (Director → worker), fixed pipelines only, $0 budget, ≤ 8 PRs per factory day, merge is always human, `PAUSE` kill switch, the factory never edits its own judge/loop/router.
 
-### Phase 75 — Self-Protection & Promotion Ladder
+### Phase 75 — Self-Protection & Promotion Ladder ✅
 - [x] Judge rejects factory diffs to `factory/**` and `src/lib/agents/model-router.ts` in the factory's home repo (Github-HQ is on its own allowlist); test in `tests/unit/factory.test.ts`
 - [x] CI backstop: the Autonomous PR policy fails `feature/bot/*`, `nexus/*`, `factory/*` PRs that touch those paths
-- [ ] Per-capability ladder stage in `factory.config.json` (`observe` / `report` / `pr`), enforced by the Director; new capabilities start at `report`
-- [ ] Morning report lists each capability's stage and the evidence needed to promote it
+- [x] Per-capability stage in `factory.config.json` → `capabilities` (`observe` / `report` / `pr`), enforced by the Director: `observe` = sensed and logged, `report` = runs and is judged but opens no PR (held results in the morning report), `pr` = draft PRs. Proven task kinds start at `pr`; `red-ci`, `security-alerts`, `adversarial-veto` start at `report`
+- [x] Morning report "Director" section: each capability's stage, its 30-day evidence, and promote/demote advice (`factory/lib/ladder.ts`). The factory never changes a stage itself
 
 ### Phase 76 — Sandboxed Worker (Docker) ✅
 Repo code no longer runs on the owner's Mac. Operator guide: [factory/README.md "Sandbox"](../factory/README.md#sandbox); design: [autonomous-factory.md §14.3](autonomous-factory.md#143-the-sandbox-as-built-phase-76).
@@ -874,34 +874,38 @@ Repo code no longer runs on the owner's Mac. Operator guide: [factory/README.md 
 - [x] Ledger / RepoHQ events record `isolation: docker | host`; `/agent-performance` shows where the latest run executed and how many attempts were sandboxed
 - [x] Tests: unit (`tests/unit/factory-sandbox.test.ts`: container args, no-env-leak, timeouts, lifecycle, runner injection, config), live isolation check (`npm run factory:sandbox:check`, 13 properties), sandboxed end-to-end cycle (`npm run factory:e2e`: M0 fixes a seeded type error inside the container, host judges and commits, no `node_modules` on the host), Playwright (`tests/e2e/phase76-sandbox.spec.ts`)
 
-### Phase 77 — Judge v2 (deterministic first, adversarial last)
-- [ ] Test integrity: assertion count must not drop in touched test files; no new mocks of the unit under test; no snapshot rewrites on non-test tasks
-- [ ] Diff sanity: no unrelated files, no mass reformatting on model tasks, deletions justified by the task
-- [ ] Dependency validation: new imports must resolve to existing deps (extends today's `npx` check to `import` / `require`)
-- [ ] Coverage delta where the repo already reports coverage
-- [ ] Advisory adversarial pass after the rules pass: "prove this should NOT merge" checklist, different model family from the builder, output `PASS` / `FAIL` / `UNCERTAIN`; may veto or label `needs-careful-review`, never approve. Copilot review when quota exists, local `local-coder-14b` otherwise
-- [ ] Judge regression suite: every `voided` verdict and every closed-in-review PR becomes a fixture
+### Phase 77 — Judge v2 (deterministic first, adversarial last) ✅
+Rules in `factory/lib/judge-rules.ts`; reviewer in `factory/lib/adversary.ts`.
+- [x] Test integrity: no snapshot rewrites; a touched test file may not lose assertions; no mocks of the project's own modules
+- [x] Type escapes: no new `as any` / `: any` in source files for type and lint fixes (found by the live adversary test: the seeded e2e error "fixed" with `as any` passed every older rule)
+- [x] Diff sanity: no deleted source files, no removed exports, unscoped fixes stay within 3 files of the ones their errors named, no mass reformatting by the model (the repo's own fixer output stays allowed)
+- [x] Dependency validation: new bare imports must be declared dependencies (or `@types/…`, or Node builtins); new relative imports must resolve to a tracked file (TS/ESM `.js`→`.ts`, `index.*`)
+- [x] Coverage may not drop more than 0.5 points where the test script already prints an Istanbul summary
+- [x] Advisory adversarial pass after the rules pass: a different model family from the builder (M0 → `free-agent`; M1/MC/M2 → `local-qwen3`) answers a 10-question "prove this should NOT merge" checklist; every issue must quote the diff or it's dropped; PASS → nothing, UNCERTAIN/FAIL → `needs-careful-review` label, FAIL rejects only once `adversarial-veto` is promoted to `pr`. Never approves; any error = no signal. Live: both reviewers passed an honest fix and failed an `as any` cheat with quoted evidence
+- [x] Judge regression suite: `factory/judge-fixtures/` (every past incident from §12 plus one case per rule, 18 fixtures) replayed by `tests/unit/judge-regression.test.ts`; every attempt saves its judge inputs and `npm run factory:judge-fixture -- <attemptId> --expect=…` turns a wrong verdict into a fixture
 
-### Phase 78 — Fixed Pipelines & New Sensors
-- [ ] Pipelines (each = sense → one worker step → verify → PR): **fix-checks** (types / lint / tests, exists), **lint-autofix** and **deps-audit** (deterministic, exist), **docs-readme** (exists), **red-CI** (new), **security alerts** (new)
-- [ ] Sensor: default branch CI failing → red-CI pipeline using gstack `/investigate`; oracle = the failing job passes. Enters at `report`
-- [ ] Sensor: Dependabot / code-scanning alerts RepoHQ already syncs → deps-audit when fixable, otherwise `/cso` report only
-- [ ] Sensor: stale bot PRs (open > 7 days, unreviewed) → report, never more PRs on that repo until they're handled
-- [ ] Cross-repo opportunity queue: one ranked list per cycle (red CI > security > failing checks > docs), priority weighted by RepoHQ health score
+### Phase 78 — Fixed Pipelines & New Sensors ✅
+Sensors in `factory/lib/sensors.ts` (read-only `gh` on the host).
+- [x] Fixed pipelines: every task kind is sense → one worker step → verify → PR (`PIPELINES` in `factory/lib/tasks.ts`); the Director picks, a worker never chooses what runs next
+- [x] Sensor: red CI on the base branch (latest completed run per workflow) → `red-ci`. At stage `report`: a sandboxed root-cause investigation on the free pool (structured report; file changes from reproducing it are discarded). At stage `pr`: a fix whose oracle is the failing workflow passing on the PR (recorded by reconcile as `ci_oracle`). First live run: a correct root cause for Figma-Jira's CI with file:line evidence
+- [x] Sensor: Dependabot alerts → morning report Security section; "disabled" is reported, not hidden (all 9 repos today: owner action). Fixes go through `deps-audit`, so `security-alerts` only reports
+- [x] Sensor: stale bot PRs (autonomous branch, open 7+ days, no review) → reported, and that repo gets no new factory PRs until they're handled (`blockOnStaleBotPrs`, default on). First live run: 5 of 9 repos blocked by the old Nexus PRs
+- [x] Cross-repo opportunity queue (`rankOpportunities`): red CI > security > deps > failing checks > never scanned > docs, × RepoHQ health (lower health → higher), plus an age bonus that stays below the gap between categories
 - [ ] Deferred: feature pipeline (`/plan-eng-review`, report-only until an oracle exists) and performance pipeline (`/benchmark`, needs baselines)
 - [ ] Decision for the owner: Nexus's `suggestedNextSkill` auto-chain (`src/app/api/webhooks/agent-events/route.ts`) is dynamic chaining. Keep it for owner-initiated tasks only, or turn it off for scheduled triggers
 
-### Phase 79 — Factory Economics & the Job Record
-- [ ] Ledger → Neon `agent_jobs` table (id, parentJobId, repo, task kind, pipeline, tier, model, status, requests, tokens, cost, timings, verdict, PR, outcome, human edits); `ledger.jsonl` stays as the local write-ahead log
-- [ ] Record free-model request count per attempt (Claude Code turns; Aider edit rounds)
-- [ ] KPIs from §14.2 on `/agent-performance` and as the morning report headline: overnight yield, accepted PRs per request, acceptance, review-load proxies, autonomy
-- [ ] Coarse routing key: difficulty (simple / medium / hard) × tier
-- [ ] Overlaps Phase 71 (telemetry) for factory runs; 71 keeps the Nexus side
+### Phase 79 — Factory Economics & the Job Record ✅
+- [x] `agent_jobs` table (`src/lib/db/schema.ts`; idempotent migration `factory/sql/0001_agent_jobs.sql`, generated by drizzle-kit, applied with `npm run factory:migrate`): one row per attempt with parent job (escalation chain), pipeline, tier, model, isolation, requests, tokens, cost, verdict, PR, reviewer, outcome, human commits, timings. `npm run factory:backfill-jobs` copied the ledger's 22 attempts. `ledger.jsonl` stays the source of truth
+- [x] Request count per attempt: Claude Code `num_turns`, Aider round trips, one per Copilot prompt, zero for deterministic fixes
+- [x] KPIs (`src/lib/agents/factory-kpis.ts`): overnight yield, acceptance, merged per 100 free requests, median review hours, PRs that needed your edits, autonomy. On `/agent-performance` (cards) and as the morning report's Retro headline
+- [x] Coarse routing key: difficulty (simple / medium / hard) × tier (`difficultyOf` in `model-router.ts`); deterministic fixes and investigations no longer count as model skill
+- [x] Overlaps Phase 71 (telemetry) for factory runs; 71 keeps the Nexus side
 
-### Phase 80 — Night Shift v2
-- [ ] Gate to start: Phases 75–77 done and the container has run 7 nights with zero host-side repo code execution
-- [ ] 20:00–06:00 on AC power, sandboxed, $0, ≤ 8 PRs, human merge, `PAUSE`
-- [ ] Success measure: a sustained rise in overnight yield and acceptance over 30 nights, not PR count
+### Phase 80 — Night Shift v2 (gate in progress)
+`factory/lib/night-shift.ts`.
+- [-] Gate: Phases 75–77 done ✅; 7 consecutive nights with every attempt sandboxed — tracked by `nightShiftReadiness` in `npm run factory:report` and the morning report (0/7 on 2026-10-06: the night before ran on the host)
+- [x] Scheduled cycles 20:00–06:00 (plus 12:00, 16:00): skipped on battery (`factory.sh`; `FACTORY_REQUIRE_AC=0` overrides), refused if the sandbox is off, always $0 whatever the manual budget, ≤ 8 PRs, human merge, `PAUSE`
+- [x] Success measure: 30-night yield and acceptance trend (last 15 nights vs the 15 before) in the morning report
 - [ ] Only then: concurrency 2
 
 ### Phase 67+ — Horizon 3: Infrastructure Agent

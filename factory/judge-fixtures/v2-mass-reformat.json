@@ -1,0 +1,35 @@
+{
+  "name": "v2-mass-reformat",
+  "source": "Phase 77 rule: a one-line fix delivered with a reformatted file",
+  "expect": "reject",
+  "reason": "reformats 16 unchanged lines",
+  "task": {
+    "kind": "fix-types",
+    "taskTier": 2,
+    "scoped": true,
+    "files": [
+      "src/a.ts"
+    ],
+    "title": "fix-types",
+    "objective": "fix-types",
+    "evidence": "",
+    "verify": [
+      "typecheck"
+    ]
+  },
+  "baseline": [
+    {
+      "name": "typecheck",
+      "ok": false,
+      "output": ""
+    }
+  ],
+  "after": [
+    {
+      "name": "typecheck",
+      "ok": true,
+      "output": ""
+    }
+  ],
+  "patch": "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-const v0 = \"x0\";\n-const v1 = \"x1\";\n-const v2 = \"x2\";\n-const v3 = \"x3\";\n-const v4 = \"x4\";\n-const v5 = \"x5\";\n-const v6 = \"x6\";\n-const v7 = \"x7\";\n-const v8 = \"x8\";\n-const v9 = \"x9\";\n-const v10 = \"x10\";\n-const v11 = \"x11\";\n-const v12 = \"x12\";\n-const v13 = \"x13\";\n-const v14 = \"x14\";\n-const v15 = \"x15\";\n-const n: string = 1\n+const v0 = 'x0'\n+const v1 = 'x1'\n+const v2 = 'x2'\n+const v3 = 'x3'\n+const v4 = 'x4'\n+const v5 = 'x5'\n+const v6 = 'x6'\n+const v7 = 'x7'\n+const v8 = 'x8'\n+const v9 = 'x9'\n+const v10 = 'x10'\n+const v11 = 'x11'\n+const v12 = 'x12'\n+const v13 = 'x13'\n+const v14 = 'x14'\n+const v15 = 'x15'\n+const n: number = 1"
+}

@@ -18,23 +18,28 @@ import {
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
 import { collectPackageInfo, confirmFailures, detectPackageManager, installCommand, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
-import { applyPatchAndCommit, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
+import { addPrLabel, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { copilotHasQuota, copilotQuota } from './lib/copilot-quota'
 import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
-import { appendEntry, deadEnds, monthToDateUsd, nextRepos, openPrAttempts, pendingReviews, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry } from './lib/ledger'
+import { appendEntry, deadEnds, latestSignals, monthToDateUsd, openPrAttempts, pendingCiOracles, pendingReviews, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry, type SignalsEntry } from './lib/ledger'
 import { listAliases } from './lib/litellm-ops'
 import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
+
 import { run, type Runner } from './lib/proc'
 import { Sandbox, dockerAvailable, ensureSandboxImages, sandboxModels, sweepSandboxes } from './lib/sandbox'
-import { recordApprovalNeeded, recordAttempt, recordResolution } from './lib/sink'
+import { healthScores, recordApprovalNeeded, recordAttempt, recordResolution } from './lib/sink'
+import { failedLog, rankOpportunities, senseRepo } from './lib/sensors'
 import { acquireLock } from './lib/lock'
+import { nightShiftReadiness, readinessLine, scheduledPolicy } from './lib/night-shift'
 import { freeQuota, m1Deferred } from './lib/quota'
 import { readManagedModels } from './lib/litellm-config'
-import { buildPrompt, filterTasks, fitLocalContext, isEnvironmentFailure, tasksFromScan, type FactoryTask } from './lib/tasks'
-import { judge } from './lib/verify'
+import { buildPrompt, filterTasks, fitLocalContext, investigationPrompt, isEnvironmentFailure, parseFindings, redCiTask, tasksFromScan, type FactoryTask } from './lib/tasks'
+import { judge, type DiffInfo, type Verdict } from './lib/verify'
+import { NEEDS_REVIEW_LABEL, adversaryAction, adversarySection, runAdversary, type AdversaryResult } from './lib/adversary'
+import { trimCheck, type JudgeInputRecord } from './lib/judge-fixture'
 
-interface Args { dryRun: boolean; repo: string | null; maxRepos: number; report: boolean; keep: boolean }
+interface Args { dryRun: boolean; repo: string | null; maxRepos: number; report: boolean; keep: boolean; scheduled: boolean }
 
 function parseArgs(argv: string[]): Args {
   const val = (k: string) => argv.find(a => a.startsWith(`--${k}=`))?.split('=')[1] ?? null
@@ -44,6 +49,8 @@ function parseArgs(argv: string[]): Args {
     maxRepos: Number(val('max-repos') ?? 3),
     report: argv.includes('--report'),
     keep: argv.includes('--keep'),
+    // Set by the launchd wrapper (factory.sh): the night shift's policy applies.
+    scheduled: argv.includes('--scheduled'),
   }
 }
 
@@ -51,13 +58,15 @@ const runId = `${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12)}-${
 let logDir = ''
 let copilotInstalled = false
 let copilotQuotaLeft = true
+/** Id of the most recent attempt written (parent of the next tier's attempt on escalation). */
+let lastAttemptId: string | null = null
 /** Built sandbox image tags; null when cfg.sandbox.mode is 'off'. */
 let sandboxImages: { worker: string; egress: string } | null = null
 const log = (...a: unknown[]) => console.log(`[factory ${new Date().toISOString().slice(11, 19)}]`, ...a)
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
-  const cfg = loadConfig()
+  let cfg = loadConfig()
   mkdirSync(cfg.home, { recursive: true })
   logDir = path.join(cfg.home, 'logs', runId)
 
@@ -65,6 +74,14 @@ async function main() {
   if (existsSync(path.join(cfg.home, 'PAUSE'))) return log(`paused (${path.join(cfg.home, 'PAUSE')} exists) — nothing to do`)
   if (cfg.repos.length === 0 && !args.repo) throw new Error('no repos in factory.config.json allowlist')
   if (args.repo && !cfg.repos.includes(args.repo)) throw new Error(`${args.repo} is not in the allowlist`)
+
+  if (args.scheduled) {
+    // Night Shift v2 (Phase 80): unattended cycles are always sandboxed and always $0.
+    const policy = scheduledPolicy(cfg)
+    if (policy.refuse) return log(`scheduled cycle refused — ${policy.refuse}`)
+    for (const n of policy.notes) log(n)
+    cfg = policy.cfg
+  }
 
   acquireLock(cfg.home, `run ${runId}`)
   mkdirSync(logDir, { recursive: true })
@@ -97,7 +114,20 @@ async function main() {
     log('sandbox OFF — repo code runs on the host (trusted fixtures only)')
   }
 
-  const queue = args.repo ? [args.repo] : nextRepos(readLedger(cfg.home), cfg.repos).slice(0, args.maxRepos)
+  // Sense (Phase 78): red CI, security alerts and stale bot PRs for every candidate repo, then
+  // one ranked queue across repos (red CI > security > failing checks > docs, weighted by health).
+  const sensed: SignalsEntry[] = []
+  for (const repo of args.repo ? [args.repo] : cfg.repos) {
+    const sig = await senseRepo(repo, cfg.integrationBranch, runId, new Date())
+    appendEntry(cfg.home, sig)
+    sensed.push(sig)
+  }
+  const ranked = rankOpportunities(args.repo ? [args.repo] : cfg.repos, readLedger(cfg.home), sensed, new Date(), {
+    health: await healthScores(cfg), blockOnStalePrs: cfg.blockOnStaleBotPrs,
+  })
+  for (const o of ranked.filter(x => x.blocked)) log(`${o.repo}: no new PRs — ${o.blocked} (review or close them)`)
+  log(`queue: ${ranked.filter(x => !x.blocked).slice(0, 5).map(o => `${o.repo.split('/')[1]}(${o.score}${o.reasons.length ? `: ${o.reasons[0]}` : ''})`).join(' · ')}`)
+  const queue = ranked.filter(x => !x.blocked).map(x => x.repo).slice(0, args.repo ? 1 : args.maxRepos)
   let prs = 0
   const openedToday = todaysUsage(readLedger(cfg.home), new Date()).prs
   if (openedToday >= cfg.maxPrsPerDay) {
@@ -107,13 +137,19 @@ async function main() {
   for (const repo of queue) {
     if (prs >= cfg.maxPrsPerCycle || openedToday + prs >= cfg.maxPrsPerDay) break
     try {
-      prs += await improveRepo(cfg, repo, args, aliases)
+      prs += await improveRepo(cfg, repo, args, aliases, sensed.find(x => x.repo === repo) ?? null)
     } catch (err) {
       log(`${repo}: ${err instanceof Error ? err.message : err}`)
     }
   }
   log(`done — ${prs} PR(s) opened`)
   printReport(cfg)
+}
+
+async function humanCommitsOn(prUrl: string): Promise<number | null> {
+  const r = await run('gh', ['pr', 'view', prUrl, '--json', 'commits', '--jq', '.commits | length'], { timeoutMs: 60_000 })
+  const n = Number(r.output.trim())
+  return r.code === 0 && Number.isFinite(n) && n > 0 ? n - 1 : null
 }
 
 /** Learn step: merged/closed factory PRs become resolutions the router reads; Copilot reviews are recorded. */
@@ -130,15 +166,30 @@ async function reconcile(cfg: FactoryConfig) {
     const state = await prState(a.prUrl!)
     if (state === 'MERGED' || state === 'CLOSED') {
       const outcome = state === 'MERGED' ? 'merged' : 'rejected'
-      appendEntry(cfg.home, { type: 'resolution', attemptId: a.id, at: new Date().toISOString(), outcome })
-      await recordResolution(cfg, a.id, outcome)
+      // The factory pushes exactly one commit; anything more is a human edit (review-load proxy, Phase 79).
+      const humanCommits = await humanCommitsOn(a.prUrl!)
+      appendEntry(cfg.home, { type: 'resolution', attemptId: a.id, at: new Date().toISOString(), outcome, ...(humanCommits !== null ? { humanCommits } : {}) })
+      await recordResolution(cfg, a.id, outcome, humanCommits)
       log(`reconciled ${a.prUrl} → ${state.toLowerCase()}`)
     }
+  }
+  // red-ci oracle: the workflow that was failing on the base branch must pass on the PR.
+  for (const a of pendingCiOracles(readLedger(cfg.home))) {
+    const workflow = a.ciWorkflow
+    if (!workflow) continue
+    const r = await run('gh', ['pr', 'checks', a.prUrl!, '--json', 'workflow,bucket'], { timeoutMs: 60_000 })
+    let checks: { workflow: string; bucket: string }[] = []
+    try { checks = JSON.parse(r.output) } catch { continue }
+    const mine = checks.filter(c => c.workflow === workflow)
+    if (mine.length === 0 || mine.some(c => c.bucket === 'pending')) continue
+    const passed = mine.every(c => c.bucket === 'pass' || c.bucket === 'skipping')
+    appendEntry(cfg.home, { type: 'ci_oracle', attemptId: a.id, at: new Date().toISOString(), workflow, passed })
+    log(`red-ci oracle ${a.prUrl}: "${workflow}" ${passed ? 'passes' : 'still fails'} on the PR`)
   }
 }
 
 /** Returns the number of PRs opened (0 or 1). */
-async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases: string[]): Promise<number> {
+async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases: string[], signals: SignalsEntry | null): Promise<number> {
   const dir = path.join(cfg.home, 'work', runId, repo.replace('/', '__'))
   log(`${repo}: cloning`)
   await cloneRepo(repo, dir)
@@ -198,6 +249,10 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     const openKinds = new Set(openPrAttempts(ledger).map(a => `${a.repo}:${a.kind}`))
     // Root for relativising paths in check output (absolute /workspace/… paths inside the sandbox).
     const allTasks = tasksFromScan(baseline, specs, readmeIssue(basics.readme), ws.dir, audit, { lintAutofixes: lintScriptAutofixes(basics.pkg) })
+    // Red CI on the base branch comes first (highest value); its log is read on the host via gh.
+    const red = signals?.base === base ? signals.redCi?.[0] : undefined
+    if (red && cfg.capabilities['red-ci'] !== 'observe') allTasks.unshift(redCiTask(red, base, await failedLog(repo, red.runId)))
+    else if (red) allTasks.unshift(redCiTask(red, base, ''))
     const tasks = filterTasks(allTasks, repo, openKinds, deadEnds(ledger, now))
     appendEntry(cfg.home, {
       type: 'scan', runId, at: now.toISOString(), repo,
@@ -215,10 +270,15 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
 
     // Try at most two tasks per repo: when free cloud quota defers the first,
     // local (M0) work on the next task still gets done this cycle.
-    for (const t of tasks.slice(0, 2)) {
+    // Promotion ladder (Phase 75): `observe` capabilities are sensed and logged, never attempted.
+    const observed = tasks.filter(t => cfg.capabilities[t.kind] === 'observe')
+    if (observed.length > 0) log(`${repo}: observe-only: ${observed.map(t => t.kind).join(', ')} (capability stage)`)
+    const runnable = tasks.filter(t => cfg.capabilities[t.kind] !== 'observe')
+    for (const t of runnable.slice(0, 2)) {
       const result = await runLadder(ctx, fitLocalContext(t, sizeOf), ledger, now)
       if (result === 'pr') return 1
       if (result === 'verified' || result === 'stop') return 0
+      // 'reported' (an investigation) / 'deferred' / 'failed': try the next task.
     }
     return 0
   } finally {
@@ -257,8 +317,19 @@ interface TaskContext {
  *   failed        → every allowed tier failed; try another task
  *   stop          → hit the paid boundary (approval needed); stop this repo
  */
-async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType<typeof readLedger>, now: Date): Promise<'pr' | 'verified' | 'deferred' | 'failed' | 'stop'> {
+async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType<typeof readLedger>, now: Date): Promise<'pr' | 'verified' | 'reported' | 'deferred' | 'failed' | 'stop'> {
   const { cfg, repo } = ctx
+  if (task.kind === 'red-ci' && cfg.capabilities['red-ci'] === 'report') {
+    // Investigation only, on the free pool (one read-only agent run; never escalates to paid).
+    if (!ctx.aliases.includes(cfg.models.M1) || ctx.dataClass !== 'public' && !cfg.allowFreeCloud.includes(repo)) {
+      log(`${repo}: red-ci investigation needs the free pool (M1) — skipped`)
+      return 'failed'
+    }
+    const pool = Object.entries(readManagedModels(readFileSync(cfg.litellm.configPath, 'utf8'))).filter(([alias]) => alias.startsWith('free-agent')).map(([, id]) => id)
+    const deferred = m1Deferred(pool, await freeQuota(cfg))
+    if (deferred) { log(`${repo}: ${deferred} — deferring red-ci investigation`); return 'deferred' }
+    return investigate(ctx, task)
+  }
   if (task.kind === 'deps-audit' || task.kind === 'lint-autofix') {
     // Deterministic: `npm audit fix` / the repo's own lint fixer (no model, no quota), judged like any other change.
     log(`${repo}: ${task.kind} → ${task.kind === 'deps-audit' ? 'npm audit fix' : "repo's lint fixer"} (no model)`)
@@ -276,6 +347,7 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
 
   let tier: ModelTier | null = decision.tier
   let exploring = decision.exploring
+  let parentId: string | null = null
   while (tier) {
     if (tier === 'M2' && !canUsePaidTier({ monthToDateUsd: monthToDateUsd(readLedger(cfg.home), new Date()), monthlyBudgetUsd: cfg.monthlyBudgetUsd }, cfg.m2EstimateUsd)) {
       const reason = cfg.monthlyBudgetUsd <= 0 ? 'paid tier disabled (monthlyBudgetUsd = 0)' : 'monthly paid budget exhausted'
@@ -294,9 +366,11 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
         return 'deferred'
       }
     }
-    const result = await attempt(ctx, task, tier, exploring)
+    const result = await attempt(ctx, task, tier, exploring, null, parentId)
     if (result === 'pr' || result === 'verified') return result
     if (result === 'rate_limited') return 'deferred'
+    // The next tier's job is the child of this failed one (escalation chain, Phase 79).
+    parentId = lastAttemptId
     tier = nextTier(tier, allowed)
     exploring = false
   }
@@ -304,7 +378,7 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
 }
 
 async function attempt(
-  ctx: TaskContext, task: FactoryTask, tier: ModelTier, exploring: boolean, auditBefore: AuditCounts | null = null,
+  ctx: TaskContext, task: FactoryTask, tier: ModelTier, exploring: boolean, auditBefore: AuditCounts | null = null, parentId: string | null = null,
 ): Promise<'pr' | 'verified' | 'failed' | 'rate_limited'> {
   const { cfg, repo, dir, ws, base, pkg, specs, baseline, args } = ctx
   const deps = task.kind === 'deps-audit'
@@ -332,7 +406,9 @@ async function attempt(
   const entry: AttemptEntry = {
     type: 'attempt', id: randomUUID(), runId, at: now.toISOString(), repo, kind: task.kind, taskTier: task.taskTier,
     tier, model, harness: h.harness, outcome: 'failed', reason: '', exploring, isolation: ws.sandbox ? 'docker' : 'host',
+    ...(task.ci ? { ciWorkflow: task.ci.workflow } : {}),
     durationMs: h.durationMs, costUsd: h.costUsd, inputTokens: h.inputTokens, outputTokens: h.outputTokens,
+    requests: h.requests, ...(parentId ? { parentId } : {}),
   }
 
   if (h.rateLimited && !h.ok) {
@@ -377,19 +453,47 @@ async function attempt(
   }
   const diff = edits.files.length > 0 ? await diffAgainst(dir, hostBase) : edits
   const readmeAfter = existsSync(path.join(dir, 'README.md')) ? readFileSync(path.join(dir, 'README.md'), 'utf8') : null
-  const verdict = diff.files.length > 0
-    ? judge({
-      // Scripts/deps from every package.json (root + sub-packages like client/, server/).
-      task, baseline, after, diff, ...collectPackageInfo(dir), readmeAfter, repo,
-      audit: deps ? { before: auditBefore, after: await runAudit(ws.dir, undefined, ws.run) } : undefined,
-      lintProblems: lintFix ? { before: lintProblems(baseline.find(b => b.name === 'lint')), after: lintProblems(after.find(a => a.name === 'lint')) } : undefined,
-    })
+  // Scripts/deps from every package.json (root + sub-packages like client/, server/).
+  const judgeInputs = diff.files.length > 0 ? {
+    ...collectPackageInfo(dir), readmeAfter, repo, repoFiles: await listFiles(dir), modelEdits: edits as DiffInfo,
+    audit: deps ? { before: auditBefore, after: await runAudit(ws.dir, undefined, ws.run) } : undefined,
+    lintProblems: lintFix ? { before: lintProblems(baseline.find(b => b.name === 'lint')), after: lintProblems(after.find(a => a.name === 'lint')) } : undefined,
+  } : null
+  const verdict = judgeInputs
+    ? judge({ task, baseline, after, diff, ...judgeInputs })
     : { ok: false, reason: h.ok ? 'no changes made' : `harness failed${h.timedOut ? ' (timeout)' : ''}` }
   entry.reason = verdict.reason
+  if (judgeInputs) {
+    // Kept so any verdict later shown wrong can become a regression fixture (npm run factory:judge-fixture).
+    const record: JudgeInputRecord = {
+      attemptId: entry.id, repo, task, baseline: baseline.map(trimCheck), after: after.map(trimCheck),
+      patch: await patchText(dir, hostBase), scripts: judgeInputs.scripts, deps: judgeInputs.deps, readmeAfter,
+      repoFiles: judgeInputs.repoFiles, lintProblems: judgeInputs.lintProblems, audit: judgeInputs.audit, verdict,
+    }
+    writeFileSync(path.join(logDir, `${slug(repo)}-${task.kind}-${tier}.judge.json`), JSON.stringify(record))
+  }
   log(`${repo}: ${tier} ${verdict.ok ? 'VERIFIED' : 'rejected'} — ${verdict.reason}`)
+
+  // Advisory adversarial pass (Phase 77): only after the deterministic judge passed, only for
+  // model-written changes, and it can never approve, only label or (once promoted) veto.
+  let adversary: AdversaryResult | null = null
+  if (verdict.ok && !deps && !lintFix) {
+    adversary = await runAdversary(cfg, tier, task, await patchText(dir, hostBase, 3))
+    if (adversary) {
+      entry.adversary = { model: adversary.model, verdict: adversary.verdict, issues: adversary.issues.length }
+      log(`${repo}: adversarial review (${adversary.model}): ${adversary.verdict}${adversary.issues.length ? ` — ${adversary.issues.map(i => i.why).join('; ').slice(0, 200)}` : ''}`)
+      if (adversaryAction(adversary, cfg.capabilities['adversarial-veto']) === 'reject') {
+        const veto: Verdict = { ok: false, reason: `adversarial review vetoed: ${adversary.issues[0]?.why ?? 'FAIL'}` }
+        verdict.ok = veto.ok
+        verdict.reason = veto.reason
+        entry.reason = veto.reason
+      }
+    }
+  }
 
   if (!verdict.ok) {
     appendEntry(cfg.home, entry)
+    lastAttemptId = entry.id
     await recordAttempt(cfg, entry, task.title)
     await resetWorktree(ws.dir, ws.run)
     if (ws.sandbox) await resetWorktree(dir)
@@ -399,21 +503,64 @@ async function attempt(
   entry.outcome = 'verified'
   entry.branch = branch
   await squashOnto(dir, hostBase, commitMessage(task, tier, model))
-  if (!args.dryRun) {
+  // Promotion ladder (Phase 75): a `report` capability proves itself in the morning report first.
+  const reportOnly = cfg.capabilities[task.kind] === 'report'
+  if (reportOnly) {
+    entry.reported = true
+    log(`${repo}: ${task.kind} is at stage "report" — verified result recorded for the morning report, no PR`)
+  }
+  if (!args.dryRun && !reportOnly) {
     await pushBranch(dir, branch)
     entry.prUrl = await createDraftPr(dir, {
       base, head: branch, title: prTitle(task),
-      body: prBody({ task, tier, model, harness: h.harness, verdict: verdict.reason, baseline, after, diff, durationMs: h.durationMs, costUsd: h.costUsd, exploring }),
+      body: prBody({ task, tier, model, harness: h.harness, verdict: verdict.reason, baseline, after, diff, durationMs: h.durationMs, costUsd: h.costUsd, exploring }) + adversarySection(adversary).join('\n'),
     })
     log(`${repo}: draft PR ${entry.prUrl}`)
+    if (adversaryAction(adversary, cfg.capabilities['adversarial-veto']) === 'label' && await addPrLabel(entry.prUrl, repo, NEEDS_REVIEW_LABEL)) {
+      log(`${repo}: labelled ${NEEDS_REVIEW_LABEL} (adversarial review ${adversary?.verdict})`)
+    }
     if (cfg.copilot.review && copilotQuotaLeft && todaysUsage(readLedger(cfg.home), new Date()).copilotReviews < cfg.copilot.maxReviewsPerDay) {
       entry.reviewRequested = await requestCopilotReview(entry.prUrl)
       if (entry.reviewRequested) log(`${repo}: Copilot review requested`)
     }
   }
   appendEntry(cfg.home, entry)
+  lastAttemptId = entry.id
   await recordAttempt(cfg, entry, task.title)
-  return args.dryRun ? 'verified' : 'pr'
+  return args.dryRun || reportOnly ? 'verified' : 'pr'
+}
+
+/**
+ * red-ci at stage `report` (Phase 78): a root-cause investigation in the sandbox. Verified = the
+ * agent produced the structured report; the findings go to the morning report, no PR. Any file
+ * changes are discarded: reproducing a failure runs the repo's own scripts, which may rewrite
+ * files (Figma-Jira's `eslint --fix` did on the first live run), and nothing from it ships.
+ */
+async function investigate(ctx: TaskContext, task: FactoryTask): Promise<'reported' | 'failed' | 'deferred'> {
+  const { cfg, repo, ws } = ctx
+  const now = new Date()
+  const harnessCfg: FactoryConfig = ws.sandbox ? { ...cfg, litellm: { ...cfg.litellm, url: ws.sandbox.litellmUrl } } : cfg
+  await resetWorktree(ws.dir, ws.run)
+  log(`${repo}: red-ci → M1 claude-code → ${cfg.models.M1} (read-only investigation${ws.sandbox ? ', sandboxed' : ''})`)
+  const h = await runHarness({ tier: 'M1', model: cfg.models.M1, smallModel: 'local-small', cwd: ws.dir, prompt: investigationPrompt(task), readOnly: true }, harnessCfg, ws.run)
+  writeFileSync(path.join(logDir, `${slug(repo)}-red-ci-investigation.log`), `${investigationPrompt(task)}\n\n=====\n${h.output}`)
+  const discarded = (await diffInfo(ws.dir, ws.run)).files.length
+  await resetWorktree(ws.dir, ws.run)
+  const findings = h.ok ? parseFindings(h.text ?? h.output) : null
+  const entry: AttemptEntry = {
+    type: 'attempt', id: randomUUID(), runId, at: now.toISOString(), repo, kind: task.kind, taskTier: task.taskTier,
+    tier: 'M1', model: cfg.models.M1, harness: h.harness, exploring: false, reported: true,
+    outcome: h.rateLimited && !h.ok ? 'rate_limited' : findings ? 'verified' : 'failed',
+    reason: (findings ? `investigated: ${task.title}` : h.ok ? 'no structured root-cause report' : `harness failed${h.timedOut ? ' (timeout)' : ''}`)
+      + (discarded ? ` (${discarded} file change(s) from reproducing it discarded)` : ''),
+    durationMs: h.durationMs, costUsd: h.costUsd, inputTokens: h.inputTokens, outputTokens: h.outputTokens, requests: h.requests,
+    isolation: ws.sandbox ? 'docker' : 'host', ciWorkflow: task.ci?.workflow, ...(findings ? { findings } : {}),
+  }
+  appendEntry(cfg.home, entry)
+  await recordAttempt(cfg, entry, task.title)
+  log(`${repo}: red-ci investigation ${findings ? 'REPORTED' : 'failed'} — ${findings ? findings.split('\n').find(l => l.trim() && !l.startsWith('#'))?.slice(0, 160) : entry.reason}`)
+  if (entry.outcome === 'rate_limited') return 'deferred'
+  return findings ? 'reported' : 'failed'
 }
 
 /** Non-breaking dependency fixes only — never `--force` (that would allow semver-major upgrades). */
@@ -421,6 +568,7 @@ async function attempt(
 async function runLintFixer(ws: Workspace, spec: CheckSpec | undefined, cfg: FactoryConfig): Promise<HarnessResult> {
   const r = spec ? await ws.run(spec.cmd, spec.args, { cwd: ws.dir, timeoutMs: cfg.checkTimeoutMs, env: { CI: '1', NO_COLOR: '1' } }) : null
   return {
+    requests: 0,
     // Lint may still fail afterwards (remaining errors); success here means the fixer ran.
     ok: !!r && !r.timedOut, harness: 'lint-autofix', model: 'npm', output: r?.output ?? 'no lint script',
     durationMs: r?.durationMs ?? 0, inputTokens: 0, outputTokens: 0, costUsd: 0, rateLimited: false, timedOut: r?.timedOut ?? false,
@@ -430,6 +578,7 @@ async function runLintFixer(ws: Workspace, spec: CheckSpec | undefined, cfg: Fac
 async function npmAuditFix(ws: Workspace, cfg: FactoryConfig): Promise<HarnessResult> {
   const r = await ws.run('npm', ['audit', 'fix', '--no-fund'], { cwd: ws.dir, timeoutMs: cfg.checkTimeoutMs })
   return {
+    requests: 0,
     ok: r.code === 0 || /fixed \d+ of \d+/i.test(r.output), harness: 'npm-audit-fix', model: 'npm', output: r.output,
     durationMs: r.durationMs, inputTokens: 0, outputTokens: 0, costUsd: 0, rateLimited: false, timedOut: r.timedOut,
   }
@@ -444,6 +593,7 @@ function printReport(cfg: FactoryConfig) {
   for (const r of rows) console.log(`${r.tier.padEnd(5)} ${String(r.attempts).padStart(8)} ${String(r.verified).padStart(9)} ${String(r.merged).padStart(7)} ${String(r.rejected).padStart(9)}  $${r.costUsd.toFixed(2)}`)
   console.log(`$0 share of verified fixes: ${verified ? Math.round((free / verified) * 100) : 0}% · paid this month: $${monthToDateUsd(ledger, new Date()).toFixed(2)} / $${cfg.monthlyBudgetUsd}`)
   console.log(`open factory PRs: ${openPrAttempts(ledger).length}`)
+  console.log(readinessLine(nightShiftReadiness(ledger)))
 }
 
 function slug(repo: string) {

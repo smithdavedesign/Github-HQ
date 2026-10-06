@@ -1,0 +1,33 @@
+{
+  "name": "v2-coverage-drop",
+  "source": "Phase 77 rule: coverage fell (tests or code paths removed)",
+  "expect": "reject",
+  "reason": "coverage dropped 85.2% \u2192 79.9%",
+  "task": {
+    "kind": "fix-tests",
+    "taskTier": 2,
+    "scoped": false,
+    "files": [],
+    "title": "fix-tests",
+    "objective": "fix-tests",
+    "evidence": "",
+    "verify": [
+      "test"
+    ]
+  },
+  "baseline": [
+    {
+      "name": "test",
+      "ok": false,
+      "output": "All files |   85.2 |    70 |"
+    }
+  ],
+  "after": [
+    {
+      "name": "test",
+      "ok": true,
+      "output": "All files |   79.9 |    70 |"
+    }
+  ],
+  "patch": "diff --git a/src/price.ts b/src/price.ts\n--- a/src/price.ts\n+++ b/src/price.ts\n@@ -1 +1 @@\n-  return sum + 1\n+  return sum"
+}

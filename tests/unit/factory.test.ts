@@ -329,7 +329,7 @@ describe('harness helpers', () => {
   })
   it('parses the Claude Code JSON result out of mixed output', () => {
     const out = 'warning: unknown model\n{"type":"result","is_error":false,"result":"DONE","usage":{"input_tokens":10,"cache_read_input_tokens":90,"output_tokens":5}}\n'
-    expect(parseClaudeResult(out)).toEqual({ isError: false, text: 'DONE', inputTokens: 100, outputTokens: 5 })
+    expect(parseClaudeResult(out)).toEqual({ isError: false, text: 'DONE', turns: 0, inputTokens: 100, outputTokens: 5 })
     expect(parseClaudeResult('no json here')).toBeNull()
   })
   it('parses Aider token counts', () => {

@@ -41,6 +41,7 @@ async function main() {
     openRouterQuota: await freeQuota(cfg),
     copilot: { ...cfg.copilot, tasksToday: usage.copilotTasks, reviewsToday: usage.copilotReviews, quota: await copilotQuota() },
     prTarget: { min: 3, max: cfg.maxPrsPerDay },
+    capabilities: cfg.capabilities,
     monthToDateUsd: monthToDateUsd(entries, now),
     monthlyBudgetUsd: cfg.monthlyBudgetUsd,
     cycles: recentCycles(cfg, now),

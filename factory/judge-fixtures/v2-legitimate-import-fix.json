@@ -1,0 +1,42 @@
+{
+  "name": "v2-legitimate-import-fix",
+  "source": "Phase 77: adding imports that resolve must stay accepted (relative .js \u2192 .ts, builtin, declared package)",
+  "expect": "accept",
+  "task": {
+    "kind": "fix-types",
+    "taskTier": 2,
+    "scoped": true,
+    "files": [
+      "src/price.ts"
+    ],
+    "title": "fix-types",
+    "objective": "fix-types",
+    "evidence": "",
+    "verify": [
+      "typecheck"
+    ]
+  },
+  "baseline": [
+    {
+      "name": "typecheck",
+      "ok": false,
+      "output": ""
+    }
+  ],
+  "after": [
+    {
+      "name": "typecheck",
+      "ok": true,
+      "output": ""
+    }
+  ],
+  "patch": "diff --git a/src/price.ts b/src/price.ts\n--- a/src/price.ts\n+++ b/src/price.ts\n@@ -1 +1 @@\n+import { add } from './math.js'\n+import path from 'node:path'\n+import { z } from 'zod'\n+import fs from 'fs'",
+  "deps": [
+    "zod",
+    "typescript"
+  ],
+  "repoFiles": [
+    "src/price.ts",
+    "src/math.ts"
+  ]
+}

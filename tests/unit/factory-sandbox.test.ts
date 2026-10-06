@@ -174,14 +174,19 @@ describe('sandbox config', () => {
 describe('Sandbox lifecycle (docker mocked)', () => {
   const dockerCalls: string[][] = []
   let nextExec: { code: number; durationMs: number } = { code: 0, durationMs: 1 }
+  // One mock for the whole block, steered by these flags: re-registering a mock for the same
+  // module with a second vi.doMock was flaky (vitest's mock registry survives resetModules).
+  let failWorkerStart = false
 
   beforeEach(() => {
     dockerCalls.length = 0
     nextExec = { code: 0, durationMs: 1 }
+    failWorkerStart = false
     vi.resetModules()
     vi.doMock('../../factory/lib/proc', () => ({
       run: async (cmd: string, args: string[]) => {
         dockerCalls.push([cmd, ...args])
+        if (failWorkerStart && args[0] === 'run' && args.some(a => a.endsWith('-worker'))) return { code: 125, output: 'no such image', durationMs: 1, timedOut: false }
         if (args[0] === 'exec' && args.includes('timeout')) return { code: nextExec.code, output: '', durationMs: nextExec.durationMs, timedOut: false }
         return { code: 0, output: 'ok\n', durationMs: 1, timedOut: false }
       },
@@ -220,15 +225,7 @@ describe('Sandbox lifecycle (docker mocked)', () => {
   })
 
   it('tears everything down if a step fails while opening', async () => {
-    vi.resetModules()
-    dockerCalls.length = 0
-    vi.doMock('../../factory/lib/proc', () => ({
-      run: async (cmd: string, args: string[]) => {
-        dockerCalls.push([cmd, ...args])
-        const failing = args[0] === 'run' && args.some(a => a.endsWith('-worker'))
-        return { code: failing ? 125 : 0, output: failing ? 'no such image' : '', durationMs: 1, timedOut: false }
-      },
-    }))
+    failWorkerStart = true
     await expect(openSandbox()).rejects.toThrow(/sandbox worker failed/)
     expect(dockerCalls.some(c => c[1] === 'rm')).toBe(true)
     expect(dockerCalls.some(c => c[1] === 'network' && c[2] === 'rm')).toBe(true)

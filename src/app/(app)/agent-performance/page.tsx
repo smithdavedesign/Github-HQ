@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { getAccuracyByImpactType, getDowngradedRepos } from '@/lib/actions/advisor-accuracy'
 import { AccuracyTable } from '@/components/dashboard/accuracy-table'
 import { summarizeFactoryEvents } from '@/lib/agents/factory-stats'
+import { KPI_WINDOW_DAYS, loadFactoryKpis } from '@/lib/agents/factory-kpis-query'
 
 export default async function AgentPerformancePage() {
   const session = await auth()
@@ -18,7 +19,7 @@ export default async function AgentPerformancePage() {
 
   const userId = session.user.id
 
-  const [events, accuracyStats, downgradedRepos, factoryEvents] = await Promise.all([
+  const [events, accuracyStats, downgradedRepos, factoryEvents, kpis] = await Promise.all([
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.userId, userId),
@@ -35,8 +36,11 @@ export default async function AgentPerformancePage() {
       orderBy: [desc(portfolioEvents.occurredAt)],
       limit: 500,
     }),
+    // Factory job record (Phase 79) for the KPIs.
+    loadFactoryKpis(userId),
   ])
   const factory = summarizeFactoryEvents(factoryEvents)
+  const pctOf = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`)
 
   // Compute stats
   const queued  = events.filter(e => e.eventType === 'agent_task_queued').length
@@ -137,6 +141,36 @@ export default async function AgentPerformancePage() {
           Accuracy data builds up as more PRs merge and repos resync. Check back after a few more merges.
         </div>
       ) : null}
+
+      {/* Factory KPIs (Phase 79 — docs/autonomous-factory.md §14.2) */}
+      {kpis && (
+        <div className="space-y-2" data-testid="factory-kpis">
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+              Factory KPIs (last {KPI_WINDOW_DAYS} days)
+            </h2>
+            <p className="text-[10px] text-muted-foreground max-w-xs text-right">
+              The target: more human-approved PRs per night, at a rising acceptance rate.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {[
+              { label: 'Overnight yield', value: kpis.overnightYield === null ? '—' : kpis.overnightYield.toFixed(1), hint: `approved PRs/night · ${kpis.nights} night(s)` },
+              { label: 'Acceptance', value: pctOf(kpis.acceptance), hint: `${kpis.merged} merged · ${kpis.closed} closed` },
+              { label: 'Per 100 free requests', value: kpis.acceptedPer100FreeRequests === null ? '—' : kpis.acceptedPer100FreeRequests.toFixed(1), hint: `merged PRs · ${kpis.freeRequests} requests` },
+              { label: 'Review time', value: kpis.reviewHoursMedian === null ? '—' : `${kpis.reviewHoursMedian.toFixed(1)}h`, hint: `median · ${kpis.humanEditedPrs} needed edits` },
+              { label: 'Autonomy', value: pctOf(kpis.autonomy), hint: 'merged untouched ÷ all decisions' },
+            ].map(k => (
+              <div key={k.label} className="rounded-lg border border-border/50 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{k.label}</div>
+                <div className="text-lg font-semibold tabular-nums">{k.value}</div>
+                <div className="text-[10px] text-muted-foreground">{k.hint}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Autonomous factory (local free-model lane — docs/autonomous-factory.md) */}
       {(factory.totalAttempts > 0 || factory.scout) && (

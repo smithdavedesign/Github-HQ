@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy the factory to ~/.repohq-factory/app and install (or remove with --uninstall) its launchd schedules.
 # Re-run after committing factory changes to redeploy.
-#   com.repohq.factory.cycle  — hourly 20:00–05:00 plus 12:00 and 16:00 local (≤ 1 PR per cycle,
+#   com.repohq.factory.cycle  — hourly 20:00–06:00 (Night Shift v2) plus 12:00 and 16:00 local (≤ 1 PR per cycle,
 #                               ≤ maxPrsPerDay per factory day) → 3–8 draft PRs by morning
 #   com.repohq.factory.report — 06:45 local: one update per gstack role, emailed
 #   com.repohq.factory.scout  — Sundays 17:10 local
@@ -75,7 +75,7 @@ if [ -f "$ROOT/.env.local" ] && ! security find-generic-password -s repohq-facto
   fi
   unset DB_URL
 fi
-CYCLE_HOURS="20 21 22 23 0 1 2 3 4 5 12 16"
+CYCLE_HOURS="20 21 22 23 0 1 2 3 4 5 6 12 16"
 CYCLE_TIMES="$(for h in $CYCLE_HOURS; do printf '    <dict><key>Hour</key><integer>%s</integer><key>Minute</key><integer>5</integer></dict>\n' "$h"; done)"
 plist com.repohq.factory.cycle cycle "<array>
 $CYCLE_TIMES
