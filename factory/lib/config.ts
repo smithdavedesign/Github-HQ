@@ -51,6 +51,8 @@ export interface FactoryConfig {
    * New capabilities start at `report`; only the owner promotes them (edit factory.config.json).
    */
   capabilities: Record<Capability, CapabilityStage>
+  /** Repos with autonomous PRs unreviewed for 7+ days get no new factory PRs until those are handled (Phase 78). */
+  blockOnStaleBotPrs: boolean
   judge: {
     /** Advisory "prove this should NOT merge" pass after the deterministic judge (Phase 77). */
     adversarial: { enabled: boolean; timeoutMs: number; reviewers: Partial<Record<ModelTier, string>> }
@@ -148,6 +150,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FactoryConfig 
       mode: env.FACTORY_SANDBOX === 'off' ? 'off' : json.sandbox?.mode ?? DEFAULT_SANDBOX.mode,
     },
     capabilities: { ...DEFAULT_CAPABILITIES, ...json.capabilities },
+    blockOnStaleBotPrs: json.blockOnStaleBotPrs ?? true,
     judge: {
       adversarial: {
         enabled: json.judge?.adversarial?.enabled ?? true,

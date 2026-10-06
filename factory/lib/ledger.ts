@@ -1,6 +1,8 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { AttemptRecord, ModelTier, TaskTier } from '../../src/lib/agents/model-router'
+import type { JobRecord } from '../../src/lib/agents/factory-kpis'
+import type { AlertCounts, BotPrs, FailingRun } from './sensors'
 
 /**
  * Append-only JSONL ledger at <FACTORY_HOME>/ledger.jsonl — the factory's
@@ -37,6 +39,14 @@ export interface AttemptEntry {
   reported?: boolean
   /** Advisory adversarial review of a verified change (Phase 77). */
   adversary?: { model: string; verdict: 'PASS' | 'FAIL' | 'UNCERTAIN'; issues: number }
+  /** red-ci investigations (Phase 78): the model's root-cause report. */
+  findings?: string
+  /** red-ci: the workflow that was failing (checked again on the PR by reconcile). */
+  ciWorkflow?: string
+  /** Model requests spent (Phase 79); absent on attempts before request tracking. */
+  requests?: number
+  /** The failed cheaper-tier attempt this one escalated from (job tree, Phase 79). */
+  parentId?: string
   /**
    * Set when the verdict itself was wrong (a judge bug, not the model's fault): the attempt
    * stays in the ledger for history but no longer counts for routing, dead ends or stats.
@@ -60,6 +70,8 @@ export interface ResolutionEntry {
   at: string
   /** merged → success; closed without merge → rejected. */
   outcome: 'merged' | 'rejected'
+  /** Commits pushed onto the PR beyond the factory's one (human edits before merging). */
+  humanCommits?: number
 }
 
 export interface ScanEntry {
@@ -92,7 +104,30 @@ export interface ApprovalEntry {
   reason: string
 }
 
-export type LedgerEntry = AttemptEntry | ResolutionEntry | ScanEntry | ScoutEntry | ApprovalEntry | ReviewEntry
+/** What the sensors saw for one repo at the start of a cycle (Phase 78). */
+export interface SignalsEntry {
+  type: 'signals'
+  runId: string
+  at: string
+  repo: string
+  /** Branch factory PRs target (integration/agent or the default branch). */
+  base: string | null
+  /** Workflows whose latest run on `base` failed; null when unknown. */
+  redCi: FailingRun[] | null
+  alerts: AlertCounts
+  botPrs: BotPrs | null
+}
+
+/** red-ci PRs: did the workflow that was failing pass on the PR? (the red-ci oracle) */
+export interface CiOracleEntry {
+  type: 'ci_oracle'
+  attemptId: string
+  at: string
+  workflow: string
+  passed: boolean
+}
+
+export type LedgerEntry = AttemptEntry | ResolutionEntry | ScanEntry | ScoutEntry | ApprovalEntry | ReviewEntry | SignalsEntry | CiOracleEntry
 
 export function ledgerPath(home: string): string {
   return path.join(home, 'ledger.jsonl')
@@ -133,7 +168,9 @@ const resolutionsOf = (e: LedgerEntry[]) => new Map(e.filter((x): x is Resolutio
 export function toAttemptRecords(entries: LedgerEntry[]): AttemptRecord[] {
   const res = resolutionsOf(entries)
   return attemptsOf(entries)
-    .filter(a => a.outcome !== 'rate_limited')
+    // Deterministic fixes and read-only investigations say nothing about a model's skill as a
+    // builder; counting them would credit M0 with npm audit fix's near-100% success.
+    .filter(a => a.outcome !== 'rate_limited' && a.harness !== 'npm-audit-fix' && a.harness !== 'lint-autofix' && !(a.kind === 'red-ci' && a.findings !== undefined && !a.prUrl))
     .map(a => {
       const r = res.get(a.id)
       const outcome = r ? (r.outcome === 'merged' ? 'success' : 'failed') : a.outcome === 'verified' ? 'success' : 'failed'
@@ -226,6 +263,32 @@ export function todaysUsage(entries: LedgerEntry[], now: Date): { prs: number; c
     copilotTasks: as.filter(a => a.tier === 'MC' && a.outcome !== 'rate_limited').length,
     copilotReviews: as.filter(a => a.reviewRequested).length,
   }
+}
+
+/** KPI input (Phase 79): every counted attempt with how its PR ended. */
+export function toJobRecords(entries: LedgerEntry[]): JobRecord[] {
+  const res = new Map(entries.filter((x): x is ResolutionEntry => x.type === 'resolution').map(r => [r.attemptId, r]))
+  return attemptsOf(entries).map(a => {
+    const r = res.get(a.id)
+    return {
+      id: a.id, startedAt: new Date(a.at), tier: a.tier, status: a.outcome, prUrl: a.prUrl ?? null,
+      outcome: r?.outcome ?? null, resolvedAt: r ? new Date(r.at) : null, humanCommits: r?.humanCommits ?? null,
+      requests: a.requests ?? null, adversaryModel: a.adversary?.model ?? null,
+    }
+  })
+}
+
+/** Latest signals per repo. */
+export function latestSignals(entries: LedgerEntry[]): Map<string, SignalsEntry> {
+  const by = new Map<string, SignalsEntry>()
+  for (const e of entries) if (e.type === 'signals' && (!by.get(e.repo) || e.at > by.get(e.repo)!.at)) by.set(e.repo, e)
+  return by
+}
+
+/** Open red-ci PRs whose oracle (the failing workflow on the PR) hasn't been recorded yet. */
+export function pendingCiOracles(entries: LedgerEntry[]): AttemptEntry[] {
+  const done = new Set(entries.filter((e): e is CiOracleEntry => e.type === 'ci_oracle').map(e => e.attemptId))
+  return openPrAttempts(entries).filter(a => a.kind === 'red-ci' && !done.has(a.id))
 }
 
 /** Open PRs whose requested Copilot review hasn't been recorded yet. */

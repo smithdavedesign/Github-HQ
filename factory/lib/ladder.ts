@@ -53,6 +53,16 @@ export function capabilityStatus(
     return { capability, stage, evidence, advice: 'hold', next: stage === 'pr' ? 'vetoing' : `needs ${VETO_MIN_FLAGGED} resolved flagged PRs at ≥ ${pct(VETO_MIN_PRECISION)} precision to veto` }
   }
 
+  if (capability === 'security-alerts') {
+    // A sensor only: fixes go through deps-audit, so this never opens PRs itself.
+    const latest = new Map<string, LedgerEntry>()
+    for (const e of entries) if (e.type === 'signals' && (!latest.get(e.repo) || e.at > (latest.get(e.repo) as { at: string }).at)) latest.set(e.repo, e)
+    const sig = [...latest.values()].filter((e): e is Extract<LedgerEntry, { type: 'signals' }> => e.type === 'signals')
+    const off = sig.filter(s => s.alerts.status === 'disabled').length
+    const evidence = sig.length ? `${sig.length - off}/${sig.length} repos report Dependabot alerts` : 'not sensed yet'
+    return { capability, stage, evidence, advice: 'hold', next: off ? 'enable Dependabot alerts on the remaining repos; fixes go through deps-audit' : 'fixes go through deps-audit' }
+  }
+
   const mine = attempts.filter(a => a.kind === capability)
   const sightings = entries.filter((e): e is ScanEntry => e.type === 'scan' && recent(e.at) && e.tasks.includes(capability)).length
 
@@ -68,7 +78,7 @@ export function capabilityStatus(
   if (stage === 'report') {
     const evidence = `${verified.length}/${mine.length} verified (${pct(rate)}), no PRs opened`
     return verified.length >= REPORT_MIN_VERIFIED && rate >= REPORT_MIN_RATE
-      ? { capability, stage, evidence, advice: 'promote', next: `set "${capability}": "pr" to let it open draft PRs` }
+      ? { capability, stage, evidence, advice: 'promote', next: capability === 'red-ci' ? 'read its investigations; if they hold up, set "red-ci": "pr" to let it attempt fixes (oracle: the workflow passes on the PR)' : `set "${capability}": "pr" to let it open draft PRs` }
       : { capability, stage, evidence, advice: 'hold', next: `needs ${REPORT_MIN_VERIFIED} verified at ≥ ${pct(REPORT_MIN_RATE)}` }
   }
 

@@ -24,6 +24,10 @@ export interface HarnessResult {
   harness: HarnessName
   model: string
   output: string
+  /** The agent's final answer, when the harness reports one separately (Claude Code). */
+  text?: string
+  /** Model requests this run spent (Claude Code turns, Aider rounds, one per Copilot prompt). */
+  requests: number
   durationMs: number
   inputTokens: number
   outputTokens: number
@@ -87,6 +91,7 @@ async function runCopilot(req: HarnessRequest, cfg: FactoryConfig, runner: Runne
     inputTokens: 0,
     outputTokens: 0,
     costUsd: 0,
+    requests: 1,
     // "You have no quota" = monthly premium requests spent: wait for the reset, not a model failure.
     rateLimited: RATE_LIMIT_RE.test(r.output) || /premium request|usage limit|no quota/i.test(r.output),
     timedOut: r.timedOut,
@@ -112,6 +117,7 @@ async function runAider(req: HarnessRequest, cfg: FactoryConfig, runner: Runner)
   })
   const tokens = /Tokens:\s*([\d.,]+k?)\s*sent,\s*([\d.,]+k?)\s*received/i.exec(r.output)
   return {
+    requests: aiderRequests(r.output),
     ok: r.code === 0 && !r.timedOut && !/litellm\.\w*Error|APIConnectionError|Empty response received/i.test(r.output),
     harness: 'aider',
     model: req.model,
@@ -153,6 +159,8 @@ async function runClaudeCode(req: HarnessRequest, cfg: FactoryConfig, runner: Ru
     harness: 'claude-code',
     model: req.model,
     output: result?.text ? `${result.text}\n---\n${r.output.slice(-4000)}` : r.output,
+    text: result?.text,
+    requests: result?.turns ?? 0,
     durationMs: r.durationMs,
     inputTokens,
     outputTokens,
@@ -181,9 +189,16 @@ export function claudeCodeEnv(req: Pick<HarnessRequest, 'model' | 'smallModel'>,
   }
 }
 
+/** One "Tokens: … sent, … received" line per model round trip. */
+export function aiderRequests(output: string): number {
+  return (output.match(/Tokens:\s*[\d.,]+k?\s*sent/gi) ?? []).length
+}
+
 export interface ClaudeResultSummary {
   isError: boolean
   text: string
+  /** Agent turns = model requests. */
+  turns: number
   inputTokens: number
   outputTokens: number
 }
@@ -197,12 +212,14 @@ export function parseClaudeResult(output: string): ClaudeResultSummary | null {
     const j = JSON.parse(last.trim()) as {
       is_error?: boolean
       result?: string
+      num_turns?: number
       usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
     }
     const u = j.usage ?? {}
     return {
       isError: j.is_error === true,
       text: j.result ?? '',
+      turns: j.num_turns ?? 0,
       inputTokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
       outputTokens: u.output_tokens ?? 0,
     }

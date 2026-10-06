@@ -288,6 +288,43 @@ export const aiSummaryJobs = pgTable('ai_summary_jobs', {
 
 // ─── Health Score History (Phase 9 — drift detection) ────────────────────────
 
+/**
+ * Autonomous factory job record (roadmap Phase 79): one row per factory attempt, mirrored from
+ * the local ledger by factory/lib/sink.ts. `parentJobId` links an escalation (M0 failed → M1).
+ * The ledger stays the source of truth; this table is what RepoHQ queries for KPIs.
+ */
+export const agentJobs = pgTable('agent_jobs', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  repoId: integer('repo_id').references(() => repositories.id, { onDelete: 'set null' }),
+  repo: text('repo').notNull(),
+  parentJobId: text('parent_job_id'),
+  runId: text('run_id').notNull(),
+  taskKind: text('task_kind').notNull(),
+  pipeline: text('pipeline'),
+  tier: text('tier').notNull(),
+  model: text('model').notNull(),
+  harness: text('harness').notNull(),
+  isolation: text('isolation'),
+  status: text('status').notNull(),
+  reason: text('reason'),
+  requests: integer('requests'),
+  inputTokens: integer('input_tokens').default(0),
+  outputTokens: integer('output_tokens').default(0),
+  costUsd: real('cost_usd').default(0),
+  durationMs: integer('duration_ms'),
+  reported: boolean('reported').default(false),
+  prUrl: text('pr_url'),
+  adversaryModel: text('adversary_model'),
+  adversaryVerdict: text('adversary_verdict'),
+  outcome: text('outcome'),
+  humanCommits: integer('human_commits'),
+  startedAt: timestamp('started_at', { mode: 'date' }).notNull(),
+  resolvedAt: timestamp('resolved_at', { mode: 'date' }),
+}, (table) => [
+  index('agent_jobs_user_started_idx').on(table.userId, table.startedAt),
+])
+
 export const healthScoreHistory = pgTable('health_score_history', {
   id: serial('id').primaryKey(),
   repoId: integer('repo_id').notNull().references(() => repositories.id, { onDelete: 'cascade' }),

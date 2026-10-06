@@ -103,7 +103,24 @@ export function emptyTierStats(): Record<ModelTier, TierStats> {
   return { M0: { attempts: 0, rate: 0 }, M1: { attempts: 0, rate: 0 }, MC: { attempts: 0, rate: 0 }, M2: { attempts: 0, rate: 0 } }
 }
 
-/** Success rate per tier for one task kind, with exponential time decay. */
+/**
+ * Coarse routing key (roadmap Phase 79): tiers are learned per difficulty, not per task kind.
+ * Per-kind cells need ≥ 10 attempts each and would take months to fill; three buckets fill
+ * three times faster. Unknown kinds count as medium.
+ */
+export type Difficulty = 'simple' | 'medium' | 'hard'
+
+const DIFFICULTY: Record<string, Difficulty> = {
+  'docs-readme': 'simple', 'lint-autofix': 'simple', 'deps-audit': 'simple',
+  'fix-lint': 'medium', 'fix-types': 'medium',
+  'fix-tests': 'hard', 'red-ci': 'hard',
+}
+
+export function difficultyOf(taskKind: string): Difficulty {
+  return DIFFICULTY[taskKind] ?? 'medium'
+}
+
+/** Success rate per tier for the task kind's difficulty bucket, with exponential time decay. */
 export function computeTierStats(
   attempts: AttemptRecord[],
   taskKind: string,
@@ -113,8 +130,9 @@ export function computeTierStats(
   const acc: Record<ModelTier, { n: number; w: number; ws: number }> = {
     M0: { n: 0, w: 0, ws: 0 }, M1: { n: 0, w: 0, ws: 0 }, MC: { n: 0, w: 0, ws: 0 }, M2: { n: 0, w: 0, ws: 0 },
   }
+  const bucketOf = difficultyOf(taskKind)
   for (const a of attempts) {
-    if (a.taskKind !== taskKind) continue
+    if (difficultyOf(a.taskKind) !== bucketOf) continue
     if (a.outcome !== 'success' && a.outcome !== 'failed') continue
     const ageDays = Math.max(0, (now.getTime() - a.at.getTime()) / 86_400_000)
     const weight = Math.pow(0.5, ageDays / halfLifeDays)

@@ -6,7 +6,10 @@
 import type { ModelTier } from '../../src/lib/agents/model-router'
 import type { Capability, CapabilityStage } from './config'
 import { ladderStatus } from './ladder'
-import type { AttemptEntry, LedgerEntry, ResolutionEntry, ReviewEntry, ScanEntry } from './ledger'
+import type { AttemptEntry, CiOracleEntry, LedgerEntry, ResolutionEntry, ReviewEntry, ScanEntry, SignalsEntry } from './ledger'
+import { rankOpportunities } from './sensors'
+import { computeFactoryKpis, kpiHeadline } from '../../src/lib/agents/factory-kpis'
+import { toJobRecords } from './ledger'
 
 export interface ReportInput {
   now: Date
@@ -66,10 +69,10 @@ export function latestScans(entries: LedgerEntry[], repos?: string[]): ScanEntry
   return [...by.values()].sort((a, b) => a.repo.localeCompare(b.repo))
 }
 
-const KIND_PRIORITY = ['fix-types', 'lint-autofix', 'fix-lint', 'fix-tests', 'deps-audit', 'docs-readme']
+const KIND_PRIORITY = ['red-ci', 'fix-types', 'lint-autofix', 'fix-lint', 'fix-tests', 'deps-audit', 'docs-readme']
 const KIND_LABEL: Record<string, string> = {
   'fix-types': 'fix type errors', 'lint-autofix': 'apply lint autofix', 'fix-lint': 'fix lint errors', 'fix-tests': 'fix failing tests',
-  'deps-audit': 'patch vulnerable dependencies', 'docs-readme': 'fill README gaps',
+  'deps-audit': 'patch vulnerable dependencies', 'docs-readme': 'fill README gaps', 'red-ci': 'fix red CI',
 }
 
 /** PM backlog: open work from the latest scans, minus kinds with an open PR. */
@@ -93,6 +96,10 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   const newPrs = last24.filter(a => a.prUrl)
   const scans = latestScans(entries, input.repos)
   const todo = backlog(entries, input.repos)
+  const signals = new Map<string, SignalsEntry>()
+  for (const e of entries) if (e.type === 'signals' && input.repos.includes(e.repo) && (!signals.get(e.repo) || e.at > signals.get(e.repo)!.at)) signals.set(e.repo, e)
+  const ranked = signals.size ? rankOpportunities(input.repos, entries, [...signals.values()], now, { blockOnStalePrs: true }) : []
+  const stale = [...signals.values()].filter(s => s.botPrs?.stale.length)
 
   const sections: RoleSection[] = []
 
@@ -107,6 +114,8 @@ export function buildMorningReport(input: ReportInput): MorningReport {
         : `Next up (${plural(todo.length, 'task')}, highest value first):`,
       ...todo.slice(0, 8).map((t, i) => `${i + 1}. ${short(t.repo)} — ${KIND_LABEL[t.kind] ?? t.kind}`),
       ...(todo.length > 8 ? [`…and ${todo.length - 8} more.`] : []),
+      ...(ranked.length ? [`Repo queue for the next cycle: ${ranked.filter(o => !o.blocked).slice(0, 5).map(o => `${short(o.repo)}${o.reasons[0] ? ` (${o.reasons[0]})` : ''}`).join(' → ')}.`] : []),
+      ...stale.map(s => `${short(s.repo)}: ${plural(s.botPrs!.stale.length, 'bot PR')} unreviewed for 7+ days — no new factory PRs there until you review or close ${s.botPrs!.stale.length === 1 ? 'it' : 'them'}: ${s.botPrs!.stale.map(p => p.url).join(' ')}`),
     ],
   })
 
@@ -177,6 +186,9 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   // ── Security ────────────────────────────────────────────────────────────────
   const audited = scans.filter(s => s.audit)
   const risky = audited.filter(s => (s.audit!.critical + s.audit!.high) > 0)
+  const alertSignals = [...signals.values()]
+  const disabled = alertSignals.filter(s => s.alerts.status === 'disabled')
+  const alerting = alertSignals.filter(s => s.alerts.status === 'ok' && s.alerts.critical + s.alerts.high > 0)
   sections.push({
     id: 'security', role: 'Security Officer', skill: '/cso', title: 'Dependencies and data policy',
     lines: [
@@ -184,12 +196,18 @@ export function buildMorningReport(input: ReportInput): MorningReport {
         ? 'No npm audits recorded yet (runs on the next scan of each npm repo).'
         : `${risky.length} of ${audited.length} audited repos have high/critical advisories:`,
       ...risky.map(s => `${short(s.repo)}: ${s.audit!.critical} critical, ${s.audit!.high} high, ${s.audit!.moderate} moderate`),
+      ...alerting.map(s => `${short(s.repo)}: Dependabot ${s.alerts.critical} critical, ${s.alerts.high} high open (${s.alerts.npmFixable} npm-fixable)`),
+      ...(disabled.length ? [`Dependabot alerts are disabled on ${disabled.length} of ${alertSignals.length} repos (${disabled.map(s => short(s.repo)).join(', ')}): enable them in each repo's Settings → Code security so this sensor has data.`] : []),
       'Policy in force: private repos never go to free-cloud models; the factory never merges, force-pushes or deletes.',
     ],
   })
 
   // ── Ops ─────────────────────────────────────────────────────────────────────
   const failedCycles = input.cycles.filter(c => c.exit !== 0)
+  const red = [...signals.values()].filter(s => s.redCi?.length)
+  const investigations = new Map<string, AttemptEntry>()
+  for (const a of attempts.filter(x => x.kind === 'red-ci' && x.findings)) if (!investigations.get(a.repo) || a.at > investigations.get(a.repo)!.at) investigations.set(a.repo, a)
+  const oracles = entries.filter((e): e is CiOracleEntry => e.type === 'ci_oracle' && since(e.at, now, 7 * DAY))
   sections.push({
     id: 'ops', role: 'Ops / SRE', skill: '/canary', title: 'Stack health and budgets',
     lines: [
@@ -202,6 +220,13 @@ export function buildMorningReport(input: ReportInput): MorningReport {
           : `Copilot premium requests used up — builder and reviews paused until ${input.copilot.quota.resetDate ?? 'the monthly reset'}.`]
         : []),
       `Paid spend this month: $${input.monthToDateUsd.toFixed(2)} of $${input.monthlyBudgetUsd} budget.`,
+      red.length ? `Red CI on ${plural(red.length, 'base branch')}:` : 'CI is green on every sensed base branch.',
+      ...red.map(s => {
+        const inv = investigations.get(s.repo)
+        const cause = inv?.findings?.split('\n').slice(1).find(l => l.trim() && !l.startsWith('#'))?.trim()
+        return `${short(s.repo)} (${s.base}): ${s.redCi!.map(r => r.workflow).join(', ')}${cause ? ` — root cause: ${cause.slice(0, 200)}` : ''}`
+      }),
+      ...oracles.map(o => `red-ci PR: "${o.workflow}" ${o.passed ? 'passes' : 'still fails'} on the PR.`),
     ],
   })
 
@@ -211,9 +236,12 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   const merged = counted.filter(a => resolutions.get(a.id)?.outcome === 'merged')
   const rejected = counted.filter(a => resolutions.get(a.id)?.outcome === 'rejected')
   const paid = verified.filter(a => a.tier === 'M2').length
+  const kpis = computeFactoryKpis(toJobRecords(entries), now, { approvalsNeeded: entries.filter(e => e.type === 'approval_needed' && since(e.at, now, 30 * DAY)).length })
   sections.push({
     id: 'retro', role: 'Engineering Manager', skill: '/retro', title: 'Last 7 days',
     lines: [
+      `${kpiHeadline(kpis)} (30 days).`,
+      ...(kpis.reviewHoursMedian !== null ? [`Review load: median ${kpis.reviewHoursMedian.toFixed(1)}h from PR to your decision; ${kpis.humanEditedPrs} merged PR(s) needed your edits.`] : []),
       `${plural(counted.length, 'attempt')}, ${verified.length} verified, ${merged.length} merged, ${rejected.length} closed without merging.`,
       verified.length ? `${Math.round(((verified.length - paid) / verified.length) * 100)}% of verified fixes cost $0 at the margin.` : 'No verified fixes yet this week.',
       merged.length + rejected.length > 0
@@ -242,7 +270,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   }
 
   const day = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
-  const subject = `RepoHQ factory · ${day} · ${plural(openPrs.length, 'PR')} to review`
+  const subject = `RepoHQ factory · ${day} · ${plural(openPrs.length, 'PR')} to review · ${plural(kpis.lastNightPrs, 'new PR')} last night`
   return { subject, sections, text: renderText(subject, sections), html: renderHtml(subject, sections) }
 }
 
