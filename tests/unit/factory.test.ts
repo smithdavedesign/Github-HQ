@@ -157,6 +157,14 @@ describe('judge', () => {
     expect(judge({ task: typeTask, baseline, after: baseline, diff: diff([['.github/workflows/ci.yml', 1, 1]]) }).reason).toMatch(/forbidden/)
     expect(judge({ task: typeTask, baseline, after: baseline, diff: diff([['src/a.ts', 300, 200]]) }).reason).toMatch(/too large/)
   })
+  it('never lets the factory edit its own judge, loop or router', () => {
+    const after = [ok('typecheck'), ok('test')]
+    const unscoped = { ...typeTask, scoped: false, files: [] }
+    for (const f of ['factory/lib/verify.ts', 'factory/run.ts', 'src/lib/agents/model-router.ts']) {
+      expect(judge({ task: unscoped, baseline, after, diff: diff([[f, 1, 1]]), repo: 'smithdavedesign/Github-HQ' }).reason).toMatch(/factory-owned/)
+    }
+    expect(judge({ task: unscoped, baseline, after, diff: diff([['factory/x.ts', 1, 1]]), repo: 'smithdavedesign/other' }).ok).toBe(true)
+  })
   it('rejects check-silencing changes', () => {
     for (const line of ['// @ts-ignore', '/* eslint-disable */', "it.skip('x', () => {})", "describe.only('x')", "xit('y')"]) {
       expect(judge({ task: typeTask, baseline, after: [ok('typecheck'), ok('test')], diff: diff([['src/a.ts', 1, 0]], [line]) }).ok).toBe(false)

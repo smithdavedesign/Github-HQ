@@ -19,9 +19,10 @@ This doc turns that loop into a **cost-aware autonomous factory**:
 
 1. **A local worker lane on the Mac** executes most tasks against the local AI stack (`~/ai-stack`: Ollama → Headroom → LiteLLM), at **$0**.
 2. **A model-tier ladder** (local → free cloud → paid) picks the cheapest model that has *proven* it can do each task type, and escalates on failure.
-3. **The existing accuracy loop is extended to models**, so the system learns its own routing policy. That is self-improvement of the factory, as well as of the repos.
+3. **The existing accuracy loop is extended to models**, so the system learns its own routing policy. That is self-improvement of the factory, as well as of the repos. It changes routing *data* only: the factory never edits its own judge, loop or router (§14).
 4. **Trust, secrets, identity and budget guardrails** from the PRD get mapped onto existing RepoHQ primitives instead of a parallel system.
 5. **Infrastructure provisioning** (the PRD's headline) is kept, but moved to Horizon 3. It's high-blast-radius and only pays off once the repo loop is cheap and trusted.
+6. **Next (§14, Phases 75–80):** sandbox the worker, harden the judge, fixed pipelines, measure accepted PRs per free request. Target: one good, human-approved PR every night, then more.
 
 ---
 
@@ -435,6 +436,49 @@ The owner's target is a small team rather than one agent: **Architect** (thinks,
 - Handoffs are structured (task JSON in, verdict JSON out), never open-ended chat. OpenClaw's `maxPingPongTurns` is pinned to 1 for when agent-to-agent is enabled.
 - Agent-to-agent access is explicitly locked down before any new agent is added (§ roadmap Phase 69). When the team agents arrive, the allowlist is architect↔builder, architect↔operator, reviewer→architect. The reviewer never holds production credentials; the builder never holds the vault.
 - The morning report is the team's standup: one section per gstack role, numbers from the ledger only.
+
+## 14. Factory v2: one good PR while the owner sleeps (2026-10-06)
+
+A proposal for a "Director + many specialist agents" architecture (CEO, engineering, QA, security and release agents spawning each other) was reviewed against what the factory had actually run and taught us. Its revised form is the plan of record. The full proposal isn't reproduced here; this section keeps the decisions.
+
+**North star.** Not "a team of autonomous agents" but *an autonomous software factory that safely produces one high-quality, human-approved PR at a time, continuously*. The metric the whole project optimises: **how many human-approved improvements the factory produced overnight.** Then raise it from one to two to three, and raise the share that get merged.
+
+**Why not more agents.** The binding constraints, in order, are verification, free-model requests, the owner's review time, then local compute. More roles add output that nothing can verify mechanically, and a 9-skill chain costs ~9 agent sessions per task on a free pool that affords one or two pipelines a night (§12). So effort goes into the boxes of the loop that already exists:
+
+```
+sense → select one task → fixed pipeline → sandboxed worker → verify (deterministic) → judge (advisory) → draft PR → human merge → learn (data only)
+```
+
+### 14.1 Decisions
+
+| # | Decision | Concretely |
+|---|---|---|
+| 1 | **Sandbox before intelligence.** The worker is too trusted today: `npm ci` and test suites of target repos run on the owner's Mac with `gh`, keychain and `~/.ssh` in reach | Docker job container per task (Phase 76). The **container gets no GitHub credential at all**: the host already commits, pushes and opens the PR *after* the judge passes (`factory/lib/git.ts`), so the container only needs the repo copy, the LiteLLM endpoint and the package registry. No host mounts, no Docker socket, CPU/memory/time limits, destroyed after the job. Checks run *inside* the container too, since the untrusted code is the repo's install and test scripts, not just the model |
+| 2 | **Spawning depth = 1.** Director → worker → done | Workers return a structured result; they never pick the next step. Nexus's `suggestedNextSkill` auto-chain (one hop, behind `autoDispatchEnabled`) is the pattern this rules out for unattended work (open item in Phase 78) |
+| 3 | **Fixed pipelines per task kind**, chosen by the Director; no dynamic skill chains | Pipelines map to task kinds with an oracle, not to gstack skill names (Phase 78). gstack `/qa` drives a browser against a running app, not a failing unit test; `/benchmark` needs baselines none of the repos have; a feature pipeline has no oracle, so it stays report-only |
+| 4 | **Deterministic verification first; the LLM judge last and advisory** | The rule-based judge (`verify.ts`) gets harder to fool (Phase 77). An adversarial LLM pass ("prove this should not merge") runs only after the rules pass, on a different model family from the builder, and can only **veto or flag** `UNCERTAIN`, never approve. `UNCERTAIN` = a PR label asking for a careful human read, not a block |
+| 5 | **The factory never modifies its own judge, loop or router** | Shipped 2026-10-06: in the factory's home repo (Github-HQ is on its own allowlist), the judge rejects any diff touching `factory/**` or `src/lib/agents/model-router.ts`; the Autonomous PR policy workflow fails autonomous branches that touch them, as a backstop. Changes there are human-only |
+| 6 | **Learning changes data, not code** | Merge / close / judge-reject / human-edit outcomes adjust routing statistics. Self-modification of factory code is out of scope indefinitely |
+| 7 | **Coarse routing** | Task difficulty (simple / medium / hard) × tier (local / free cloud / Copilot / paid). No per-skill × model × repo cells until there are thousands of jobs; today a cell needs ≥ 10 attempts to count |
+| 8 | **Promotion ladder per capability**: observe → report → draft PR → auto-verified PR → human merge | A new capability (e.g. red-CI investigation) enters at *report* and moves up only with evidence. **Merge stays human indefinitely**: it's the final control and the router's best learning signal |
+| 9 | **Measure what the factory costs, not just what the model scores** | KPIs in Phase 79: accepted PRs per free request, merge rate, review-load proxies, autonomy |
+| 10 | **Keep scheduled one-shot cycles** rather than a `while (!paused)` daemon | launchd starts a fresh process each cycle: crashes and leaks don't accumulate, `PAUSE` is checked at start, and "nothing worth doing" already means the cycle exits. Same loop shape, more robust host |
+
+### 14.2 KPIs
+
+| KPI | Definition | Source |
+|---|---|---|
+| Factory efficiency | accepted (merged) PRs ÷ free-model requests spent | ledger: request count per attempt (new field) |
+| Acceptance | merged ÷ (merged + closed) factory PRs | reconcile (exists) |
+| Review load (proxy) | median hours from PR open to merge/close; human commits pushed onto bot branches | GitHub (new) |
+| Autonomy | verified tasks ÷ tasks that ended in `approval_needed`, dead-end or a human edit | ledger |
+| Overnight yield | human-approved PRs produced per night | ledger + reconcile; headline of the morning report |
+
+"Minutes of human review" can't be measured directly, so the proxies stand in for it.
+
+### 14.3 Capacity on this Mac
+
+16 GB RAM: Docker Desktop's VM has 8 GB and Ollama keeps a 7B model (~5 GB) resident on the host. Realistic concurrency is **one container**, two for light repos. The cycle is serial today, and stays serial until the container has run a week of nights cleanly.
 
 ---
 

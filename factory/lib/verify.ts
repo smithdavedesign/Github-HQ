@@ -38,6 +38,15 @@ const FORBIDDEN_PATHS = [
   /(^|\/)node_modules\//,
 ]
 
+/** The repo that hosts the factory itself (it's on its own allowlist). */
+export const FACTORY_HOME_REPO = 'smithdavedesign/Github-HQ'
+
+/**
+ * In the factory's home repo, the judge, loop and router are human-only: learning
+ * changes routing data, never the code that decides what passes (docs/autonomous-factory.md §14).
+ */
+const SELF_PATHS = [/^factory\//, /^src\/lib\/agents\/model-router\.ts$/]
+
 /** Check-silencing patterns a model might use to "pass". */
 const CHEATS: [RegExp, string][] = [
   [/@ts-(ignore|nocheck|expect-error)/, 'adds a TypeScript suppression'],
@@ -62,6 +71,8 @@ export function judge(input: {
   /** Names of the repo's dependencies + devDependencies (for `npx <tool>` checks). */
   deps?: string[]
   readmeAfter?: string | null
+  /** owner/name of the target repo (enables the self-modification guard). */
+  repo?: string
   /** deps-audit only: npm audit before/after. */
   audit?: { before: AuditCounts | null; after: AuditCounts | null }
   /** lint-autofix only: ESLint problem totals before/after. */
@@ -70,6 +81,10 @@ export function judge(input: {
   const { task, baseline, after, diff } = input
 
   if (diff.files.length === 0) return { ok: false, reason: 'no changes made' }
+  if (input.repo === FACTORY_HOME_REPO) {
+    const self = diff.files.find(f => SELF_PATHS.some(re => re.test(f.path)))
+    if (self) return { ok: false, reason: `touched factory-owned path ${self.path} (human-only)` }
+  }
   if (task.kind === 'deps-audit') return judgeDeps(diff, baseline, after, input.audit)
   if (task.kind === 'lint-autofix') return judgeLintAutofix(diff, baseline, after, input.lintProblems)
 

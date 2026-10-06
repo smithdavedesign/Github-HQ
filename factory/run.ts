@@ -327,7 +327,7 @@ async function attempt(
   const verdict = diff.files.length > 0
     ? judge({
       // Scripts/deps from every package.json (root + sub-packages like client/, server/).
-      task, baseline, after, diff, ...collectPackageInfo(dir), readmeAfter,
+      task, baseline, after, diff, ...collectPackageInfo(dir), readmeAfter, repo,
       audit: deps ? { before: auditBefore, after: await runAudit(dir) } : undefined,
       lintProblems: lintFix ? { before: lintProblems(baseline.find(b => b.name === 'lint')), after: lintProblems(after.find(a => a.name === 'lint')) } : undefined,
     })

@@ -848,6 +848,57 @@ Fixes from the first scheduled night (details: [autonomous-factory.md §12](auto
 - [ ] Add bidirectional links from RepoHQ Agent History to Notion records for auditability
 - [ ] Add weekly governance report: autonomy throughput, merge-to-main approvals, regression rate, and documentation completeness
 
+### Factory v2 — One Good PR Overnight (Phases 75–80)
+Plan of record from the 2026-10-06 architecture review: harden and measure the existing loop instead of adding agent roles. Order: sandbox → verification → fixed pipelines → economics → learning → night shift. Design and rationale: [autonomous-factory.md §14](autonomous-factory.md#14-factory-v2-one-good-pr-while-the-owner-sleeps-2026-10-06).
+
+**Standing limits for every phase below:** spawning depth 1 (Director → worker), fixed pipelines only, $0 budget, ≤ 8 PRs per factory day, merge is always human, `PAUSE` kill switch, the factory never edits its own judge/loop/router.
+
+### Phase 75 — Self-Protection & Promotion Ladder
+- [x] Judge rejects factory diffs to `factory/**` and `src/lib/agents/model-router.ts` in the factory's home repo (Github-HQ is on its own allowlist); test in `tests/unit/factory.test.ts`
+- [x] CI backstop: the Autonomous PR policy fails `feature/bot/*`, `nexus/*`, `factory/*` PRs that touch those paths
+- [ ] Per-capability ladder stage in `factory.config.json` (`observe` / `report` / `pr`), enforced by the Director; new capabilities start at `report`
+- [ ] Morning report lists each capability's stage and the evidence needed to promote it
+
+### Phase 76 — Sandboxed Worker (Docker)
+- [ ] Job image: Node LTS + git + Aider + Claude Code CLI; per-repo toolchain detection (Node first; Python/Go later)
+- [ ] Repo copied in, not bind-mounted from `~/Documents`; no `~/.ssh`, `~/.aws`, `~/.config/gh`, keychain or Docker socket
+- [ ] **No GitHub credential in the container**: the host keeps commit / push / `gh pr create` after the judge passes
+- [ ] Network: LiteLLM (`host.docker.internal:4000`) + package registries only; everything else blocked
+- [ ] Install, checks and the model harness all run inside the container; the host reads back the diff and check results
+- [ ] Limits: CPU, memory, wall clock (cycle timeout), disk; container and volume removed after every job
+- [ ] Concurrency 1 (16 GB Mac with Ollama resident); revisit after a clean week
+- [ ] Fallback when Docker is down: skip the cycle (never run untrusted repo code on the host again)
+
+### Phase 77 — Judge v2 (deterministic first, adversarial last)
+- [ ] Test integrity: assertion count must not drop in touched test files; no new mocks of the unit under test; no snapshot rewrites on non-test tasks
+- [ ] Diff sanity: no unrelated files, no mass reformatting on model tasks, deletions justified by the task
+- [ ] Dependency validation: new imports must resolve to existing deps (extends today's `npx` check to `import` / `require`)
+- [ ] Coverage delta where the repo already reports coverage
+- [ ] Advisory adversarial pass after the rules pass: "prove this should NOT merge" checklist, different model family from the builder, output `PASS` / `FAIL` / `UNCERTAIN`; may veto or label `needs-careful-review`, never approve. Copilot review when quota exists, local `local-coder-14b` otherwise
+- [ ] Judge regression suite: every `voided` verdict and every closed-in-review PR becomes a fixture
+
+### Phase 78 — Fixed Pipelines & New Sensors
+- [ ] Pipelines (each = sense → one worker step → verify → PR): **fix-checks** (types / lint / tests, exists), **lint-autofix** and **deps-audit** (deterministic, exist), **docs-readme** (exists), **red-CI** (new), **security alerts** (new)
+- [ ] Sensor: default branch CI failing → red-CI pipeline using gstack `/investigate`; oracle = the failing job passes. Enters at `report`
+- [ ] Sensor: Dependabot / code-scanning alerts RepoHQ already syncs → deps-audit when fixable, otherwise `/cso` report only
+- [ ] Sensor: stale bot PRs (open > 7 days, unreviewed) → report, never more PRs on that repo until they're handled
+- [ ] Cross-repo opportunity queue: one ranked list per cycle (red CI > security > failing checks > docs), priority weighted by RepoHQ health score
+- [ ] Deferred: feature pipeline (`/plan-eng-review`, report-only until an oracle exists) and performance pipeline (`/benchmark`, needs baselines)
+- [ ] Decision for the owner: Nexus's `suggestedNextSkill` auto-chain (`src/app/api/webhooks/agent-events/route.ts`) is dynamic chaining. Keep it for owner-initiated tasks only, or turn it off for scheduled triggers
+
+### Phase 79 — Factory Economics & the Job Record
+- [ ] Ledger → Neon `agent_jobs` table (id, parentJobId, repo, task kind, pipeline, tier, model, status, requests, tokens, cost, timings, verdict, PR, outcome, human edits); `ledger.jsonl` stays as the local write-ahead log
+- [ ] Record free-model request count per attempt (Claude Code turns; Aider edit rounds)
+- [ ] KPIs from §14.2 on `/agent-performance` and as the morning report headline: overnight yield, accepted PRs per request, acceptance, review-load proxies, autonomy
+- [ ] Coarse routing key: difficulty (simple / medium / hard) × tier
+- [ ] Overlaps Phase 71 (telemetry) for factory runs; 71 keeps the Nexus side
+
+### Phase 80 — Night Shift v2
+- [ ] Gate to start: Phases 75–77 done and the container has run 7 nights with zero host-side repo code execution
+- [ ] 20:00–06:00 on AC power, sandboxed, $0, ≤ 8 PRs, human merge, `PAUSE`
+- [ ] Success measure: a sustained rise in overnight yield and acceptance over 30 nights, not PR count
+- [ ] Only then: concurrency 2
+
 ### Phase 67+ — Horizon 3: Infrastructure Agent
 - [ ] `agent_resources` ledger table (owner, provider, kind, environment, est. cost, `ephemeral`, `ttlAt`, destroy procedure, lifecycle state) + `.infrastructure/resources.json` mirror
 - [ ] Dev-only provisioning in order: GitHub repo → Vercel preview → Neon/Supabase dev branch → Cloudflare preview DNS → AWS/GCP
