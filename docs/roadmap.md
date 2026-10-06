@@ -768,7 +768,8 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 - [x] Budget ledger: monthly paid cap (default $0) enforced before every M2 attempt; M2 cost computed from token usage
 - [x] Human boundary: `approval_needed` ledger entry + RepoHQ in-app notification (fans out via the existing outbound webhook)
 - [x] Draft-only PRs; the factory never merges, force-pushes or deletes branches
-- [ ] Signed, single-use approval links (`/approve/[token]`) and an `awaiting_approval` lifecycle stage in RepoHQ
+- [x] Signed, single-use approval links (`/approve/[token]`) and an `awaiting_approval` lifecycle stage in RepoHQ
+  - Implementation notes: signed HMAC tokens with expiry and one-time use, plus a RepoHQ approval page used when a task needs a human permit before continuing.
 - [ ] OpenClaw → WhatsApp relay for approvals (needs owner sign-off before any outbound WhatsApp)
 - [ ] Branch protection on `main` for every allowlisted repo (L4 backstop). Owner action via GitHub settings
 
@@ -800,6 +801,41 @@ Toward the Architect / Builder / Reviewer / Operator team (docs/autonomous-facto
 - [ ] Owner: run `bash factory/bin/setup-email.sh <gmail>` once (needs a Gmail app password)
 - [ ] Builder ← Reviewer loop: turn Copilot's line comments into a follow-up commit on the same branch
 - [ ] Copilot coding agent (assign an issue to `@copilot`) for tasks every local tier failed
+
+### Phase 70 — Shared Branch Governance (Integration First)
+- [x] Standard branch policy across all repos: autonomous work branches use `feature/bot/{taskId}-{slug}`
+- [x] Add an integration landing branch standard: `integration/agent` (alias allowed: `feature/bot` only if the repo already uses it as integration)
+- [x] All autonomous PRs target `integration/agent`; no autonomous PR may target `main`
+- [-] Human gate remains only for `integration/agent -> main` promotion PRs (main-release workflow guard + label requirement shipped; operational rollout process pending)
+- [-] Add branch cleanup policy: TTL, max concurrent bot branches, and stale-branch sweeper (scaffold preview endpoint shipped in Nexus)
+- [x] Add CI/promotion guard that rejects autonomous PRs to `main` with a clear policy message
+
+### Phase 71 — Agent Visibility v2 (Full Behind-the-Scenes Telemetry)
+- [ ] Expand Agent History with full execution timeline: queued, preparing, running, report-ready, pr-ready, merged, failed, timed-out, needs-human
+- [ ] Persist and surface per-run telemetry: model tier, tokens, cost USD, duration, retries, escalation reason, chain depth
+- [ ] Add a factory trace panel on `/agent-performance` with per-stage timings and retry chains
+- [ ] Add correlation IDs across RepoHQ event rows and Nexus execution IDs for one-click traceability
+- [ ] Add operator filters for source (`repohq-advisor`, `repohq-auto-dispatch`, `skill-chain`, `self-scan`, `mcp`)
+
+### Phase 72 — Run-Until-Complete Autonomous Loops
+- [x] Add bounded retry orchestration for recoverable failures (lint/test/network/transient CI) with default max attempts = 3
+- [x] Add terminal-state policy with explicit stop reasons (`merged`, `failed`, `timed_out`, `needs_human`, `rejected`)
+- [x] Add auto-repair chaining policy that continues execution until objective complete or retry budget exhausted
+- [x] Add loop kill-switch and per-repo retry budget controls in Settings
+- [x] Add anti-loop safeguards: chain-depth cap, duplicate-objective suppression, and cooldown windows
+
+### Phase 73 — gstack as Default Orchestrator
+- [x] Make gstack the default autonomous execution path for advisor-dispatched tasks, with per-skill allowlist by repo (`resolveAdvisorSkill` + repo tag policy `gstack-allow:*` + env override map)
+- [x] Add policy tiers for auto-run skills (`report-only`, `analyze+fix`, `high-risk`) and enforce by repo lifecycle + confidence (auto-dispatch now gates by tier + lifecycle + impact accuracy band)
+- [x] Add progressive autonomy controls: low-risk skills auto-run by default, high-risk skills require explicit per-repo opt-in (`gstack-optin:high-risk` tag or `REPO_GSTACK_HIGH_RISK_OPT_IN_JSON` override)
+- [x] Add cross-skill objective continuity so downstream skills inherit prior findings and unresolved blockers (auto-chain now carries inherited findings + blocker context into objective and contextNotes)
+
+### Phase 74 — Notion Execution Ledger (System of Record)
+- [ ] Introduce a Notion execution database as source of truth for autonomous runs across repos
+- [ ] Auto-sync one canonical record per run with required fields: taskId, trigger, repo, skill, branch, PR links, timeline, retries, terminal state, outcome delta
+- [ ] Enforce writing standards on summaries: objective, acceptance criteria, confidence, rollback notes, final outcome
+- [ ] Add bidirectional links from RepoHQ Agent History to Notion records for auditability
+- [ ] Add weekly governance report: autonomy throughput, merge-to-main approvals, regression rate, and documentation completeness
 
 ### Phase 67+ — Horizon 3: Infrastructure Agent
 - [ ] `agent_resources` ledger table (owner, provider, kind, environment, est. cost, `ephemeral`, `ttlAt`, destroy procedure, lifecycle state) + `.infrastructure/resources.json` mirror

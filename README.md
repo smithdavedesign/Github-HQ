@@ -227,6 +227,48 @@ NEXUS_WEBHOOK_SECRET=your-webhook-secret
 
 The gstack Skill Launcher and Run Agent buttons will activate once these are set. Without Nexus, the UI shows a "not configured" state.
 
+### Advisor Dispatch Skill Policy
+
+- Advisor-dispatched autonomous tasks default to gstack skills:
+  - `security` impact → `/investigate`
+  - `health` / `opportunity` / `revenue` impact → `/ship`
+- Optional per-repo allowlist via repository tag:
+  - `gstack-allow:ship,investigate`
+  - `gstack-allow:all` (or omit tag) allows default behavior.
+- Optional global override via env JSON map:
+
+```bash
+REPO_GSTACK_SKILL_ALLOWLIST_JSON={"owner/repo":["ship","investigate"]}
+```
+
+Env override takes precedence over repo tags.
+
+### Auto-Run Skill Tier Policy
+
+Auto-dispatch now applies tiered safety rules before queueing advisor actions:
+
+- `report-only`: always allowed except archived repos.
+- `analyze+fix`: allowed for lifecycle stages `building`, `beta`, `production`, `growing`, `maintaining`; requires at least medium confidence.
+- `high-risk`: allowed for `beta`, `production`, `growing`, `maintaining`; requires high confidence.
+
+Confidence is derived from per-impact historical accuracy signal (`successRate` + minimum data points).
+
+### Progressive Autonomy Controls
+
+- Low-risk tiers (`report-only`, `analyze+fix`) auto-run by default once lifecycle + confidence gates pass.
+- High-risk tier requires explicit per-repo opt-in for auto-dispatch:
+  - Repo tag: `gstack-optin:high-risk`
+  - Optional env override map: `REPO_GSTACK_HIGH_RISK_OPT_IN_JSON={"owner/repo":true}`
+- Env override map takes precedence over tags.
+
+### Cross-Skill Objective Continuity
+
+- Auto-chained skills now inherit prior actionable findings and unresolved blocker context.
+- RepoHQ carries this continuity in both places:
+  - Chained objective text (explicit carry-forward summary)
+  - `contextNotes` fields (`parentTaskId`, `inheritedFindings`, `unresolvedBlockers`)
+- This keeps downstream skills aligned with upstream report findings and reduces context loss across skill transitions.
+
 ### 9. (Optional) Enable MCP Server
 
 ```json
@@ -268,6 +310,8 @@ RepoHQ integrates with **AI-Took-My-Job** (AI-DevOps Nexus) to automatically exe
 **Lifecycle states:** `idle → queued → preparing → running → pr_ready / report_ready → merged / failed / timed_out / needs_human`
 
 **Auto-dispatch:** Enable in Settings → Agent Auto-Dispatch. Every Monday the advisor automatically queues eligible actions — you wake up with PRs ready to review. Controls: effort gate (quick / quick+medium / all), max tasks per week (1–10), skip security tasks, minimum accuracy threshold.
+
+**Autonomous loop policy:** agent retries are bounded by a default budget of 3 attempts. Terminal stop reasons (`merged`, `failed`, `timed_out`, `needs_human`, `rejected`) halt re-entry, while recoverable CI/test failures can continue until the retry cap is reached.
 
 The Run Agent button hydrates from the database on mount — it always reflects the true current state even after navigation or page refresh. The server also blocks duplicate queuing server-side.
 

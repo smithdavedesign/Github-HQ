@@ -66,6 +66,10 @@ export default async function AgentPerformancePage() {
   }, 0)
 
   const nexusUrl = process.env.NEXUS_API_URL
+  const tracedEvents = events.filter(event => {
+    const meta = event.metadata as Record<string, unknown> | null
+    return Boolean(meta?.correlationId || meta?.executionTimeline || meta?.modelTier || meta?.totalTokens || meta?.durationMs)
+  })
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -173,6 +177,45 @@ export default async function AgentPerformancePage() {
             {factory.freeSharePct != null ? <>Free-tier share of verified fixes: <span className="font-medium text-foreground">{factory.freeSharePct}%</span> · </> : null}
             {factory.scout ? <>free-agent: <span className="font-mono">{factory.scout.primary ?? '—'}</span> (scouted {formatDistanceToNow(factory.scout.at)})</> : null}
           </p>
+        </div>
+      )}
+
+      {/* Execution trace */}
+      {tracedEvents.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold">Execution Trace</h2>
+          <div className="space-y-3 rounded-lg border border-border/50 bg-muted/10 p-3 text-xs">
+            {tracedEvents.slice(0, 5).map(event => {
+              const meta = event.metadata as Record<string, unknown> | null
+              const timeline = Array.isArray(meta?.executionTimeline) ? meta.executionTimeline as Array<{ stage?: string; at?: string }> : []
+              const tier = meta?.modelTier ? String(meta.modelTier) : '—'
+              const tokens = typeof meta?.totalTokens === 'number' ? meta.totalTokens : '—'
+              const correlation = meta?.correlationId ? String(meta.correlationId) : '—'
+
+              return (
+                <div key={event.id} className="rounded border border-border/40 bg-background/80 p-2.5">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <p className="font-medium truncate">{event.title}</p>
+                    <span className="text-[10px] text-muted-foreground">{correlation}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                    <span>Tier: <span className="text-foreground font-medium">{tier}</span></span>
+                    <span>Tokens: <span className="text-foreground font-medium">{tokens}</span></span>
+                    <span>Cost: <span className="text-foreground font-medium">{meta?.costUsd ? `$${Number(meta.costUsd).toFixed(4)}` : '—'}</span></span>
+                  </div>
+                  {timeline.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {timeline.map((step, idx) => (
+                        <span key={`${event.id}-${idx}`} className="rounded-full border border-border/50 bg-muted/50 px-1.5 py-0.5 text-[9px] text-muted-foreground">
+                          {String(step.stage ?? 'stage')}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

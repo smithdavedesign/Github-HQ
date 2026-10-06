@@ -10,6 +10,7 @@ import { TrendingUp } from 'lucide-react'
 
 interface Props {
   data: HealthTrendPoint[]
+  hasLiveFallback?: boolean
 }
 
 function formatDate(dateStr: string) {
@@ -17,7 +18,7 @@ function formatDate(dateStr: string) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-export function HealthTrendLineChart({ data }: Props) {
+export function HealthTrendLineChart({ data, hasLiveFallback = false }: Props) {
   return (
     <Card className="card-elevated">
       <CardHeader className="pb-2">
@@ -33,9 +34,13 @@ export function HealthTrendLineChart({ data }: Props) {
         {data.length < 3 ? (
           <div className="flex items-center justify-center h-48 text-center" aria-live="polite">
             <div>
-              <p className="text-sm font-medium text-muted-foreground">No data yet</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                {hasLiveFallback ? 'Showing live snapshot' : 'No data yet'}
+              </p>
               <p className="text-xs text-muted-foreground mt-1">
-                {data.length} of 3+ snapshots needed — check back after a few more syncs
+                {hasLiveFallback
+                  ? 'History snapshots are still warming up — daily syncs will fill in the trend.'
+                  : `${data.length} of 3+ snapshots needed — check back after a few more syncs`}
               </p>
             </div>
           </div>

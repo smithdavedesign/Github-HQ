@@ -14,8 +14,162 @@ const VALID_SKILLS = new Set<GstackSkill>([
   'ship', 'document-release', 'health', 'canary', 'retro',
 ])
 
+export type AdvisorImpactType = 'opportunity' | 'revenue' | 'security' | 'health'
+export type SkillPolicyTier = 'report-only' | 'analyze+fix' | 'high-risk'
+export type ConfidenceBand = 'low' | 'medium' | 'high'
+
+export function resolveAdvisorSkill(impactType: AdvisorImpactType): GstackSkill {
+  return impactType === 'security' ? 'investigate' : 'ship'
+}
+
+const REPORT_ONLY_SKILLS = new Set<GstackSkill>(['health', 'qa-only', 'review', 'canary', 'retro'])
+
+export function resolveSkillPolicyTier(skill: GstackSkill, impactType?: AdvisorImpactType): SkillPolicyTier {
+  if (REPORT_ONLY_SKILLS.has(skill)) return 'report-only'
+  if (impactType === 'security' || skill === 'investigate') return 'high-risk'
+  return 'analyze+fix'
+}
+
+export function resolveConfidenceBand(successRate: number, dataPoints: number, minDataPoints: number): ConfidenceBand {
+  if (dataPoints < minDataPoints) return 'low'
+  if (successRate >= 80) return 'high'
+  if (successRate >= 50) return 'medium'
+  return 'low'
+}
+
+export function isTierAllowedForLifecycle(tier: SkillPolicyTier, lifecycleStatus: string | null | undefined): boolean {
+  const stage = lifecycleStatus ?? 'maintaining'
+
+  if (tier === 'report-only') {
+    return stage !== 'archived'
+  }
+
+  if (tier === 'analyze+fix') {
+    return ['building', 'beta', 'production', 'growing', 'maintaining'].includes(stage)
+  }
+
+  return ['beta', 'production', 'growing', 'maintaining'].includes(stage)
+}
+
+export function isTierAllowedByConfidence(tier: SkillPolicyTier, confidence: ConfidenceBand): boolean {
+  if (tier === 'report-only') return true
+  if (tier === 'analyze+fix') return confidence !== 'low'
+  return confidence === 'high'
+}
+
+/**
+ * Progressive autonomy gate:
+ * - low-risk tiers (`report-only`, `analyze+fix`) auto-run by default
+ * - `high-risk` requires explicit per-repo opt-in
+ *
+ * Repo opt-in tag: gstack-optin:high-risk
+ * Optional env override JSON (highest precedence):
+ * REPO_GSTACK_HIGH_RISK_OPT_IN_JSON={"owner/repo":true}
+ */
+export function parseEnvHighRiskOptInMap(raw: string | undefined): Map<string, boolean> {
+  if (!raw) return new Map()
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const map = new Map<string, boolean>()
+    for (const [repoFullName, value] of Object.entries(parsed)) {
+      map.set(repoFullName, value === true)
+    }
+    return map
+  } catch {
+    return new Map()
+  }
+}
+
+export function isHighRiskOptedIn(
+  repoFullName: string,
+  tags: string[] | null | undefined,
+  envOptInMap: Map<string, boolean>,
+): boolean {
+  const envOverride = envOptInMap.get(repoFullName)
+  if (envOverride != null) return envOverride
+
+  if (!tags?.length) return false
+  return tags.some((t) => t.toLowerCase() === 'gstack-optin:high-risk')
+}
+
+export function isTierAllowedByProgressiveAutonomy(
+  tier: SkillPolicyTier,
+  repoFullName: string,
+  tags: string[] | null | undefined,
+  envOptInMap: Map<string, boolean>,
+): boolean {
+  if (tier !== 'high-risk') return true
+  return isHighRiskOptedIn(repoFullName, tags, envOptInMap)
+}
+
 export function isGstackSkill(value: unknown): value is GstackSkill {
   return typeof value === 'string' && VALID_SKILLS.has(value as GstackSkill)
+}
+
+/**
+ * Repo-level allowlist parser from tags.
+ *
+ * Supported forms:
+ * - gstack-allow:ship,investigate
+ * - gstack-allow:all
+ */
+export function parseRepoSkillAllowlist(tags: string[] | null | undefined): Set<GstackSkill> | null {
+  if (!tags?.length) return null
+
+  const prefix = 'gstack-allow:'
+  const tag = tags.find((t) => t.toLowerCase().startsWith(prefix))
+  if (!tag) return null
+
+  const value = tag.slice(prefix.length).trim().toLowerCase()
+  if (!value || value === 'all' || value === '*') return null
+
+  const skills = value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((s): s is GstackSkill => isGstackSkill(s))
+
+  return new Set(skills)
+}
+
+/**
+ * Optional env override map for hard policy by repo full name.
+ *
+ * Example:
+ * REPO_GSTACK_SKILL_ALLOWLIST_JSON={"owner/repo":["ship","investigate"]}
+ */
+export function parseEnvSkillAllowlistMap(raw: string | undefined): Map<string, Set<GstackSkill>> {
+  if (!raw) return new Map()
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const map = new Map<string, Set<GstackSkill>>()
+
+    for (const [repoFullName, value] of Object.entries(parsed)) {
+      if (!Array.isArray(value)) continue
+      const skills = value
+        .map((s) => (typeof s === 'string' ? s.trim() : ''))
+        .filter((s): s is GstackSkill => isGstackSkill(s))
+      map.set(repoFullName, new Set(skills))
+    }
+
+    return map
+  } catch {
+    return new Map()
+  }
+}
+
+export function isSkillAllowedForRepo(
+  skill: GstackSkill,
+  repoFullName: string,
+  repoTagAllowlist: Set<GstackSkill> | null,
+  envAllowlistMap: Map<string, Set<GstackSkill>>,
+): boolean {
+  const envAllowlist = envAllowlistMap.get(repoFullName)
+  if (envAllowlist) return envAllowlist.has(skill)
+  if (repoTagAllowlist) return repoTagAllowlist.has(skill)
+  return true
 }
 
 export interface SkillMeta {

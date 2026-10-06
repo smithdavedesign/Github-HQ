@@ -9,6 +9,11 @@ export interface HealthTrendPoint {
   avgActivity: number
 }
 
+export interface PortfolioHealthTrend {
+  series: HealthTrendPoint[]
+  snapshotDays: number
+}
+
 export interface HealthTrendRow {
   date: string
   healthScore?: number | null
@@ -65,7 +70,7 @@ export function buildHealthTrendSeries(
   return series
 }
 
-export async function getPortfolioHealthTrend(userId: string, days = 30): Promise<HealthTrendPoint[]> {
+export async function getPortfolioHealthTrend(userId: string, days = 30): Promise<PortfolioHealthTrend> {
   const since = new Date(Date.now() - days * 86400_000)
 
   const rows = await db
@@ -84,12 +89,15 @@ export async function getPortfolioHealthTrend(userId: string, days = 30): Promis
     .groupBy(healthScoreHistory.recordedDate)
     .orderBy(healthScoreHistory.recordedDate)
 
-  return buildHealthTrendSeries(rows.map(r => ({
+  return {
+    series: buildHealthTrendSeries(rows.map(r => ({
     date: r.date,
     healthScore: r.avgHealth ?? 0,
     securityScore: r.avgSecurity ?? 0,
     activityScore: r.avgActivity ?? 0,
-  })), days)
+    })), days),
+    snapshotDays: rows.length,
+  }
 }
 
 /**
