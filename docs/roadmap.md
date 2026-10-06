@@ -825,7 +825,9 @@ Fixes from the first scheduled night (details: [autonomous-factory.md §12](auto
 - [x] QA: environment-dependent test failures (missing secrets / network) are reported, not tasked; the judge rejects early returns in test files
 - [x] Close the 11 pre-fix Nexus agent PRs whose only change is the injected brief (closed 2026-10-06)
 
-### Phase 70 — Shared Branch Governance (Integration First)
+### Phase 70 — Shared Branch Governance (Integration First) — superseded 2026-10-06
+> Replaced by a single PR to `main` per change. Squash-merged releases meant every `integration/agent → main` PR conflicted with the last one, and each change needed two PRs. `integration/agent` and the Main Release Gate are gone from Github-HQ and AI-Took-My-Job; agents open draft PRs against the default branch, the owner merges, and the factory-path guard for autonomous branches stays.
+
 - [x] Standard branch policy across all repos: autonomous work branches use `feature/bot/{taskId}-{slug}`
 - [x] Add an integration landing branch standard: `integration/agent` (alias allowed: `feature/bot` only if the repo already uses it as integration)
 - [x] All autonomous PRs target `integration/agent`; no autonomous PR may target `main`

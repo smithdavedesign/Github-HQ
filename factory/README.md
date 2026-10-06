@@ -20,8 +20,8 @@ Execute  in the Docker sandbox (no credentials, allowlisted egress; see "Sandbox
 Verify   (host) the sandbox's result comes back as a patch, applied to the host clone; then the
          lib/verify.ts judge (Judge v2 rules in lib/judge-rules.ts, then an advisory adversarial review): target check passes, nothing regresses, no check-silencing,
          no forbidden paths, size cap; README edits additive with real scripts/tools only
-Gate     draft PR on a feature/bot/factory-… branch, targeting integration/agent when the repo
-         has it (else the default branch); never merges; ≤ 1 per cycle, ≤ 8 per factory day
+Gate     draft PR on a feature/bot/factory-… branch against the default branch (or
+         `integrationBranch` if a repo still has one); you merge
 Review   GitHub Copilot code review requested on every PR (independent Reviewer, ≤ 8/day;
          paused while the seat's premium requests are spent)
 Learn    PR merged → success, closed → failure → ledger → router (per difficulty) → agent_jobs → KPIs
@@ -54,7 +54,7 @@ touch ~/.repohq-factory/PAUSE           # kill switch (rm to resume)
 ## Configuration
 
 - `factory/factory.config.json`: `copilot.{enabled, model, maxTasksPerDay, review, maxReviewsPerDay}` and `maxPrsPerDay` (default 8). Copilot tasks and reviews spend your seat's premium requests (× the model's multiplier); `gpt-5-mini` is an included model on paid plans, so set a stronger `copilot.model` only if your allowance covers it.
-- `factory/factory.config.json`: `integrationBranch` (default `integration/agent`): repos that have it get their PRs there, per the release policy (agent work → `integration/agent` → human-labelled release → `main`).
+- `factory/factory.config.json`: `integrationBranch` (default `integration/agent`): used only by repos that still have that branch; everything else, including RepoHQ and Nexus since 2026-10, gets PRs against the default branch.
 - Ledger hygiene: if a verdict turns out to be a judge bug, set `"voided": "<why>"` on that attempt in `~/.repohq-factory/ledger.jsonl`. It stays for history but stops counting for routing, dead ends and stats.
 - `factory/factory.config.json`: the **allowlist** (`repos`). The factory never touches a repo that isn't listed. Also `allowFreeCloud` (private repos allowed on M1), `monthlyBudgetUsd` (M2; default 0, which means never pay) and `maxPrsPerCycle`.
 - `~/.repohq-factory/env`: runtime settings sourced by the launchd wrapper. `FACTORY_USER_ID` mirrors attempts into RepoHQ (`portfolio_events`). The DB URL is read from RepoHQ's own `.env.local` at runtime, not copied. Set `FACTORY_OP_ENV_FILE` to resolve secrets through 1Password (`op run`).
