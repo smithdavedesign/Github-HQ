@@ -10,6 +10,7 @@ import type { AttemptEntry, CiOracleEntry, LedgerEntry, ResolutionEntry, ReviewE
 import { rankOpportunities } from './sensors'
 import { computeFactoryKpis, kpiHeadline } from '../../src/lib/agents/factory-kpis'
 import { toJobRecords } from './ledger'
+import { kpiTrend, nightShiftReadiness, readinessLine } from './night-shift'
 
 export interface ReportInput {
   now: Date
@@ -219,7 +220,8 @@ export function buildMorningReport(input: ReportInput): MorningReport {
           ? `Copilot premium requests: ${Math.round(input.copilot.quota.percentRemaining)}% left this month.`
           : `Copilot premium requests used up — builder and reviews paused until ${input.copilot.quota.resetDate ?? 'the monthly reset'}.`]
         : []),
-      `Paid spend this month: $${input.monthToDateUsd.toFixed(2)} of $${input.monthlyBudgetUsd} budget.`,
+      `Paid spend this month: $${input.monthToDateUsd.toFixed(2)} of $${input.monthlyBudgetUsd} budget (scheduled cycles always run at $0).`,
+      readinessLine(nightShiftReadiness(entries)),
       red.length ? `Red CI on ${plural(red.length, 'base branch')}:` : 'CI is green on every sensed base branch.',
       ...red.map(s => {
         const inv = investigations.get(s.repo)
@@ -241,6 +243,10 @@ export function buildMorningReport(input: ReportInput): MorningReport {
     id: 'retro', role: 'Engineering Manager', skill: '/retro', title: 'Last 7 days',
     lines: [
       `${kpiHeadline(kpis)} (30 days).`,
+      ...(() => {
+        const t = kpiTrend(toJobRecords(entries), now)
+        return t.direction ? [`Trend (last 15 nights vs the 15 before): ${t.direction} — yield ${t.previous.overnightYield?.toFixed(1)} → ${t.recent.overnightYield?.toFixed(1)}/night.`] : []
+      })(),
       ...(kpis.reviewHoursMedian !== null ? [`Review load: median ${kpis.reviewHoursMedian.toFixed(1)}h from PR to your decision; ${kpis.humanEditedPrs} merged PR(s) needed your edits.`] : []),
       `${plural(counted.length, 'attempt')}, ${verified.length} verified, ${merged.length} merged, ${rejected.length} closed without merging.`,
       verified.length ? `${Math.round(((verified.length - paid) / verified.length) * 100)}% of verified fixes cost $0 at the margin.` : 'No verified fixes yet this week.',

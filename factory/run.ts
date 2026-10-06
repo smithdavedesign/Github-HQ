@@ -31,6 +31,7 @@ import { Sandbox, dockerAvailable, ensureSandboxImages, sandboxModels, sweepSand
 import { healthScores, recordApprovalNeeded, recordAttempt, recordResolution } from './lib/sink'
 import { failedLog, rankOpportunities, senseRepo } from './lib/sensors'
 import { acquireLock } from './lib/lock'
+import { nightShiftReadiness, readinessLine, scheduledPolicy } from './lib/night-shift'
 import { freeQuota, m1Deferred } from './lib/quota'
 import { readManagedModels } from './lib/litellm-config'
 import { buildPrompt, filterTasks, fitLocalContext, investigationPrompt, isEnvironmentFailure, parseFindings, redCiTask, tasksFromScan, type FactoryTask } from './lib/tasks'
@@ -38,7 +39,7 @@ import { judge, type DiffInfo, type Verdict } from './lib/verify'
 import { NEEDS_REVIEW_LABEL, adversaryAction, adversarySection, runAdversary, type AdversaryResult } from './lib/adversary'
 import { trimCheck, type JudgeInputRecord } from './lib/judge-fixture'
 
-interface Args { dryRun: boolean; repo: string | null; maxRepos: number; report: boolean; keep: boolean }
+interface Args { dryRun: boolean; repo: string | null; maxRepos: number; report: boolean; keep: boolean; scheduled: boolean }
 
 function parseArgs(argv: string[]): Args {
   const val = (k: string) => argv.find(a => a.startsWith(`--${k}=`))?.split('=')[1] ?? null
@@ -48,6 +49,8 @@ function parseArgs(argv: string[]): Args {
     maxRepos: Number(val('max-repos') ?? 3),
     report: argv.includes('--report'),
     keep: argv.includes('--keep'),
+    // Set by the launchd wrapper (factory.sh): the night shift's policy applies.
+    scheduled: argv.includes('--scheduled'),
   }
 }
 
@@ -63,7 +66,7 @@ const log = (...a: unknown[]) => console.log(`[factory ${new Date().toISOString(
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
-  const cfg = loadConfig()
+  let cfg = loadConfig()
   mkdirSync(cfg.home, { recursive: true })
   logDir = path.join(cfg.home, 'logs', runId)
 
@@ -71,6 +74,14 @@ async function main() {
   if (existsSync(path.join(cfg.home, 'PAUSE'))) return log(`paused (${path.join(cfg.home, 'PAUSE')} exists) — nothing to do`)
   if (cfg.repos.length === 0 && !args.repo) throw new Error('no repos in factory.config.json allowlist')
   if (args.repo && !cfg.repos.includes(args.repo)) throw new Error(`${args.repo} is not in the allowlist`)
+
+  if (args.scheduled) {
+    // Night Shift v2 (Phase 80): unattended cycles are always sandboxed and always $0.
+    const policy = scheduledPolicy(cfg)
+    if (policy.refuse) return log(`scheduled cycle refused — ${policy.refuse}`)
+    for (const n of policy.notes) log(n)
+    cfg = policy.cfg
+  }
 
   acquireLock(cfg.home, `run ${runId}`)
   mkdirSync(logDir, { recursive: true })
@@ -582,6 +593,7 @@ function printReport(cfg: FactoryConfig) {
   for (const r of rows) console.log(`${r.tier.padEnd(5)} ${String(r.attempts).padStart(8)} ${String(r.verified).padStart(9)} ${String(r.merged).padStart(7)} ${String(r.rejected).padStart(9)}  $${r.costUsd.toFixed(2)}`)
   console.log(`$0 share of verified fixes: ${verified ? Math.round((free / verified) * 100) : 0}% · paid this month: $${monthToDateUsd(ledger, new Date()).toFixed(2)} / $${cfg.monthlyBudgetUsd}`)
   console.log(`open factory PRs: ${openPrAttempts(ledger).length}`)
+  console.log(readinessLine(nightShiftReadiness(ledger)))
 }
 
 function slug(repo: string) {

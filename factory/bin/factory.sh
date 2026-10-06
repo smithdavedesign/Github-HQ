@@ -30,8 +30,15 @@ if [ -n "${FACTORY_USER_ID:-}" ] && [ -z "${FACTORY_DATABASE_URL:-}" ]; then
   [ -n "$FACTORY_DATABASE_URL" ] && export FACTORY_DATABASE_URL
 fi
 
+# Night Shift v2 (Phase 80): on battery, macOS Deep-Idle-sleeps mid-cycle (a 10-minute cycle took
+# three hours and lost its push), so scheduled cycles only run on AC power. FACTORY_REQUIRE_AC=0 to override.
+if [ "$MODE" = cycle ] && [ "${FACTORY_REQUIRE_AC:-1}" != 0 ] && pmset -g batt 2>/dev/null | grep -q "Battery Power"; then
+  echo "=== cycle $(date -u +%FT%TZ): skipped — on battery power (plug in for the night shift) ===" >> "$LOG"
+  exit 0
+fi
+
 case "$MODE" in
-  cycle) CMD=(npx --no-install tsx factory/run.ts) ;;
+  cycle) CMD=(npx --no-install tsx factory/run.ts --scheduled) ;;
   scout) CMD=(npx --no-install tsx factory/scout.ts) ;;
   report) CMD=(npx --no-install tsx factory/report.ts) ;;
   *) echo "usage: factory.sh cycle|scout|report" >&2; exit 2 ;;
