@@ -36,6 +36,7 @@ const EVENT_ICONS: Record<FeedEvent['type'], typeof TrendingDown> = {
   agent_pr_opened:     GitPullRequest,
   agent_pr_merged:     Bot,
   agent_failed:        Bot,
+  agent_report_ready:  Activity,
 }
 
 const ICON_COLORS: Record<FeedEventSeverity, string> = {

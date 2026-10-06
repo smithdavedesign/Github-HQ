@@ -12,6 +12,7 @@ export type AgentTaskStage =
   | 'pr_ready'
   | 'ci_failing'
   | 'needs_human'
+  | 'awaiting_approval'
   | 'merged'
   | 'rejected'
   | 'report_ready'
@@ -24,9 +25,10 @@ const STAGE_LABELS: Record<string, string> = {
   preparing:    'Preparing context…',
   running:      'Agent running…',
   pr_ready:     'PR created',
-  ci_failing:   'CI failing — fix queued',
-  needs_human:  'Needs human review',
-  merged:       'PR merged',
+  ci_failing:        'CI failing — fix queued',
+  needs_human:       'Needs human review',
+  awaiting_approval:  'Awaiting approval',
+  merged:            'PR merged',
   rejected:     'PR closed — not merged',
   report_ready: 'Report ready',
   failed:       'Agent failed',
@@ -67,7 +69,7 @@ export async function GET(request: Request) {
       inArray(portfolioEvents.eventType, [
         'agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected',
         'agent_execution_failed', 'agent_skill_report',
-        'agent_ci_failed', 'agent_needs_human',
+        'agent_ci_failed', 'agent_needs_human', 'agent_awaiting_approval',
       ]),
     ),
     orderBy: [desc(portfolioEvents.occurredAt)],
@@ -85,6 +87,7 @@ export async function GET(request: Request) {
   const execFailed  = matching.find(e => e.eventType === 'agent_execution_failed')
   const skillReport = matching.find(e => e.eventType === 'agent_skill_report')
   const needsHuman  = matching.find(e => e.eventType === 'agent_needs_human')
+  const awaitingApproval = matching.find(e => e.eventType === 'agent_awaiting_approval')
   const ciFailed    = matching.find(e => e.eventType === 'agent_ci_failed')
 
   if (prMerged)  {
@@ -94,6 +97,10 @@ export async function GET(request: Request) {
   if (needsHuman) {
     const meta = needsHuman.metadata as { prUrl?: string } | null
     return ok('needs_human', { prUrl: meta?.prUrl, nexusUrl })
+  }
+  if (awaitingApproval) {
+    const meta = awaitingApproval.metadata as { prUrl?: string; approveUrl?: string; taskId?: string } | null
+    return ok('awaiting_approval', { prUrl: meta?.prUrl ?? null, nexusUrl })
   }
   if (ciFailed) {
     const meta = ciFailed.metadata as { prUrl?: string } | null

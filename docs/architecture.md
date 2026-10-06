@@ -327,6 +327,18 @@ All agent tasks are classified by risk tier. Do not route to a higher tier until
 | Auto-queue causing unreviewed work | Auto-dispatch gated by effort/accuracy/security settings; master toggle defaults off |
 | Duplicate agent tasks | Server-side lifecycle guard in `queueAdvisorAction` and `queueGstackSkill` — both check `BLOCKING_STAGES` before posting to Nexus |
 
+## Agent Execution — Lanes & Model Tiers (planned, Phases 60–66)
+
+Execution is moving from one paid lane (Render worker → Anthropic) to a **cost ladder**:
+
+| Tier | Lane | Harness → model | Cost |
+|------|------|-----------------|------|
+| M0 Local | local Mac worker | Aider → `local-coder` (Qwen2.5-Coder) via LiteLLM `:4000` | $0 |
+| M1 Free cloud | local Mac worker | Claude Code + gstack, `ANTHROPIC_BASE_URL=http://localhost:4000` → `free-agent` (OpenRouter free) | $0, rate-limited |
+| M2 Paid | Render worker | Claude Code + gstack → Anthropic | $ (budget-gated, never implicit) |
+
+The router picks the cheapest tier with proven success for `(impactType, skill, tier)`, subject to a data-classification gate (private repos skip M1 by default) and action-level approvals (L4 = merge/delete/force-push always need a human). Full design: [autonomous-factory.md](autonomous-factory.md).
+
 ## Agent Execution — Success Metrics
 
 | Metric | Target | Gate |

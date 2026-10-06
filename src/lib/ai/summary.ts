@@ -1,4 +1,5 @@
-import { getLLMAdapter } from './adapter'
+import { getLLMAdapter, getFallbackAdapter } from './adapter'
+import { generateJson } from './structured'
 import { db } from '@/lib/db'
 import { repositories } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -52,15 +53,14 @@ Activity: ${context.activityStatus}, ${context.openIssues} open issues, ${contex
 Health Score: ${context.healthScore}/100
 ${context.readmeExcerpt ? `README (excerpt): ${context.readmeExcerpt.slice(0, 800)}` : ''}`
 
-  const text = await adapter.generate({
-    system: SYSTEM_PROMPT, user: prompt, fast: false, maxTokens: 512, cacheSystem: true,
-  })
   let summary: RepoSummary
   try {
-    summary = JSON.parse(text)
-  } catch {
-    console.error('[summary] failed to parse Claude response:', text.slice(0, 200))
-    throw new Error('Summary: Claude returned non-JSON response')
+    ({ value: summary } = await generateJson<RepoSummary>(adapter, {
+      system: SYSTEM_PROMPT, user: prompt, fast: false, maxTokens: 512, cacheSystem: true,
+    }, { fallback: getFallbackAdapter(adapter.provider), label: 'summary' }))
+  } catch (err) {
+    console.error('[summary] failed to parse model response:', err instanceof Error ? err.message : err)
+    throw new Error('Summary: model returned non-JSON response')
   }
 
   await db

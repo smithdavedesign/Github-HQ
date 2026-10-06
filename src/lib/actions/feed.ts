@@ -15,7 +15,7 @@ export interface FeedEvent {
   id: string
   type: 'health_drop' | 'health_improved' | 'deployment_down' | 'deployment_slow' |
         'security_critical' | 'security_high' | 'dormant' | 'no_tests' | 'build_failing' |
-        'dep_cascade_risk' | 'agent_pr_opened' | 'agent_pr_merged' | 'agent_failed'
+        'dep_cascade_risk' | 'agent_pr_opened' | 'agent_pr_merged' | 'agent_failed' | 'agent_report_ready'
   repoId: number
   repoName: string
   description: string
@@ -215,7 +215,7 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
   const agentEvents = await db.query.portfolioEvents.findMany({
     where: and(
       eq(portfolioEvents.userId, userId),
-      inArray(portfolioEvents.eventType, ['agent_pr_created', 'agent_pr_merged', 'agent_execution_failed']),
+      inArray(portfolioEvents.eventType, ['agent_pr_created', 'agent_pr_merged', 'agent_execution_failed', 'agent_skill_report']),
       gte(portfolioEvents.occurredAt, thirtyDaysAgo),
     ),
     orderBy: [desc(portfolioEvents.occurredAt)],
@@ -265,7 +265,20 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
         repoId,
         repoName,
         description: 'Agent execution failed',
-        detail: meta?.error as string | undefined,
+        detail: ae.description ?? (meta?.error as string | undefined),
+        severity: 'warning',
+        date: ae.occurredAt,
+        meta: meta ?? undefined,
+      })
+    } else if (ae.eventType === 'agent_skill_report') {
+      const findings = Array.isArray(meta?.findings) ? meta.findings.filter((finding): finding is string => typeof finding === 'string' && finding.trim().length > 0) : []
+      events.push({
+        id: `agent_report_${ae.id}`,
+        type: 'agent_report_ready',
+        repoId,
+        repoName,
+        description: `/${String(meta?.skillName ?? 'skill')} report ready`,
+        detail: findings.length > 0 ? findings[0] : (ae.description ?? 'No findings recorded'),
         severity: 'warning',
         date: ae.occurredAt,
         meta: meta ?? undefined,

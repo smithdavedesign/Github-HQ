@@ -21,3 +21,9 @@ describe('PROVIDER_SHORT_NAME', () => {
     }
   })
 })
+
+describe('openrouter provider', () => {
+  it('maps openrouter to OpenRouter', () => {
+    expect(PROVIDER_SHORT_NAME.openrouter).toBe('OpenRouter')
+  })
+})
