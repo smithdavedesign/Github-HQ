@@ -726,10 +726,19 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 
 **Shipped approach (2026-10-05):** rather than first splitting Nexus into queue lanes, the local lane shipped as a standalone runner (`factory/`) that reuses RepoHQ's pure routing code and mirrors its activity into `portfolio_events`. The Nexus lane split (61-B) is deferred until the local runner proves its merge rate.
 
+**Status (2026-10-06):** Factory v2 (Phases 75–80) shipped in #13 and #15: the sandboxed worker, Judge v2 with an adversarial reviewer, the promotion ladder, sensors and a ranked queue, the `agent_jobs` record with KPIs, and the night-shift policy. Next is the night shift's gate (7 consecutive nights with every attempt sandboxed), then concurrency 2. Plan of record: [autonomous-factory.md §14](autonomous-factory.md#14-factory-v2-one-good-pr-while-the-owner-sleeps-2026-10-06).
+
+**Owner actions that unblock the most:**
+- Close the pre-fix Nexus no-op PRs (Phase 69b). Bot PRs unreviewed for 7+ days block new factory PRs on their repo (Phase 78); on 2026-10-06 that was 5 of 9 repos.
+- Leave the Mac on AC power overnight; scheduled cycles skip on battery (Phase 80).
+- Set the Anthropic console spend cap (Phase 60). The LiteLLM key is a known constant, so it's the only hard limit on the paid alias outside the sandbox.
+- Run `bash factory/bin/setup-email.sh <gmail>` so the morning report is emailed (Phase 69).
+- Optional: enable Dependabot alerts (off on all 9 repos), branch protection on `main` (Phase 65), and decide on Nexus's auto-chain (Phase 78).
+
 **Gate to start Horizon 3 (Phase 67):** ≥ 80% of merged agent PRs produced at $0 over 30 days, and zero unapproved L4 actions.
 
 ### Phase 60 — Foundation Fixes
-- [x] **Nexus: gstack scripts never invoked `claude` when it was installed.** Commit `1e9210e` left the `--print` call inside the `else` branch of all 9 `scripts/gstack-*.sh`. Fixed on `AI-Took-My-Job` branch `fix/gstack-claude-invocation` with regression test `tests/integration/gstack-claude-invocation-check.sh` (0/9 on old code → 9/9). **Remaining: merge + deploy the Render worker.**
+- [x] **Nexus: gstack scripts never invoked `claude` when it was installed.** Commit `1e9210e` left the `--print` call inside the `else` branch of all 9 `scripts/gstack-*.sh`. Fixed with regression test `tests/integration/gstack-claude-invocation-check.sh` (0/9 on old code → 9/9); merged in AI-Took-My-Job #19 and released to `main` in #23.
 - [x] Removed the stale `tests/integration/gstack-openclaw-routing-check.sh`
 - [ ] Set the Anthropic console monthly spend limit (provider-side hard cap). Owner action.
 - [x] LiteLLM: factory aliases `free-agent`, `free-agent-b`, `local-agent` live in a managed block with **free-only** fallbacks (`free-agent → free-agent-b`); the hand-maintained `local-coder → cloud-or → cloud-smart` ladder stays for interactive use only
@@ -740,7 +749,7 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 - [x] Harness (`factory/lib/harness.ts`): M0 → Aider (`--edit-format diff`) on `local-agent`; M1/M2 → Claude Code `--bare --strict-mcp-config` through LiteLLM with tool allow/deny lists (no commit/push/rm/web)
 - [x] Cost + model telemetry per attempt (`tier, harness, model, tokens, costUsd, durationMs, exploring`) in the ledger and RepoHQ `agent_attempt` metadata
 - [x] Free-tier 429 / quota exhaustion → defer to the next cycle; **never** escalates to paid. Quota is read from OpenRouter's `/api/v1/key` before every M1 task
-- [x] launchd schedules (`factory/bin/install-launchd.sh`): cycles 18:00 + 03:00 local (after OpenRouter's 00:00 UTC reset), `caffeinate -i` per run, standard priority; deployed to `~/.repohq-factory/app` because launchd can't read `~/Documents`
+- [x] launchd schedules (`factory/bin/install-launchd.sh`; first schedule 18:00 + 03:00, superseded by Phases 69 and 80), `caffeinate -i` per run, standard priority; deployed to `~/.repohq-factory/app` because launchd can't read `~/Documents`
 - [x] First live draft PR from the scheduled loop: [AI-Took-My-Job#10](https://github.com/smithdavedesign/AI-Took-My-Job/pull/10) (M0, $0)
 - [ ] 61-B: Nexus BullMQ lanes `agent-local` / `agent-cloud` so RepoHQ-dispatched advisor tasks can also use the free lane (deferred — see above)
 - [ ] Dedicated `ai-agent` macOS user for the runner (needs sudo; runs as the owner today, confined to `~/.repohq-factory/work`)
@@ -797,26 +806,26 @@ Toward the Architect / Builder / Reviewer / Operator team (docs/autonomous-facto
 - [x] **Reviewer = GitHub Copilot code review**, requested on every factory PR (works on drafts), ≤ 8/day; results recorded in the ledger during reconcile
 - [x] **deps-audit**: every npm scan runs `npm audit`; high/critical → deterministic `npm audit fix` (no model, never `--force`), judged on package files only, advisories must drop, no regressions
 - [x] **Morning report**: one update per gstack role (PM → Architect plan, Builder, QA, Reviewer, Security, Ops, Retro) from the ledger, with local-model headlines; saved to `~/.repohq-factory/reports/` and emailed via himalaya + Gmail app password in the keychain
-- [x] Schedule: cycles hourly 20:00–05:00 plus 12:00/16:00, ≤ 1 PR per cycle, ≤ 8 per factory day (07:00–07:00); report 06:45
+- [x] Schedule: cycles hourly 20:00–05:00 plus 12:00/16:00, ≤ 1 PR per cycle, ≤ 8 per factory day (07:00–07:00); report 06:45 (extended to 06:00 and AC-only in Phase 80)
 - [ ] Owner: run `bash factory/bin/setup-email.sh <gmail>` once (needs a Gmail app password)
 - [ ] Builder ← Reviewer loop: turn Copilot's line comments into a follow-up commit on the same branch
 - [ ] Copilot coding agent (assign an issue to `@copilot`) for tasks every local tier failed
 
 ### Phase 69b — First-Night Hardening ✅
 Fixes from the first scheduled night (details: [autonomous-factory.md §12](autonomous-factory.md#12-what-building-it-changed-2026-10-05)).
-- [x] Nexus gstack scripts strip the injected RepoHQ brief before anything is committed (AI-Took-My-Job #19); `CLAUDE.md` back to `@AGENTS.md` (Github-HQ #12)
+- [x] Nexus gstack scripts strip the injected RepoHQ brief before anything is committed (AI-Took-My-Job #19, merged); `CLAUDE.md` back to `@AGENTS.md` (Github-HQ #12, merged)
 - [x] Factory: `lint-autofix` deterministic task for repos whose lint script runs a fixer; deps PRs discard check side effects
 - [x] Factory: README judge/prompt read sub-package `package.json` files; `voided` attempts for verdicts later shown to be judge bugs
 - [x] Factory: quota-aware Copilot (builder and reviews pause at 0% premium requests); "no quota" = rate-limited, not a failure
 - [x] Factory: push / `gh pr create` retry on network errors; `caffeinate -ims`; README "Overnight runs need power"
 - [x] QA: environment-dependent test failures (missing secrets / network) are reported, not tasked; the judge rejects early returns in test files
-- [ ] Close the 11 pre-fix Nexus agent PRs whose only change is the injected brief (listed in the morning report)
+- [ ] Close the 11 pre-fix Nexus agent PRs whose only change is the injected brief (listed in the morning report). Owner action; since Phase 78 they also block new factory PRs on their repos
 
 ### Phase 70 — Shared Branch Governance (Integration First)
 - [x] Standard branch policy across all repos: autonomous work branches use `feature/bot/{taskId}-{slug}`
 - [x] Add an integration landing branch standard: `integration/agent` (alias allowed: `feature/bot` only if the repo already uses it as integration)
 - [x] All autonomous PRs target `integration/agent`; no autonomous PR may target `main`
-- [-] Human gate remains only for `integration/agent -> main` promotion PRs (main-release workflow guard + label requirement shipped; operational rollout process pending)
+- [x] Human gate remains only for `integration/agent -> main` promotion PRs: the Main Release Gate workflow requires the `human-reviewed-release` label, which exists in Github-HQ and AI-Took-My-Job and was first used to release AI-Took-My-Job #23
 - [-] Add branch cleanup policy: TTL, max concurrent bot branches, and stale-branch sweeper (scaffold preview endpoint shipped in Nexus)
 - [x] Add CI/promotion guard that rejects autonomous PRs to `main` with a clear policy message
 - [x] Policy also recognises Nexus's real branch names (`nexus/agent-task-*` via `nexus/*`) and `factory/*`; the factory now names branches `feature/bot/factory-…` and targets `integration/agent` when a repo has it
