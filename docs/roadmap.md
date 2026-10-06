@@ -802,6 +802,16 @@ Toward the Architect / Builder / Reviewer / Operator team (docs/autonomous-facto
 - [ ] Builder ← Reviewer loop: turn Copilot's line comments into a follow-up commit on the same branch
 - [ ] Copilot coding agent (assign an issue to `@copilot`) for tasks every local tier failed
 
+### Phase 69b — First-Night Hardening ✅
+Fixes from the first scheduled night (details: [autonomous-factory.md §12](autonomous-factory.md#12-what-building-it-changed-2026-10-05)).
+- [x] Nexus gstack scripts strip the injected RepoHQ brief before anything is committed (AI-Took-My-Job #19); `CLAUDE.md` back to `@AGENTS.md` (Github-HQ #12)
+- [x] Factory: `lint-autofix` deterministic task for repos whose lint script runs a fixer; deps PRs discard check side effects
+- [x] Factory: README judge/prompt read sub-package `package.json` files; `voided` attempts for verdicts later shown to be judge bugs
+- [x] Factory: quota-aware Copilot (builder and reviews pause at 0% premium requests); "no quota" = rate-limited, not a failure
+- [x] Factory: push / `gh pr create` retry on network errors; `caffeinate -ims`; README "Overnight runs need power"
+- [x] QA: environment-dependent test failures (missing secrets / network) are reported, not tasked; the judge rejects early returns in test files
+- [ ] Close the 11 pre-fix Nexus agent PRs whose only change is the injected brief (listed in the morning report)
+
 ### Phase 70 — Shared Branch Governance (Integration First)
 - [x] Standard branch policy across all repos: autonomous work branches use `feature/bot/{taskId}-{slug}`
 - [x] Add an integration landing branch standard: `integration/agent` (alias allowed: `feature/bot` only if the repo already uses it as integration)
@@ -809,6 +819,7 @@ Toward the Architect / Builder / Reviewer / Operator team (docs/autonomous-facto
 - [-] Human gate remains only for `integration/agent -> main` promotion PRs (main-release workflow guard + label requirement shipped; operational rollout process pending)
 - [-] Add branch cleanup policy: TTL, max concurrent bot branches, and stale-branch sweeper (scaffold preview endpoint shipped in Nexus)
 - [x] Add CI/promotion guard that rejects autonomous PRs to `main` with a clear policy message
+- [x] Policy also recognises Nexus's real branch names (`nexus/agent-task-*` via `nexus/*`) and `factory/*`; the factory now names branches `feature/bot/factory-…` and targets `integration/agent` when a repo has it
 
 ### Phase 71 — Agent Visibility v2 (Full Behind-the-Scenes Telemetry)
 - [ ] Expand Agent History with full execution timeline: queued, preparing, running, report-ready, pr-ready, merged, failed, timed-out, needs-human

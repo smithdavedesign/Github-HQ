@@ -4,18 +4,21 @@ The local self-improvement loop from [docs/autonomous-factory.md](../docs/autono
 
 ```
 Sense    clone → install → the repo's own typecheck / lint / test + README check
-Decide   tasks: fix-types · fix-lint · fix-tests · deps-audit · docs-readme (Tier 1–2 only)
+Decide   tasks: fix-types · lint-autofix · fix-lint · fix-tests · deps-audit · docs-readme (Tier 1–2 only)
 Route    src/lib/agents/model-router.ts: cheapest proven tier, data-class gate, ~10% exploration
 Execute  M0 Aider → local-agent (Qwen2.5-Coder 7B)   $0
          M1 Claude Code --bare → free-agent pool: Ollama Cloud · OpenRouter · Gemini   $0
             (picked by the scout; a 429 on one provider falls through to the next)
          MC GitHub Copilot CLI (your seat, gpt-5-mini by default)   prepaid, ≤ 6 tasks/day
          M2 Claude Code --bare → cloud-smart (Anthropic)   only with a budget > 0
-         deps-audit runs `npm audit fix` (no model, never --force)
+         deps-audit runs `npm audit fix` (no model, never --force); lint-autofix runs the
+         repo's own fixer (eslint --fix / prettier --write) as a mechanical PR
 Verify   lib/verify.ts judge: target check passes, nothing regresses, no check-silencing,
          no forbidden paths, size cap; README edits additive with real scripts/tools only
-Gate     draft PR (never merges), ≤ 1 per cycle, ≤ 8 per factory day (07:00–07:00)
-Review   GitHub Copilot code review requested on every PR (independent Reviewer, ≤ 8/day)
+Gate     draft PR on a feature/bot/factory-… branch, targeting integration/agent when the repo
+         has it (else the default branch); never merges; ≤ 1 per cycle, ≤ 8 per factory day
+Review   GitHub Copilot code review requested on every PR (independent Reviewer, ≤ 8/day;
+         paused while the seat's premium requests are spent)
 Learn    PR merged → success, closed → failure → ledger → router
 Report   06:45 email: one update per gstack role (PM → Architect plan, Builder, QA, Reviewer,
          Security, Ops, Retro), built from the ledger; headlines by the local model
@@ -40,6 +43,8 @@ touch ~/.repohq-factory/PAUSE           # kill switch (rm to resume)
 ## Configuration
 
 - `factory/factory.config.json`: `copilot.{enabled, model, maxTasksPerDay, review, maxReviewsPerDay}` and `maxPrsPerDay` (default 8). Copilot tasks and reviews spend your seat's premium requests (× the model's multiplier); `gpt-5-mini` is an included model on paid plans, so set a stronger `copilot.model` only if your allowance covers it.
+- `factory/factory.config.json`: `integrationBranch` (default `integration/agent`): repos that have it get their PRs there, per the release policy (agent work → `integration/agent` → human-labelled release → `main`).
+- Ledger hygiene: if a verdict turns out to be a judge bug, set `"voided": "<why>"` on that attempt in `~/.repohq-factory/ledger.jsonl`. It stays for history but stops counting for routing, dead ends and stats.
 - `factory/factory.config.json`: the **allowlist** (`repos`). The factory never touches a repo that isn't listed. Also `allowFreeCloud` (private repos allowed on M1), `monthlyBudgetUsd` (M2; default 0, which means never pay) and `maxPrsPerCycle`.
 - `~/.repohq-factory/env`: runtime settings sourced by the launchd wrapper. `FACTORY_USER_ID` mirrors attempts into RepoHQ (`portfolio_events`). The DB URL is read from RepoHQ's own `.env.local` at runtime, not copied. Set `FACTORY_OP_ENV_FILE` to resolve secrets through 1Password (`op run`).
 - State lives in `~/.repohq-factory/`: `ledger.jsonl` (source of truth), `logs/<run>/` (prompts + harness output per attempt), `scout-reports/`.

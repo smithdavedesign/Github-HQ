@@ -1,8 +1,9 @@
 # RepoHQ — Personal Autonomous Software Factory
 
-> **Status:** Phases 60–64 shipped, 65–66 partial, 67 not started ([roadmap.md](roadmap.md#autonomous-factory-roadmap)).
-> The local lane runs as `factory/` on a launchd schedule; operator guide in [factory/README.md](../factory/README.md).
-> §12 records what building it changed.
+> **Status:** Phases 60–64, 68 and 69 shipped; 65–66 partial; 67 not started ([roadmap.md](roadmap.md#autonomous-factory-roadmap)).
+> The local lane runs as `factory/` on a launchd schedule (hourly overnight, 06:45 morning report); operator guide in [factory/README.md](../factory/README.md).
+> Agent work lands on `integration/agent`; only human-labelled releases reach `main` (roadmap Phase 70).
+> §12 records what building it changed, including the first scheduled night.
 > Adapted from the *"Personal Autonomous Software Factory — Infrastructure Provisioning & Identity"* PRD (§21),
 > reconciled with what RepoHQ, Nexus, gstack and the local AI stack actually do today, and
 > re-prioritised around one constraint: **use free models wherever they're good enough.**
@@ -404,6 +405,14 @@ The first implementation ran against all ten allowlisted repos. These findings c
 | "Offload Claude Code's background calls to local" saves nothing headless | `modelUsage` showed only the main model; pointing the small-model role at a non-existent alias still passed, with 0 requests for it in LiteLLM | `local-small` kept as insurance. The real request cost is one per agent turn (11–19 per task), so the levers are the provider pool and fewer turns |
 | Free tiers expose different models than their catalogues list | Gemini 3.5–3.8 Flash: 503 "high demand"; 2.5 Flash: retired for new users. Ollama Cloud: 11 of 16 models Pro-only | Discovery probes each candidate (one tiny call) before it's evaluated |
 | Not every README is documentation | gitHub-cron-job-app's README is a cron heartbeat file | Removed from the allowlist. The allowlist is the owner's statement of intent. |
+| **Injected context leaked into commits** | Nexus's gstack scripts wrote the RepoHQ brief (with a "Last push" timestamp) into `CLAUDE.md`; 12 open agent PRs across 6 repos contained *only* that change and conflicted with each other | AI-Took-My-Job #19: the brief is stripped by an EXIT trap before anything is committed. `CLAUDE.md` back to `@AGENTS.md` (Github-HQ #12) |
+| Agent branches escaped the release policy | Nexus names branches `nexus/agent-task-*`; the policy matched `nexus/auto-*`, so agent PRs targeted `main` | Policy matches `nexus/*` and `factory/*`; factory branches follow the `feature/bot/…` standard and target `integration/agent` when a repo has it |
+| A Mac on battery doesn't run overnight | Deep Idle sleep stretched a 10-minute cycle to 3 hours and a verified fix was lost to a failed push | `caffeinate -ims` (AC only), push / PR creation retry on network errors, overnight runs documented as needing power |
+| A lint script that fixes files can't host model fixes | Figma-Jira's `eslint --fix` rewrite is 2,493 lines; every model fix exceeded the size cap | New deterministic `lint-autofix` task lands the fixer's own rewrite first; deps PRs discard check side effects |
+| The judge can be wrong too | family-tree keeps scripts in `client/` and `server/`; README attempts on two tiers were rejected for "invented" scripts that exist | Scripts and deps are read from sub-package `package.json` files; verdicts later shown to be judge bugs are marked `voided` (kept for history, ignored for routing) |
+| A prepaid seat still runs out | Copilot Pro's premium requests hit 0% (overage off): the CLI answered "You have no quota", logged as a model failure | The factory reads the Copilot quota before builder tasks and review requests and pauses both until the reset; "no quota" counts as rate-limited |
+
+**First scheduled night (2026-10-05 → 06):** 3 draft PRs from one verification cycle (AI-Trend-Tracker lint, an `npm audit fix` on AI-CLI-Social-Autoposter, and a go-adventure test "fix" that was closed in review: it skipped key-dependent smoke tests via early returns, which the judge now rejects). The owner merged 3 factory PRs, giving the router its first merge signal. Overnight cycles then opened AI-Trend-Tracker #6 (a real Vitest config fix) despite the sleep problems above.
 
 **First live PR (scheduled run, 2026-10-05):** [AI-Took-My-Job#10](https://github.com/smithdavedesign/AI-Took-My-Job/pull/10), produced by M0 (local Qwen2.5-Coder 7B) at $0. It adds an Installation and Setup section (+30/−0) with the real clone URL and real scripts. It also documented `npm test` for a repo without a test script, which the judge now rejects.
 
@@ -418,7 +427,7 @@ The owner's target is a small team rather than one agent: **Architect** (thinks,
 | PM / Architect | RepoHQ advisor + factory scans and router; owner reviews the plan in the morning report | Planning is cheap and deterministic today; the paid model is reserved for decisions that need it |
 | Builder | M0 Aider (local) · M1 Claude Code on the free pool · MC Copilot CLI · M2 Claude (paid, budget-gated) | Cheapest proven tier first, escalating on failure |
 | QA | The judge: the repo's own checks, re-run, plus anti-cheat rules | Rule-based checks beat model agreement as verification |
-| Reviewer | GitHub Copilot code review on every PR | Different vendor and model family from the Builder. Costs one premium request, not a debate |
+| Reviewer | GitHub Copilot code review on every PR (paused automatically when the seat's premium requests are spent) | Different vendor and model family from the Builder. Costs one premium request, not a debate |
 | Security | `npm audit` on every scan + deterministic `deps-audit` fixes | No model needed |
 | Operator | Not yet (Horizon 3) | Needs trust levels, approvals and the resource ledger first; CLIs/APIs before browser clicking |
 

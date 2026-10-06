@@ -334,7 +334,7 @@ describe('harness helpers', () => {
 describe('pr + sink rendering', () => {
   const [task] = tasksFromScan([ok('lint', false, 'src/a.ts\n  1:1  error  x  rule')], planChecks({ scripts: { lint: 'eslint .' } }, 'npm', false), null, '/r')
   it('names branches and titles', () => {
-    expect(branchName(task, NOW, 'run-abcd')).toBe('factory/fix-lint-20261005-abcd')
+    expect(branchName(task, NOW, 'run-abcd')).toBe('feature/bot/factory-20261005-abcd-fix-lint')
     expect(prTitle(task)).toMatch(/^\[factory\] Fix lint errors/)
   })
   it('PR body shows before/after checks and provenance', () => {
