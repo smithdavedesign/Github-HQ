@@ -52,3 +52,13 @@ touch ~/.repohq-factory/PAUSE           # kill switch (rm to resume)
 - M0 (7B, 16k context) is good for small scoped edits: one-file fixes run in seconds. It can't host Claude Code (the system prompt alone overflows 16k), whole-file rewrites truncate large files (so Aider runs with `--edit-format diff`), and files over 12KB are routed past M0.
 - Repos whose `lint` script auto-fixes (`eslint --fix`) mutate the tree during checks. The factory discards that after the baseline scan and folds it into the judged diff after a fix, so what's judged is exactly what ships.
 - The scout and the cycle share a lock: the scout restarts LiteLLM, which would drop an in-flight agent request.
+
+## Overnight runs need power
+
+The first scheduled night showed the Mac on battery dropping into Deep Idle sleep between steps: a 10-minute cycle took three hours and its push failed with the network down. `caffeinate -ims` keeps the system awake **only on AC power**. For 3–8 PRs by morning:
+
+- leave the Mac **plugged in** overnight;
+- System Settings → Battery → Options → turn on **"Prevent automatic sleeping on power adapter when the display is off"**;
+- optional, so the first cycle runs even if the Mac slept: `sudo pmset repeat wakeorpoweron MTWRFSU 19:58:00`.
+
+Missed launchd slots run once on wake (launchd coalesces them), pushes and PR creation retry on network errors, and the Ops section of the morning report shows how many cycles actually ran.

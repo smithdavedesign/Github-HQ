@@ -23,6 +23,11 @@ export interface FactoryConfig {
   /** Ceiling across all cycles in a local day (the morning target is 3–8 PRs). */
   maxPrsPerDay: number
   /**
+   * Repos with this branch get factory PRs targeted at it instead of the default branch
+   * (RepoHQ's policy: autonomous branches → integration/agent → human-reviewed release → main).
+   */
+  integrationBranch: string
+  /**
    * GitHub Copilot (prepaid seat). MC tier = Copilot CLI as a builder; reviews =
    * Copilot code review requested on every factory PR (the independent Reviewer).
    * Both spend premium requests, so each has a daily cap.
@@ -62,6 +67,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FactoryConfig 
     m2PricePerMTok: json.m2PricePerMTok ?? { input: 3, output: 15 },
     maxPrsPerCycle: num(env.FACTORY_MAX_PRS, json.maxPrsPerCycle ?? 1),
     maxPrsPerDay: json.maxPrsPerDay ?? 8,
+    integrationBranch: json.integrationBranch ?? 'integration/agent',
     copilot: {
       enabled: json.copilot?.enabled ?? true,
       model: json.copilot?.model ?? 'gpt-5-mini',

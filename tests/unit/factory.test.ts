@@ -229,6 +229,8 @@ describe('ledger', () => {
     expect([...deadEnds(entries, NOW)]).toEqual(['o/r:fix-lint'])
     expect(deadEnds([...entries, att({ outcome: 'verified', at: NOW.toISOString() })], NOW).size).toBe(0)
     expect(deadEnds([att({ tier: 'M0', outcome: 'failed' }), att({ tier: 'M0', outcome: 'failed' })], NOW).size).toBe(0)
+    const deps = { tier: 'M0' as const, harness: 'npm-audit-fix', kind: 'deps-audit', outcome: 'failed' as const }
+    expect([...deadEnds([att(deps), att(deps)], NOW)]).toEqual(['o/r:deps-audit'])
   })
   it('nextRepos puts never-scanned first, then least recent', () => {
     const entries: LedgerEntry[] = [

@@ -18,7 +18,7 @@ import {
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
 import { confirmFailures, detectPackageManager, installCommand, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
-import { checkoutNewBranch, cloneRepo, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
+import { checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
 import { appendEntry, deadEnds, monthToDateUsd, nextRepos, openPrAttempts, pendingReviews, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry } from './lib/ledger'
@@ -120,7 +120,9 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
   log(`${repo}: cloning`)
   await cloneRepo(repo, dir)
   try {
-    const base = await currentBranch(dir)
+    const integration = await checkoutIntegrationBranch(dir, cfg.integrationBranch)
+    const base = integration ? cfg.integrationBranch : await currentBranch(dir)
+    if (integration) log(`${repo}: targeting ${cfg.integrationBranch} (repo's integration branch)`)
     const basics = readRepoBasics(dir)
     let specs: CheckSpec[] = []
     let baseline: CheckResult[] = []

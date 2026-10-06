@@ -153,7 +153,9 @@ export function deadEnds(entries: LedgerEntry[], now: Date, windowDays = 14): Se
     const t = new Date(a.at).getTime()
     const key = `${a.repo}:${a.kind}`
     if (a.outcome === 'verified') lastSuccess.set(key, Math.max(lastSuccess.get(key) ?? 0, t))
-    if (a.outcome === 'failed' && a.tier !== 'M0' && t >= since) fails.set(key, (fails.get(key) ?? 0) + 1)
+    // M0 model failures escalate, so they don't count — but deterministic fixes (npm audit fix) never escalate.
+    const countsAsDeadEnd = a.tier !== 'M0' || a.harness === 'npm-audit-fix'
+    if (a.outcome === 'failed' && countsAsDeadEnd && t >= since) fails.set(key, (fails.get(key) ?? 0) + 1)
   }
   return new Set([...fails.entries()].filter(([k, n]) => n >= 2 && (lastSuccess.get(k) ?? 0) < since).map(([k]) => k))
 }

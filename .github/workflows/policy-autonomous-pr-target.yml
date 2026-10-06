@@ -19,7 +19,12 @@ jobs:
           if [[ "$HEAD_REF" == feature/bot/* ]]; then
             is_autonomous="true"
           fi
-          if [[ "$HEAD_REF" == nexus/auto-* ]]; then
+          # Nexus names agent branches nexus/agent-task-* (older ones nexus/auto-*);
+          # the RepoHQ factory uses factory/*.
+          if [[ "$HEAD_REF" == nexus/* ]]; then
+            is_autonomous="true"
+          fi
+          if [[ "$HEAD_REF" == factory/* ]]; then
             is_autonomous="true"
           fi
 

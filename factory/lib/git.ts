@@ -25,6 +25,18 @@ export async function cloneRepo(fullName: string, dir: string): Promise<void> {
   appendFileSync(path.join(dir, '.git/info/exclude'), '\nnode_modules/\n.next/\n*.tsbuildinfo\ncoverage/\n.aider*\n.claude/\n')
 }
 
+/**
+ * If the remote has `branch` (e.g. integration/agent), fetch and check it out so scans,
+ * fixes and the PR base all use it. Shallow clones only fetch the default branch.
+ */
+export async function checkoutIntegrationBranch(dir: string, branch: string): Promise<boolean> {
+  const ls = await run('git', ['-C', dir, ...CRED, 'ls-remote', '--heads', 'origin', branch], { timeoutMs: 60_000 })
+  if (ls.code !== 0 || !ls.output.includes(`refs/heads/${branch}`)) return false
+  await must(`fetch ${branch}`, run('git', ['-C', dir, ...CRED, 'fetch', '-q', '--depth', '30', 'origin', `${branch}:${branch}`], { timeoutMs: 300_000 }))
+  await must(`checkout ${branch}`, git(dir, ['checkout', '-q', branch]))
+  return true
+}
+
 export async function currentBranch(dir: string): Promise<string> {
   return (await must('rev-parse', git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']))).output.trim()
 }
@@ -74,12 +86,26 @@ export async function commitAll(dir: string, message: string): Promise<void> {
   await must('commit', git(dir, ['commit', '-q', '--no-verify', '-m', message]))
 }
 
+/**
+ * Network steps retry: a Mac waking from sleep mid-cycle drops the network for a while,
+ * and a verified fix shouldn't be lost to that (a push failed with no output after sleep).
+ */
+async function withRetry(label: string, attempts: number, fn: () => ReturnType<typeof run>) {
+  let last: Awaited<ReturnType<typeof run>> | null = null
+  for (let i = 1; i <= attempts; i++) {
+    last = await fn()
+    if (last.code === 0) return last
+    if (i < attempts) await new Promise(r => setTimeout(r, 20_000 * i))
+  }
+  throw new Error(`${label} failed after ${attempts} attempts: ${last!.output.trim().split('\n').slice(-3).join(' | ') || '(no output — network down?)'}`)
+}
+
 export async function pushBranch(dir: string, branch: string): Promise<void> {
-  await must('push', run('git', ['-C', dir, ...CRED, 'push', '-q', '-u', 'origin', branch], { timeoutMs: 180_000 }))
+  await withRetry('push', 3, () => run('git', ['-C', dir, ...CRED, 'push', '-q', '-u', 'origin', branch], { timeoutMs: 180_000 }))
 }
 
 export async function createDraftPr(dir: string, opts: { base: string; head: string; title: string; body: string }): Promise<string> {
-  const r = await must('gh pr create', run('gh', ['pr', 'create', '--draft', '--base', opts.base, '--head', opts.head, '--title', opts.title, '--body', opts.body], { cwd: dir, timeoutMs: 120_000 }))
+  const r = await withRetry('gh pr create', 3, () => run('gh', ['pr', 'create', '--draft', '--base', opts.base, '--head', opts.head, '--title', opts.title, '--body', opts.body], { cwd: dir, timeoutMs: 120_000 }))
   const url = r.output.match(/https:\/\/github\.com\/\S+\/pull\/\d+/)?.[0]
   if (!url) throw new Error(`gh pr create returned no URL: ${r.output.slice(-200)}`)
   return url
