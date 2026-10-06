@@ -66,7 +66,7 @@
 - [x] Daily snapshot after sync (idempotent)
 - [x] `getHealthTrend()` compares current to oldest snapshot
 - [x] HealthBadge ↑/↓ arrow after 7+ days of data
-- [ ] 30-day trend line on Analytics page — waiting for data (~30 syncs)
+- [ ] 30-day trend line on Analytics page — blocked: snapshots stopped when the cron workflows were disabled (Aug 14); see audit-2026-10.md item 2
 
 ### Phase 10 — Natural Language Query
 - [x] Sparkle input above repos table — plain English filters
@@ -103,7 +103,7 @@
 - [x] 30 unit tests
 
 ### Phase 16 — Portfolio Analytics Trends
-- [ ] Line chart on Analytics page: avg health over time — waiting for 30+ days of snapshots
+- [ ] Line chart on Analytics page: avg health over time — blocked by the disabled cron workflows (audit-2026-10.md item 2), not by missing data
 
 ### Phase 17 — Goal Tracking
 - [x] `goals` table: type (mrr / health\_avg / repos\_live / revenue\_repos / custom), target, deadline
@@ -727,6 +727,8 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 **Shipped approach (2026-10-05):** rather than first splitting Nexus into queue lanes, the local lane shipped as a standalone runner (`factory/`) that reuses RepoHQ's pure routing code and mirrors its activity into `portfolio_events`. The Nexus lane split (61-B) is deferred until the local runner proves its merge rate.
 
 **Status (2026-10-06):** Factory v2 (Phases 75–80) shipped in #13 and #15: the sandboxed worker, Judge v2 with an adversarial reviewer, the promotion ladder, sensors and a ranked queue, the `agent_jobs` record with KPIs, and the night-shift policy. Next is the night shift's gate (7 consecutive nights with every attempt sandboxed), then concurrency 2. Plan of record: [autonomous-factory.md §14](autonomous-factory.md#14-factory-v2-one-good-pr-while-the-owner-sleeps-2026-10-06).
+
+**Audit (2026-10-06):** [audit-2026-10.md](audit-2026-10.md) found the scheduled crons disabled since Aug 14, `gstack-self` failing daily on a deleted repo, and critical framework advisories in production. Its fix-now list comes before new phases.
 
 **Owner actions that unblock the most:**
 - Close the pre-fix Nexus no-op PRs (Phase 69b). Bot PRs unreviewed for 7+ days block new factory PRs on their repo (Phase 78); on 2026-10-06 that was 5 of 9 repos.
