@@ -15,6 +15,9 @@ const config: KnipConfig = {
     'src/components/ui/**',
     // MCP brief types are exported for the MCP server's external consumers.
     'mcp/brief.ts',
+    // approval-tokens exports the full public API for signed one-time approval links.
+    // buildApprovalUrl is called by the notification dispatcher at runtime.
+    'src/lib/approval-tokens.ts',
   ],
   ignoreExportsUsedInFile: true,
   ignoreDependencies: [
