@@ -1,5 +1,5 @@
 /**
- * Tests the "don't chain (or self-improve) for no reason" gate in
+ * Tests the "don't chain for no reason" gate in
  * /api/webhooks/agent-events/route.ts. Mirrors the gating condition using the
  * real getActionableFindings/isGstackSkill so this stays in sync with
  * src/lib/skills/suggest-actions.ts.
@@ -12,11 +12,6 @@ import { isGstackSkill } from '../../src/lib/actions/nexus-utils'
 function shouldAutoChain(isChained: boolean, suggestedNextSkill: string | undefined, findings: string[]): boolean {
   if (isChained || !suggestedNextSkill || !isGstackSkill(suggestedNextSkill)) return false
   return getActionableFindings(findings).length > 0
-}
-
-/** Mirrors the gstack-self-scan "Fix: <finding>" queueing gate in route.ts. */
-function shouldQueueSelfImproveTasks(isSelfScan: boolean, repoId: number | null, findings: string[]): boolean {
-  return isSelfScan && repoId != null && getActionableFindings(findings).length > 0
 }
 
 const INFORMATIONAL_FINDING =
@@ -53,19 +48,5 @@ describe('skill-chain auto-queue gate', () => {
 
   it('does not chain when suggestedNextSkill is not a valid gstack skill', () => {
     expect(shouldAutoChain(false, 'not-a-skill', ['Dead code: 3 unused exports'])).toBe(false)
-  })
-})
-
-describe('gstack-self-scan self-improve queueing gate', () => {
-  it('does not queue fix tasks when the only finding is informational', () => {
-    expect(shouldQueueSelfImproveTasks(true, 1, [INFORMATIONAL_FINDING])).toBe(false)
-  })
-
-  it('does not queue fix tasks for non-self-scan reports', () => {
-    expect(shouldQueueSelfImproveTasks(false, 1, ['Dead code: 3 unused exports'])).toBe(false)
-  })
-
-  it('queues fix tasks when there is at least one actionable finding', () => {
-    expect(shouldQueueSelfImproveTasks(true, 1, ['Dead code: 3 unused exports'])).toBe(true)
   })
 })

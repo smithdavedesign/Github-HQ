@@ -36,15 +36,18 @@ export function HealthTrendChart({ data }: { data: ChartDataPoint[] }) {
         <CardTitle className="text-base">Repository Health Scores (Top 20)</CardTitle>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={400}>
-          <BarChart data={data} layout="vertical" margin={{ left: 100, right: 20 }}>
+        {/* 30px per repo so every name gets a label (at a fixed 400px Recharts skipped every other one). */}
+        <ResponsiveContainer width="100%" height={Math.max(240, data.length * 30 + 60)}>
+          <BarChart data={data} layout="vertical" margin={{ left: 8, right: 20 }}>
             <CartesianGrid strokeDasharray="3 3" horizontal={false} />
             <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
             <YAxis
               type="category"
               dataKey="name"
               tick={{ fontSize: 11 }}
-              width={96}
+              width={150}
+              interval={0}
+              tickFormatter={(name: string) => (name.length > 22 ? `${name.slice(0, 21)}…` : name)}
             />
             <Tooltip
               formatter={(value) => [`${value}`, '']}

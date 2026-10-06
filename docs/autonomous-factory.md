@@ -247,7 +247,7 @@ RepoHQ: RepoHQ#142 wants M2 (paid) — est. $0.40, month-to-date $3.10 / $10.
 Approve: https://repohq.vercel.app/approve/<signed-token>
 ```
 
-Approval goes through a **signed, single-use, expiring link** back to RepoHQ, never a free-text reply. Chat replies can be spoofed or prompt-injected, and the OpenClaw companion shouldn't hold approval authority.
+Approval goes through a **signed, single-use, expiring link** back to RepoHQ, never a free-text reply. *(Not built yet: the first `/approve` page was removed in the 2026-10 audit because nothing issued or consumed its tokens; see roadmap Phase 65.)* Chat replies can be spoofed or prompt-injected, and the OpenClaw companion shouldn't hold approval authority.
 
 ### Budget (PRD §21.11)
 

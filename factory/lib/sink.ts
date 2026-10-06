@@ -56,6 +56,37 @@ export async function healthScores(cfg: FactoryConfig): Promise<Map<string, numb
   return out
 }
 
+/** Newest RepoHQ health snapshot date (YYYY-MM-DD) for the owner's repos; null without the sink or data. */
+export async function latestHealthSnapshot(cfg: FactoryConfig): Promise<string | null> {
+  const d = db(cfg)
+  if (!d) return null
+  let out: string | null = null
+  await safely('latestHealthSnapshot', async () => {
+    const [row] = await d.select({ latest: sql<string | null>`max(${schema.healthScoreHistory.recordedDate})::text` })
+      .from(schema.healthScoreHistory)
+      .innerJoin(schema.repositories, eq(schema.healthScoreHistory.repoId, schema.repositories.id))
+      .where(eq(schema.repositories.userId, cfg.repohq.userId!))
+    out = row?.latest ?? null
+  })
+  return out
+}
+
+/** Nexus (remote executor) outcomes since `since`, from RepoHQ's portfolio_events; null without the sink. */
+export async function nexusOutcomes(cfg: FactoryConfig, since: Date): Promise<{ queued: number; failed: number; prs: number } | null> {
+  const d = db(cfg)
+  if (!d) return null
+  let out: { queued: number; failed: number; prs: number } | null = null
+  await safely('nexusOutcomes', async () => {
+    const rows = await d.select({ type: schema.portfolioEvents.eventType, n: sql<number>`count(*)::int` })
+      .from(schema.portfolioEvents)
+      .where(and(eq(schema.portfolioEvents.userId, cfg.repohq.userId!), sql`${schema.portfolioEvents.occurredAt} >= ${since}`))
+      .groupBy(schema.portfolioEvents.eventType)
+    const n = (t: string) => rows.find(r => r.type === t)?.n ?? 0
+    out = { queued: n('agent_task_queued'), failed: n('agent_execution_failed') + n('agent_failed'), prs: n('agent_pr_created') }
+  })
+  return out
+}
+
 export function attemptEventValues(a: AttemptEntry, userId: string, repoId: number | null, objective: string) {
   const outcome = a.outcome === 'verified' ? 'success' : 'failed'
   const emoji = outcome === 'success' ? '✅' : '❌'

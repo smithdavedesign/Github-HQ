@@ -61,12 +61,15 @@ interface GstackSkillLauncherProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function GstackSkillLauncher({ repoId, repoName, repoHomepage, defaultObjectives, nexusEnabled, skillHistory = {} }: GstackSkillLauncherProps) {
-  const [openPhases, setOpenPhases] = useState<Set<string>>(() => {
+  // Start from the defaults on both server and client, then apply the stored choice after mount:
+  // reading localStorage during render made the server and client HTML differ (hydration error).
+  const [openPhases, setOpenPhases] = useState<Set<string>>(() => new Set(['Understand', 'Monitor']))
+  useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
-      return stored ? new Set(JSON.parse(stored) as string[]) : new Set(['Understand', 'Monitor'])
-    } catch { return new Set(['Understand', 'Monitor']) }
-  })
+      if (stored) setOpenPhases(new Set(JSON.parse(stored) as string[]))
+    } catch { /* storage unavailable: keep defaults */ }
+  }, [])
   const [expandedSkill, setExpandedSkill] = useState<GstackSkill | null>(null)
   const [objectives, setObjectives] = useState(defaultObjectives)
   const [loading, setLoading] = useState<GstackSkill | null>(null)

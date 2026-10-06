@@ -5,7 +5,7 @@ const DB_URL = process.env.DATABASE_URL ?? ''
 
 async function getContext() {
   const sql = neon(DB_URL)
-  const [user] = await sql`SELECT id FROM users LIMIT 1`
+  const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
   if (!user) return null
   const [repo] = await sql`SELECT id, name FROM repositories WHERE user_id = ${user.id} LIMIT 1`
   return { userId: user.id as string, repoId: repo?.id as number | undefined, repoName: repo?.name as string | undefined }
@@ -66,7 +66,7 @@ test.describe('Feed page', () => {
 
     await page.goto('/feed')
     await expect(page.getByText('/health report ready')).toBeVisible({ timeout: 8000 })
-    await expect(page.getByText('Agent execution failed')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText('Agent execution failed', { exact: true }).first()).toBeVisible({ timeout: 8000 })
     await expect(page.getByText(/Repository clone failed: the GitHub repo could not be accessed/i)).toBeVisible({ timeout: 8000 })
 
     await cleanup(prefix)

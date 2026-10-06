@@ -19,8 +19,9 @@ import { listAliases } from './lib/litellm-ops'
 import { run } from './lib/proc'
 import { freeQuota } from './lib/quota'
 import { buildMorningReport, toMime, type MorningReport, type RoleId, type RoleSection } from './lib/report'
-import { recordNotification } from './lib/sink'
+import { latestHealthSnapshot, nexusOutcomes, recordNotification } from './lib/sink'
 import { copilotQuota } from './lib/copilot-quota'
+import { inactivityDisabled, type SystemHealth } from './lib/system-health'
 
 const log = (...a: unknown[]) => console.log(`[report ${new Date().toISOString().slice(11, 19)}]`, ...a)
 
@@ -45,6 +46,7 @@ async function main() {
     monthToDateUsd: monthToDateUsd(entries, now),
     monthlyBudgetUsd: cfg.monthlyBudgetUsd,
     cycles: recentCycles(cfg, now),
+    systemHealth: await gatherSystemHealth(cfg, now),
   }
   let report = buildMorningReport(input)
   // Opt-in: the local 7B model mis-paraphrased numbers in testing ("4 of 8 reviews completed"
@@ -69,6 +71,20 @@ async function main() {
   if (!sent) {
     await recordNotification(cfg, report.subject, `Morning report saved to ${stem}.html (email not configured — run factory/bin/setup-email.sh).`)
   }
+}
+
+/** Never throws: every probe degrades to null/unknown. */
+async function gatherSystemHealth(cfg: FactoryConfig, now: Date): Promise<SystemHealth> {
+  const lists = await Promise.all(cfg.repos.map(async repo => {
+    const r = await run('gh', ['workflow', 'list', '--repo', repo, '--all', '--json', 'name,state'], { timeoutMs: 30_000 })
+    if (r.code !== 0) return null
+    try { return inactivityDisabled(repo, JSON.parse(r.output)) } catch { return null }
+  }))
+  const [latestSnapshot, nexus] = await Promise.all([
+    latestHealthSnapshot(cfg),
+    nexusOutcomes(cfg, new Date(now.getTime() - 7 * 86_400_000)),
+  ])
+  return { disabledWorkflows: lists.every(l => l === null) ? null : lists.flatMap(l => l ?? []), latestSnapshot, nexus }
 }
 
 /** One local-model call (routine work → Ollama, $0) that rephrases each role's facts as a headline. */

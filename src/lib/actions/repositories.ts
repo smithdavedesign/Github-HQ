@@ -80,17 +80,22 @@ export const getDashboardStats = cache(async function getDashboardStats() {
 
   const userId = session.user.id
 
+  // Health status counts and the average cover active repos only: archived coursework scored
+  // "Dead" drowned out the repos that need attention (51 of 66 in the 2026-10 audit).
+  const active = sql`(coalesce(${repositories.isArchived}, false) = false and coalesce(${repositories.lifecycleStatus}, '') <> 'archived')`
+
   return dbOp('load dashboard stats', async () => {
   const [repoStats, securityStats, revenueStats] = await Promise.all([
     db
       .select({
         total: sql<number>`count(*)`.mapWith(Number),
+        archived: sql<number>`count(*) filter (where not ${active})`.mapWith(Number),
         private: sql<number>`count(*) filter (where ${repositories.visibility} = 'private')`.mapWith(Number),
         public: sql<number>`count(*) filter (where ${repositories.visibility} = 'public')`.mapWith(Number),
-        healthy: sql<number>`count(*) filter (where ${repositoryMetrics.healthScore} >= 75)`.mapWith(Number),
-        atRisk: sql<number>`count(*) filter (where ${repositoryMetrics.healthScore} >= 55 and ${repositoryMetrics.healthScore} < 75)`.mapWith(Number),
-        dead: sql<number>`count(*) filter (where ${repositoryMetrics.healthScore} < 55)`.mapWith(Number),
-        avgHealth: sql<number>`avg(${repositoryMetrics.healthScore})`.mapWith(Number),
+        healthy: sql<number>`count(*) filter (where ${active} and ${repositoryMetrics.healthScore} >= 75)`.mapWith(Number),
+        atRisk: sql<number>`count(*) filter (where ${active} and ${repositoryMetrics.healthScore} >= 55 and ${repositoryMetrics.healthScore} < 75)`.mapWith(Number),
+        dead: sql<number>`count(*) filter (where ${active} and ${repositoryMetrics.healthScore} < 55)`.mapWith(Number),
+        avgHealth: sql<number>`avg(${repositoryMetrics.healthScore}) filter (where ${active})`.mapWith(Number),
       })
       .from(repositories)
       .leftJoin(repositoryMetrics, eq(repositories.id, repositoryMetrics.repoId))

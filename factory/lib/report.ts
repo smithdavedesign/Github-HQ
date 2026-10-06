@@ -4,6 +4,7 @@
  * optional one-line role headlines (written by the local model) only rephrase them.
  */
 import type { ModelTier } from '../../src/lib/agents/model-router'
+import { systemHealthLines, type SystemHealth } from './system-health'
 import type { Capability, CapabilityStage } from './config'
 import { ladderStatus } from './ladder'
 import type { AttemptEntry, CiOracleEntry, LedgerEntry, ResolutionEntry, ReviewEntry, ScanEntry, SignalsEntry } from './ledger'
@@ -33,6 +34,8 @@ export interface ReportInput {
   headlines?: Partial<Record<RoleId, string>>
   /** Capability stages (promotion ladder, Phase 75). */
   capabilities?: Record<Capability, CapabilityStage>
+  /** Disabled workflows, stale RepoHQ data, Nexus failure rate (factory/lib/system-health.ts). */
+  systemHealth?: SystemHealth
 }
 
 export type RoleId = 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro' | 'ladder'
@@ -209,9 +212,11 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   const investigations = new Map<string, AttemptEntry>()
   for (const a of attempts.filter(x => x.kind === 'red-ci' && x.findings)) if (!investigations.get(a.repo) || a.at > investigations.get(a.repo)!.at) investigations.set(a.repo, a)
   const oracles = entries.filter((e): e is CiOracleEntry => e.type === 'ci_oracle' && since(e.at, now, 7 * DAY))
+  const health = input.systemHealth ? systemHealthLines(input.systemHealth, now) : null
   sections.push({
     id: 'ops', role: 'Ops / SRE', skill: '/canary', title: 'Stack health and budgets',
     lines: [
+      ...(health?.lines ?? []),
       `LiteLLM gateway: ${input.liteLLMUp ? 'up' : 'DOWN'}.`,
       `Cycles in the last 24h: ${input.cycles.length}${failedCycles.length ? ` (${failedCycles.length} failed)` : ''}.`,
       `OpenRouter free quota: ${input.openRouterQuota ? `${input.openRouterQuota.remaining}/${input.openRouterQuota.limit} left today` : 'unknown'} (one pool member of three).`,
@@ -276,7 +281,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   }
 
   const day = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
-  const subject = `RepoHQ factory · ${day} · ${plural(openPrs.length, 'PR')} to review · ${plural(kpis.lastNightPrs, 'new PR')} last night`
+  const subject = `${health?.alarm ? '⚠ ' : ''}RepoHQ factory · ${day} · ${plural(openPrs.length, 'PR')} to review · ${plural(kpis.lastNightPrs, 'new PR')} last night`
   return { subject, sections, text: renderText(subject, sections), html: renderHtml(subject, sections) }
 }
 

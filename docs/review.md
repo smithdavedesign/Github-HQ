@@ -1,5 +1,6 @@
 # RepoHQ — Honest Review
 *Reviewed June 13, 2026. Sources: full repo read-through + live site at https://repohq.vercel.app.*
+*Superseded by the [October 2026 audit](audit-2026-10.md).*
 
 > **Status: RESOLVED.** Every Critical/High/Medium item in the Prioritised Recommendations
 > table below (encryption at rest, CI build gate, uptime false-positive, `ai_summary_jobs`

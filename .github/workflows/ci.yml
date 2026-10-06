@@ -35,6 +35,11 @@ jobs:
       - name: Dead code check
         run: npm run dead-code
 
+      # Runtime dependencies only (dev tooling never ships). Critical advisories sat in production
+      # unnoticed until the 2026-10 audit; Dependabot alerts cover everything below critical.
+      - name: Dependency audit (production, critical)
+        run: npm audit --omit=dev --audit-level=critical
+
   build:
     name: Build
     runs-on: ubuntu-latest

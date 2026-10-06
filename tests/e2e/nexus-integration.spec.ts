@@ -22,8 +22,10 @@ test.describe('Settings — Agent Execution card', () => {
   test('shows connection status indicator', async ({ page }) => {
     await page.goto('/settings')
     // Either "Connected" (green dot + URL) or "Not configured" depending on env
-    const connected    = await page.getByText(/Not configured|ai-devops-nexus/).isVisible().catch(() => false)
-    expect(connected).toBe(true)
+    // Scoped to the Agent Execution card ("Not configured" appears on other cards too), and an
+    // auto-waiting assertion: isVisible() returned before the streamed card rendered.
+    const card = page.locator('[data-slot="card"]').filter({ hasText: 'Agent Execution' })
+    await expect(card.getByText(/Not configured|Connected — /)).toBeVisible()
   })
 
   test('shows env var instructions', async ({ page }) => {
@@ -91,7 +93,7 @@ test.describe('Agent Performance page', () => {
     await page.goto('/agent-performance')
     await expect(page.getByText('Tasks queued')).toBeVisible()
     await expect(page.getByText('PRs merged')).toBeVisible()
-    await expect(page.getByText('Success rate')).toBeVisible()
+    await expect(page.getByText('Success rate', { exact: true })).toBeVisible()
   })
 
   test('shows empty state or activity log', async ({ page }) => {
@@ -124,17 +126,18 @@ test.describe('Agent Performance page', () => {
 // ─── Webhook endpoint ─────────────────────────────────────────────────────────
 
 test.describe('Webhook endpoint', () => {
-  test('returns 200 for valid event without secret check', async ({ request }) => {
+  // Fail-secure since Phase 58: without the shared secret every request is 401, even when the
+  // server has no secret configured. Accepted-event cases need NEXUS_WEBHOOK_SECRET in the test env.
+  const secret = process.env.NEXUS_WEBHOOK_SECRET
+
+  test('rejects events without the webhook secret', async ({ request }) => {
     const res = await request.post('/api/webhooks/agent-events', {
       data: { eventType: 'agent_task_queued', taskId: 'test-task-id' },
     })
-    expect(res.status()).toBe(200)
+    expect(res.status()).toBe(401)
   })
 
   test('returns 401 when wrong webhook secret is provided', async ({ request }) => {
-    // Only runs when NEXUS_WEBHOOK_SECRET is configured
-    test.skip(!process.env.NEXUS_WEBHOOK_SECRET, 'No webhook secret configured')
-
     const res = await request.post('/api/webhooks/agent-events', {
       headers: { 'x-nexus-webhook-secret': 'wrong-secret' },
       data: { eventType: 'agent_pr_merged', taskId: 'test-id' },
@@ -143,8 +146,9 @@ test.describe('Webhook endpoint', () => {
   })
 
   test('returns 400 for invalid JSON', async ({ request }) => {
+    test.skip(!secret, 'NEXUS_WEBHOOK_SECRET not set')
     const res = await request.post('/api/webhooks/agent-events', {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-nexus-webhook-secret': secret! },
       data: 'not-valid-json',
     })
     // Should return 400 or 200 gracefully — either is acceptable
@@ -152,7 +156,9 @@ test.describe('Webhook endpoint', () => {
   })
 
   test('agent_pr_merged event is accepted', async ({ request }) => {
+    test.skip(!secret, 'NEXUS_WEBHOOK_SECRET not set')
     const res = await request.post('/api/webhooks/agent-events', {
+      headers: { 'x-nexus-webhook-secret': secret! },
       data: {
         eventType: 'agent_pr_merged',
         taskId: 'playwright-test-task',
@@ -179,11 +185,12 @@ test.describe('portfolio_events DB state', () => {
       ORDER BY occurred_at DESC LIMIT 5
     `
 
-    // If any queued events exist, verify structure
-    if (rows.length > 0) {
-      const meta = rows[0].metadata as Record<string, unknown>
+    // Every queued event carries its Nexus task id; advisor-sourced ones (those with an
+    // impactType) also carry the predicted delta. Skill and self-scan queues never had one.
+    for (const row of rows) {
+      const meta = row.metadata as Record<string, unknown>
       expect(meta).toHaveProperty('taskId')
-      expect(meta).toHaveProperty('predictedDelta')
+      if (meta.impactType) expect(meta).toHaveProperty('predictedDelta')
     }
     // Zero rows is also fine — means nobody has queued yet
     expect(rows.length).toBeGreaterThanOrEqual(0)

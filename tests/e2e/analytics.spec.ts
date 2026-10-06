@@ -5,56 +5,9 @@ const DB_URL = process.env.DATABASE_URL ?? ''
 
 async function getContext() {
   const sql = neon(DB_URL)
-  const [user] = await sql`SELECT id FROM users LIMIT 1`
+  const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
   if (!user) return null
   return { userId: user.id as string }
-}
-
-async function snapshotRows(userId: string) {
-  const sql = neon(DB_URL)
-  return await sql`
-    SELECT h.id, h.repo_id AS "repoId", h.health_score AS "healthScore", h.activity_score AS "activityScore", h.security_score AS "securityScore", h.recorded_date AS "recordedDate", h.recorded_at AS "recordedAt"
-    FROM health_score_history h
-    INNER JOIN repositories r ON r.id = h.repo_id
-    WHERE r.user_id = ${userId}
-    ORDER BY h.recorded_at DESC
-  ` as Array<{ id: number; repoId: number; healthScore: number; activityScore: number | null; securityScore: number | null; recordedDate: string; recordedAt: string | null }>
-}
-
-async function restoreRows(rows: Array<{ repoId: number; healthScore: number; activityScore: number | null; securityScore: number | null; recordedDate: string; recordedAt: string | null }>) {
-  if (!DB_URL || rows.length === 0) return
-  const sql = neon(DB_URL)
-  for (const row of rows) {
-    await sql`
-      INSERT INTO health_score_history (repo_id, health_score, activity_score, security_score, recorded_date, recorded_at)
-      VALUES (${row.repoId}, ${row.healthScore}, ${row.activityScore}, ${row.securityScore}, ${row.recordedDate}, ${row.recordedAt ?? new Date().toISOString()})
-      ON CONFLICT (repo_id, recorded_date) DO NOTHING
-    `
-  }
-}
-
-async function seedTempRepo(userId: string) {
-  const sql = neon(DB_URL)
-  const githubId = Number(String(Date.now()).slice(-9))
-  const createdAt = new Date().toISOString()
-  const [repo] = await sql`
-    INSERT INTO repositories (
-      user_id, github_id, name, owner, full_name, visibility,
-      created_at, updated_at, lifecycle_status, estimated_effort, is_focused
-    )
-    VALUES (
-      ${userId}, ${githubId}, ${'analytics-fallback-' + githubId}, ${'test'}, ${'test/analytics-fallback-' + githubId},
-      'private', ${createdAt}, ${createdAt}, 'maintaining', 'medium', false
-    )
-    RETURNING id
-  `
-
-  await sql`
-    INSERT INTO repository_metrics (repo_id, health_score, activity_score, security_score, calculated_at)
-    VALUES (${repo.id}, 73, 42, 88, NOW())
-  `
-
-  return { repoId: repo.id as number }
 }
 
 test.describe('Analytics page', () => {
@@ -73,32 +26,25 @@ test.describe('Analytics page', () => {
     expect(hasChart || hasEmpty).toBe(true)
   })
 
-  test('shows a live snapshot when trend history is not warmed up', async ({ page }) => {
-    test.setTimeout(60000)
+  test('trend card shows the live snapshot until 3 days of history exist, then the chart', async ({ page }) => {
+    // Read-only: the old version deleted the user's health history and re-inserted it row by row,
+    // and a timeout mid-restore lost months of real snapshots.
     test.skip(!DB_URL, 'DATABASE_URL not set')
-
     const ctx = await getContext()
     if (!ctx?.userId) { test.skip(true, 'No user'); return }
 
     const sql = neon(DB_URL)
-    const backup = await snapshotRows(ctx.userId)
-    const tempRepo = await seedTempRepo(ctx.userId)
+    const [row] = await sql`
+      SELECT count(DISTINCT h.recorded_date)::int AS days
+      FROM health_score_history h JOIN repositories r ON r.id = h.repo_id
+      WHERE r.user_id = ${ctx.userId} AND h.recorded_at >= NOW() - INTERVAL '30 days'
+    `
 
-    try {
-      await sql`
-        DELETE FROM health_score_history
-        WHERE repo_id IN (
-          SELECT id FROM repositories WHERE user_id = ${ctx.userId}
-        )
-      `
-
-      await page.goto('/analytics')
-      await expect(page.getByText('Showing live snapshot')).toBeVisible({ timeout: 8000 })
-      await expect(page.getByText('History snapshots are still warming up')).toBeVisible({ timeout: 8000 })
-    } finally {
-      await sql`DELETE FROM repository_metrics WHERE repo_id = ${tempRepo.repoId}`
-      await sql`DELETE FROM repositories WHERE id = ${tempRepo.repoId}`
-      await restoreRows(backup)
+    await page.goto('/analytics')
+    if ((row?.days ?? 0) < 3) {
+      await expect(page.getByText(/Showing live snapshot|No data yet/)).toBeVisible({ timeout: 8000 })
+    } else {
+      await expect(page.getByText('Showing live snapshot')).toHaveCount(0)
     }
   })
 })

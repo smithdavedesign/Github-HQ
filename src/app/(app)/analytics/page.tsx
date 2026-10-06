@@ -20,7 +20,7 @@ export default async function AnalyticsPage() {
     db.query.repositories.findMany({
       where: eq(repositories.userId, session.user.id),
       with: { metrics: true },
-      columns: { id: true, name: true, estimatedEffort: true },
+      columns: { id: true, name: true, estimatedEffort: true, isArchived: true, lifecycleStatus: true },
     }),
     getPortfolioHealthTrend(session.user.id),
     getAgentStats(),
@@ -59,7 +59,7 @@ export default async function AnalyticsPage() {
     : []
 
   const matrixRepos = reposWithMetrics
-    .filter(r => r.metrics?.opportunityScore != null)
+    .filter(r => r.metrics?.opportunityScore != null && !r.isArchived && r.lifecycleStatus !== 'archived')
     .map(r => ({
       id: r.id,
       name: r.name,

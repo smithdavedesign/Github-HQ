@@ -7,6 +7,11 @@
  */
 import { test, expect } from '@playwright/test'
 import { neon } from '@neondatabase/serverless'
+import { DISPOSABLE_DB, DISPOSABLE_DB_REASON } from './helpers/disposable-db'
+
+
+// Overwrites every user's LLM settings.
+test.skip(!DISPOSABLE_DB, DISPOSABLE_DB_REASON)
 
 const DB_URL = process.env.DATABASE_URL ?? ''
 
@@ -25,21 +30,21 @@ test.describe('Analyze button — provider stored in DB', () => {
   test('DB stores anthropic after setProvider(anthropic)', async () => {
     await setProvider('anthropic')
     const sql = neon(DB_URL)
-    const [row] = await sql`SELECT llm_provider FROM users LIMIT 1`
+    const [row] = await sql`SELECT llm_provider FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     expect(row?.llm_provider).toBe('anthropic')
   })
 
   test('DB stores openai after setProvider(openai)', async () => {
     await setProvider('openai')
     const sql = neon(DB_URL)
-    const [row] = await sql`SELECT llm_provider FROM users LIMIT 1`
+    const [row] = await sql`SELECT llm_provider FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     expect(row?.llm_provider).toBe('openai')
   })
 
   test('DB stores gemini after setProvider(gemini)', async () => {
     await setProvider('gemini')
     const sql = neon(DB_URL)
-    const [row] = await sql`SELECT llm_provider FROM users LIMIT 1`
+    const [row] = await sql`SELECT llm_provider FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     expect(row?.llm_provider).toBe('gemini')
   })
 
@@ -47,7 +52,7 @@ test.describe('Analyze button — provider stored in DB', () => {
     await setProvider('gemini')
     await setProvider('anthropic')
     const sql = neon(DB_URL)
-    const [row] = await sql`SELECT llm_provider FROM users LIMIT 1`
+    const [row] = await sql`SELECT llm_provider FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     expect(row?.llm_provider).toBe('anthropic')
   })
 })
