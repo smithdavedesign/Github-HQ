@@ -52,3 +52,5 @@ tests/setup/auth-state.json
 
 # local run logs
 *.log
+
+.neon
