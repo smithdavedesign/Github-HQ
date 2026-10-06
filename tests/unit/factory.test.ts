@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
-  confirmFailures, runChecks, parseAudit, type CheckSpec,
+  confirmFailures, runChecks, parseAudit, collectPackageInfo, lintScriptAutofixes, lintProblems, type CheckSpec,
   detectPackageManager, installCommand, planChecks, isPlaceholderTestScript,
   filesFromTscOutput, filesFromEslintOutput, errorExcerpt, readmeIssue, type CheckResult,
 } from '../../factory/lib/checks'
@@ -643,5 +643,61 @@ describe('judge: silent test skips', () => {
   it('catches skipIf / todo variants', () => {
     const d = parseDiff('1\t0\tsrc/a.test.ts\n', '+++ b/src/a.test.ts\n+it.skipIf(!key)("x", () => {})\n', new Set())
     expect(judge({ task: testTask, baseline: [ok('test', false)], after: [ok('test')], diff: d }).ok).toBe(false)
+  })
+})
+
+describe('sub-package scripts', () => {
+  it('collects scripts and deps from client/ and server/ when there is no root package.json', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'factory-pkgs-'))
+    const write = (p: string, j: object) => { mkdirSync(path.dirname(path.join(dir, p)), { recursive: true }); writeFileSync(path.join(dir, p), JSON.stringify(j)) }
+    write('client/package.json', { scripts: { dev: 'vite', 'test:e2e': 'playwright test' }, devDependencies: { vite: '1' } })
+    write('server/package.json', { scripts: { start: 'node index.js' }, dependencies: { express: '4' } })
+    write('client/node_modules/x/package.json', { scripts: { evil: 'x' } })
+    const info = collectPackageInfo(dir)
+    expect(Object.keys(info.scripts).sort()).toEqual(['dev', 'start', 'test:e2e'])
+    expect(info.deps.sort()).toEqual(['express', 'vite'])
+  })
+})
+
+describe('lint-autofix', () => {
+  const specs = planChecks({ scripts: { lint: 'eslint . --fix' } }, 'npm', false)
+  const failingLint = ok('lint', false, '/r/a.js\n  1:1  error  x  rule\n\n✖ 120 problems (40 errors, 80 warnings)')
+  it('detects fixer lint scripts and parses problem totals', () => {
+    expect(lintScriptAutofixes({ scripts: { lint: 'eslint . --fix' } })).toBe(true)
+    expect(lintScriptAutofixes({ scripts: { lint: 'prettier --write . && eslint .' } })).toBe(true)
+    expect(lintScriptAutofixes({ scripts: { lint: 'eslint .' } })).toBe(false)
+    expect(lintProblems(failingLint)).toBe(120)
+    expect(lintProblems(ok('lint'))).toBe(0)
+    expect(lintProblems(undefined)).toBeNull()
+  })
+  it('offers the mechanical autofix instead of a model lint fix', () => {
+    expect(tasksFromScan([failingLint], specs, null, '/r', null, { lintAutofixes: true }).map(t => t.kind)).toEqual(['lint-autofix'])
+    expect(tasksFromScan([failingLint], specs, null, '/r', null, {}).map(t => t.kind)).toEqual(['fix-lint'])
+  })
+  it('judge: size-exempt, problems must drop, no other regressions, no suppressions', () => {
+    const [t] = tasksFromScan([failingLint], specs, null, '/r', null, { lintAutofixes: true })
+    const big: DiffInfo = { files: [{ path: 'src/a.js', added: 1500, removed: 1400, deleted: false }], addedLines: ['const a = 1;'] }
+    const base = [failingLint, ok('test')]
+    expect(judge({ task: t, baseline: base, after: [ok('lint', false), ok('test')], diff: big, lintProblems: { before: 120, after: 7 } }).ok).toBe(true)
+    // eslint --fix reports post-fix counts, so "unchanged" is the normal case
+    expect(judge({ task: t, baseline: base, after: [ok('lint', false), ok('test')], diff: big, lintProblems: { before: 120, after: 120 } }).ok).toBe(true)
+    expect(judge({ task: t, baseline: base, after: [ok('lint', false), ok('test')], diff: big, lintProblems: { before: 120, after: 130 } }).reason).toMatch(/increased/)
+    expect(judge({ task: t, baseline: base, after: [ok('lint'), ok('test', false)], diff: big, lintProblems: { before: 120, after: 0 } }).reason).toMatch(/regressed: test/)
+    const cheat: DiffInfo = { ...big, addedLines: ['/* eslint-disable */'] }
+    expect(judge({ task: t, baseline: base, after: [ok('lint'), ok('test')], diff: cheat, lintProblems: { before: 120, after: 0 } }).reason).toMatch(/disables ESLint/)
+  })
+  it('deterministic lint-autofix failures count toward dead ends', () => {
+    const lf = { tier: 'M0' as const, harness: 'lint-autofix', kind: 'lint-autofix', outcome: 'failed' as const }
+    expect([...deadEnds([att(lf), att(lf)], NOW)]).toEqual(['o/r:lint-autofix'])
+  })
+})
+
+describe('voided attempts', () => {
+  it('are ignored by routing, dead ends and stats', () => {
+    const bad = { kind: 'docs-readme', outcome: 'failed' as const, voided: 'judge read root package.json only' }
+    const entries = [att(bad), att(bad)]
+    expect(deadEnds(entries, NOW).size).toBe(0)
+    expect(toAttemptRecords(entries)).toEqual([])
+    expect(summarizeByTier(entries).every(r => r.attempts === 0)).toBe(true)
   })
 })

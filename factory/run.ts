@@ -17,7 +17,7 @@ import {
   allowedTiers, canUsePaidTier, chooseTier, classifyRepoData, computeTierStats, nextTier, type ModelTier,
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
-import { confirmFailures, detectPackageManager, installCommand, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
+import { collectPackageInfo, confirmFailures, detectPackageManager, installCommand, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
 import { checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
@@ -163,7 +163,7 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     const ledger = readLedger(cfg.home)
     const now = new Date()
     const openKinds = new Set(openPrAttempts(ledger).map(a => `${a.repo}:${a.kind}`))
-    const allTasks = tasksFromScan(baseline, specs, readmeIssue(basics.readme), dir, audit)
+    const allTasks = tasksFromScan(baseline, specs, readmeIssue(basics.readme), dir, audit, { lintAutofixes: lintScriptAutofixes(basics.pkg) })
     const tasks = filterTasks(allTasks, repo, openKinds, deadEnds(ledger, now))
     appendEntry(cfg.home, {
       type: 'scan', runId, at: now.toISOString(), repo,
@@ -215,9 +215,9 @@ interface TaskContext {
  */
 async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType<typeof readLedger>, now: Date): Promise<'pr' | 'verified' | 'deferred' | 'failed' | 'stop'> {
   const { cfg, repo } = ctx
-  if (task.kind === 'deps-audit') {
-    // Deterministic: `npm audit fix` (no model, no quota), judged like any other change.
-    log(`${repo}: deps-audit → npm audit fix (no model)`)
+  if (task.kind === 'deps-audit' || task.kind === 'lint-autofix') {
+    // Deterministic: `npm audit fix` / the repo's own lint fixer (no model, no quota), judged like any other change.
+    log(`${repo}: ${task.kind} → ${task.kind === 'deps-audit' ? 'npm audit fix' : "repo's lint fixer"} (no model)`)
     const r = await attempt(cfg, repo, ctx.dir, ctx.base, task, 'M0', false, ctx.pkg, ctx.specs, ctx.baseline, ctx.args, ctx.audit)
     return r === 'rate_limited' ? 'deferred' : r
   }
@@ -264,14 +264,17 @@ async function attempt(
   auditBefore: AuditCounts | null = null,
 ): Promise<'pr' | 'verified' | 'failed' | 'rate_limited'> {
   const deps = task.kind === 'deps-audit'
+  const lintFix = task.kind === 'lint-autofix'
+  const lintSpec = specs.find(s => s.name === 'lint')
   const now = new Date()
   const branch = branchName(task, now, runId)
   await checkoutNewBranch(dir, base, branch)
-  const model = deps ? 'npm' : cfg.models[tier]
-  const prompt = deps ? 'npm audit fix' : buildPrompt(task, tier, pkg, specs.filter(s => task.verify.includes(s.name)).map(s => s.display), repo)
-  if (!deps) log(`${repo}: ${tier} ${harnessFor(tier)} → ${model}`)
+  const model = deps || lintFix ? 'npm' : cfg.models[tier]
+  const promptPkg = { ...pkg, scripts: collectPackageInfo(dir).scripts }
+  const prompt = deps ? 'npm audit fix' : lintFix ? (lintSpec?.display ?? 'lint') : buildPrompt(task, tier, promptPkg, specs.filter(s => task.verify.includes(s.name)).map(s => s.display), repo)
+  if (!deps && !lintFix) log(`${repo}: ${tier} ${harnessFor(tier)} → ${model}`)
 
-  const h: HarnessResult = deps ? await npmAuditFix(dir, cfg) : await runHarness({
+  const h: HarnessResult = deps ? await npmAuditFix(dir, cfg) : lintFix ? await runLintFixer(dir, lintSpec, cfg) : await runHarness({
     tier, model, cwd: dir, prompt, files: task.scoped ? task.files : undefined,
     timeoutMs: tier === 'M0' ? cfg.m0TimeoutMs : undefined,
     // Claude Code's small-model role → local Ollama (falls back to the pool). Measured: zero
@@ -304,17 +307,24 @@ async function attempt(
     await commitAll(dir, 'factory: wip')
     after = await runChecks(specs, dir, cfg.checkTimeoutMs)
     if ((await diffInfo(dir)).files.length > 0) {
-      await commitAll(dir, 'factory: wip (repo check autofix)')
-      after = await runChecks(specs, dir, cfg.checkTimeoutMs)
-      await resetWorktree(dir)
+      if (deps) {
+        // A dependency PR must contain only package files: drop the lint fixer's rewrite.
+        await resetWorktree(dir)
+      } else {
+        await commitAll(dir, 'factory: wip (repo check autofix)')
+        after = await runChecks(specs, dir, cfg.checkTimeoutMs)
+        await resetWorktree(dir)
+      }
     }
   }
   const diff = edits.files.length > 0 ? await diffAgainst(dir, baseSha) : edits
   const readmeAfter = existsSync(path.join(dir, 'README.md')) ? readFileSync(path.join(dir, 'README.md'), 'utf8') : null
   const verdict = diff.files.length > 0
     ? judge({
-      task, baseline, after, diff, scripts: pkg?.scripts, deps: Object.keys({ ...pkg?.dependencies, ...pkg?.devDependencies }), readmeAfter,
+      // Scripts/deps from every package.json (root + sub-packages like client/, server/).
+      task, baseline, after, diff, ...collectPackageInfo(dir), readmeAfter,
       audit: deps ? { before: auditBefore, after: await runAudit(dir) } : undefined,
+      lintProblems: lintFix ? { before: lintProblems(baseline.find(b => b.name === 'lint')), after: lintProblems(after.find(a => a.name === 'lint')) } : undefined,
     })
     : { ok: false, reason: h.ok ? 'no changes made' : `harness failed${h.timedOut ? ' (timeout)' : ''}` }
   entry.reason = verdict.reason
@@ -348,6 +358,16 @@ async function attempt(
 }
 
 /** Non-breaking dependency fixes only — never `--force` (that would allow semver-major upgrades). */
+/** Run the repo's own lint script once to let its fixer (eslint --fix / prettier --write) rewrite files. */
+async function runLintFixer(dir: string, spec: CheckSpec | undefined, cfg: FactoryConfig): Promise<HarnessResult> {
+  const r = spec ? await run(spec.cmd, spec.args, { cwd: dir, timeoutMs: cfg.checkTimeoutMs, env: { ...process.env, CI: '1', NO_COLOR: '1' } }) : null
+  return {
+    // Lint may still fail afterwards (remaining errors); success here means the fixer ran.
+    ok: !!r && !r.timedOut, harness: 'lint-autofix', model: 'npm', output: r?.output ?? 'no lint script',
+    durationMs: r?.durationMs ?? 0, inputTokens: 0, outputTokens: 0, costUsd: 0, rateLimited: false, timedOut: r?.timedOut ?? false,
+  }
+}
+
 async function npmAuditFix(dir: string, cfg: FactoryConfig): Promise<HarnessResult> {
   const r = await run('npm', ['audit', 'fix', '--no-fund'], { cwd: dir, timeoutMs: cfg.checkTimeoutMs })
   return {

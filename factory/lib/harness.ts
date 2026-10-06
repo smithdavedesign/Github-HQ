@@ -2,7 +2,7 @@ import type { ModelTier } from '../../src/lib/agents/model-router'
 import type { FactoryConfig } from './config'
 import { run } from './proc'
 
-export type HarnessName = 'aider' | 'claude-code' | 'copilot' | 'npm-audit-fix'
+export type HarnessName = 'aider' | 'claude-code' | 'copilot' | 'npm-audit-fix' | 'lint-autofix'
 
 export interface HarnessRequest {
   tier: ModelTier

@@ -7,7 +7,7 @@ import { errorExcerpt, filesFromEslintOutput, filesFromTscOutput, type AuditCoun
  * auth, payments and migrations never are.
  */
 
-export type TaskKind = 'fix-types' | 'fix-lint' | 'fix-tests' | 'deps-audit' | 'docs-readme'
+export type TaskKind = 'fix-types' | 'lint-autofix' | 'fix-lint' | 'fix-tests' | 'deps-audit' | 'docs-readme'
 
 export interface FactoryTask {
   kind: TaskKind
@@ -38,7 +38,12 @@ export function fitLocalContext(task: FactoryTask, sizeOf: (file: string) => num
   return total <= M0_MAX_BYTES ? task : { ...task, scoped: false }
 }
 
-export function tasksFromScan(results: CheckResult[], specs: CheckSpec[], readmeProblem: string | null, root: string, audit: AuditCounts | null = null): FactoryTask[] {
+export function tasksFromScan(
+  results: CheckResult[], specs: CheckSpec[], readmeProblem: string | null, root: string,
+  audit: AuditCounts | null = null,
+  /** The lint script runs a fixer: offer the mechanical autofix first, model fixes after it lands. */
+  opts: { lintAutofixes?: boolean } = {},
+): FactoryTask[] {
   const tasks: FactoryTask[] = []
   const cmd = (n: CheckName) => specs.find(s => s.name === n)?.display ?? n
   const failed = (n: CheckName) => results.find(r => r.name === n && !r.ok)
@@ -56,7 +61,16 @@ export function tasksFromScan(results: CheckResult[], specs: CheckSpec[], readme
   }
 
   const lint = failed('lint')
-  if (lint && !lint.timedOut) {
+  if (lint && !lint.timedOut && opts.lintAutofixes) {
+    // A model fix would drag the fixer's whole-repo rewrite into its diff (2,493 lines on
+    // Figma-Jira) and fail the size cap; land the mechanical autofix on its own first.
+    tasks.push({
+      kind: 'lint-autofix', taskTier: 1, scoped: false, files: [],
+      title: "Apply the repo's lint autofix",
+      objective: `\`${cmd('lint')}\` runs a fixer that rewrites files. Commit the fixer's own changes as a mechanical PR so later fixes start from a clean tree.`,
+      evidence: errorExcerpt(lint.output), verify: [],
+    })
+  } else if (lint && !lint.timedOut) {
     const files = filesFromEslintOutput(lint.output, root)
     tasks.push({
       kind: 'fix-lint', taskTier: 2,

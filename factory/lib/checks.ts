@@ -195,3 +195,47 @@ export async function runAudit(cwd: string, timeoutMs = 120_000): Promise<AuditC
   const r = await run('npm', ['audit', '--json'], { cwd, timeoutMs, maxOutput: 2_000_000 })
   return parseAudit(r.output)
 }
+
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'coverage'])
+
+/**
+ * Scripts and dependency names from the root package.json and any package.json up to
+ * two levels down (client/, server/, packages/*, apps/*). Repos like family-tree have no
+ * root package.json at all, so judging a README against root scripts only rejects
+ * every real command.
+ */
+export function collectPackageInfo(dir: string, maxDepth = 2): { scripts: Record<string, string>; deps: string[] } {
+  const scripts: Record<string, string> = {}
+  const deps = new Set<string>()
+  const visit = (d: string, depth: number) => {
+    const p = path.join(d, 'package.json')
+    if (existsSync(p)) {
+      try {
+        const pkg = JSON.parse(readFileSync(p, 'utf8')) as PackageJson
+        for (const [k, v] of Object.entries(pkg.scripts ?? {})) scripts[k] ??= v
+        for (const k of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) deps.add(k)
+      } catch {
+        // unreadable package.json — ignore
+      }
+    }
+    if (depth >= maxDepth) return
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (e.isDirectory() && !SKIP_DIRS.has(e.name) && !e.name.startsWith('.')) visit(path.join(d, e.name), depth + 1)
+    }
+  }
+  visit(dir, 0)
+  return { scripts, deps: [...deps] }
+}
+
+/** The repo's lint script rewrites files (eslint --fix, prettier --write). */
+export function lintScriptAutofixes(pkg: PackageJson | null): boolean {
+  return /--fix\b|--write\b/.test(pkg?.scripts?.lint ?? '')
+}
+
+/** ESLint's "✖ N problems" total; 0 when lint passed; null when unknown. */
+export function lintProblems(r: { ok: boolean; output: string } | undefined): number | null {
+  if (!r) return null
+  if (r.ok) return 0
+  const m = /✖\s+(\d+)\s+problems?/.exec(r.output)
+  return m ? Number(m[1]) : null
+}
