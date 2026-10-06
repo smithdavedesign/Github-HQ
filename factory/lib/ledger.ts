@@ -47,6 +47,8 @@ export interface AttemptEntry {
   requests?: number
   /** The failed cheaper-tier attempt this one escalated from (job tree, Phase 79). */
   parentId?: string
+  /** Front door: the owner-request (queue taskId) this attempt serves, so results correlate back. */
+  ownerTaskId?: string
   /**
    * Set when the verdict itself was wrong (a judge bug, not the model's fault): the attempt
    * stays in the ledger for history but no longer counts for routing, dead ends or stats.
@@ -127,7 +129,29 @@ export interface CiOracleEntry {
   passed: boolean
 }
 
-export type LedgerEntry = AttemptEntry | ResolutionEntry | ScanEntry | ScoutEntry | ApprovalEntry | ReviewEntry | SignalsEntry | CiOracleEntry
+/**
+ * Front door terminal result (ai-stack/repohq/CONTRACT.md). Written once per owner-request when
+ * its ladder finishes; OpenClaw's `report` reads these to deliver the PR URL (or reason) to WhatsApp.
+ */
+export interface OwnerResultEntry {
+  type: 'owner_result'
+  runId: string
+  at: string
+  repo: string
+  /** Correlates back to the queue entry (queue/owner-requests.jsonl). */
+  ownerTaskId: string
+  /**
+   * pr       = draft PR opened.
+   * verified = passed the judge but held with no PR (capability at stage `report`, or a dry run).
+   * rejected = the judge/checks blocked it.
+   * failed   = no tier could attempt it (rate-limited out, or hit the paid-approval boundary).
+   */
+  ownerStatus: 'pr' | 'verified' | 'rejected' | 'failed'
+  prUrl?: string
+  reason?: string
+}
+
+export type LedgerEntry = AttemptEntry | ResolutionEntry | ScanEntry | ScoutEntry | ApprovalEntry | ReviewEntry | SignalsEntry | CiOracleEntry | OwnerResultEntry
 
 export function ledgerPath(home: string): string {
   return path.join(home, 'ledger.jsonl')

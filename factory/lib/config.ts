@@ -65,7 +65,7 @@ export type CapabilityStage = 'observe' | 'report' | 'pr'
 
 export const CAPABILITIES = [
   'fix-types', 'fix-lint', 'fix-tests', 'lint-autofix', 'deps-audit', 'docs-readme',
-  'red-ci', 'security-alerts', 'adversarial-veto',
+  'red-ci', 'security-alerts', 'adversarial-veto', 'owner-requested',
 ] as const
 export type Capability = typeof CAPABILITIES[number]
 
@@ -74,6 +74,10 @@ export const DEFAULT_CAPABILITIES: Record<Capability, CapabilityStage> = {
   'fix-types': 'pr', 'fix-lint': 'pr', 'fix-tests': 'pr', 'lint-autofix': 'pr', 'deps-audit': 'pr', 'docs-readme': 'pr',
   // New (Phases 77–78): earn promotion with evidence first.
   'red-ci': 'report', 'security-alerts': 'report', 'adversarial-veto': 'report',
+  // Front door (ai-stack/repohq/CONTRACT.md): starts at `report` like every new capability — it runs
+  // the full path (sandbox → judge) and reports "verified, held, no PR" so a clean dry run earns trust
+  // first. Promote to `pr` (here or in factory.config.json) to actually open labeled draft PRs.
+  'owner-requested': 'report',
 }
 
 /** Builder tier → reviewer alias from a different model family (local = Qwen; free-agent = Nemotron → Cohere → Gemini). */
