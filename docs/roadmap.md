@@ -735,7 +735,7 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 **Owner actions that unblock the most:**
 - ~~Close the pre-fix Nexus no-op PRs (Phase 69b).~~ Done 2026-10-06: 11 closed.
 - Leave the Mac on AC power overnight; scheduled cycles skip on battery (Phase 80).
-- Set the Anthropic console spend cap (Phase 60). The LiteLLM key is a known constant, so it's the only hard limit on the paid alias outside the sandbox.
+- ~~Set the Anthropic console spend cap (Phase 60).~~ Done 2026-10-06: $25/month.
 - Run `bash factory/bin/setup-email.sh <gmail>` so the morning report is emailed (Phase 69).
 - Optional: branch protection on `main` (Phase 65), and decide on Nexus's auto-chain (Phase 78). Dependabot alerts were enabled on all 9 repos on 2026-10-06.
 
@@ -744,7 +744,7 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 ### Phase 60 — Foundation Fixes
 - [x] **Nexus: gstack scripts never invoked `claude` when it was installed.** Commit `1e9210e` left the `--print` call inside the `else` branch of all 9 `scripts/gstack-*.sh`. Fixed with regression test `tests/integration/gstack-claude-invocation-check.sh` (0/9 on old code → 9/9); merged in AI-Took-My-Job #19 and released to `main` in #23.
 - [x] Removed the stale `tests/integration/gstack-openclaw-routing-check.sh`
-- [ ] Set the Anthropic console monthly spend limit (provider-side hard cap). Owner action.
+- [x] Anthropic console monthly spend limit: $25 (set 2026-10-06; was the $200,000 default, about 5× the last 30 days' $5.23)
 - [x] LiteLLM: factory aliases `free-agent`, `free-agent-b`, `local-agent` live in a managed block with **free-only** fallbacks (`free-agent → free-agent-b`); the hand-maintained `local-coder → cloud-or → cloud-smart` ladder stays for interactive use only
 
 ### Phase 61 — Free Model Lane (local runner)
