@@ -2,7 +2,7 @@
 
 > **Status:** Phases 60–64, 68 and 69 shipped; 65–66 partial; 67 not started ([roadmap.md](roadmap.md#autonomous-factory-roadmap)).
 > The local lane runs as `factory/` on a launchd schedule (hourly overnight, 06:45 morning report); operator guide in [factory/README.md](../factory/README.md).
-> Agent work lands on `integration/agent`; only human-labelled releases reach `main` (roadmap Phase 70).
+> Agent work lands as draft PRs against `main`; nothing merges without the owner (the `integration/agent` hop of roadmap Phase 70 was retired 2026-10-06).
 > §12 records what building it changed, including the first scheduled night.
 > Adapted from the *"Personal Autonomous Software Factory — Infrastructure Provisioning & Identity"* PRD (§21),
 > reconciled with what RepoHQ, Nexus, gstack and the local AI stack actually do today, and
@@ -360,7 +360,7 @@ As built (Factory v2, 2026-10-06):
 [Route]     cheapest proven tier per difficulty × data class                             (Phases 63, 79)
 [Execute]   Docker sandbox: Aider (M0) / Claude Code (M1) via the egress relay           (Phase 76)
 [Verify]    repo checks + Judge v2 rules, then an advisory adversarial review            (Phase 77)
-[Gate]      draft PR → integration/agent; you merge; human-reviewed-release for main      (Phase 70)
+[Gate]      draft PR → main; you merge                                                  (Phase 70, simplified)
 [Measure]   agent_jobs + KPIs: overnight yield, acceptance, requests per merge, autonomy (Phase 79)
 [Learn]     merge/close → routing data; wrong verdicts → judge regression fixtures        (Phases 63, 77)
 [Schedule]  20:00–06:00 on AC power, sandboxed, $0                                        (Phase 80)

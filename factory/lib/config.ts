@@ -24,7 +24,8 @@ export interface FactoryConfig {
   maxPrsPerDay: number
   /**
    * Repos with this branch get factory PRs targeted at it instead of the default branch
-   * (RepoHQ's policy: autonomous branches → integration/agent → human-reviewed release → main).
+   * Only used when a repo still has this branch; otherwise PRs target the default branch (since
+   * 2026-10, RepoHQ and Nexus have none: every change is one PR to main that the owner merges).
    */
   integrationBranch: string
   /**
