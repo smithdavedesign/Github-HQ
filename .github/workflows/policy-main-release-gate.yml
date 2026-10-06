@@ -1,0 +1,36 @@
+name: Main Release Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, labeled, unlabeled, edited]
+
+jobs:
+  enforce-main-release-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require integration branch and human release label
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$BASE_REF" != "main" ]]; then
+            echo "Not a PR to main; skipping."
+            exit 0
+          fi
+
+          if [[ "$HEAD_REF" != "integration/agent" ]]; then
+            echo "Main release policy violation: PRs to main must come from integration/agent."
+            echo "Head branch: $HEAD_REF"
+            exit 1
+          fi
+
+          if [[ "$LABELS" != *"human-reviewed-release"* ]]; then
+            echo "Main release policy violation: missing required label human-reviewed-release."
+            exit 1
+          fi
+
+          echo "Main release policy passed."

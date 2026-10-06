@@ -1,5 +1,6 @@
 import { toNum } from '@/lib/utils'
-import { getLLMAdapter } from './adapter'
+import { getLLMAdapter, getFallbackAdapter } from './adapter'
+import { generateJson } from './structured'
 import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, securityFindings, deployments, digests } from '@/lib/db/schema'
 import { eq, inArray, and } from 'drizzle-orm'
@@ -227,20 +228,18 @@ Rules:
 - If a repo is listed in Downgraded Repos, add a caveat or deprioritise it`
 
   const adapter = await getLLMAdapter(userId)
-  const text = await adapter.generate({
-    system: SYSTEM_PROMPT,
-    user: `Portfolio: ${repoAnalysis.length} repos, avg opp score ${avgOpp}, estimated total value ${formatValuation(totalValue)}\n\n${repoLines}${accuracySection}`,
-    fast: false,
-    maxTokens: 1500,
-    cacheSystem: true,
-  })
-  const jsonStr = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
   let parsed: Omit<AdvisorContent, 'generatedAt'>
   try {
-    parsed = JSON.parse(jsonStr)
-  } catch {
-    console.error('[advisor] failed to parse Claude response:', text.slice(0, 200))
-    throw new Error('Advisor: Claude returned non-JSON response')
+    ({ value: parsed } = await generateJson<Omit<AdvisorContent, 'generatedAt'>>(adapter, {
+      system: SYSTEM_PROMPT,
+      user: `Portfolio: ${repoAnalysis.length} repos, avg opp score ${avgOpp}, estimated total value ${formatValuation(totalValue)}\n\n${repoLines}${accuracySection}`,
+      fast: false,
+      maxTokens: 1500,
+      cacheSystem: true,
+    }, { fallback: getFallbackAdapter(adapter.provider), label: 'advisor' }))
+  } catch (err) {
+    console.error('[advisor] failed to parse model response:', err instanceof Error ? err.message : err)
+    throw new Error('Advisor: model returned non-JSON response')
   }
 
   const result: AdvisorContent = { ...parsed, generatedAt: new Date().toISOString() }

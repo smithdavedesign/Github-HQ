@@ -7,13 +7,17 @@ const config: KnipConfig = {
     // MCP server — run as a standalone process via `node mcp/server.ts`
     'mcp/server.ts',
   ],
-  project: ['src/**/*.{ts,tsx}', 'mcp/**/*.ts'],
+  // factory/ entry points come from the package.json factory* scripts
+  project: ['src/**/*.{ts,tsx}', 'mcp/**/*.ts', 'factory/**/*.ts'],
   ignore: [
     // shadcn/ui components export their full public API — consumers may import any member.
     // Knip can't know which exports are used externally, so we exclude the ui/ barrel.
     'src/components/ui/**',
     // MCP brief types are exported for the MCP server's external consumers.
     'mcp/brief.ts',
+    // approval-tokens exports the full public API for signed one-time approval links.
+    // buildApprovalUrl is called by the notification dispatcher at runtime.
+    'src/lib/approval-tokens.ts',
   ],
   ignoreExportsUsedInFile: true,
   ignoreDependencies: [

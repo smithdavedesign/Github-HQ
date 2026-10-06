@@ -720,6 +720,132 @@ Triggered by a real no-op PR (`smithdavedesign/family-tree` PR #3): a `/health` 
 
 ---
 
+## Autonomous Factory Roadmap
+
+Turns the closed loop into a cost-aware autonomous factory: a local lane on the Mac running against the local AI stack (`~/ai-stack`), a local → free cloud → paid model ladder, learned routing, and the PRD's trust/identity/budget guardrails. Design: [autonomous-factory.md](autonomous-factory.md). Operator guide: [factory/README.md](../factory/README.md).
+
+**Shipped approach (2026-10-05):** rather than first splitting Nexus into queue lanes, the local lane shipped as a standalone runner (`factory/`) that reuses RepoHQ's pure routing code and mirrors its activity into `portfolio_events`. The Nexus lane split (61-B) is deferred until the local runner proves its merge rate.
+
+**Gate to start Horizon 3 (Phase 67):** ≥ 80% of merged agent PRs produced at $0 over 30 days, and zero unapproved L4 actions.
+
+### Phase 60 — Foundation Fixes
+- [x] **Nexus: gstack scripts never invoked `claude` when it was installed.** Commit `1e9210e` left the `--print` call inside the `else` branch of all 9 `scripts/gstack-*.sh`. Fixed on `AI-Took-My-Job` branch `fix/gstack-claude-invocation` with regression test `tests/integration/gstack-claude-invocation-check.sh` (0/9 on old code → 9/9). **Remaining: merge + deploy the Render worker.**
+- [x] Removed the stale `tests/integration/gstack-openclaw-routing-check.sh`
+- [ ] Set the Anthropic console monthly spend limit (provider-side hard cap). Owner action.
+- [x] LiteLLM: factory aliases `free-agent`, `free-agent-b`, `local-agent` live in a managed block with **free-only** fallbacks (`free-agent → free-agent-b`); the hand-maintained `local-coder → cloud-or → cloud-smart` ladder stays for interactive use only
+
+### Phase 61 — Free Model Lane (local runner)
+- [x] `free-agent` / `free-agent-b` selected by eval (Phase 64), not by hand
+- [x] Local runner `factory/run.ts`: sense (repo's own typecheck/lint/test + README) → task → route → execute → verify → draft PR → learn; allowlist, kill switch (`~/.repohq-factory/PAUSE`), one PR per cycle, process lock shared with the scout
+- [x] Harness (`factory/lib/harness.ts`): M0 → Aider (`--edit-format diff`) on `local-agent`; M1/M2 → Claude Code `--bare --strict-mcp-config` through LiteLLM with tool allow/deny lists (no commit/push/rm/web)
+- [x] Cost + model telemetry per attempt (`tier, harness, model, tokens, costUsd, durationMs, exploring`) in the ledger and RepoHQ `agent_attempt` metadata
+- [x] Free-tier 429 / quota exhaustion → defer to the next cycle; **never** escalates to paid. Quota is read from OpenRouter's `/api/v1/key` before every M1 task
+- [x] launchd schedules (`factory/bin/install-launchd.sh`): cycles 18:00 + 03:00 local (after OpenRouter's 00:00 UTC reset), `caffeinate -i` per run, standard priority; deployed to `~/.repohq-factory/app` because launchd can't read `~/Documents`
+- [x] First live draft PR from the scheduled loop: [AI-Took-My-Job#10](https://github.com/smithdavedesign/AI-Took-My-Job/pull/10) (M0, $0)
+- [ ] 61-B: Nexus BullMQ lanes `agent-local` / `agent-cloud` so RepoHQ-dispatched advisor tasks can also use the free lane (deferred — see above)
+- [ ] Dedicated `ai-agent` macOS user for the runner (needs sudo; runs as the owner today, confined to `~/.repohq-factory/work`)
+
+### Phase 62 — Free Intelligence Layer (RepoHQ on Vercel)
+- [x] `openrouter` provider (`src/lib/ai/providers.ts`, `adapter.ts`, Settings → AI Provider). OpenAI-compatible; `OPENROUTER_BASE_URL` / `OPENROUTER_MODEL_FAST` / `OPENROUTER_MODEL_CAPABLE` overrides (point at LiteLLM in dev)
+- [x] Gemini free tier noted in the provider hint (zero-code free option)
+- [x] Structured-output guard `src/lib/ai/structured.ts`: extract (fences, `<think>`, prose) → validate → one repair retry → `claude-haiku-4-5` fallback via the server key. Wired into advisor, digest, CEO report, analysis and summary
+
+### Phase 63 — Learned Routing + Escalation Ladder
+- [x] `src/lib/agents/model-router.ts` (pure, 22 tests): `classifyRepoData`, `allowedTiers`, time-decayed `computeTierStats`, `chooseTier` (cheapest proven ≥ 80% over ≥ 10, cold start cheapest, ~10% exploration one tier down), `nextTier`, `canUsePaidTier`
+- [x] Escalation M0 → M1 → M2 within a cycle; M2 blocked unless `monthlyBudgetUsd > 0` (default 0) → `approval_needed` + RepoHQ notification
+- [x] Data-classification gate: private repos skip M1 unless `allowFreeCloud`; `Client Work` / `sensitive` never use M1; unknown visibility treated as private
+- [x] Dead-end detection: ≥ 2 M1+ failures per repo+kind in 14 days (M0 failures don't count; they escalate)
+- [x] Verification judge (`factory/lib/verify.ts`): target check passes, no regressions, no `@ts-ignore`/`eslint-disable`/`.skip`/`.only`, no lockfile/CI/env edits, ≤ 400 lines; README edits must be additive with only real scripts/tools and no placeholders
+- [x] `/agent-performance`: "Autonomous Factory by Model Tier" table (attempts / verified / merged / closed / cost), free-tier share, current `free-agent` (`src/lib/agents/factory-stats.ts`); merge/close outcomes are stamped onto the RepoHQ event during reconcile
+- [ ] Feed factory tier stats into the RepoHQ advisor accuracy table
+
+### Phase 64 — Model Scout + Eval Harness
+- [x] `factory/scout.ts`: OpenRouter free + `tools` models → preflight → eval suite (seeded bug, multi-file fix, read-only report) → rank with 21-day history → update `free-agent` / `free-agent-b` → commit `~/ai-stack` → `model_scout_report` event
+- [x] Quota-aware: evaluates only as many models as today's free requests allow; rotates untested models in; falls back to history when quota is exhausted; keeps (or demotes) incumbents rather than leaving no alias
+- [x] `factory/eval/e2e.sh`: full cycle against a local fixture repo (M0 fixes a seeded type error → judge → squashed commit)
+
+### Phase 65 — Trust, Approvals & Budget
+- [x] Budget ledger: monthly paid cap (default $0) enforced before every M2 attempt; M2 cost computed from token usage
+- [x] Human boundary: `approval_needed` ledger entry + RepoHQ in-app notification (fans out via the existing outbound webhook)
+- [x] Draft-only PRs; the factory never merges, force-pushes or deletes branches
+- [x] Signed, single-use approval links (`/approve/[token]`) and an `awaiting_approval` lifecycle stage in RepoHQ
+  - Implementation notes: signed HMAC tokens with expiry and one-time use, plus a RepoHQ approval page used when a task needs a human permit before continuing.
+- [ ] OpenClaw → WhatsApp relay for approvals (needs owner sign-off before any outbound WhatsApp)
+- [ ] Branch protection on `main` for every allowlisted repo (L4 backstop). Owner action via GitHub settings
+
+### Phase 66 — Agent Identity & Secrets
+- [x] Secrets read at runtime only: the OpenRouter key from `~/ai-stack/litellm/.env` (into an HTTP header), the RepoHQ DB URL from `.env.local`; never written to prompts, logs or new files
+- [x] `op run` support in the launchd wrapper (`FACTORY_OP_ENV_FILE`)
+- [ ] 1Password `AI-Agent` vault + service account (owner action), then move both secrets into it
+- [ ] Factory PRs authored by the Nexus GitHub App instead of the owner's `gh` login
+
+### Phase 68 — Redundant Free Model Pool ✅
+OpenRouter's 50 free requests/day can't be the single brain. M1 became a LiteLLM pool across independent free providers (design: [autonomous-factory.md §3.1](autonomous-factory.md#31-the-free-model-pool-no-single-quota-is-a-point-of-failure)).
+- [x] Managed LiteLLM members for **Gemini** (AI Studio free tier), **Ollama Cloud** (free plan, OpenAI-compatible endpoint) and **OpenRouter**, alongside local Ollama (`factory/lib/litellm-config.ts`, pool ids like `ollama-cloud:nemotron-3-super`)
+- [x] Scout discovers and probes candidates on all three providers, evaluates them, and writes a **provider-diverse** chain `free-agent → free-agent-b → free-agent-c` (`pickPool`); skips models tested in the last 3 days
+- [x] Explicit fallback ladders (LiteLLM doesn't chain fallbacks recursively): `free-agent` → rest of pool; `cloud-or` → pool; `local-coder` → pool → `cloud-smart` (paid last). Verified live: an exhausted OpenRouter request was served by Ollama Cloud in the same call
+- [x] Factory defers M1 only when no pool member has capacity (`m1Deferred`)
+- [x] OpenClaw default agent: `local-coder → free-agent → cloud-smart` (was `→ cloud-or →`), via OpenClaw's validated config CLI
+- [x] Route Claude Code's small-model role to local Ollama: `local-small` alias (same resident Qwen as `local-agent`, falls back to the pool), wired via `ANTHROPIC_DEFAULT_HAIKU_MODEL` / `ANTHROPIC_SMALL_FAST_MODEL` for M1. **Measured saving: zero.** In headless `--bare` runs Claude Code makes *no* small-model calls (a bogus alias there never reached LiteLLM). Free requests are spent one per agent turn (11–19 per task), so the levers are fewer turns and more providers, not offloading background calls. Kept as insurance.
+- [ ] Optional: one-time $10 OpenRouter credit (1,000 free requests/day) to deepen the OpenRouter member. Owner decision
+- [ ] Later: move the worker stack into an AI dev VM with the Mac as control plane (§8). Needs more RAM or a second machine
+
+### Phase 69 — Copilot, Reviewer, Morning Report, Agent Lockdown ✅
+Toward the Architect / Builder / Reviewer / Operator team (docs/autonomous-factory.md §13), starting with the roles that are measurable today.
+- [x] **OpenClaw agent lockdown** (before adding any agents): `tools.agentToAgent = {enabled: false, allow: []}`, `tools.sessions.visibility = "tree"`, `session.agentToAgent.maxPingPongTurns = 1`, each agent may spawn only its own sub-agents. Applied via the validated config CLI; `openclaw doctor`: 0 errors
+- [x] **MC tier = GitHub Copilot CLI** (prepaid seat) between free cloud and paid: locked down (`--disable-builtin-mcps`, no git writes, deny beats allow), ≤ 6 tasks/day; passed 2/2 fix evals with `gpt-5-mini`
+- [x] **Reviewer = GitHub Copilot code review**, requested on every factory PR (works on drafts), ≤ 8/day; results recorded in the ledger during reconcile
+- [x] **deps-audit**: every npm scan runs `npm audit`; high/critical → deterministic `npm audit fix` (no model, never `--force`), judged on package files only, advisories must drop, no regressions
+- [x] **Morning report**: one update per gstack role (PM → Architect plan, Builder, QA, Reviewer, Security, Ops, Retro) from the ledger, with local-model headlines; saved to `~/.repohq-factory/reports/` and emailed via himalaya + Gmail app password in the keychain
+- [x] Schedule: cycles hourly 20:00–05:00 plus 12:00/16:00, ≤ 1 PR per cycle, ≤ 8 per factory day (07:00–07:00); report 06:45
+- [ ] Owner: run `bash factory/bin/setup-email.sh <gmail>` once (needs a Gmail app password)
+- [ ] Builder ← Reviewer loop: turn Copilot's line comments into a follow-up commit on the same branch
+- [ ] Copilot coding agent (assign an issue to `@copilot`) for tasks every local tier failed
+
+### Phase 70 — Shared Branch Governance (Integration First)
+- [x] Standard branch policy across all repos: autonomous work branches use `feature/bot/{taskId}-{slug}`
+- [x] Add an integration landing branch standard: `integration/agent` (alias allowed: `feature/bot` only if the repo already uses it as integration)
+- [x] All autonomous PRs target `integration/agent`; no autonomous PR may target `main`
+- [-] Human gate remains only for `integration/agent -> main` promotion PRs (main-release workflow guard + label requirement shipped; operational rollout process pending)
+- [-] Add branch cleanup policy: TTL, max concurrent bot branches, and stale-branch sweeper (scaffold preview endpoint shipped in Nexus)
+- [x] Add CI/promotion guard that rejects autonomous PRs to `main` with a clear policy message
+
+### Phase 71 — Agent Visibility v2 (Full Behind-the-Scenes Telemetry)
+- [ ] Expand Agent History with full execution timeline: queued, preparing, running, report-ready, pr-ready, merged, failed, timed-out, needs-human
+- [ ] Persist and surface per-run telemetry: model tier, tokens, cost USD, duration, retries, escalation reason, chain depth
+- [ ] Add a factory trace panel on `/agent-performance` with per-stage timings and retry chains
+- [ ] Add correlation IDs across RepoHQ event rows and Nexus execution IDs for one-click traceability
+- [ ] Add operator filters for source (`repohq-advisor`, `repohq-auto-dispatch`, `skill-chain`, `self-scan`, `mcp`)
+
+### Phase 72 — Run-Until-Complete Autonomous Loops
+- [x] Add bounded retry orchestration for recoverable failures (lint/test/network/transient CI) with default max attempts = 3
+- [x] Add terminal-state policy with explicit stop reasons (`merged`, `failed`, `timed_out`, `needs_human`, `rejected`)
+- [x] Add auto-repair chaining policy that continues execution until objective complete or retry budget exhausted
+- [x] Add loop kill-switch and per-repo retry budget controls in Settings
+- [x] Add anti-loop safeguards: chain-depth cap, duplicate-objective suppression, and cooldown windows
+
+### Phase 73 — gstack as Default Orchestrator
+- [x] Make gstack the default autonomous execution path for advisor-dispatched tasks, with per-skill allowlist by repo (`resolveAdvisorSkill` + repo tag policy `gstack-allow:*` + env override map)
+- [x] Add policy tiers for auto-run skills (`report-only`, `analyze+fix`, `high-risk`) and enforce by repo lifecycle + confidence (auto-dispatch now gates by tier + lifecycle + impact accuracy band)
+- [x] Add progressive autonomy controls: low-risk skills auto-run by default, high-risk skills require explicit per-repo opt-in (`gstack-optin:high-risk` tag or `REPO_GSTACK_HIGH_RISK_OPT_IN_JSON` override)
+- [x] Add cross-skill objective continuity so downstream skills inherit prior findings and unresolved blockers (auto-chain now carries inherited findings + blocker context into objective and contextNotes)
+
+### Phase 74 — Notion Execution Ledger (System of Record)
+- [ ] Introduce a Notion execution database as source of truth for autonomous runs across repos
+- [ ] Auto-sync one canonical record per run with required fields: taskId, trigger, repo, skill, branch, PR links, timeline, retries, terminal state, outcome delta
+- [ ] Enforce writing standards on summaries: objective, acceptance criteria, confidence, rollback notes, final outcome
+- [ ] Add bidirectional links from RepoHQ Agent History to Notion records for auditability
+- [ ] Add weekly governance report: autonomy throughput, merge-to-main approvals, regression rate, and documentation completeness
+
+### Phase 67+ — Horizon 3: Infrastructure Agent
+- [ ] `agent_resources` ledger table (owner, provider, kind, environment, est. cost, `ephemeral`, `ttlAt`, destroy procedure, lifecycle state) + `.infrastructure/resources.json` mirror
+- [ ] Dev-only provisioning in order: GitHub repo → Vercel preview → Neon/Supabase dev branch → Cloudflare preview DNS → AWS/GCP
+- [ ] IaC-first (Terraform / provider-native), plan → review → apply-to-dev → commit
+- [ ] Disposable environments with "destroy what you created" exception; TTL sweeper proposes teardown of everything else
+- [ ] Mission mode (PRD §21.19): starts in `awaiting_approval` with cost estimate; unlocked only after Tier 1–3 accuracy gates
+
+---
+
 ## Distribution Roadmap
 
 Features required to open RepoHQ to other users. Tracked separately because they each touch auth, data isolation, billing, or GitHub platform constraints.

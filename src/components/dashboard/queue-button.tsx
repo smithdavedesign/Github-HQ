@@ -6,11 +6,11 @@ import type { AdvisorAction } from '@/lib/ai/advisor'
 import { toast } from 'sonner'
 import { Bot, Loader2, CheckCircle, ExternalLink, GitPullRequest, AlertCircle, Clock, FileText, XCircle } from 'lucide-react'
 
-type Stage = 'idle' | 'launching' | 'queued' | 'preparing' | 'running' | 'pr_ready' | 'ci_failing' | 'needs_human' | 'merged' | 'rejected' | 'report_ready' | 'failed' | 'timed_out'
+type Stage = 'idle' | 'launching' | 'queued' | 'preparing' | 'running' | 'pr_ready' | 'ci_failing' | 'needs_human' | 'awaiting_approval' | 'merged' | 'rejected' | 'report_ready' | 'failed' | 'timed_out'
 
 interface StatusPayload { status: Stage; stage: string; prUrl?: string; nexusUrl?: string }
 
-const TERMINAL: Stage[] = ['pr_ready', 'ci_failing', 'needs_human', 'merged', 'rejected', 'report_ready', 'failed', 'timed_out']
+const TERMINAL: Stage[] = ['pr_ready', 'ci_failing', 'needs_human', 'awaiting_approval', 'merged', 'rejected', 'report_ready', 'failed', 'timed_out']
 const POLL_MS  = 5000
 const MAX_POLLS = 180  // 15 min
 
@@ -197,12 +197,12 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
     )
   }
 
-  // ── Needs human ────────────────────────────────────────────────────────────
-  if (stage === 'needs_human') {
+  // ── Needs human / awaiting approval ───────────────────────────────────────
+  if (stage === 'needs_human' || stage === 'awaiting_approval') {
     return (
       <a href={prUrl ?? '#'} target={prUrl ? '_blank' : '_self'} rel="noopener noreferrer"
         className="flex items-center gap-1 text-[10px] font-medium text-red-500 hover:text-red-600">
-        <AlertCircle className="w-3 h-3" />Needs human review →
+        <AlertCircle className="w-3 h-3" />{stage === 'awaiting_approval' ? 'Awaiting approval →' : 'Needs human review →'}
       </a>
     )
   }

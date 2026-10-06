@@ -3,12 +3,24 @@
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { portfolioEvents, repositories, users } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import type { AdvisorAction, AdvisorContent } from '@/lib/ai/advisor'
 import { getRepoLifecycle, BLOCKING_STAGES } from '@/lib/agents/lifecycle'
 import type { AccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy-utils'
 import type { GstackSkill } from './nexus-utils'
+import {
+  resolveAdvisorSkill,
+  parseRepoSkillAllowlist,
+  parseEnvSkillAllowlistMap,
+  isSkillAllowedForRepo,
+  resolveSkillPolicyTier,
+  resolveConfidenceBand,
+  isTierAllowedForLifecycle,
+  isTierAllowedByConfidence,
+  parseEnvHighRiskOptInMap,
+  isTierAllowedByProgressiveAutonomy,
+} from './nexus-utils'
 
 export type NexusTaskStatus = 'queued' | 'preparing' | 'ready' | 'failed' | 'unknown'
 
@@ -71,9 +83,17 @@ async function _queueAdvisorAction(action: AdvisorAction): Promise<QueuedTask> {
   // Look up the repo's full name for Nexus (owner/repo format)
   const repo = await db.query.repositories.findFirst({
     where: and(eq(repositories.id, action.repoId), eq(repositories.userId, session.user.id)),
-    columns: { fullName: true, name: true },
+    columns: { fullName: true, name: true, tags: true },
   })
   if (!repo) throw new Error(`Repo ${action.repoId} not found`)
+
+  const advisorSkill = resolveAdvisorSkill(action.impactType)
+  const envAllowlistMap = parseEnvSkillAllowlistMap(process.env.REPO_GSTACK_SKILL_ALLOWLIST_JSON)
+  const repoTagAllowlist = parseRepoSkillAllowlist(repo.tags)
+  const allowed = isSkillAllowedForRepo(advisorSkill, repo.fullName, repoTagAllowlist, envAllowlistMap)
+  if (!allowed) {
+    throw new Error(`Repo policy blocks /${advisorSkill} for ${repo.fullName}. Add tag gstack-allow:${advisorSkill} (or set REPO_GSTACK_SKILL_ALLOWLIST_JSON) to allow advisor dispatch.`)
+  }
 
   const riskTier  = resolveRiskTier(action)
   const objective = `${action.action}\n\nContext: ${action.reasoning}\nExpected impact: ${action.estimatedImpact}`
@@ -98,7 +118,7 @@ async function _queueAdvisorAction(action: AdvisorAction): Promise<QueuedTask> {
         riskTier,
         predictedDelta:  action.estimatedImpact,
         source:          'repohq-advisor',
-        skillName:       action.impactType === 'security' ? 'investigate' : 'ship',
+        skillName:       advisorSkill,
         autoExecute:     action.effort !== 'substantial', // tier3/substantial tasks queue for manual review
       }),
     }),
@@ -258,9 +278,18 @@ export async function queueAdvisorActionForUser(
 
   const repo = await db.query.repositories.findFirst({
     where: and(eq(repositories.id, action.repoId), eq(repositories.userId, userId)),
-    columns: { fullName: true, name: true },
+    columns: { fullName: true, name: true, tags: true },
   })
   if (!repo) return null
+
+  const advisorSkill = resolveAdvisorSkill(action.impactType)
+  const envAllowlistMap = parseEnvSkillAllowlistMap(process.env.REPO_GSTACK_SKILL_ALLOWLIST_JSON)
+  const repoTagAllowlist = parseRepoSkillAllowlist(repo.tags)
+  const allowed = isSkillAllowedForRepo(advisorSkill, repo.fullName, repoTagAllowlist, envAllowlistMap)
+  if (!allowed) {
+    console.warn(`[auto-dispatch] blocked by repo skill allowlist: ${repo.fullName} does not allow /${advisorSkill}`)
+    return null
+  }
 
   const riskTier  = resolveRiskTier(action)
   const objective = `${action.action}\n\nContext: ${action.reasoning}\nExpected impact: ${action.estimatedImpact}`
@@ -283,7 +312,7 @@ export async function queueAdvisorActionForUser(
           riskTier,
           predictedDelta:  action.estimatedImpact,
           source:          'repohq-auto-dispatch',
-          skillName:       action.impactType === 'security' ? 'investigate' : 'ship',
+          skillName:       advisorSkill,
           autoExecute:     action.effort !== 'substantial',
         }),
       }),
@@ -344,6 +373,24 @@ export async function autoDispatchAdvisorActions(
   const config = getNexusConfig()
   if (!config) { result.errors.push('Nexus not configured'); return result }
 
+  const repoIds = Array.from(new Set(advisor.actions.map((a) => a.repoId)))
+  const repoRows = repoIds.length > 0
+    ? await db.query.repositories.findMany({
+      where: and(eq(repositories.userId, userId), inArray(repositories.id, repoIds)),
+      columns: { id: true, fullName: true, tags: true, lifecycleStatus: true },
+    })
+    : []
+
+  const lifecycleByRepoId = new Map<number, string | null>()
+  for (const row of repoRows) lifecycleByRepoId.set(row.id, row.lifecycleStatus ?? null)
+
+  const repoById = new Map<number, { fullName: string; tags: string[] | null }>()
+  for (const row of repoRows) {
+    repoById.set(row.id, { fullName: row.fullName, tags: row.tags ?? null })
+  }
+
+  const highRiskOptInMap = parseEnvHighRiskOptInMap(process.env.REPO_GSTACK_HIGH_RISK_OPT_IN_JSON)
+
   for (const action of advisor.actions) {
     if (result.queued >= settings.autoDispatchMaxPerRun) break
 
@@ -363,17 +410,44 @@ export async function autoDispatchAdvisorActions(
       continue
     }
 
-    // 3. Accuracy gate (only if threshold > 0 and sufficient data)
+    // 3. Skill policy tier gate (lifecycle + confidence)
+    const skill = resolveAdvisorSkill(action.impactType)
+    const tier = resolveSkillPolicyTier(skill, action.impactType)
+    const lifecycleStatus = lifecycleByRepoId.get(action.repoId) ?? null
+    const repoInfo = repoById.get(action.repoId)
+    const repoFullName = repoInfo?.fullName ?? action.repoName
+    const repoTags = repoInfo?.tags ?? null
+
+    if (!isTierAllowedForLifecycle(tier, lifecycleStatus)) {
+      result.skipped.push(`${action.repoName}: /${skill} (${tier}) blocked for lifecycle ${lifecycleStatus ?? 'unknown'}`)
+      continue
+    }
+
+    if (!isTierAllowedByProgressiveAutonomy(tier, repoFullName, repoTags, highRiskOptInMap)) {
+      result.skipped.push(`${action.repoName}: /${skill} (${tier}) blocked until repo opts in to high-risk auto-run`)
+      continue
+    }
+
+    const stat = accuracyStats.find(s => s.impactType === action.impactType)
+    const minPts = MIN_DATA_POINTS[action.impactType as keyof typeof MIN_DATA_POINTS] ?? 3
+    const confidence = stat
+      ? resolveConfidenceBand(stat.successRate, stat.dataPoints, minPts)
+      : 'low'
+
+    if (!isTierAllowedByConfidence(tier, confidence)) {
+      result.skipped.push(`${action.repoName}: /${skill} (${tier}) blocked by ${confidence}-confidence ${action.impactType} signal`)
+      continue
+    }
+
+    // 4. Accuracy threshold gate (only if threshold > 0 and sufficient data)
     if (settings.autoDispatchAccuracyThreshold > 0) {
-      const stat = accuracyStats.find(s => s.impactType === action.impactType)
-      const minPts = MIN_DATA_POINTS[action.impactType as keyof typeof MIN_DATA_POINTS] ?? 3
       if (stat && stat.dataPoints >= minPts && stat.successRate < settings.autoDispatchAccuracyThreshold) {
         result.skipped.push(`${action.repoName}: ${action.impactType} accuracy ${stat.successRate}% < threshold ${settings.autoDispatchAccuracyThreshold}%`)
         continue
       }
     }
 
-    // 4. Queue (lifecycle guard handled inside queueAdvisorActionForUser)
+    // 5. Queue (lifecycle guard handled inside queueAdvisorActionForUser)
     const queued = await queueAdvisorActionForUser(userId, action)
     if (queued) {
       result.queued++
@@ -398,6 +472,13 @@ export async function autoDispatchAdvisorActions(
  * can detect and refuse to chain again (prevents infinite loops).
  * Returns the taskId on success, null on lifecycle block or Nexus error.
  */
+interface SkillChainContinuityContext {
+  parentTaskId?: string
+  parentSummary?: string | null
+  inheritedFindings?: string[]
+  unresolvedBlockers?: string[]
+}
+
 export async function queueSuggestedSkill(
   userId: string,
   repoId: number,
@@ -405,6 +486,7 @@ export async function queueSuggestedSkill(
   skill: GstackSkill,
   objective: string,
   parentSkill: string,
+  continuity?: SkillChainContinuityContext,
 ): Promise<string | null> {
   if (!userId || !repoId || !repoFullName) return null  // caller safety — webhook repoName can be undefined
 
@@ -416,6 +498,8 @@ export async function queueSuggestedSkill(
 
   const defaults = SKILL_DEFAULTS[skill]
   const riskTier = skill === 'ship' ? 'tier2' : 'tier3'
+  const inheritedFindings = (continuity?.inheritedFindings ?? []).slice(0, 5)
+  const unresolvedBlockers = (continuity?.unresolvedBlockers ?? []).slice(0, 5)
 
   try {
     const res = await fetch(`${config.url}/internal/agent-tasks`, {
@@ -435,6 +519,10 @@ export async function queueSuggestedSkill(
           chainDepth:     1,
           parentSkill,
           autoExecute:    true,
+          ...(continuity?.parentTaskId ? { parentTaskId: continuity.parentTaskId } : {}),
+          ...(continuity?.parentSummary ? { parentSummary: continuity.parentSummary } : {}),
+          ...(inheritedFindings.length > 0 ? { inheritedFindings } : {}),
+          ...(unresolvedBlockers.length > 0 ? { unresolvedBlockers } : {}),
         }),
       }),
     })
@@ -461,6 +549,9 @@ export async function queueSuggestedSkill(
         riskTier,
         nexusUrl:   config.url,
         autoExecute: true,
+        ...(continuity?.parentTaskId ? { parentTaskId: continuity.parentTaskId } : {}),
+        ...(inheritedFindings.length > 0 ? { inheritedFindings } : {}),
+        ...(unresolvedBlockers.length > 0 ? { unresolvedBlockers } : {}),
       },
     })
 

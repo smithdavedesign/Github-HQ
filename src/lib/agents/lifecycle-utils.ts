@@ -8,6 +8,7 @@ export type AgentLifecycleStage =
   | 'pr_ready'
   | 'ci_failing'    // PR open, CI failed — auto-fix being queued
   | 'needs_human'   // CI failed 3 times — human intervention required
+  | 'awaiting_approval' // Human approval required before continuing an autonomous action
   | 'merged'
   | 'rejected'      // PR closed without merging — terminal, not actionable
   | 'report_ready'
@@ -21,7 +22,44 @@ export const BLOCKING_STAGES = new Set<AgentLifecycleStage>([
 
 /** Terminal stages — allow new queue or retry */
 export const TERMINAL_STAGES = new Set<AgentLifecycleStage>([
-  'idle', 'merged', 'rejected', 'report_ready', 'failed', 'timed_out', 'needs_human',
+  'idle', 'merged', 'rejected', 'report_ready', 'failed', 'timed_out', 'needs_human', 'awaiting_approval',
 ])
+
+export const DEFAULT_MAX_AUTONOMOUS_RETRIES = 3
+export const AUTONOMOUS_TERMINAL_REASONS = ['merged', 'failed', 'timed_out', 'needs_human', 'awaiting_approval', 'rejected'] as const
+export type AutonomousStopReason = typeof AUTONOMOUS_TERMINAL_REASONS[number]
+
+export function isTerminalStage(stage: AgentLifecycleStage): boolean {
+  return TERMINAL_STAGES.has(stage)
+}
+
+export function isRetryEligible(retryCount: number, maxAttempts = DEFAULT_MAX_AUTONOMOUS_RETRIES): boolean {
+  if (!Number.isInteger(retryCount) || retryCount < 0) return false
+  return retryCount < Math.max(1, maxAttempts)
+}
+
+export function shouldContinueAutonomousLoop({
+  retryCount,
+  maxAttempts = DEFAULT_MAX_AUTONOMOUS_RETRIES,
+  lifecycleStage,
+  stopReason,
+  autoDispatchEnabled = true,
+}: {
+  retryCount: number
+  maxAttempts?: number
+  lifecycleStage?: AgentLifecycleStage | string | null
+  stopReason?: string | null
+  autoDispatchEnabled?: boolean
+}): boolean {
+  if (!autoDispatchEnabled) return false
+  if (!isRetryEligible(retryCount, maxAttempts)) return false
+  if (typeof stopReason === 'string' && AUTONOMOUS_TERMINAL_REASONS.includes(stopReason as AutonomousStopReason)) {
+    return false
+  }
+  if (lifecycleStage && isTerminalStage(lifecycleStage as AgentLifecycleStage)) {
+    return false
+  }
+  return true
+}
 
 export const LIFECYCLE_TIMEOUT_MS = 15 * 60 * 1000  // 15 minutes

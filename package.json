@@ -15,7 +15,11 @@
     "lint": "eslint . --max-warnings=0",
     "dead-code": "knip",
     "db:push": "drizzle-kit push",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "factory": "tsx factory/run.ts",
+    "factory:scout": "tsx factory/scout.ts",
+    "factory:report": "tsx factory/run.ts --report",
+    "factory:morning": "tsx factory/report.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
@@ -54,6 +58,7 @@
     "eslint-config-next": "^16.2.9",
     "knip": "^6.16.1",
     "tailwindcss": "^4",
+    "tsx": "^4.22.3",
     "typescript": "^5.9.3",
     "vitest": "^4.1.7"
   }

@@ -7,6 +7,7 @@ import { dispatchNotification } from '@/lib/notifications/dispatcher'
 import { isGstackSkill } from '@/lib/actions/nexus-utils'
 import { secretsEqual, decrypt } from '@/lib/crypto-utils'
 import { getActionableFindings } from '@/lib/skills/suggest-actions'
+import { buildSkillChainObjective, extractUnresolvedBlockers } from '@/lib/skills/chain-continuity'
 
 interface AgentEventPayload {
   eventType: 'agent_task_queued' | 'agent_pr_created' | 'agent_pr_merged' | 'agent_execution_failed' | 'agent_skill_report'
@@ -18,6 +19,15 @@ interface AgentEventPayload {
   durationMs?: number
   filesChanged?: number
   costUsd?: number
+  correlationId?: string
+  modelTier?: string
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+  retryCount?: number
+  chainDepth?: number
+  escalationReason?: string
+  executionTimeline?: Array<{ stage: string; at: string }>
   // Phase G4: gstack skill findings (when outcome = no-changes)
   skillName?: string
   findings?: string[]
@@ -46,7 +56,26 @@ export async function POST(request: Request) {
     payload.findings = payload.findings.slice(0, 50)
   }
 
-  const { eventType, taskId, repoName, prUrl, summary, agentName, durationMs, filesChanged, costUsd } = payload
+  const {
+    eventType,
+    taskId,
+    repoName,
+    prUrl,
+    summary,
+    agentName,
+    durationMs,
+    filesChanged,
+    costUsd,
+    correlationId,
+    modelTier,
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    retryCount,
+    chainDepth,
+    escalationReason,
+    executionTimeline,
+  } = payload
 
   // Correlate taskId → userId/repoId via JSONB containment query.
   // More reliable than scanning a fixed window of recent events — taskIds are UUIDs
@@ -79,7 +108,23 @@ export async function POST(request: Request) {
       eventType: 'agent_pr_created',
       title:    `Agent PR created${repoName ? ` for ${repoName}` : ''}`,
       description: summary ?? null,
-      metadata: { taskId, prUrl, agentName, durationMs, filesChanged, costUsd },
+      metadata: {
+        taskId,
+        prUrl,
+        agentName,
+        durationMs,
+        filesChanged,
+        costUsd,
+        correlationId,
+        modelTier,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        retryCount,
+        chainDepth,
+        escalationReason,
+        executionTimeline,
+      },
     })
     after(async () => {
       await dispatchNotification({
@@ -108,6 +153,15 @@ export async function POST(request: Request) {
         durationMs,
         filesChanged,
         costUsd,
+        correlationId,
+        modelTier,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        retryCount,
+        chainDepth,
+        escalationReason,
+        executionTimeline,
         predictedDelta:  meta?.predictedDelta ?? null,
         impactType:      meta?.impactType ?? null,
         actualDeltaPending: true,   // will be updated after resync
@@ -159,6 +213,16 @@ export async function POST(request: Request) {
         taskId,
         agentName,
         durationMs,
+        costUsd,
+        correlationId,
+        modelTier,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        retryCount,
+        chainDepth,
+        escalationReason,
+        executionTimeline,
         impactType:     meta?.impactType ?? null,
         predictedDelta: meta?.predictedDelta ?? null,
       },
@@ -269,8 +333,14 @@ export async function POST(request: Request) {
           if (!repo) return
 
           const { queueSuggestedSkill } = await import('@/lib/actions/nexus')
-          const topFindings = chainActionable.slice(0, 3).join('; ')
-          const objective = `Auto-chain from /${payload.skillName ?? 'skill'}: ${topFindings.slice(0, 200)}`
+          const parentSkill = payload.skillName ?? 'unknown'
+          const inheritedFindings = chainActionable.slice(0, 5)
+          const unresolvedBlockers = extractUnresolvedBlockers(inheritedFindings, summary)
+          const objective = buildSkillChainObjective({
+            parentSkill,
+            inheritedFindings,
+            unresolvedBlockers,
+          })
 
           await queueSuggestedSkill(
             userId,
@@ -278,7 +348,13 @@ export async function POST(request: Request) {
             repo.fullName,
             nextSkill,
             objective,
-            payload.skillName ?? 'unknown',
+            parentSkill,
+            {
+              parentTaskId: taskId,
+              parentSummary: summary ?? null,
+              inheritedFindings,
+              unresolvedBlockers,
+            },
           )
         } catch (err) {
           console.warn('[skill-chain] auto-queue failed (non-fatal):', err instanceof Error ? err.message : err)

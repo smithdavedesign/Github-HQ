@@ -40,6 +40,7 @@ export async function getRepoLifecycle(userId: string, repoId: number): Promise<
           'agent_skill_report',
           'agent_ci_failed',
           'agent_needs_human',
+          'agent_awaiting_approval',
         ]),
       ),
       columns: { eventType: true, metadata: true, occurredAt: true },
@@ -83,6 +84,12 @@ export async function getRepoLifecycle(userId: string, repoId: number): Promise<
   const failedEvent = eventsForTask.find(e => e.eventType === 'agent_execution_failed')
   if (failedEvent) {
     return { stage: 'failed', taskId, prUrl: null, queuedAt }
+  }
+
+  const awaitingApprovalEvent = eventsForTask.find(e => e.eventType === 'agent_awaiting_approval')
+  if (awaitingApprovalEvent) {
+    const m = awaitingApprovalEvent.metadata as { prUrl?: string } | null
+    return { stage: 'awaiting_approval', taskId, prUrl: m?.prUrl ?? null, queuedAt }
   }
 
   const needsHumanEvent = eventsForTask.find(e => e.eventType === 'agent_needs_human')

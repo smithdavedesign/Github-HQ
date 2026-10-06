@@ -1,0 +1,33 @@
+name: Autonomous PR Target Policy
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+
+jobs:
+  enforce-autonomous-pr-target:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block autonomous branches targeting main
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          is_autonomous="false"
+          if [[ "$HEAD_REF" == feature/bot/* ]]; then
+            is_autonomous="true"
+          fi
+          if [[ "$HEAD_REF" == nexus/auto-* ]]; then
+            is_autonomous="true"
+          fi
+
+          if [[ "$is_autonomous" == "true" && "$BASE_REF" == "main" ]]; then
+            echo "Autonomous PR policy violation: autonomous branches must target integration/agent, not main."
+            echo "Head branch: $HEAD_REF"
+            echo "Base branch: $BASE_REF"
+            exit 1
+          fi
+
+          echo "Autonomous PR target policy passed."

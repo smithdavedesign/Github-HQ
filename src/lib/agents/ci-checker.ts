@@ -3,8 +3,7 @@ import { portfolioEvents, users } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { decrypt } from '@/lib/crypto-utils'
 import { respectRateLimit } from '@/lib/github/sync'
-
-const MAX_CI_FIX_ATTEMPTS = 3
+import { DEFAULT_MAX_AUTONOMOUS_RETRIES, shouldContinueAutonomousLoop } from '@/lib/agents/lifecycle-utils'
 
 type PRMeta      = { taskId?: string; prUrl?: string }
 type CIFailMeta  = { taskId?: string; sha?: string; attempt?: number }
@@ -123,7 +122,12 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
       const checkName    = firstFailed.name
       const errorSummary = (firstFailed.output?.summary ?? `${checkName} failed`).slice(0, 500)
 
-      if (priorAttempts >= MAX_CI_FIX_ATTEMPTS) {
+      if (!shouldContinueAutonomousLoop({
+        retryCount: priorAttempts,
+        maxAttempts: DEFAULT_MAX_AUTONOMOUS_RETRIES,
+        lifecycleStage: 'ci_failing',
+        autoDispatchEnabled: true,
+      })) {
         const alreadyEscalated = events.some(e => {
           if (e.eventType !== 'agent_needs_human') return false
           const m = e.metadata as TerminalMeta | null
