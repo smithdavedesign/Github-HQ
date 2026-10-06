@@ -17,7 +17,7 @@ const PREFIX = `phase79-kpi-${Date.now()}`
 
 async function userId(): Promise<string | null> {
   const sql = neon(DB_URL)
-  const [user] = await sql`SELECT id FROM users LIMIT 1`
+  const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
   return (user?.id as string | undefined) ?? null
 }
 

@@ -16,7 +16,7 @@ const DB_URL = process.env.DATABASE_URL ?? ''
 
 async function getContext() {
   const sql = neon(DB_URL)
-  const [user] = await sql`SELECT id FROM users LIMIT 1`
+  const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
   if (!user) return null
   const [repo] = await sql`SELECT id, name FROM repositories WHERE user_id = ${user.id} LIMIT 1`
   return { userId: user.id as string, repoId: repo?.id as number | undefined, repoName: repo?.name as string | undefined }
@@ -37,15 +37,22 @@ async function seedSkillReport(userId: string, repoId: number, skillName: string
 async function cleanup(repoId: number) {
   if (!DB_URL) return
   const sql = neon(DB_URL)
-  await sql`DELETE FROM portfolio_events WHERE repo_id = ${repoId} AND event_type = 'agent_skill_report' AND title LIKE '%findings%'`
+  // Seeded titles end "findings — <repoId>"; real reports end with the repo name. A bare
+  // '%findings%' also deleted the repo's real skill reports.
+  await sql`DELETE FROM portfolio_events WHERE repo_id = ${repoId} AND event_type = 'agent_skill_report' AND title LIKE ${'% findings — ' + repoId}`
 }
 
 // ─── Skill launcher UI structure ──────────────────────────────────────────────
 
 test.describe('GstackSkillLauncher — lifecycle sections', () => {
+  // The launcher only renders when the server has Nexus configured; otherwise the Agent tab shows
+  // "gstack skills not available".
+  test.skip(!process.env.NEXUS_API_URL || !process.env.NEXUS_API_TOKEN, 'NEXUS_API_URL / NEXUS_API_TOKEN not set')
+
   test('Agent tab shows gstack skills section', async ({ page }) => {
     await page.goto('/repos')
-    const firstLink = page.getByRole('link').filter({ hasText: /[A-Za-z]/ }).first()
+    const firstLink = page.locator('tbody tr').first().getByRole('link').first()
+    await firstLink.waitFor({ timeout: 8000 }).catch(() => {})
     if (!await firstLink.isVisible()) { test.skip(true, 'No repos'); return }
     await firstLink.click()
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -54,7 +61,8 @@ test.describe('GstackSkillLauncher — lifecycle sections', () => {
 
   test('Lifecycle phase labels are visible', async ({ page }) => {
     await page.goto('/repos')
-    const firstLink = page.getByRole('link').filter({ hasText: /[A-Za-z]/ }).first()
+    const firstLink = page.locator('tbody tr').first().getByRole('link').first()
+    await firstLink.waitFor({ timeout: 8000 }).catch(() => {})
     if (!await firstLink.isVisible()) { test.skip(true, 'No repos'); return }
     await firstLink.click()
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -70,37 +78,40 @@ test.describe('GstackSkillLauncher — lifecycle sections', () => {
 
   test('/investigate skill is visible with Analyze + Fix badge', async ({ page }) => {
     await page.goto('/repos')
-    const firstLink = page.getByRole('link').filter({ hasText: /[A-Za-z]/ }).first()
+    const firstLink = page.locator('tbody tr').first().getByRole('link').first()
+    await firstLink.waitFor({ timeout: 8000 }).catch(() => {})
     if (!await firstLink.isVisible()) { test.skip(true, 'No repos'); return }
     await firstLink.click()
     await page.getByRole('tab', { name: /Agent/i }).click()
     // The Understand phase should be open by default
-    await expect(page.getByText('/investigate')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText('/investigate', { exact: true }).first()).toBeVisible({ timeout: 8000 })
     await expect(page.getByText('Analyze + Fix').first()).toBeVisible()
   })
 
   test('/health skill shows Report only badge', async ({ page }) => {
     await page.goto('/repos')
-    const firstLink = page.getByRole('link').filter({ hasText: /[A-Za-z]/ }).first()
+    const firstLink = page.locator('tbody tr').first().getByRole('link').first()
+    await firstLink.waitFor({ timeout: 8000 }).catch(() => {})
     if (!await firstLink.isVisible()) { test.skip(true, 'No repos'); return }
     await firstLink.click()
     await page.getByRole('tab', { name: /Agent/i }).click()
     // Click Monitor phase to open it
     await page.getByText('Monitor', { exact: true }).click()
-    await expect(page.getByText('/health')).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText('/health', { exact: true }).first()).toBeVisible({ timeout: 3000 })
     await expect(page.getByText('Report only').first()).toBeVisible()
   })
 
   test('/ship skill shows Creates PR badge', async ({ page }) => {
     await page.goto('/repos')
-    const firstLink = page.getByRole('link').filter({ hasText: /[A-Za-z]/ }).first()
+    const firstLink = page.locator('tbody tr').first().getByRole('link').first()
+    await firstLink.waitFor({ timeout: 8000 }).catch(() => {})
     if (!await firstLink.isVisible()) { test.skip(true, 'No repos'); return }
     await firstLink.click()
     await page.getByRole('tab', { name: /Agent/i }).click()
     // Click Ship phase
-    await page.getByText('Ship', { exact: true }).click()
-    await expect(page.getByText('/ship')).toBeVisible({ timeout: 3000 })
-    await expect(page.getByText('Creates PR')).toBeVisible()
+    await page.getByRole('button', { name: 'Expand Ship skills' }).click()
+    await expect(page.getByText('/ship', { exact: true }).first()).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText('Creates PR').first()).toBeVisible()
   })
 })
 
@@ -148,7 +159,7 @@ test.describe('SkillReportFindings — full expansion', () => {
 
     await page.goto(`/repos/${ctx.repoId}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    await expect(page.getByText('Finding 1:')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText('Finding 1:').first()).toBeVisible({ timeout: 8000 })
 
     // No expand toggle since 3 < 4 preview threshold
     const hasToggle = await page.getByText(/Show \d+ more finding/).isVisible().catch(() => false)
@@ -177,8 +188,8 @@ test.describe('SkillReportFindings — suggested actions', () => {
     await page.getByRole('tab', { name: /Agent/i }).click()
 
     // Should show suggested actions section
-    await expect(page.getByText('Suggested actions')).toBeVisible({ timeout: 8000 })
-    await expect(page.getByText('Fix TypeScript errors')).toBeVisible()
+    await expect(page.getByText('Take action').first()).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText(/Fix TypeScript/).first()).toBeVisible()
     await expect(page.getByRole('button', { name: /Run \/ship/i }).first()).toBeVisible()
 
     await cleanup(ctx.repoId)
@@ -195,7 +206,7 @@ test.describe('SkillReportFindings — suggested actions', () => {
 
     await page.goto(`/repos/${ctx.repoId}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    await expect(page.getByText('Suggested actions')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText('Take action').first()).toBeVisible({ timeout: 8000 })
     await expect(page.getByRole('button', { name: /Run \/investigate/i }).first()).toBeVisible()
 
     await cleanup(ctx.repoId)
@@ -221,9 +232,8 @@ test.describe('ActiveAgentsCard on dashboard', () => {
 
     await page.goto('/')
     // Card appears when agents are running
-    const cardVisible = await page.getByText(/agent.*running/i).isVisible({ timeout: 8000 }).catch(() => false)
-    const altVisible = await page.getByText(ctx.repoName ?? '').isVisible().catch(() => false)
-    expect(cardVisible || altVisible).toBe(true)
+    // Auto-waiting: isVisible() ignores its timeout and returned before the card streamed in.
+    await expect(page.getByText(/agent.*running/i).or(page.getByText(ctx.repoName ?? '', { exact: true })).first()).toBeVisible({ timeout: 8000 })
 
     // Cleanup
     await sql`DELETE FROM portfolio_events WHERE metadata->>'taskId' = ${taskId}`
