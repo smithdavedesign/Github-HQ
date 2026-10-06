@@ -923,6 +923,15 @@ Sensors in `factory/lib/sensors.ts` (read-only `gh` on the host).
 - [x] Success measure: 30-night yield and acceptance trend (last 15 nights vs the 15 before) in the morning report
 - [ ] Only then: concurrency 2
 
+### Phase 81 — One Agent System (Nexus migration)
+The factory becomes the only executor, and Nexus's queue infrastructure (Redis/BullMQ, worker) moves into this repo. Audit §9.1, decided 2026-10-06. PRD: [agent-hq-migration-prd.md](agent-hq-migration-prd.md).
+- [ ] Infra in this repo: `render.yaml` (Redis Key Value), `docker-compose.yml` (dev Redis), shared queue contract `factory/lib/queue.ts`
+- [ ] `agent_requests`, `automation_runs`, `trace_events`, `agent_jobs.request_id` (`factory/sql/0002_agent_hq_queue.sql`)
+- [ ] `factory/worker.ts`: BullMQ worker (request / cycle / report / scout), schedulers replace the launchd calendar, PAUSE/AC/lock gates, Neon reconcile
+- [ ] RepoHQ enqueues into the factory (Run agent, gstack launcher in fix + report modes, auto-dispatch, MCP); auto-chain and the CI-fix loop removed
+- [ ] Agents page: automation panel (queue, schedulers, runs, owner controls), requests, per-run trace timeline
+- [ ] Owner cutover: Redis from the Blueprint, `REDIS_URL` + `FACTORY_USER_ID` in Vercel, `install-launchd.sh`, suspend then retire Nexus on Render, archive `AI-Took-My-Job`
+
 ### Phase 67+ — Horizon 3: Infrastructure Agent
 - [ ] `agent_resources` ledger table (owner, provider, kind, environment, est. cost, `ephemeral`, `ttlAt`, destroy procedure, lifecycle state) + `.infrastructure/resources.json` mirror
 - [ ] Dev-only provisioning in order: GitHub repo → Vercel preview → Neon/Supabase dev branch → Cloudflare preview DNS → AWS/GCP
