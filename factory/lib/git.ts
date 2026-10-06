@@ -1,13 +1,17 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { parseDiff, type DiffInfo } from './verify'
-import { run } from './proc'
+import { run, type Runner } from './proc'
 
 // Use gh as the credential helper per command — no global git config changes.
 const CRED = ['-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential']
 
-async function git(dir: string, args: string[], timeoutMs = 120_000) {
-  return run('git', ['-C', dir, ...args], { timeoutMs })
+/**
+ * Working-tree operations take an optional `runner` so they can run inside the sandbox
+ * (on its copy of the repo); clone / fetch / push / PR always run on the host.
+ */
+async function git(dir: string, args: string[], timeoutMs = 120_000, runner: Runner = run) {
+  return runner('git', ['-C', dir, ...args], { timeoutMs })
 }
 
 async function must(label: string, p: ReturnType<typeof run>) {
@@ -41,29 +45,30 @@ export async function currentBranch(dir: string): Promise<string> {
   return (await must('rev-parse', git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']))).output.trim()
 }
 
-export async function checkoutNewBranch(dir: string, base: string, branch: string): Promise<void> {
-  await resetWorktree(dir)
-  await must('checkout base', git(dir, ['checkout', '-q', base]))
-  await must('checkout -B', git(dir, ['checkout', '-q', '-B', branch]))
+export async function checkoutNewBranch(dir: string, base: string, branch: string, runner: Runner = run): Promise<void> {
+  await resetWorktree(dir, runner)
+  await must('checkout base', git(dir, ['checkout', '-q', base], undefined, runner))
+  await must('checkout -B', git(dir, ['checkout', '-q', '-B', branch], undefined, runner))
 }
 
 /** Discard all tracked changes and untracked files (ignored files such as node_modules survive). */
-export async function resetWorktree(dir: string): Promise<void> {
-  await git(dir, ['reset', '-q', '--hard'])
-  await git(dir, ['clean', '-q', '-fd'])
+export async function resetWorktree(dir: string, runner: Runner = run): Promise<void> {
+  await git(dir, ['reset', '-q', '--hard'], undefined, runner)
+  await git(dir, ['clean', '-q', '-fd'], undefined, runner)
 }
 
-export async function diffInfo(dir: string): Promise<DiffInfo> {
-  await git(dir, ['add', '-A'])
-  const numstat = (await git(dir, ['diff', '--cached', '--numstat'])).output
-  const patch = (await git(dir, ['diff', '--cached', '-U0'])).output
-  const deleted = new Set((await git(dir, ['diff', '--cached', '--name-only', '--diff-filter=D'])).output.split('\n').filter(Boolean))
-  await git(dir, ['reset', '-q'])
+export async function diffInfo(dir: string, runner: Runner = run): Promise<DiffInfo> {
+  const g = (args: string[]) => git(dir, args, undefined, runner)
+  await g(['add', '-A'])
+  const numstat = (await g(['diff', '--cached', '--numstat'])).output
+  const patch = (await g(['diff', '--cached', '-U0'])).output
+  const deleted = new Set((await g(['diff', '--cached', '--name-only', '--diff-filter=D'])).output.split('\n').filter(Boolean))
+  await g(['reset', '-q'])
   return parseDiff(numstat, patch, deleted)
 }
 
-export async function headSha(dir: string): Promise<string> {
-  return (await must('rev-parse HEAD', git(dir, ['rev-parse', 'HEAD']))).output.trim()
+export async function headSha(dir: string, runner: Runner = run): Promise<string> {
+  return (await must('rev-parse HEAD', git(dir, ['rev-parse', 'HEAD'], undefined, runner))).output.trim()
 }
 
 /** Diff between a commit and HEAD (committed changes only). */
@@ -80,9 +85,19 @@ export async function squashOnto(dir: string, sha: string, message: string): Pro
   await must('commit', git(dir, ['commit', '-q', '--no-verify', '-m', message]))
 }
 
-export async function commitAll(dir: string, message: string): Promise<void> {
-  await must('add', git(dir, ['add', '-A']))
+export async function commitAll(dir: string, message: string, runner: Runner = run): Promise<void> {
+  await must('add', git(dir, ['add', '-A'], undefined, runner))
   // --no-verify: the repo's own checks already ran under the factory's judge; hooks may not be installed here.
+  await must('commit', git(dir, ['commit', '-q', '--no-verify', '-m', message], undefined, runner))
+}
+
+/**
+ * Apply a patch produced in the sandbox to the host clone and commit it. Only file contents
+ * cross the boundary: nothing from the repo is executed on the host (no install, no checks,
+ * no hooks — `--no-verify`).
+ */
+export async function applyPatchAndCommit(dir: string, patchFile: string, message: string): Promise<void> {
+  await must('apply', git(dir, ['apply', '--index', '--binary', '--whitespace=nowarn', patchFile]))
   await must('commit', git(dir, ['commit', '-q', '--no-verify', '-m', message]))
 }
 

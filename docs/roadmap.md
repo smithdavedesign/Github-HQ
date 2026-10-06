@@ -859,15 +859,20 @@ Plan of record from the 2026-10-06 architecture review: harden and measure the e
 - [ ] Per-capability ladder stage in `factory.config.json` (`observe` / `report` / `pr`), enforced by the Director; new capabilities start at `report`
 - [ ] Morning report lists each capability's stage and the evidence needed to promote it
 
-### Phase 76 — Sandboxed Worker (Docker)
-- [ ] Job image: Node LTS + git + Aider + Claude Code CLI; per-repo toolchain detection (Node first; Python/Go later)
-- [ ] Repo copied in, not bind-mounted from `~/Documents`; no `~/.ssh`, `~/.aws`, `~/.config/gh`, keychain or Docker socket
-- [ ] **No GitHub credential in the container**: the host keeps commit / push / `gh pr create` after the judge passes
-- [ ] Network: LiteLLM (`host.docker.internal:4000`) + package registries only; everything else blocked
-- [ ] Install, checks and the model harness all run inside the container; the host reads back the diff and check results
-- [ ] Limits: CPU, memory, wall clock (cycle timeout), disk; container and volume removed after every job
-- [ ] Concurrency 1 (16 GB Mac with Ollama resident); revisit after a clean week
-- [ ] Fallback when Docker is down: skip the cycle (never run untrusted repo code on the host again)
+### Phase 76 — Sandboxed Worker (Docker) ✅
+Repo code no longer runs on the owner's Mac. Operator guide: [factory/README.md "Sandbox"](../factory/README.md#sandbox); design: [autonomous-factory.md §14.3](autonomous-factory.md#143-the-sandbox-as-built-phase-76).
+- [x] Job image `factory/docker/worker.Dockerfile`: Node 22 + git + Aider 0.86.2 + Claude Code 2.1.291 + pnpm, non-root `worker` user; tag = hash of the Dockerfile (edits rebuild automatically, superseded tags pruned); prebuilt by `install-launchd.sh` / `npm run factory:sandbox:build`. Node only for now (Python/Go later)
+- [x] Repo streamed in with `tar` (never bind-mounted); no `~/.ssh`, `~/.aws`, `~/.config/gh`, keychain or Docker socket; the worker gets only the per-command env overrides, never the host environment (`proc.ts` `env` is now overrides-only, `Runner` abstraction)
+- [x] **No GitHub credential in the container**: the host keeps clone / commit / push / `gh pr create`; the sandbox's result comes back as a binary-safe patch applied to the host clone (`applyPatchAndCommit`, file contents only) and is judged there
+- [x] Network: worker on an `--internal` network; egress container (`egress.Dockerfile`) proxies only `sandbox.allowHosts` (npm + yarn registries) and relays LiteLLM **for an allowlist of model aliases** (free tiers; the paid alias only with a budget). Found while building: the LiteLLM key is a guessable constant, so without the model filter any repo script could spend on `cloud-smart`
+- [x] Install, baseline checks, the harness (Aider / Claude Code), post-fix checks, lint autofix and `npm audit fix` all run inside; `confirmFailures`, `runAudit`, working-tree git ops take the sandbox `Runner`
+- [x] Limits: `--cpus 4`, `--memory 4g` (no extra swap), `--pids-limit 1024`, `--cap-drop ALL`, `no-new-privileges`, in-container `timeout` per command, PID 1 = 90-min `sleep`; containers + network removed after every repo, crash leftovers swept at cycle start
+- [ ] Per-container disk quota: not available on Docker Desktop's overlay2 (`--storage-opt size`); bounded by the Docker VM disk, writable layer deleted after each repo
+- [x] Concurrency 1 (serial cycle); revisit after a clean week
+- [x] Docker down → cycle skipped and logged; never falls back to the host. `FACTORY_SANDBOX=off` exists for trusted fixtures only
+- [x] Copilot builder (MC) excluded while sandboxed (it needs the owner's GitHub login); Copilot PR review unaffected
+- [x] Ledger / RepoHQ events record `isolation: docker | host`; `/agent-performance` shows where the latest run executed and how many attempts were sandboxed
+- [x] Tests: unit (`tests/unit/factory-sandbox.test.ts`: container args, no-env-leak, timeouts, lifecycle, runner injection, config), live isolation check (`npm run factory:sandbox:check`, 13 properties), sandboxed end-to-end cycle (`npm run factory:e2e`: M0 fixes a seeded type error inside the container, host judges and commits, no `node_modules` on the host), Playwright (`tests/e2e/phase76-sandbox.spec.ts`)
 
 ### Phase 77 — Judge v2 (deterministic first, adversarial last)
 - [ ] Test integrity: assertion count must not drop in touched test files; no new mocks of the unit under test; no snapshot rewrites on non-test tasks

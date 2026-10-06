@@ -10,11 +10,18 @@ export interface ProcResult {
 
 export interface ProcOptions {
   cwd?: string
-  env?: NodeJS.ProcessEnv
+  /**
+   * Variables to set on top of the inherited environment. Overrides only: the sandbox
+   * runner forwards exactly these into the container, never the host's environment.
+   */
+  env?: Record<string, string | undefined>
   timeoutMs?: number
   input?: string
   maxOutput?: number
 }
+
+/** Runs a command somewhere: on the host (`run`) or inside a sandbox container (sandbox.ts). */
+export type Runner = (cmd: string, args: string[], opts?: ProcOptions) => Promise<ProcResult>
 
 /** Run a command without a shell; never throws on non-zero exit. */
 export function run(cmd: string, args: string[], opts: ProcOptions = {}): Promise<ProcResult> {
@@ -23,7 +30,7 @@ export function run(cmd: string, args: string[], opts: ProcOptions = {}): Promis
   return new Promise(resolve => {
     let out = ''
     let timedOut = false
-    const child = spawn(cmd, args, { cwd, env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'], detached: true })
+    const child = spawn(cmd, args, { cwd, env: env ? { ...process.env, ...env } : process.env, stdio: ['pipe', 'pipe', 'pipe'], detached: true })
     const append = (b: Buffer) => {
       out += b.toString()
       if (out.length > maxOutput * 2) out = out.slice(-maxOutput)

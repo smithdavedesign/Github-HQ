@@ -37,8 +37,41 @@ export interface FactoryConfig {
   /** M0 (local 7B) either finishes fast or not at all. */
   m0TimeoutMs: number
   checkTimeoutMs: number
+  /**
+   * Where target-repo code (install, checks, the model harness) runs. `docker` (default):
+   * a throwaway container per repo with no credentials and allowlisted egress
+   * (factory/lib/sandbox.ts). If Docker is down, the cycle is skipped rather than running on
+   * the host. `off` runs on the host — only for trusted fixtures (the e2e checks).
+   */
+  sandbox: SandboxConfig
   /** Optional RepoHQ sink — mirrors attempts into portfolio_events. */
   repohq: { databaseUrl: string | null; userId: string | null }
+}
+
+export interface SandboxConfig {
+  mode: 'docker' | 'off'
+  /** Image repositories; the tag is a hash of the Dockerfile, so edits rebuild automatically. */
+  workerImage: string
+  egressImage: string
+  cpus: number
+  /** Docker memory limit (swap is capped at the same value). */
+  memory: string
+  pidsLimit: number
+  /** The worker container exits after this long whatever happens (its PID 1 is a timed sleep). */
+  lifetimeMs: number
+  /** Hostnames the worker may reach through the egress proxy (package registries). */
+  allowHosts: string[]
+}
+
+export const DEFAULT_SANDBOX: SandboxConfig = {
+  mode: 'docker',
+  workerImage: 'repohq-factory-worker',
+  egressImage: 'repohq-factory-egress',
+  cpus: 4,
+  memory: '4g',
+  pidsLimit: 1024,
+  lifetimeMs: 90 * 60_000,
+  allowHosts: ['registry.npmjs.org', 'registry.yarnpkg.com'],
 }
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
@@ -78,6 +111,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FactoryConfig 
     harnessTimeoutMs: json.harnessTimeoutMs ?? 15 * 60_000,
     m0TimeoutMs: json.m0TimeoutMs ?? 4 * 60_000,
     checkTimeoutMs: json.checkTimeoutMs ?? 8 * 60_000,
+    sandbox: {
+      ...DEFAULT_SANDBOX,
+      ...json.sandbox,
+      mode: env.FACTORY_SANDBOX === 'off' ? 'off' : json.sandbox?.mode ?? DEFAULT_SANDBOX.mode,
+    },
     repohq: {
       // Reuse RepoHQ's own .env.local rather than copying the DB secret elsewhere.
       databaseUrl: env.FACTORY_USER_ID ? env.FACTORY_DATABASE_URL ?? readEnvVar(path.join(ROOT, '..', '.env.local'), 'DATABASE_URL') : null,

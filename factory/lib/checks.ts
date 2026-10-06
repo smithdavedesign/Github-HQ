@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
-import { run } from './proc'
+import { run, type Runner } from './proc'
 
 /**
  * Deterministic repo checks — the factory's "sense" step. No LLM involved:
@@ -82,10 +82,10 @@ export function planChecks(pkg: PackageJson, pm: PackageManager, hasTsconfig: bo
   return specs
 }
 
-export async function runChecks(specs: CheckSpec[], cwd: string, timeoutMs: number): Promise<CheckResult[]> {
+export async function runChecks(specs: CheckSpec[], cwd: string, timeoutMs: number, runner: Runner = run): Promise<CheckResult[]> {
   const results: CheckResult[] = []
   for (const s of specs) {
-    const r = await run(s.cmd, s.args, { cwd, timeoutMs, env: { ...process.env, CI: '1', FORCE_COLOR: '0', NO_COLOR: '1' } })
+    const r = await runner(s.cmd, s.args, { cwd, timeoutMs, env: { CI: '1', FORCE_COLOR: '0', NO_COLOR: '1' } })
     results.push({ name: s.name, ok: r.code === 0 && !r.timedOut, output: r.output, durationMs: r.durationMs, timedOut: r.timedOut })
   }
   return results
@@ -96,7 +96,7 @@ export async function runChecks(specs: CheckSpec[], cwd: string, timeoutMs: numb
  * a flaky or resource-starved failure must never send a model to "fix" working code.
  */
 export async function confirmFailures(
-  specs: CheckSpec[], results: CheckResult[], cwd: string, timeoutMs: number,
+  specs: CheckSpec[], results: CheckResult[], cwd: string, timeoutMs: number, runner: Runner = run,
 ): Promise<{ results: CheckResult[]; flaky: CheckName[] }> {
   const flaky: CheckName[] = []
   const confirmed: CheckResult[] = []
@@ -104,7 +104,7 @@ export async function confirmFailures(
     if (r.ok) { confirmed.push(r); continue }
     const spec = specs.find(s => s.name === r.name)
     if (!spec) { confirmed.push(r); continue }
-    const [again] = await runChecks([spec], cwd, timeoutMs)
+    const [again] = await runChecks([spec], cwd, timeoutMs, runner)
     if (again.ok) flaky.push(r.name)
     confirmed.push(again.ok ? again : r)
   }
@@ -191,8 +191,8 @@ export function parseAudit(output: string): AuditCounts | null {
 }
 
 /** npm-only (needs package-lock.json). Network call to the registry; no code runs. */
-export async function runAudit(cwd: string, timeoutMs = 120_000): Promise<AuditCounts | null> {
-  const r = await run('npm', ['audit', '--json'], { cwd, timeoutMs, maxOutput: 2_000_000 })
+export async function runAudit(cwd: string, timeoutMs = 120_000, runner: Runner = run): Promise<AuditCounts | null> {
+  const r = await runner('npm', ['audit', '--json'], { cwd, timeoutMs, maxOutput: 2_000_000 })
   return parseAudit(r.output)
 }
 

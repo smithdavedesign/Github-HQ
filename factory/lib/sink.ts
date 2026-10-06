@@ -61,6 +61,7 @@ export function attemptEventValues(a: AttemptEntry, userId: string, repoId: numb
       harness: a.harness,
       kind: a.kind,
       exploring: a.exploring,
+      isolation: a.isolation ?? 'host',
       prUrl: a.prUrl ?? null,
       costUsd: a.costUsd,
       durationMs: a.durationMs,

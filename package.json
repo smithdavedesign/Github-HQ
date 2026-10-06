@@ -19,7 +19,10 @@
     "factory": "tsx factory/run.ts",
     "factory:scout": "tsx factory/scout.ts",
     "factory:report": "tsx factory/run.ts --report",
-    "factory:morning": "tsx factory/report.ts"
+    "factory:morning": "tsx factory/report.ts",
+    "factory:sandbox:build": "tsx factory/bin/build-sandbox.ts",
+    "factory:sandbox:check": "tsx factory/eval/sandbox-smoke.ts",
+    "factory:e2e": "bash factory/eval/e2e.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",

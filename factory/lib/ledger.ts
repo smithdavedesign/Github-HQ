@@ -31,6 +31,8 @@ export interface AttemptEntry {
   branch?: string
   /** Copilot code review was requested on the PR. */
   reviewRequested?: boolean
+  /** Where the repo's code ran: a Docker sandbox (Phase 76) or the host. Absent on older entries (host). */
+  isolation?: 'docker' | 'host'
   /**
    * Set when the verdict itself was wrong (a judge bug, not the model's fault): the attempt
    * stays in the ledger for history but no longer counts for routing, dead ends or stats.

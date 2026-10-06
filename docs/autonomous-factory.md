@@ -453,7 +453,7 @@ sense → select one task → fixed pipeline → sandboxed worker → verify (de
 
 | # | Decision | Concretely |
 |---|---|---|
-| 1 | **Sandbox before intelligence.** The worker is too trusted today: `npm ci` and test suites of target repos run on the owner's Mac with `gh`, keychain and `~/.ssh` in reach | Docker job container per task (Phase 76). The **container gets no GitHub credential at all**: the host already commits, pushes and opens the PR *after* the judge passes (`factory/lib/git.ts`), so the container only needs the repo copy, the LiteLLM endpoint and the package registry. No host mounts, no Docker socket, CPU/memory/time limits, destroyed after the job. Checks run *inside* the container too, since the untrusted code is the repo's install and test scripts, not just the model |
+| 1 | **Sandbox before intelligence** (shipped, §14.3). The worker was too trusted: `npm ci` and test suites of target repos run on the owner's Mac with `gh`, keychain and `~/.ssh` in reach | Docker job container per repo (Phase 76). The **container gets no GitHub credential at all**: the host already commits, pushes and opens the PR *after* the judge passes (`factory/lib/git.ts`), so the container only needs the repo copy, the LiteLLM endpoint and the package registry. No host mounts, no Docker socket, CPU/memory/time limits, destroyed after the job. Checks run *inside* the container too, since the untrusted code is the repo's install and test scripts, not just the model |
 | 2 | **Spawning depth = 1.** Director → worker → done | Workers return a structured result; they never pick the next step. Nexus's `suggestedNextSkill` auto-chain (one hop, behind `autoDispatchEnabled`) is the pattern this rules out for unattended work (open item in Phase 78) |
 | 3 | **Fixed pipelines per task kind**, chosen by the Director; no dynamic skill chains | Pipelines map to task kinds with an oracle, not to gstack skill names (Phase 78). gstack `/qa` drives a browser against a running app, not a failing unit test; `/benchmark` needs baselines none of the repos have; a feature pipeline has no oracle, so it stays report-only |
 | 4 | **Deterministic verification first; the LLM judge last and advisory** | The rule-based judge (`verify.ts`) gets harder to fool (Phase 77). An adversarial LLM pass ("prove this should not merge") runs only after the rules pass, on a different model family from the builder, and can only **veto or flag** `UNCERTAIN`, never approve. `UNCERTAIN` = a PR label asking for a careful human read, not a block |
@@ -476,9 +476,27 @@ sense → select one task → fixed pipeline → sandboxed worker → verify (de
 
 "Minutes of human review" can't be measured directly, so the proxies stand in for it.
 
-### 14.3 Capacity on this Mac
+### 14.3 The sandbox as built (Phase 76)
 
-16 GB RAM: Docker Desktop's VM has 8 GB and Ollama keeps a 7B model (~5 GB) resident on the host. Realistic concurrency is **one container**, two for light repos. The cycle is serial today, and stays serial until the container has run a week of nights cleanly.
+Shipped 2026-10-06; operator details in [factory/README.md "Sandbox"](../factory/README.md#sandbox).
+
+```
+host:  clone (gh) ─▶ tar ─▶ ┌ worker (no creds, no mounts, non-root, caps dropped) ┐ ─internal net─▶ ┌ egress ┐ ─▶ npm/yarn registries
+                            │ install · checks · Aider / Claude Code · re-checks   │               │ proxy  │
+host:  judge ◀─ patch ◀──── └──────────────────────────────────────────────────────┘               │ relay  │ ─▶ LiteLLM (allowed models only)
+host:  commit · push · draft PR                                                                     └────────┘
+```
+
+What building it decided:
+- **Overrides-only environments.** `run()` used to take a full environment and every caller spread `process.env`. Now `env` holds overrides, the host runner merges them and the sandbox runner forwards exactly those, so host secrets such as `FACTORY_DATABASE_URL` can't reach repo code by construction (unit-tested).
+- **A model allowlist at the relay, not only a host allowlist.** LiteLLM's key is a fixed, published default, so "reach LiteLLM" meant "reach the paid alias too". The relay reads each request's `model` and forwards only the factory's free aliases. The same gap exists for anything on the host that can reach `localhost:4000`; the Anthropic console spend cap (Phase 60) is still the provider-side backstop.
+- **The host judges its own copy.** The worker's result comes back as a patch and is applied to the host clone before the judge runs, so the judged tree, the committed tree and the pushed tree are one tree. Only file contents cross the boundary; git hooks never run (`--no-verify`).
+- **Skip, don't degrade.** Docker down means no cycle, not a host run.
+- **Measured cost:** ~3 s per repo to create the network, egress and worker; isolation smoke 8 s; the e2e cycle 34 s sandboxed vs 25 s on the host. Images: worker 1.8 GB, egress 235 MB.
+
+### 14.4 Capacity on this Mac
+
+16 GB RAM: Docker Desktop's VM has 8 GB and Ollama keeps a 7B model (~5 GB) resident on the host. Realistic concurrency is **one container**, two for light repos. The cycle is serial, and stays serial until the sandbox has run a week of nights cleanly.
 
 ---
 
