@@ -86,7 +86,8 @@ async function runCopilot(req: HarnessRequest, cfg: FactoryConfig): Promise<Harn
     inputTokens: 0,
     outputTokens: 0,
     costUsd: 0,
-    rateLimited: RATE_LIMIT_RE.test(r.output) || /premium request|usage limit/i.test(r.output),
+    // "You have no quota" = monthly premium requests spent: wait for the reset, not a model failure.
+    rateLimited: RATE_LIMIT_RE.test(r.output) || /premium request|usage limit|no quota/i.test(r.output),
     timedOut: r.timedOut,
   }
 }

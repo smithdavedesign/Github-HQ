@@ -20,6 +20,7 @@ import { loadConfig, type FactoryConfig } from './lib/config'
 import { collectPackageInfo, confirmFailures, detectPackageManager, installCommand, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
 import { checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
+import { copilotHasQuota, copilotQuota } from './lib/copilot-quota'
 import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
 import { appendEntry, deadEnds, monthToDateUsd, nextRepos, openPrAttempts, pendingReviews, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry } from './lib/ledger'
 import { listAliases } from './lib/litellm-ops'
@@ -48,6 +49,7 @@ function parseArgs(argv: string[]): Args {
 const runId = `${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12)}-${randomUUID().slice(0, 4)}`
 let logDir = ''
 let copilotInstalled = false
+let copilotQuotaLeft = true
 const log = (...a: unknown[]) => console.log(`[factory ${new Date().toISOString().slice(11, 19)}]`, ...a)
 
 async function main() {
@@ -66,6 +68,9 @@ async function main() {
   log(`run ${runId}${args.dryRun ? ' (dry run)' : ''}`)
 
   copilotInstalled = (await run('copilot', ['--version'], { timeoutMs: 30_000 })).code === 0
+  const quota = copilotInstalled ? await copilotQuota() : null
+  copilotQuotaLeft = copilotHasQuota(quota)
+  if (!copilotQuotaLeft) log(`Copilot premium requests used up (resets ${quota?.resetDate ?? 'next month'}) — Copilot builder and reviews paused`)
   await reconcile(cfg)
 
   const aliases = await listAliases(cfg).catch((): string[] => [])
@@ -222,7 +227,7 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
     return r === 'rate_limited' ? 'deferred' : r
   }
   const usage = todaysUsage(ledger, now)
-  const copilot = cfg.copilot.enabled && copilotInstalled && usage.copilotTasks < cfg.copilot.maxTasksPerDay
+  const copilot = cfg.copilot.enabled && copilotInstalled && copilotQuotaLeft && usage.copilotTasks < cfg.copilot.maxTasksPerDay
   const allowed = allowedTiers(task, ctx.dataClass, { allowFreeCloud: cfg.allowFreeCloud.includes(repo), copilot })
     // M0/M1 need their LiteLLM alias; MC is the Copilot CLI and M2 is gated by budget below.
     .filter(t => t === 'M2' || t === 'MC' || ctx.aliases.includes(cfg.models[t]))
@@ -347,7 +352,7 @@ async function attempt(
       body: prBody({ task, tier, model, harness: h.harness, verdict: verdict.reason, baseline, after, diff, durationMs: h.durationMs, costUsd: h.costUsd, exploring }),
     })
     log(`${repo}: draft PR ${entry.prUrl}`)
-    if (cfg.copilot.review && todaysUsage(readLedger(cfg.home), new Date()).copilotReviews < cfg.copilot.maxReviewsPerDay) {
+    if (cfg.copilot.review && copilotQuotaLeft && todaysUsage(readLedger(cfg.home), new Date()).copilotReviews < cfg.copilot.maxReviewsPerDay) {
       entry.reviewRequested = await requestCopilotReview(entry.prUrl)
       if (entry.reviewRequested) log(`${repo}: Copilot review requested`)
     }

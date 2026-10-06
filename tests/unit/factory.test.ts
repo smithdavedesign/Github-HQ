@@ -701,3 +701,16 @@ describe('voided attempts', () => {
     expect(summarizeByTier(entries).every(r => r.attempts === 0)).toBe(true)
   })
 })
+
+describe('Copilot premium-request quota', () => {
+  it('parses the quota snapshot and pauses Copilot when spent without overage', async () => {
+    const { parseCopilotQuota, copilotHasQuota } = await import('../../factory/lib/copilot-quota')
+    const spent = parseCopilotQuota({ copilot_plan: 'individual', quota_reset_date: '2026-11-01', quota_snapshots: { premium_interactions: { percent_remaining: 0, overage_permitted: false } } })
+    expect(spent).toEqual({ plan: 'individual', percentRemaining: 0, overagePermitted: false, resetDate: '2026-11-01' })
+    expect(copilotHasQuota(spent)).toBe(false)
+    expect(copilotHasQuota({ ...spent!, overagePermitted: true })).toBe(true)
+    expect(copilotHasQuota(parseCopilotQuota({ quota_snapshots: { premium_interactions: { percent_remaining: 42 } } }))).toBe(true)
+    expect(copilotHasQuota(null)).toBe(true) // unknown → rely on "no quota" detection
+    expect(parseCopilotQuota({})).toBeNull()
+  })
+})

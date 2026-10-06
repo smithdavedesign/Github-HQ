@@ -15,7 +15,9 @@ export interface ReportInput {
   pool: Record<string, string>
   liteLLMUp: boolean
   openRouterQuota: { remaining: number; limit: number } | null
-  copilot: { enabled: boolean; model: string; tasksToday: number; maxTasksPerDay: number; reviewsToday: number; maxReviewsPerDay: number }
+  copilot: { enabled: boolean; model: string; tasksToday: number; maxTasksPerDay: number; reviewsToday: number; maxReviewsPerDay: number
+    /** Premium requests left this month (null = unknown). */
+    quota?: { percentRemaining: number; resetDate: string | null } | null }
   prTarget: { min: number; max: number }
   monthToDateUsd: number
   monthlyBudgetUsd: number
@@ -186,6 +188,11 @@ export function buildMorningReport(input: ReportInput): MorningReport {
       `LiteLLM gateway: ${input.liteLLMUp ? 'up' : 'DOWN'}.`,
       `Cycles in the last 24h: ${input.cycles.length}${failedCycles.length ? ` (${failedCycles.length} failed)` : ''}.`,
       `OpenRouter free quota: ${input.openRouterQuota ? `${input.openRouterQuota.remaining}/${input.openRouterQuota.limit} left today` : 'unknown'} (one pool member of three).`,
+      ...(input.copilot.quota
+        ? [input.copilot.quota.percentRemaining > 0
+          ? `Copilot premium requests: ${Math.round(input.copilot.quota.percentRemaining)}% left this month.`
+          : `Copilot premium requests used up — builder and reviews paused until ${input.copilot.quota.resetDate ?? 'the monthly reset'}.`]
+        : []),
       `Paid spend this month: $${input.monthToDateUsd.toFixed(2)} of $${input.monthlyBudgetUsd} budget.`,
     ],
   })
