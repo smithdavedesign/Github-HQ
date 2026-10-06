@@ -1,20 +1,28 @@
 import type { NextConfig } from 'next'
 
 const dev = process.env.NODE_ENV !== 'production'
-// Vercel's preview toolbar (vercel.live) only runs on preview deployments.
-const preview = process.env.VERCEL_ENV === 'preview'
+// Vercel injects its toolbar (vercel.live) for signed-in team members on preview AND production
+// deployments; these are the origins Vercel documents for it.
+const toolbar = {
+  script: ' https://vercel.live',
+  connect: ' https://vercel.live wss://ws-us3.pusher.com',
+  img: ' https://vercel.live https://vercel.com',
+  style: ' https://vercel.live',
+  font: ' https://vercel.live https://assets.vercel.com',
+  frame: 'https://vercel.live',
+}
 
 // No nonces yet: Next's inline hydration scripts need 'unsafe-inline'. The policy still blocks
 // third-party scripts, plugins, framing by other sites and form posts to anywhere but GitHub
 // OAuth (Chrome applies form-action to the redirect after the sign-in POST).
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ''}${preview ? ' https://vercel.live' : ''}`,
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://avatars.githubusercontent.com",
-  "font-src 'self' data:",
-  `connect-src 'self'${dev ? ' ws: wss:' : ''}${preview ? ' https://vercel.live wss://ws-us3.pusher.com' : ''}`,
-  `frame-src ${preview ? 'https://vercel.live' : "'none'"}`,
+  `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ''}${toolbar.script}`,
+  `style-src 'self' 'unsafe-inline'${toolbar.style}`,
+  `img-src 'self' data: blob: https://avatars.githubusercontent.com${toolbar.img}`,
+  `font-src 'self' data:${toolbar.font}`,
+  `connect-src 'self'${dev ? ' ws: wss:' : ''}${toolbar.connect}`,
+  `frame-src ${toolbar.frame}`,
   "frame-ancestors 'self'",
   "base-uri 'self'",
   "form-action 'self' https://github.com",
