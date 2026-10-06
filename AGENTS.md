@@ -41,9 +41,16 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Callers that build stub objects must satisfy that interface.
 
 ### Cron jobs
-- GitHub Actions (`.github/workflows/cron-*.yml`) are the canonical trigger.
+- GitHub Actions (`.github/workflows/cron-*.yml`) are the canonical trigger. GitHub disables scheduled workflows after 60 days without a commit; the stale-data banner (`src/lib/health/freshness.ts`) and the morning report's System health block flag it. Re-enable with `gh workflow enable`.
 - Vercel cron (`vercel.json`) is fallback only. Do not add duplicate schedules for the same route.
 - All cron routes are guarded by `verifyCronSecret()`.
+
+### Server-only modules
+- `'use server'` only on files whose exports are browser-callable actions that derive the user from the session.
+- Functions that take a `userId` (cron, webhooks, internal helpers) live in modules starting with `import 'server-only'`, never in a `'use server'` file (e.g. `src/lib/agents/nexus-dispatch.ts`).
+
+### E2E tests
+- The suite runs against `.env.local`'s DATABASE_URL, which is production. Only seed rows you can identify and delete. Anything that overwrites or deletes shared rows must `test.skip(!DISPOSABLE_DB, …)` (`tests/e2e/helpers/disposable-db.ts`).
 
 ## Worker bootstrap (Nexus / CI worktrees)
 

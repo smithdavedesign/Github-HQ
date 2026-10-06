@@ -132,9 +132,8 @@ Sorted: critical → warning → info → positive, then date descending.
 | `/api/cron/deployments` | GitHub Actions | every 12h | Uptime checks for all deployment URLs |
 | `/api/cron/ai-summary` | GitHub Actions | 05:00 Sunday | Enqueues per-repo AI summary jobs then processes them in a loop |
 | `/api/cron/digest` | GitHub Actions | 06:00 Monday | Digest + Advisor + CEO Report + Auto-Dispatch per user |
-| `/api/cron/gstack-self` | Vercel cron | 07:00 daily | Self-scan RepoHQ with /health + /qa-only → auto-queues fix tasks |
 
-All routes require `Authorization: Bearer $CRON_SECRET`. GitHub Actions (`.github/workflows/cron-*.yml`) is the canonical trigger for all jobs except `gstack-self`, which runs daily via Vercel cron (no GitHub Actions equivalent since it runs continuously, not on a branch push schedule).
+All routes require `Authorization: Bearer $CRON_SECRET`. GitHub Actions (`.github/workflows/cron-*.yml`) is the only trigger. GitHub disables scheduled workflows after 60 days without a commit, so the app shows a stale-data banner when no health snapshot has landed for two days, and the factory's morning report lists disabled workflows. The daily `gstack-self` Vercel cron was removed in the 2026-10 audit.
 
 ---
 

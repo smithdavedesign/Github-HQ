@@ -493,7 +493,9 @@ All 9 portfolio-relevant gstack skills wired end-to-end.
 - [x] Playwright tests: phase labels, type badges, findings expansion, actionable items, Active Agents card
 - [x] Integration test scripts: `gstack-review-check.sh`, `gstack-qa-only-check.sh`, `gstack-retro-check.sh`
 
-### Phase 57 — Gstack Self-Improvement Loop ✅
+### Phase 57 — Gstack Self-Improvement Loop ✅ (retired 2026-10)
+> Retired in the [2026-10 audit](audit-2026-10.md): after the repo was recreated as Github-HQ, the cron matched the deleted `RepoHQ` row and failed every day from June to October. The factory now improves RepoHQ itself.
+
 RepoHQ now monitors and improves itself without any human intervention, scoped to the RepoHQ repo.
 
 **The loop:**
@@ -728,14 +730,14 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 
 **Status (2026-10-06):** Factory v2 (Phases 75–80) shipped in #13 and #15: the sandboxed worker, Judge v2 with an adversarial reviewer, the promotion ladder, sensors and a ranked queue, the `agent_jobs` record with KPIs, and the night-shift policy. Next is the night shift's gate (7 consecutive nights with every attempt sandboxed), then concurrency 2. Plan of record: [autonomous-factory.md §14](autonomous-factory.md#14-factory-v2-one-good-pr-while-the-owner-sleeps-2026-10-06).
 
-**Audit (2026-10-06):** [audit-2026-10.md](audit-2026-10.md) found the scheduled crons disabled since Aug 14, `gstack-self` failing daily on a deleted repo, and critical framework advisories in production. Its fix-now list comes before new phases.
+**Audit (2026-10-06):** [audit-2026-10.md](audit-2026-10.md) found the scheduled crons disabled since Aug 14, `gstack-self` failing daily on a deleted repo, and critical framework advisories in production. The whole fix-now list shipped the same day (Github-HQ #20, AI-Took-My-Job #28; status table at the top of the audit). Open: the §9 decisions (one executor, personal tool vs product) and the owner actions below.
 
 **Owner actions that unblock the most:**
-- Close the pre-fix Nexus no-op PRs (Phase 69b). Bot PRs unreviewed for 7+ days block new factory PRs on their repo (Phase 78); on 2026-10-06 that was 5 of 9 repos.
+- ~~Close the pre-fix Nexus no-op PRs (Phase 69b).~~ Done 2026-10-06: 11 closed.
 - Leave the Mac on AC power overnight; scheduled cycles skip on battery (Phase 80).
 - Set the Anthropic console spend cap (Phase 60). The LiteLLM key is a known constant, so it's the only hard limit on the paid alias outside the sandbox.
 - Run `bash factory/bin/setup-email.sh <gmail>` so the morning report is emailed (Phase 69).
-- Optional: enable Dependabot alerts (off on all 9 repos), branch protection on `main` (Phase 65), and decide on Nexus's auto-chain (Phase 78).
+- Optional: branch protection on `main` (Phase 65), and decide on Nexus's auto-chain (Phase 78). Dependabot alerts were enabled on all 9 repos on 2026-10-06.
 
 **Gate to start Horizon 3 (Phase 67):** ≥ 80% of merged agent PRs produced at $0 over 30 days, and zero unapproved L4 actions.
 
@@ -821,7 +823,7 @@ Fixes from the first scheduled night (details: [autonomous-factory.md §12](auto
 - [x] Factory: quota-aware Copilot (builder and reviews pause at 0% premium requests); "no quota" = rate-limited, not a failure
 - [x] Factory: push / `gh pr create` retry on network errors; `caffeinate -ims`; README "Overnight runs need power"
 - [x] QA: environment-dependent test failures (missing secrets / network) are reported, not tasked; the judge rejects early returns in test files
-- [ ] Close the 11 pre-fix Nexus agent PRs whose only change is the injected brief (listed in the morning report). Owner action; since Phase 78 they also block new factory PRs on their repos
+- [x] Close the 11 pre-fix Nexus agent PRs whose only change is the injected brief (closed 2026-10-06)
 
 ### Phase 70 — Shared Branch Governance (Integration First)
 - [x] Standard branch policy across all repos: autonomous work branches use `feature/bot/{taskId}-{slug}`
@@ -993,10 +995,8 @@ Features required to open RepoHQ to other users. Tracked separately because they
 | cron-ai-summary | 05:00 Sunday | `/api/cron/ai-summary` (enqueue per-repo jobs then process loop) |
 | cron-digest | 06:00 Monday | `/api/cron/digest` |
 
-**Vercel cron (daily — gstack-self only):**
+GitHub disables these after 60 days without a commit (it happened Aug 14 – Oct 6, 2026). The app shows a stale-data banner and the morning report flags disabled workflows; re-enable with `gh workflow enable <file> --repo smithdavedesign/Github-HQ`.
 
-| Endpoint | Time (UTC) | What it does |
-|----------|-----------|-------------|
-| `/api/cron/gstack-self` | 07:00 daily | Self-scan RepoHQ with /health + /qa-only → auto-queue fix tasks |
+**Vercel cron:** none. `gstack-self` (daily /health + /qa-only self-scan via Nexus) was removed in the 2026-10 audit: it had targeted a deleted repo and failed every day since June; the factory covers RepoHQ itself.
 
-All routes require `Authorization: Bearer $CRON_SECRET`. Vercel cron is used only for `gstack-self` because it must run daily regardless of git activity; all other jobs are driven by GitHub Actions, which provides logs, retry, and manual dispatch.
+All routes require `Authorization: Bearer $CRON_SECRET`.
