@@ -31,6 +31,13 @@ export interface AttemptEntry {
   branch?: string
   /** Copilot code review was requested on the PR. */
   reviewRequested?: boolean
+  /** Where the repo's code ran: a Docker sandbox (Phase 76) or the host. Absent on older entries (host). */
+  isolation?: 'docker' | 'host'
+  /**
+   * Set when the verdict itself was wrong (a judge bug, not the model's fault): the attempt
+   * stays in the ledger for history but no longer counts for routing, dead ends or stats.
+   */
+  voided?: string
 }
 
 export interface ReviewEntry {
@@ -111,7 +118,8 @@ export function parseLedger(text: string): LedgerEntry[] {
   return out
 }
 
-const attemptsOf = (e: LedgerEntry[]) => e.filter((x): x is AttemptEntry => x.type === 'attempt')
+/** Attempts that count — voided attempts (judge bugs) are kept for history only. */
+const attemptsOf = (e: LedgerEntry[]) => e.filter((x): x is AttemptEntry => x.type === 'attempt' && !x.voided)
 const resolutionsOf = (e: LedgerEntry[]) => new Map(e.filter((x): x is ResolutionEntry => x.type === 'resolution').map(r => [r.attemptId, r]))
 
 /**
@@ -153,7 +161,9 @@ export function deadEnds(entries: LedgerEntry[], now: Date, windowDays = 14): Se
     const t = new Date(a.at).getTime()
     const key = `${a.repo}:${a.kind}`
     if (a.outcome === 'verified') lastSuccess.set(key, Math.max(lastSuccess.get(key) ?? 0, t))
-    if (a.outcome === 'failed' && a.tier !== 'M0' && t >= since) fails.set(key, (fails.get(key) ?? 0) + 1)
+    // M0 model failures escalate, so they don't count — but deterministic fixes (npm audit fix) never escalate.
+    const countsAsDeadEnd = a.tier !== 'M0' || a.harness === 'npm-audit-fix' || a.harness === 'lint-autofix'
+    if (a.outcome === 'failed' && countsAsDeadEnd && t >= since) fails.set(key, (fails.get(key) ?? 0) + 1)
   }
   return new Set([...fails.entries()].filter(([k, n]) => n >= 2 && (lastSuccess.get(k) ?? 0) < since).map(([k]) => k))
 }

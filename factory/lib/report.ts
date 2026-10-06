@@ -15,7 +15,9 @@ export interface ReportInput {
   pool: Record<string, string>
   liteLLMUp: boolean
   openRouterQuota: { remaining: number; limit: number } | null
-  copilot: { enabled: boolean; model: string; tasksToday: number; maxTasksPerDay: number; reviewsToday: number; maxReviewsPerDay: number }
+  copilot: { enabled: boolean; model: string; tasksToday: number; maxTasksPerDay: number; reviewsToday: number; maxReviewsPerDay: number
+    /** Premium requests left this month (null = unknown). */
+    quota?: { percentRemaining: number; resetDate: string | null } | null }
   prTarget: { min: number; max: number }
   monthToDateUsd: number
   monthlyBudgetUsd: number
@@ -60,9 +62,9 @@ export function latestScans(entries: LedgerEntry[], repos?: string[]): ScanEntry
   return [...by.values()].sort((a, b) => a.repo.localeCompare(b.repo))
 }
 
-const KIND_PRIORITY = ['fix-types', 'fix-lint', 'fix-tests', 'deps-audit', 'docs-readme']
+const KIND_PRIORITY = ['fix-types', 'lint-autofix', 'fix-lint', 'fix-tests', 'deps-audit', 'docs-readme']
 const KIND_LABEL: Record<string, string> = {
-  'fix-types': 'fix type errors', 'fix-lint': 'fix lint errors', 'fix-tests': 'fix failing tests',
+  'fix-types': 'fix type errors', 'lint-autofix': 'apply lint autofix', 'fix-lint': 'fix lint errors', 'fix-tests': 'fix failing tests',
   'deps-audit': 'patch vulnerable dependencies', 'docs-readme': 'fill README gaps',
 }
 
@@ -107,7 +109,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   // ── Architect: routing + model pool ─────────────────────────────────────────
   const tiers: ModelTier[] = ['M0', 'M1', 'MC', 'M2']
   const tierLine = (t: ModelTier) => {
-    const as = last7.filter(a => a.tier === t && a.outcome !== 'rate_limited' && a.harness !== 'npm-audit-fix')
+    const as = last7.filter(a => a.tier === t && a.outcome !== 'rate_limited' && a.harness !== 'npm-audit-fix' && a.harness !== 'lint-autofix')
     const v = as.filter(a => a.outcome === 'verified').length
     return as.length ? `${t}: ${v}/${as.length} verified` : null
   }
@@ -131,7 +133,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
       : newPrs.map(a => {
         const state = resolutions.get(a.id)?.outcome
         const tag = state === 'merged' ? ' (merged)' : state === 'rejected' ? ' (closed)' : ''
-        return `${short(a.repo)}: ${KIND_LABEL[a.kind] ?? a.kind}${tag} — ${a.tier} · ${a.harness === 'npm-audit-fix' ? 'npm audit fix' : a.model} · ${Math.round(a.durationMs / 60000)} min — ${a.prUrl}`
+        return `${short(a.repo)}: ${KIND_LABEL[a.kind] ?? a.kind}${tag} — ${a.tier} · ${a.harness === 'npm-audit-fix' ? 'npm audit fix' : a.harness === 'lint-autofix' ? 'lint autofix' : a.model} · ${Math.round(a.durationMs / 60000)} min — ${a.prUrl}`
       }),
   })
 
@@ -186,6 +188,11 @@ export function buildMorningReport(input: ReportInput): MorningReport {
       `LiteLLM gateway: ${input.liteLLMUp ? 'up' : 'DOWN'}.`,
       `Cycles in the last 24h: ${input.cycles.length}${failedCycles.length ? ` (${failedCycles.length} failed)` : ''}.`,
       `OpenRouter free quota: ${input.openRouterQuota ? `${input.openRouterQuota.remaining}/${input.openRouterQuota.limit} left today` : 'unknown'} (one pool member of three).`,
+      ...(input.copilot.quota
+        ? [input.copilot.quota.percentRemaining > 0
+          ? `Copilot premium requests: ${Math.round(input.copilot.quota.percentRemaining)}% left this month.`
+          : `Copilot premium requests used up — builder and reviews paused until ${input.copilot.quota.resetDate ?? 'the monthly reset'}.`]
+        : []),
       `Paid spend this month: $${input.monthToDateUsd.toFixed(2)} of $${input.monthlyBudgetUsd} budget.`,
     ],
   })

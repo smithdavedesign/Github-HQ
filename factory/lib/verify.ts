@@ -38,6 +38,15 @@ const FORBIDDEN_PATHS = [
   /(^|\/)node_modules\//,
 ]
 
+/** The repo that hosts the factory itself (it's on its own allowlist). */
+export const FACTORY_HOME_REPO = 'smithdavedesign/Github-HQ'
+
+/**
+ * In the factory's home repo, the judge, loop and router are human-only: learning
+ * changes routing data, never the code that decides what passes (docs/autonomous-factory.md §14).
+ */
+const SELF_PATHS = [/^factory\//, /^src\/lib\/agents\/model-router\.ts$/]
+
 /** Check-silencing patterns a model might use to "pass". */
 const CHEATS: [RegExp, string][] = [
   [/@ts-(ignore|nocheck|expect-error)/, 'adds a TypeScript suppression'],
@@ -62,13 +71,22 @@ export function judge(input: {
   /** Names of the repo's dependencies + devDependencies (for `npx <tool>` checks). */
   deps?: string[]
   readmeAfter?: string | null
+  /** owner/name of the target repo (enables the self-modification guard). */
+  repo?: string
   /** deps-audit only: npm audit before/after. */
   audit?: { before: AuditCounts | null; after: AuditCounts | null }
+  /** lint-autofix only: ESLint problem totals before/after. */
+  lintProblems?: { before: number | null; after: number | null }
 }): Verdict {
   const { task, baseline, after, diff } = input
 
   if (diff.files.length === 0) return { ok: false, reason: 'no changes made' }
+  if (input.repo === FACTORY_HOME_REPO) {
+    const self = diff.files.find(f => SELF_PATHS.some(re => re.test(f.path)))
+    if (self) return { ok: false, reason: `touched factory-owned path ${self.path} (human-only)` }
+  }
   if (task.kind === 'deps-audit') return judgeDeps(diff, baseline, after, input.audit)
+  if (task.kind === 'lint-autofix') return judgeLintAutofix(diff, baseline, after, input.lintProblems)
 
   const forbidden = diff.files.find(f => FORBIDDEN_PATHS.some(re => re.test(f.path)))
   if (forbidden) return { ok: false, reason: `touched forbidden path ${forbidden.path}` }
@@ -215,4 +233,23 @@ function judgeDeps(diff: DiffInfo, baseline: CheckResult[], after: CheckResult[]
   const regressed = baseline.filter(b => b.ok).filter(b => !after.find(a => a.name === b.name)?.ok)
   if (regressed.length > 0) return { ok: false, reason: `regressed: ${regressed.map(r => r.name).join(', ')} now fail` }
   return { ok: true, reason: `high+critical ${serious(audit.before)} → ${serious(audit.after)}; no regressions` }
+}
+
+/**
+ * lint-autofix: the repo's own fixer rewrote files. Size-exempt (it's mechanical), but lint
+ * problems must not increase, nothing else may regress, and no suppressions may appear.
+ */
+function judgeLintAutofix(diff: DiffInfo, baseline: CheckResult[], after: CheckResult[], problems?: { before: number | null; after: number | null }): Verdict {
+  const forbidden = diff.files.find(f => FORBIDDEN_PATHS.some(re => re.test(f.path)))
+  if (forbidden) return { ok: false, reason: `touched forbidden path ${forbidden.path}` }
+  for (const [re, what] of CHEATS) {
+    if (diff.addedLines.some(l => re.test(l))) return { ok: false, reason: `change ${what}` }
+  }
+  if (problems?.before == null || problems.after == null) return { ok: false, reason: 'lint problem count unavailable' }
+  // ESLint --fix reports problems *remaining after* fixing, so the baseline already shows the
+  // post-fix count: the PR's value is landing the rewrite itself. It just mustn't make lint worse.
+  if (problems.after > problems.before) return { ok: false, reason: `lint problems increased (${problems.before} → ${problems.after})` }
+  const regressed = baseline.filter(b => b.ok && b.name !== 'lint').filter(b => !after.find(a => a.name === b.name)?.ok)
+  if (regressed.length > 0) return { ok: false, reason: `regressed: ${regressed.map(r => r.name).join(', ')} now fail` }
+  return { ok: true, reason: `${diff.files.length} file(s) rewritten by the repo's own lint fixer; lint problems ${problems.before} → ${problems.after}; no regressions` }
 }

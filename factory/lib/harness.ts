@@ -1,8 +1,8 @@
 import type { ModelTier } from '../../src/lib/agents/model-router'
 import type { FactoryConfig } from './config'
-import { run } from './proc'
+import { run, type Runner } from './proc'
 
-export type HarnessName = 'aider' | 'claude-code' | 'copilot' | 'npm-audit-fix'
+export type HarnessName = 'aider' | 'claude-code' | 'copilot' | 'npm-audit-fix' | 'lint-autofix'
 
 export interface HarnessRequest {
   tier: ModelTier
@@ -49,11 +49,12 @@ export function harnessFor(tier: ModelTier): HarnessName {
   return 'claude-code'
 }
 
-export async function runHarness(req: HarnessRequest, cfg: FactoryConfig): Promise<HarnessResult> {
+/** `runner` = where the agent runs: the host, or a sandbox container (cfg.litellm.url must then be the sandbox's relay). */
+export async function runHarness(req: HarnessRequest, cfg: FactoryConfig, runner: Runner = run): Promise<HarnessResult> {
   const h = harnessFor(req.tier)
-  if (h === 'aider') return runAider(req, cfg)
-  if (h === 'copilot') return runCopilot(req, cfg)
-  return runClaudeCode(req, cfg)
+  if (h === 'aider') return runAider(req, cfg, runner)
+  if (h === 'copilot') return runCopilot(req, cfg, runner)
+  return runClaudeCode(req, cfg, runner)
 }
 
 /** Copilot CLI permissions: deny rules beat allow rules; file access is confined to the cwd by default. */
@@ -73,8 +74,8 @@ export function copilotArgs(req: Pick<HarnessRequest, 'model' | 'prompt' | 'read
   ]
 }
 
-async function runCopilot(req: HarnessRequest, cfg: FactoryConfig): Promise<HarnessResult> {
-  const r = await run('copilot', copilotArgs(req), { cwd: req.cwd, timeoutMs: req.timeoutMs ?? cfg.harnessTimeoutMs })
+async function runCopilot(req: HarnessRequest, cfg: FactoryConfig, runner: Runner): Promise<HarnessResult> {
+  const r = await runner('copilot', copilotArgs(req), { cwd: req.cwd, timeoutMs: req.timeoutMs ?? cfg.harnessTimeoutMs })
   return {
     ok: r.code === 0 && !r.timedOut,
     harness: 'copilot',
@@ -86,12 +87,13 @@ async function runCopilot(req: HarnessRequest, cfg: FactoryConfig): Promise<Harn
     inputTokens: 0,
     outputTokens: 0,
     costUsd: 0,
-    rateLimited: RATE_LIMIT_RE.test(r.output) || /premium request|usage limit/i.test(r.output),
+    // "You have no quota" = monthly premium requests spent: wait for the reset, not a model failure.
+    rateLimited: RATE_LIMIT_RE.test(r.output) || /premium request|usage limit|no quota/i.test(r.output),
     timedOut: r.timedOut,
   }
 }
 
-async function runAider(req: HarnessRequest, cfg: FactoryConfig): Promise<HarnessResult> {
+async function runAider(req: HarnessRequest, cfg: FactoryConfig, runner: Runner): Promise<HarnessResult> {
   const args = [
     '--model', `openai/${req.model}`,
     // Search/replace edits. Aider's default "whole" format makes the 7B model re-emit
@@ -103,10 +105,10 @@ async function runAider(req: HarnessRequest, cfg: FactoryConfig): Promise<Harnes
     '--message', req.prompt,
     ...(req.files ?? []),
   ]
-  const r = await run('aider', args, {
+  const r = await runner('aider', args, {
     cwd: req.cwd,
     timeoutMs: req.timeoutMs ?? cfg.harnessTimeoutMs,
-    env: { ...process.env, OPENAI_API_BASE: `${cfg.litellm.url}/v1`, OPENAI_API_KEY: cfg.litellm.key },
+    env: aiderEnv(cfg),
   })
   const tokens = /Tokens:\s*([\d.,]+k?)\s*sent,\s*([\d.,]+k?)\s*received/i.exec(r.output)
   return {
@@ -123,7 +125,7 @@ async function runAider(req: HarnessRequest, cfg: FactoryConfig): Promise<Harnes
   }
 }
 
-async function runClaudeCode(req: HarnessRequest, cfg: FactoryConfig): Promise<HarnessResult> {
+async function runClaudeCode(req: HarnessRequest, cfg: FactoryConfig, runner: Runner): Promise<HarnessResult> {
   const args = [
     '-p', req.prompt,
     '--bare', '--strict-mcp-config',
@@ -135,21 +137,10 @@ async function runClaudeCode(req: HarnessRequest, cfg: FactoryConfig): Promise<H
   ]
   if (req.tier === 'M2') args.push('--max-budget-usd', String(cfg.m2EstimateUsd * 2))
 
-  const r = await run('claude', args, {
+  const r = await runner('claude', args, {
     cwd: req.cwd,
     timeoutMs: req.timeoutMs ?? cfg.harnessTimeoutMs,
-    env: {
-      ...process.env,
-      // Every tier goes through the LiteLLM gateway; --bare reads only ANTHROPIC_API_KEY.
-      ANTHROPIC_BASE_URL: cfg.litellm.url,
-      ANTHROPIC_API_KEY: cfg.litellm.key,
-      ANTHROPIC_AUTH_TOKEN: '',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: req.smallModel ?? req.model,
-      ANTHROPIC_SMALL_FAST_MODEL: req.smallModel ?? req.model,
-      ANTHROPIC_DEFAULT_SONNET_MODEL: req.model,
-      ANTHROPIC_DEFAULT_OPUS_MODEL: req.model,
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-    },
+    env: claudeCodeEnv(req, cfg),
   })
   const result = parseClaudeResult(r.output)
   const inputTokens = result?.inputTokens ?? 0
@@ -168,6 +159,25 @@ async function runClaudeCode(req: HarnessRequest, cfg: FactoryConfig): Promise<H
     costUsd,
     rateLimited: RATE_LIMIT_RE.test(r.output),
     timedOut: r.timedOut,
+  }
+}
+
+/** Aider's environment overrides: the OpenAI-compatible LiteLLM endpoint. */
+export function aiderEnv(cfg: Pick<FactoryConfig, 'litellm'>): Record<string, string> {
+  return { OPENAI_API_BASE: `${cfg.litellm.url}/v1`, OPENAI_API_KEY: cfg.litellm.key }
+}
+
+/** Claude Code's environment overrides. Every tier goes through the LiteLLM gateway; --bare reads only ANTHROPIC_API_KEY. */
+export function claudeCodeEnv(req: Pick<HarnessRequest, 'model' | 'smallModel'>, cfg: Pick<FactoryConfig, 'litellm'>): Record<string, string> {
+  return {
+    ANTHROPIC_BASE_URL: cfg.litellm.url,
+    ANTHROPIC_API_KEY: cfg.litellm.key,
+    ANTHROPIC_AUTH_TOKEN: '',
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: req.smallModel ?? req.model,
+    ANTHROPIC_SMALL_FAST_MODEL: req.smallModel ?? req.model,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: req.model,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: req.model,
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
   }
 }
 

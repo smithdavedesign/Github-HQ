@@ -802,6 +802,16 @@ Toward the Architect / Builder / Reviewer / Operator team (docs/autonomous-facto
 - [ ] Builder ← Reviewer loop: turn Copilot's line comments into a follow-up commit on the same branch
 - [ ] Copilot coding agent (assign an issue to `@copilot`) for tasks every local tier failed
 
+### Phase 69b — First-Night Hardening ✅
+Fixes from the first scheduled night (details: [autonomous-factory.md §12](autonomous-factory.md#12-what-building-it-changed-2026-10-05)).
+- [x] Nexus gstack scripts strip the injected RepoHQ brief before anything is committed (AI-Took-My-Job #19); `CLAUDE.md` back to `@AGENTS.md` (Github-HQ #12)
+- [x] Factory: `lint-autofix` deterministic task for repos whose lint script runs a fixer; deps PRs discard check side effects
+- [x] Factory: README judge/prompt read sub-package `package.json` files; `voided` attempts for verdicts later shown to be judge bugs
+- [x] Factory: quota-aware Copilot (builder and reviews pause at 0% premium requests); "no quota" = rate-limited, not a failure
+- [x] Factory: push / `gh pr create` retry on network errors; `caffeinate -ims`; README "Overnight runs need power"
+- [x] QA: environment-dependent test failures (missing secrets / network) are reported, not tasked; the judge rejects early returns in test files
+- [ ] Close the 11 pre-fix Nexus agent PRs whose only change is the injected brief (listed in the morning report)
+
 ### Phase 70 — Shared Branch Governance (Integration First)
 - [x] Standard branch policy across all repos: autonomous work branches use `feature/bot/{taskId}-{slug}`
 - [x] Add an integration landing branch standard: `integration/agent` (alias allowed: `feature/bot` only if the repo already uses it as integration)
@@ -809,6 +819,7 @@ Toward the Architect / Builder / Reviewer / Operator team (docs/autonomous-facto
 - [-] Human gate remains only for `integration/agent -> main` promotion PRs (main-release workflow guard + label requirement shipped; operational rollout process pending)
 - [-] Add branch cleanup policy: TTL, max concurrent bot branches, and stale-branch sweeper (scaffold preview endpoint shipped in Nexus)
 - [x] Add CI/promotion guard that rejects autonomous PRs to `main` with a clear policy message
+- [x] Policy also recognises Nexus's real branch names (`nexus/agent-task-*` via `nexus/*`) and `factory/*`; the factory now names branches `feature/bot/factory-…` and targets `integration/agent` when a repo has it
 
 ### Phase 71 — Agent Visibility v2 (Full Behind-the-Scenes Telemetry)
 - [ ] Expand Agent History with full execution timeline: queued, preparing, running, report-ready, pr-ready, merged, failed, timed-out, needs-human
@@ -836,6 +847,62 @@ Toward the Architect / Builder / Reviewer / Operator team (docs/autonomous-facto
 - [ ] Enforce writing standards on summaries: objective, acceptance criteria, confidence, rollback notes, final outcome
 - [ ] Add bidirectional links from RepoHQ Agent History to Notion records for auditability
 - [ ] Add weekly governance report: autonomy throughput, merge-to-main approvals, regression rate, and documentation completeness
+
+### Factory v2 — One Good PR Overnight (Phases 75–80)
+Plan of record from the 2026-10-06 architecture review: harden and measure the existing loop instead of adding agent roles. Order: sandbox → verification → fixed pipelines → economics → learning → night shift. Design and rationale: [autonomous-factory.md §14](autonomous-factory.md#14-factory-v2-one-good-pr-while-the-owner-sleeps-2026-10-06).
+
+**Standing limits for every phase below:** spawning depth 1 (Director → worker), fixed pipelines only, $0 budget, ≤ 8 PRs per factory day, merge is always human, `PAUSE` kill switch, the factory never edits its own judge/loop/router.
+
+### Phase 75 — Self-Protection & Promotion Ladder
+- [x] Judge rejects factory diffs to `factory/**` and `src/lib/agents/model-router.ts` in the factory's home repo (Github-HQ is on its own allowlist); test in `tests/unit/factory.test.ts`
+- [x] CI backstop: the Autonomous PR policy fails `feature/bot/*`, `nexus/*`, `factory/*` PRs that touch those paths
+- [ ] Per-capability ladder stage in `factory.config.json` (`observe` / `report` / `pr`), enforced by the Director; new capabilities start at `report`
+- [ ] Morning report lists each capability's stage and the evidence needed to promote it
+
+### Phase 76 — Sandboxed Worker (Docker) ✅
+Repo code no longer runs on the owner's Mac. Operator guide: [factory/README.md "Sandbox"](../factory/README.md#sandbox); design: [autonomous-factory.md §14.3](autonomous-factory.md#143-the-sandbox-as-built-phase-76).
+- [x] Job image `factory/docker/worker.Dockerfile`: Node 22 + git + Aider 0.86.2 + Claude Code 2.1.291 + pnpm, non-root `worker` user; tag = hash of the Dockerfile (edits rebuild automatically, superseded tags pruned); prebuilt by `install-launchd.sh` / `npm run factory:sandbox:build`. Node only for now (Python/Go later)
+- [x] Repo streamed in with `tar` (never bind-mounted); no `~/.ssh`, `~/.aws`, `~/.config/gh`, keychain or Docker socket; the worker gets only the per-command env overrides, never the host environment (`proc.ts` `env` is now overrides-only, `Runner` abstraction)
+- [x] **No GitHub credential in the container**: the host keeps clone / commit / push / `gh pr create`; the sandbox's result comes back as a binary-safe patch applied to the host clone (`applyPatchAndCommit`, file contents only) and is judged there
+- [x] Network: worker on an `--internal` network; egress container (`egress.Dockerfile`) proxies only `sandbox.allowHosts` (npm + yarn registries) and relays LiteLLM **for an allowlist of model aliases** (free tiers; the paid alias only with a budget). Found while building: the LiteLLM key is a guessable constant, so without the model filter any repo script could spend on `cloud-smart`
+- [x] Install, baseline checks, the harness (Aider / Claude Code), post-fix checks, lint autofix and `npm audit fix` all run inside; `confirmFailures`, `runAudit`, working-tree git ops take the sandbox `Runner`
+- [x] Limits: `--cpus 4`, `--memory 4g` (no extra swap), `--pids-limit 1024`, `--cap-drop ALL`, `no-new-privileges`, in-container `timeout` per command, PID 1 = 90-min `sleep`; containers + network removed after every repo, crash leftovers swept at cycle start
+- [ ] Per-container disk quota: not available on Docker Desktop's overlay2 (`--storage-opt size`); bounded by the Docker VM disk, writable layer deleted after each repo
+- [x] Concurrency 1 (serial cycle); revisit after a clean week
+- [x] Docker down → cycle skipped and logged; never falls back to the host. `FACTORY_SANDBOX=off` exists for trusted fixtures only
+- [x] Copilot builder (MC) excluded while sandboxed (it needs the owner's GitHub login); Copilot PR review unaffected
+- [x] Ledger / RepoHQ events record `isolation: docker | host`; `/agent-performance` shows where the latest run executed and how many attempts were sandboxed
+- [x] Tests: unit (`tests/unit/factory-sandbox.test.ts`: container args, no-env-leak, timeouts, lifecycle, runner injection, config), live isolation check (`npm run factory:sandbox:check`, 13 properties), sandboxed end-to-end cycle (`npm run factory:e2e`: M0 fixes a seeded type error inside the container, host judges and commits, no `node_modules` on the host), Playwright (`tests/e2e/phase76-sandbox.spec.ts`)
+
+### Phase 77 — Judge v2 (deterministic first, adversarial last)
+- [ ] Test integrity: assertion count must not drop in touched test files; no new mocks of the unit under test; no snapshot rewrites on non-test tasks
+- [ ] Diff sanity: no unrelated files, no mass reformatting on model tasks, deletions justified by the task
+- [ ] Dependency validation: new imports must resolve to existing deps (extends today's `npx` check to `import` / `require`)
+- [ ] Coverage delta where the repo already reports coverage
+- [ ] Advisory adversarial pass after the rules pass: "prove this should NOT merge" checklist, different model family from the builder, output `PASS` / `FAIL` / `UNCERTAIN`; may veto or label `needs-careful-review`, never approve. Copilot review when quota exists, local `local-coder-14b` otherwise
+- [ ] Judge regression suite: every `voided` verdict and every closed-in-review PR becomes a fixture
+
+### Phase 78 — Fixed Pipelines & New Sensors
+- [ ] Pipelines (each = sense → one worker step → verify → PR): **fix-checks** (types / lint / tests, exists), **lint-autofix** and **deps-audit** (deterministic, exist), **docs-readme** (exists), **red-CI** (new), **security alerts** (new)
+- [ ] Sensor: default branch CI failing → red-CI pipeline using gstack `/investigate`; oracle = the failing job passes. Enters at `report`
+- [ ] Sensor: Dependabot / code-scanning alerts RepoHQ already syncs → deps-audit when fixable, otherwise `/cso` report only
+- [ ] Sensor: stale bot PRs (open > 7 days, unreviewed) → report, never more PRs on that repo until they're handled
+- [ ] Cross-repo opportunity queue: one ranked list per cycle (red CI > security > failing checks > docs), priority weighted by RepoHQ health score
+- [ ] Deferred: feature pipeline (`/plan-eng-review`, report-only until an oracle exists) and performance pipeline (`/benchmark`, needs baselines)
+- [ ] Decision for the owner: Nexus's `suggestedNextSkill` auto-chain (`src/app/api/webhooks/agent-events/route.ts`) is dynamic chaining. Keep it for owner-initiated tasks only, or turn it off for scheduled triggers
+
+### Phase 79 — Factory Economics & the Job Record
+- [ ] Ledger → Neon `agent_jobs` table (id, parentJobId, repo, task kind, pipeline, tier, model, status, requests, tokens, cost, timings, verdict, PR, outcome, human edits); `ledger.jsonl` stays as the local write-ahead log
+- [ ] Record free-model request count per attempt (Claude Code turns; Aider edit rounds)
+- [ ] KPIs from §14.2 on `/agent-performance` and as the morning report headline: overnight yield, accepted PRs per request, acceptance, review-load proxies, autonomy
+- [ ] Coarse routing key: difficulty (simple / medium / hard) × tier
+- [ ] Overlaps Phase 71 (telemetry) for factory runs; 71 keeps the Nexus side
+
+### Phase 80 — Night Shift v2
+- [ ] Gate to start: Phases 75–77 done and the container has run 7 nights with zero host-side repo code execution
+- [ ] 20:00–06:00 on AC power, sandboxed, $0, ≤ 8 PRs, human merge, `PAUSE`
+- [ ] Success measure: a sustained rise in overnight yield and acceptance over 30 nights, not PR count
+- [ ] Only then: concurrency 2
 
 ### Phase 67+ — Horizon 3: Infrastructure Agent
 - [ ] `agent_resources` ledger table (owner, provider, kind, environment, est. cost, `ephemeral`, `ttlAt`, destroy procedure, lifecycle state) + `.infrastructure/resources.json` mirror

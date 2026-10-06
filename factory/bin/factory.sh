@@ -5,7 +5,7 @@
 # - Optional env (FACTORY_DATABASE_URL, FACTORY_USER_ID, FACTORY_MONTHLY_BUDGET_USD, …)
 #   is read from ~/.repohq-factory/env. If FACTORY_OP_ENV_FILE is set, secrets are
 #   resolved by 1Password at runtime (`op run`) instead — values never touch disk or prompts.
-# - caffeinate keeps the Mac awake for the duration of the run only.
+# - caffeinate keeps the Mac awake for the duration of the run only (on AC power).
 set -euo pipefail
 
 MODE="${1:-cycle}"
@@ -45,6 +45,8 @@ fi
 {
   echo "=== $MODE $(date -u +%FT%TZ) ==="
   status=0
-  caffeinate -i "${CMD[@]}" || status=$?
+  # -i idle sleep, -m disk sleep, -s system sleep (only honoured on AC power — on battery,
+  # macOS still forces sleep; see factory/README.md "Overnight runs").
+  caffeinate -ims "${CMD[@]}" || status=$?
   echo "=== exit $status ==="
 } >> "$LOG" 2>&1

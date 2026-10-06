@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, edited]
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   enforce-autonomous-pr-target:
     runs-on: ubuntu-latest
@@ -19,7 +23,12 @@ jobs:
           if [[ "$HEAD_REF" == feature/bot/* ]]; then
             is_autonomous="true"
           fi
-          if [[ "$HEAD_REF" == nexus/auto-* ]]; then
+          # Nexus names agent branches nexus/agent-task-* (older ones nexus/auto-*);
+          # the RepoHQ factory uses factory/*.
+          if [[ "$HEAD_REF" == nexus/* ]]; then
+            is_autonomous="true"
+          fi
+          if [[ "$HEAD_REF" == factory/* ]]; then
             is_autonomous="true"
           fi
 
@@ -31,3 +40,22 @@ jobs:
           fi
 
           echo "Autonomous PR target policy passed."
+
+      # The factory's judge, loop and router are human-only (docs/autonomous-factory.md §14).
+      # The judge already rejects these edits; this is the backstop if it ever doesn't.
+      - name: Block autonomous edits to the factory itself
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          case "$HEAD_REF" in feature/bot/*|nexus/*|factory/*) ;; *) echo "Not an autonomous branch."; exit 0 ;; esac
+          touched=$(gh api --paginate "repos/${{ github.repository }}/pulls/$PR_NUMBER/files" --jq '.[].filename' \
+            | grep -E '^(factory/|src/lib/agents/model-router\.ts$)' || true)
+          if [[ -n "$touched" ]]; then
+            echo "Autonomous PR policy violation: factory-owned paths are human-only."
+            echo "$touched"
+            exit 1
+          fi
+          echo "No factory-owned paths touched."

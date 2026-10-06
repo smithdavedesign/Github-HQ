@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # End-to-end check of one factory cycle against a local fixture repo (no GitHub, no PR):
 # seeded TypeScript error → scan → route (M0) → Aider via LiteLLM → re-check → judge → squash commit.
-# Needs the local AI stack (LiteLLM :4000 with the local-agent alias). Usage: bash factory/eval/e2e.sh
+# Needs the local AI stack (LiteLLM :4000 with the local-agent alias) and Docker: install, checks and
+# Aider run in the sandbox (factory/lib/sandbox.ts), the host only judges and commits.
+# Usage: bash factory/eval/e2e.sh            (sandboxed, the default)
+#        FACTORY_SANDBOX=off bash factory/eval/e2e.sh   (host execution; trusted fixture only)
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"
@@ -38,8 +41,15 @@ fail() { echo "E2E FAILED: $*"; exit 1; }
 echo "$OUT" | grep -q 'fix-types → M0' || fail 'task was not routed to M0'
 echo "$OUT" | grep -q 'M0 VERIFIED' || fail 'M0 fix was not verified'
 [ "$(git -C "$WORK" rev-list --count HEAD)" = 2 ] || fail 'expected exactly one squashed commit on top of base'
-(cd "$WORK" && npx --no-install tsc --noEmit) || fail 'typecheck fails on the committed tree'
+# RepoHQ's own tsc: in sandbox mode the host clone never gets node_modules (nothing is installed on the host).
+"$ROOT/node_modules/.bin/tsc" -p "$WORK" --noEmit || fail 'typecheck fails on the committed tree'
 [ -z "$(git -C "$WORK" status --porcelain)" ] || fail 'worktree not clean after commit'
 git -C "$WORK" log -1 --format=%B | grep -q 'RepoHQ Factory (M0' || fail 'commit message missing provenance'
 grep -q '"outcome":"verified"' "$TMP/home/ledger.jsonl" || fail 'ledger has no verified attempt'
+if [ "${FACTORY_SANDBOX:-docker}" != off ]; then
+  echo "$OUT" | grep -q 'M0 aider → local-agent (sandboxed)' || fail 'harness did not run in the sandbox'
+  grep -q '"isolation":"docker"' "$TMP/home/ledger.jsonl" || fail 'ledger attempt not marked isolation=docker'
+  [ ! -d "$WORK/node_modules" ] || fail 'host clone has node_modules: repo code was installed on the host'
+  [ -z "$(docker ps -aq --filter name=repohq-sbx-)" ] || fail 'sandbox containers left behind'
+fi
 echo "E2E PASSED"

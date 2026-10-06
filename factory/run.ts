@@ -17,14 +17,16 @@ import {
   allowedTiers, canUsePaidTier, chooseTier, classifyRepoData, computeTierStats, nextTier, type ModelTier,
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
-import { confirmFailures, detectPackageManager, installCommand, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
-import { checkoutNewBranch, cloneRepo, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
+import { collectPackageInfo, confirmFailures, detectPackageManager, installCommand, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
+import { applyPatchAndCommit, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
+import { copilotHasQuota, copilotQuota } from './lib/copilot-quota'
 import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
 import { appendEntry, deadEnds, monthToDateUsd, nextRepos, openPrAttempts, pendingReviews, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry } from './lib/ledger'
 import { listAliases } from './lib/litellm-ops'
 import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
-import { run } from './lib/proc'
+import { run, type Runner } from './lib/proc'
+import { Sandbox, dockerAvailable, ensureSandboxImages, sandboxModels, sweepSandboxes } from './lib/sandbox'
 import { recordApprovalNeeded, recordAttempt, recordResolution } from './lib/sink'
 import { acquireLock } from './lib/lock'
 import { freeQuota, m1Deferred } from './lib/quota'
@@ -48,6 +50,9 @@ function parseArgs(argv: string[]): Args {
 const runId = `${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12)}-${randomUUID().slice(0, 4)}`
 let logDir = ''
 let copilotInstalled = false
+let copilotQuotaLeft = true
+/** Built sandbox image tags; null when cfg.sandbox.mode is 'off'. */
+let sandboxImages: { worker: string; egress: string } | null = null
 const log = (...a: unknown[]) => console.log(`[factory ${new Date().toISOString().slice(11, 19)}]`, ...a)
 
 async function main() {
@@ -66,6 +71,9 @@ async function main() {
   log(`run ${runId}${args.dryRun ? ' (dry run)' : ''}`)
 
   copilotInstalled = (await run('copilot', ['--version'], { timeoutMs: 30_000 })).code === 0
+  const quota = copilotInstalled ? await copilotQuota() : null
+  copilotQuotaLeft = copilotHasQuota(quota)
+  if (!copilotQuotaLeft) log(`Copilot premium requests used up (resets ${quota?.resetDate ?? 'next month'}) — Copilot builder and reviews paused`)
   await reconcile(cfg)
 
   const aliases = await listAliases(cfg).catch((): string[] => [])
@@ -73,6 +81,21 @@ async function main() {
     if (!aliases.includes(cfg.models[t])) log(`warning: LiteLLM alias ${cfg.models[t]} (${t}) not available`)
   }
   if (aliases.length === 0) throw new Error('LiteLLM gateway is down — see ~/ai-stack/README.md troubleshooting')
+
+  if (cfg.sandbox.mode === 'docker') {
+    // Repo code (install, checks, the model harness) only runs in the sandbox. No Docker → no
+    // cycle: never fall back to running untrusted code on the host (roadmap Phase 76).
+    if (!(await dockerAvailable())) {
+      log('Docker is not running — skipping this cycle (repo code never runs on the host; start Docker Desktop, or see factory/README.md "Sandbox")')
+      return
+    }
+    const swept = await sweepSandboxes(cfg.home)
+    if (swept > 0) log(`removed ${swept} sandbox container(s) left by an earlier run`)
+    sandboxImages = await ensureSandboxImages(cfg.sandbox, m => log(m))
+    log(`sandbox: ${sandboxImages.worker}`)
+  } else {
+    log('sandbox OFF — repo code runs on the host (trusted fixtures only)')
+  }
 
   const queue = args.repo ? [args.repo] : nextRepos(readLedger(cfg.home), cfg.repos).slice(0, args.maxRepos)
   let prs = 0
@@ -119,9 +142,21 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
   const dir = path.join(cfg.home, 'work', runId, repo.replace('/', '__'))
   log(`${repo}: cloning`)
   await cloneRepo(repo, dir)
+  let sandbox: Sandbox | null = null
   try {
-    const base = await currentBranch(dir)
+    const integration = await checkoutIntegrationBranch(dir, cfg.integrationBranch)
+    const base = integration ? cfg.integrationBranch : await currentBranch(dir)
+    if (integration) log(`${repo}: targeting ${cfg.integrationBranch} (repo's integration branch)`)
+    // Static reads of the fresh clone are fine on the host; nothing from the repo has run yet.
     const basics = readRepoBasics(dir)
+    if (sandboxImages) {
+      sandbox = await Sandbox.open({
+        cfg: cfg.sandbox, litellmUrl: cfg.litellm.url, scope: cfg.home, images: sandboxImages,
+        allowModels: sandboxModels(cfg.models, { paidBudgetUsd: cfg.monthlyBudgetUsd, extra: ['local-small'] }),
+      })
+      await sandbox.copyIn(dir)
+    }
+    const ws: Workspace = sandbox ? { dir: sandbox.dir, run: sandbox.run, sandbox } : { dir, run, sandbox: null }
     let specs: CheckSpec[] = []
     let baseline: CheckResult[] = []
     let audit: AuditCounts | null = null
@@ -130,10 +165,10 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
       const pm = detectPackageManager(basics.files)
       const install = installCommand(pm, basics.files)
       log(`${repo}: ${install.cmd} ${install.args.join(' ')}`)
-      let ins = await run(install.cmd, install.args, { cwd: dir, timeoutMs: cfg.checkTimeoutMs })
+      let ins = await ws.run(install.cmd, install.args, { cwd: ws.dir, timeoutMs: cfg.checkTimeoutMs })
       if (ins.code !== 0 && /ETIMEDOUT|ECONNRESET|EAI_AGAIN|network/i.test(ins.output)) {
         log(`${repo}: install hit a network error — retrying once`)
-        ins = await run(install.cmd, install.args, { cwd: dir, timeoutMs: cfg.checkTimeoutMs })
+        ins = await ws.run(install.cmd, install.args, { cwd: ws.dir, timeoutMs: cfg.checkTimeoutMs })
       }
       if (ins.code !== 0) {
         writeFileSync(path.join(logDir, `${slug(repo)}-install.log`), ins.output)
@@ -142,26 +177,27 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
         return 0
       }
       specs = planChecks(basics.pkg, pm, basics.hasTsconfig)
-      baseline = await runChecks(specs, dir, cfg.checkTimeoutMs)
+      baseline = await runChecks(specs, ws.dir, cfg.checkTimeoutMs, ws.run)
       for (const b of baseline) writeFileSync(path.join(logDir, `${slug(repo)}-baseline-${b.name}.log`), b.output)
       if (baseline.some(b => !b.ok)) {
-        const confirmed = await confirmFailures(specs, baseline, dir, cfg.checkTimeoutMs)
+        const confirmed = await confirmFailures(specs, baseline, ws.dir, cfg.checkTimeoutMs, ws.run)
         if (confirmed.flaky.length > 0) log(`${repo}: ${confirmed.flaky.join(', ')} failed once then passed — treated as flaky, not a task`)
         baseline = confirmed.results
       }
       // Some repos' checks write files (e.g. `eslint . --fix`). Start every attempt from a clean tree.
-      const sideEffects = await diffInfo(dir)
+      const sideEffects = await diffInfo(ws.dir, ws.run)
       if (sideEffects.files.length > 0) {
         log(`${repo}: checks modified ${sideEffects.files.length} tracked file(s) (auto-fixing lint/format script) — discarded`)
-        await resetWorktree(dir)
+        await resetWorktree(ws.dir, ws.run)
       }
-      if (pm === 'npm' && basics.files.has('package-lock.json')) audit = await runAudit(dir)
+      if (pm === 'npm' && basics.files.has('package-lock.json')) audit = await runAudit(ws.dir, undefined, ws.run)
     }
 
     const ledger = readLedger(cfg.home)
     const now = new Date()
     const openKinds = new Set(openPrAttempts(ledger).map(a => `${a.repo}:${a.kind}`))
-    const allTasks = tasksFromScan(baseline, specs, readmeIssue(basics.readme), dir, audit)
+    // Root for relativising paths in check output (absolute /workspace/… paths inside the sandbox).
+    const allTasks = tasksFromScan(baseline, specs, readmeIssue(basics.readme), ws.dir, audit, { lintAutofixes: lintScriptAutofixes(basics.pkg) })
     const tasks = filterTasks(allTasks, repo, openKinds, deadEnds(ledger, now))
     appendEntry(cfg.home, {
       type: 'scan', runId, at: now.toISOString(), repo,
@@ -175,7 +211,7 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     const sizeOf = (f: string) => { try { return statSync(path.join(dir, f)).size } catch { return 0 } }
     const visibility = await repoVisibility(repo)
     const dataClass = classifyRepoData({ visibility })
-    const ctx: TaskContext = { cfg, repo, dir, base, pkg: basics.pkg, specs, baseline, args, aliases, dataClass, audit }
+    const ctx: TaskContext = { cfg, repo, dir, ws, base, pkg: basics.pkg, specs, baseline, args, aliases, dataClass, audit }
 
     // Try at most two tasks per repo: when free cloud quota defers the first,
     // local (M0) work on the next task still gets done this cycle.
@@ -186,14 +222,24 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     }
     return 0
   } finally {
+    await sandbox?.close()
     if (!args.keep) rmSync(dir, { recursive: true, force: true })
   }
+}
+
+/** Where repo code runs: the sandbox's copy of the clone, or (sandbox off) the host clone itself. */
+interface Workspace {
+  dir: string
+  run: Runner
+  sandbox: Sandbox | null
 }
 
 interface TaskContext {
   cfg: FactoryConfig
   repo: string
+  /** The host clone: judged, committed and pushed from here. */
   dir: string
+  ws: Workspace
   base: string
   pkg: ReturnType<typeof readRepoBasics>['pkg']
   specs: CheckSpec[]
@@ -213,14 +259,15 @@ interface TaskContext {
  */
 async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType<typeof readLedger>, now: Date): Promise<'pr' | 'verified' | 'deferred' | 'failed' | 'stop'> {
   const { cfg, repo } = ctx
-  if (task.kind === 'deps-audit') {
-    // Deterministic: `npm audit fix` (no model, no quota), judged like any other change.
-    log(`${repo}: deps-audit → npm audit fix (no model)`)
-    const r = await attempt(cfg, repo, ctx.dir, ctx.base, task, 'M0', false, ctx.pkg, ctx.specs, ctx.baseline, ctx.args, ctx.audit)
+  if (task.kind === 'deps-audit' || task.kind === 'lint-autofix') {
+    // Deterministic: `npm audit fix` / the repo's own lint fixer (no model, no quota), judged like any other change.
+    log(`${repo}: ${task.kind} → ${task.kind === 'deps-audit' ? 'npm audit fix' : "repo's lint fixer"} (no model)`)
+    const r = await attempt(ctx, task, 'M0', false, ctx.audit)
     return r === 'rate_limited' ? 'deferred' : r
   }
   const usage = todaysUsage(ledger, now)
-  const copilot = cfg.copilot.enabled && copilotInstalled && usage.copilotTasks < cfg.copilot.maxTasksPerDay
+  // The Copilot CLI authenticates with the owner's GitHub login, which never enters the sandbox.
+  const copilot = !ctx.ws.sandbox && cfg.copilot.enabled && copilotInstalled && copilotQuotaLeft && usage.copilotTasks < cfg.copilot.maxTasksPerDay
   const allowed = allowedTiers(task, ctx.dataClass, { allowFreeCloud: cfg.allowFreeCloud.includes(repo), copilot })
     // M0/M1 need their LiteLLM alias; MC is the Copilot CLI and M2 is gated by budget below.
     .filter(t => t === 'M2' || t === 'MC' || ctx.aliases.includes(cfg.models[t]))
@@ -247,7 +294,7 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
         return 'deferred'
       }
     }
-    const result = await attempt(cfg, repo, ctx.dir, ctx.base, task, tier, exploring, ctx.pkg, ctx.specs, ctx.baseline, ctx.args)
+    const result = await attempt(ctx, task, tier, exploring)
     if (result === 'pr' || result === 'verified') return result
     if (result === 'rate_limited') return 'deferred'
     tier = nextTier(tier, allowed)
@@ -257,30 +304,34 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
 }
 
 async function attempt(
-  cfg: FactoryConfig, repo: string, dir: string, base: string, task: FactoryTask, tier: ModelTier, exploring: boolean,
-  pkg: ReturnType<typeof readRepoBasics>['pkg'], specs: CheckSpec[], baseline: CheckResult[], args: Args,
-  auditBefore: AuditCounts | null = null,
+  ctx: TaskContext, task: FactoryTask, tier: ModelTier, exploring: boolean, auditBefore: AuditCounts | null = null,
 ): Promise<'pr' | 'verified' | 'failed' | 'rate_limited'> {
+  const { cfg, repo, dir, ws, base, pkg, specs, baseline, args } = ctx
   const deps = task.kind === 'deps-audit'
+  const lintFix = task.kind === 'lint-autofix'
+  const lintSpec = specs.find(s => s.name === 'lint')
   const now = new Date()
   const branch = branchName(task, now, runId)
-  await checkoutNewBranch(dir, base, branch)
-  const model = deps ? 'npm' : cfg.models[tier]
-  const prompt = deps ? 'npm audit fix' : buildPrompt(task, tier, pkg, specs.filter(s => task.verify.includes(s.name)).map(s => s.display), repo)
-  if (!deps) log(`${repo}: ${tier} ${harnessFor(tier)} → ${model}`)
+  await checkoutNewBranch(ws.dir, base, branch, ws.run)
+  const model = deps || lintFix ? 'npm' : cfg.models[tier]
+  const promptPkg = { ...pkg, scripts: collectPackageInfo(dir).scripts }
+  const prompt = deps ? 'npm audit fix' : lintFix ? (lintSpec?.display ?? 'lint') : buildPrompt(task, tier, promptPkg, specs.filter(s => task.verify.includes(s.name)).map(s => s.display), repo)
+  if (!deps && !lintFix) log(`${repo}: ${tier} ${harnessFor(tier)} → ${model}${ws.sandbox ? ' (sandboxed)' : ''}`)
 
-  const h: HarnessResult = deps ? await npmAuditFix(dir, cfg) : await runHarness({
-    tier, model, cwd: dir, prompt, files: task.scoped ? task.files : undefined,
+  // Inside the sandbox the agent reaches LiteLLM through the egress relay, not localhost.
+  const harnessCfg: FactoryConfig = ws.sandbox ? { ...cfg, litellm: { ...cfg.litellm, url: ws.sandbox.litellmUrl } } : cfg
+  const h: HarnessResult = deps ? await npmAuditFix(ws, cfg) : lintFix ? await runLintFixer(ws, lintSpec, cfg) : await runHarness({
+    tier, model, cwd: ws.dir, prompt, files: task.scoped ? task.files : undefined,
     timeoutMs: tier === 'M0' ? cfg.m0TimeoutMs : undefined,
     // Claude Code's small-model role → local Ollama (falls back to the pool). Measured: zero
     // such calls in headless --bare runs today, so this is insurance, not a saving.
     smallModel: tier === 'M1' ? 'local-small' : undefined,
-  }, cfg)
+  }, harnessCfg, ws.run)
   writeFileSync(path.join(logDir, `${slug(repo)}-${task.kind}-${tier}.log`), `${prompt}\n\n=====\n${h.output}`)
 
   const entry: AttemptEntry = {
     type: 'attempt', id: randomUUID(), runId, at: now.toISOString(), repo, kind: task.kind, taskTier: task.taskTier,
-    tier, model, harness: h.harness, outcome: 'failed', reason: '', exploring,
+    tier, model, harness: h.harness, outcome: 'failed', reason: '', exploring, isolation: ws.sandbox ? 'docker' : 'host',
     durationMs: h.durationMs, costUsd: h.costUsd, inputTokens: h.inputTokens, outputTokens: h.outputTokens,
   }
 
@@ -295,24 +346,43 @@ async function attempt(
   // Snapshot the model's edits, then run the checks. If the repo's own checks rewrite
   // files (eslint --fix, prettier --write), fold that in and re-check, so the judge
   // sees exactly what would ship.
-  const baseSha = await headSha(dir)
-  const edits = await diffInfo(dir)
+  const baseSha = await headSha(ws.dir, ws.run)
+  const edits = await diffInfo(ws.dir, ws.run)
   let after = baseline
   if (edits.files.length > 0) {
-    await commitAll(dir, 'factory: wip')
-    after = await runChecks(specs, dir, cfg.checkTimeoutMs)
-    if ((await diffInfo(dir)).files.length > 0) {
-      await commitAll(dir, 'factory: wip (repo check autofix)')
-      after = await runChecks(specs, dir, cfg.checkTimeoutMs)
-      await resetWorktree(dir)
+    await commitAll(ws.dir, 'factory: wip', ws.run)
+    after = await runChecks(specs, ws.dir, cfg.checkTimeoutMs, ws.run)
+    if ((await diffInfo(ws.dir, ws.run)).files.length > 0) {
+      if (deps) {
+        // A dependency PR must contain only package files: drop the lint fixer's rewrite.
+        await resetWorktree(ws.dir, ws.run)
+      } else {
+        await commitAll(ws.dir, 'factory: wip (repo check autofix)', ws.run)
+        after = await runChecks(specs, ws.dir, cfg.checkTimeoutMs, ws.run)
+        await resetWorktree(ws.dir, ws.run)
+      }
     }
   }
-  const diff = edits.files.length > 0 ? await diffAgainst(dir, baseSha) : edits
+  // Sandbox: bring the result back to the host clone as a patch (file contents only — nothing
+  // is executed here). From this point the host clone is exactly what gets judged and pushed.
+  let hostBase = baseSha
+  if (ws.sandbox) {
+    await checkoutNewBranch(dir, base, branch)
+    hostBase = await headSha(dir)
+    if (edits.files.length > 0) {
+      const patchFile = path.join(logDir, `${slug(repo)}-${task.kind}-${tier}.patch`)
+      await ws.sandbox.exportPatch(baseSha, patchFile)
+      await applyPatchAndCommit(dir, patchFile, 'factory: sandbox result')
+    }
+  }
+  const diff = edits.files.length > 0 ? await diffAgainst(dir, hostBase) : edits
   const readmeAfter = existsSync(path.join(dir, 'README.md')) ? readFileSync(path.join(dir, 'README.md'), 'utf8') : null
   const verdict = diff.files.length > 0
     ? judge({
-      task, baseline, after, diff, scripts: pkg?.scripts, deps: Object.keys({ ...pkg?.dependencies, ...pkg?.devDependencies }), readmeAfter,
-      audit: deps ? { before: auditBefore, after: await runAudit(dir) } : undefined,
+      // Scripts/deps from every package.json (root + sub-packages like client/, server/).
+      task, baseline, after, diff, ...collectPackageInfo(dir), readmeAfter, repo,
+      audit: deps ? { before: auditBefore, after: await runAudit(ws.dir, undefined, ws.run) } : undefined,
+      lintProblems: lintFix ? { before: lintProblems(baseline.find(b => b.name === 'lint')), after: lintProblems(after.find(a => a.name === 'lint')) } : undefined,
     })
     : { ok: false, reason: h.ok ? 'no changes made' : `harness failed${h.timedOut ? ' (timeout)' : ''}` }
   entry.reason = verdict.reason
@@ -321,13 +391,14 @@ async function attempt(
   if (!verdict.ok) {
     appendEntry(cfg.home, entry)
     await recordAttempt(cfg, entry, task.title)
-    await resetWorktree(dir)
+    await resetWorktree(ws.dir, ws.run)
+    if (ws.sandbox) await resetWorktree(dir)
     return 'failed'
   }
 
   entry.outcome = 'verified'
   entry.branch = branch
-  await squashOnto(dir, baseSha, commitMessage(task, tier, model))
+  await squashOnto(dir, hostBase, commitMessage(task, tier, model))
   if (!args.dryRun) {
     await pushBranch(dir, branch)
     entry.prUrl = await createDraftPr(dir, {
@@ -335,7 +406,7 @@ async function attempt(
       body: prBody({ task, tier, model, harness: h.harness, verdict: verdict.reason, baseline, after, diff, durationMs: h.durationMs, costUsd: h.costUsd, exploring }),
     })
     log(`${repo}: draft PR ${entry.prUrl}`)
-    if (cfg.copilot.review && todaysUsage(readLedger(cfg.home), new Date()).copilotReviews < cfg.copilot.maxReviewsPerDay) {
+    if (cfg.copilot.review && copilotQuotaLeft && todaysUsage(readLedger(cfg.home), new Date()).copilotReviews < cfg.copilot.maxReviewsPerDay) {
       entry.reviewRequested = await requestCopilotReview(entry.prUrl)
       if (entry.reviewRequested) log(`${repo}: Copilot review requested`)
     }
@@ -346,8 +417,18 @@ async function attempt(
 }
 
 /** Non-breaking dependency fixes only — never `--force` (that would allow semver-major upgrades). */
-async function npmAuditFix(dir: string, cfg: FactoryConfig): Promise<HarnessResult> {
-  const r = await run('npm', ['audit', 'fix', '--no-fund'], { cwd: dir, timeoutMs: cfg.checkTimeoutMs })
+/** Run the repo's own lint script once to let its fixer (eslint --fix / prettier --write) rewrite files. */
+async function runLintFixer(ws: Workspace, spec: CheckSpec | undefined, cfg: FactoryConfig): Promise<HarnessResult> {
+  const r = spec ? await ws.run(spec.cmd, spec.args, { cwd: ws.dir, timeoutMs: cfg.checkTimeoutMs, env: { CI: '1', NO_COLOR: '1' } }) : null
+  return {
+    // Lint may still fail afterwards (remaining errors); success here means the fixer ran.
+    ok: !!r && !r.timedOut, harness: 'lint-autofix', model: 'npm', output: r?.output ?? 'no lint script',
+    durationMs: r?.durationMs ?? 0, inputTokens: 0, outputTokens: 0, costUsd: 0, rateLimited: false, timedOut: r?.timedOut ?? false,
+  }
+}
+
+async function npmAuditFix(ws: Workspace, cfg: FactoryConfig): Promise<HarnessResult> {
+  const r = await ws.run('npm', ['audit', 'fix', '--no-fund'], { cwd: ws.dir, timeoutMs: cfg.checkTimeoutMs })
   return {
     ok: r.code === 0 || /fixed \d+ of \d+/i.test(r.output), harness: 'npm-audit-fix', model: 'npm', output: r.output,
     durationMs: r.durationMs, inputTokens: 0, outputTokens: 0, costUsd: 0, rateLimited: false, timedOut: r.timedOut,

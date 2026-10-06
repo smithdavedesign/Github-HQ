@@ -20,6 +20,8 @@ const config: KnipConfig = {
     'src/lib/approval-tokens.ts',
   ],
   ignoreExportsUsedInFile: true,
+  // System tools the factory sandbox spawns (factory/lib/sandbox.ts streams the clone in with tar).
+  ignoreBinaries: ['tar'],
   ignoreDependencies: [
     // tailwindcss and tw-animate-css are imported via CSS @import in globals.css.
     // Knip only parses JS/TS imports so it flags these as unused — they are not.
