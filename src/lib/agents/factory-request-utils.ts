@@ -4,7 +4,7 @@
  * worker. No DB client, no `server-only`: mcp/server.ts and factory/ run under plain tsx.
  */
 import type { agentRequests, portfolioEvents } from '../db/schema'
-import type { GstackSkill } from '../actions/nexus-utils'
+import type { GstackSkill } from '../skills/skill-policy'
 import type { AgentLifecycleStage } from './lifecycle-utils'
 
 export type RequestMode = 'fix' | 'report'

@@ -6,7 +6,9 @@ import { getMyAccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { RepoAdvisorSection } from '@/components/repos/repo-advisor-section'
 import { GstackSkillLauncher } from '@/components/repos/gstack-skill-launcher'
 import { SkillReportFindings } from '@/components/repos/skill-report-findings'
-import type { GstackSkill } from '@/lib/actions/nexus'
+import type { GstackSkill } from '@/lib/skills/skill-policy'
+import { auth } from '@/lib/auth'
+import { factoryAccess } from '@/lib/agents/factory-queue'
 import { db } from '@/lib/db'
 import { portfolioEvents } from '@/lib/db/schema'
 import { and, eq, inArray, desc } from 'drizzle-orm'
@@ -55,6 +57,11 @@ export default async function RepoDetailPage({ params }: Props) {
     getSkillRunHistory(repoId),
   ])
   if (!repo) notFound()
+
+  // Agent HQ (Phase 81): the factory takes requests from its owner, for allowlisted repos only.
+  const session = await auth()
+  const factory = session?.user?.id ? factoryAccess(session.user.id, repo.fullName) : { ok: false as const, reason: 'Sign in to queue agent work.' }
+  const factoryReason = factory.ok ? null : factory.reason
 
   const metrics = repo.metrics
   const stack = repo.techStack
@@ -396,7 +403,6 @@ export default async function RepoDetailPage({ params }: Props) {
         <TabsContent value="agent" className="pt-4 space-y-6">
           {/* gstack Skill Launcher */}
           {(() => {
-            const nexusConfigured = !!(process.env.NEXUS_API_URL && process.env.NEXUS_API_TOKEN)
             const openAlerts = repo.securityFindings?.filter(f => f.state === 'open' && ['critical','high'].includes(f.severity ?? '')) ?? []
             const failingBuild = repo.metrics?.buildStatus === 'failure'
             const repoActions = advisor?.actions?.filter(a => a.repoId === repoId) ?? []
@@ -421,9 +427,9 @@ export default async function RepoDetailPage({ params }: Props) {
               <GstackSkillLauncher
                 repoId={repoId}
                 repoName={repo.name}
-                repoHomepage={repo.homepage}
                 defaultObjectives={defaultObjectives}
-                nexusEnabled={nexusConfigured}
+                factoryEnabled={factory.ok}
+                factoryReason={factoryReason}
                 skillHistory={skillHistory}
               />
             )
@@ -432,7 +438,8 @@ export default async function RepoDetailPage({ params }: Props) {
           {/* AI Repo Advisory */}
           <RepoAdvisorSection
             actions={advisor?.actions?.filter(a => a.repoId === repoId) ?? []}
-            nexusEnabled={!!(process.env.NEXUS_API_URL && process.env.NEXUS_API_TOKEN)}
+            factoryEnabled={factory.ok}
+            factoryReason={factoryReason}
             generatedAt={advisor?.generatedAt}
             accuracyStats={accuracyStats}
           />
@@ -493,8 +500,9 @@ export default async function RepoDetailPage({ params }: Props) {
                           : 'bg-muted text-muted-foreground border-border/60'
 
                 const source = meta?.source as string | undefined
-                const isAutoDispatched = source === 'repohq-auto-dispatch'
-                const isMcpTriggered   = source === 'repohq-mcp-agent'
+                // Agent HQ request sources (Phase 81) and the older Nexus-era ones.
+                const isAutoDispatched = source === 'auto-dispatch' || source === 'repohq-auto-dispatch'
+                const isMcpTriggered   = source === 'mcp' || source === 'repohq-mcp-agent'
 
                 return (
                   <div key={event.id} className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-muted/10">
@@ -541,7 +549,7 @@ export default async function RepoDetailPage({ params }: Props) {
                           skillName={meta?.skillName as string | undefined}
                           repoId={repoId}
                           repoName={repo.name}
-                          nexusEnabled={!!(process.env.NEXUS_API_URL && process.env.NEXUS_API_TOKEN)}
+                          factoryEnabled={factory.ok}
                         />
                       )}
                     </div>

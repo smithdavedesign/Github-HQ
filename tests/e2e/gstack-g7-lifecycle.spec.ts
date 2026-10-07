@@ -3,14 +3,15 @@
  *
  * Covers:
  * - Repo Agent tab: 5 lifecycle sections, 9 skills, collapsible sections
- * - Skill type badges (Report only / Analyze + Fix / Creates PR)
+ * - Skill type badges (Report only / Creates PR)
  * - Findings expansion (no truncation — Show all)
  * - Actionable items from skill reports
  * - Active Agents card on dashboard
  * - get_skill_history MCP equivalent (via DB seeding)
  */
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { neon } from '@neondatabase/serverless'
+import { getFactoryRepo, NOT_FACTORY_OWNER } from './helpers/factory'
 
 const DB_URL = process.env.DATABASE_URL ?? ''
 
@@ -45,27 +46,23 @@ async function cleanup(repoId: number) {
 // ─── Skill launcher UI structure ──────────────────────────────────────────────
 
 test.describe('GstackSkillLauncher — lifecycle sections', () => {
-  // The launcher only renders when the server has Nexus configured; otherwise the Agent tab shows
-  // "gstack skills not available".
-  test.skip(!process.env.NEXUS_API_URL || !process.env.NEXUS_API_TOKEN, 'NEXUS_API_URL / NEXUS_API_TOKEN not set')
+  // The launcher renders for the factory owner on allowlisted repos only (Agent HQ, Phase 81);
+  // elsewhere the Agent tab explains why agent skills are off.
+  async function openFactoryRepoAgentTab(page: Page): Promise<boolean> {
+    const repo = await getFactoryRepo()
+    if (!repo) return false
+    await page.goto(`/repos/${repo.id}`)
+    await page.getByRole('tab', { name: /Agent/i }).click()
+    return true
+  }
 
   test('Agent tab shows gstack skills section', async ({ page }) => {
-    await page.goto('/repos')
-    const firstLink = page.locator('tbody tr').first().getByRole('link').first()
-    await firstLink.waitFor({ timeout: 8000 }).catch(() => {})
-    if (!await firstLink.isVisible()) { test.skip(true, 'No repos'); return }
-    await firstLink.click()
-    await page.getByRole('tab', { name: /Agent/i }).click()
+    if (!await openFactoryRepoAgentTab(page)) { test.skip(true, NOT_FACTORY_OWNER); return }
     await expect(page.getByText('GSTACK SKILLS')).toBeVisible({ timeout: 8000 })
   })
 
   test('Lifecycle phase labels are visible', async ({ page }) => {
-    await page.goto('/repos')
-    const firstLink = page.locator('tbody tr').first().getByRole('link').first()
-    await firstLink.waitFor({ timeout: 8000 }).catch(() => {})
-    if (!await firstLink.isVisible()) { test.skip(true, 'No repos'); return }
-    await firstLink.click()
-    await page.getByRole('tab', { name: /Agent/i }).click()
+    if (!await openFactoryRepoAgentTab(page)) { test.skip(true, NOT_FACTORY_OWNER); return }
     // At least some phase headers should be visible
     const phaseTexts = ['Understand', 'Build Quality', 'Ship', 'Monitor', 'Reflect']
     let foundPhase = false
@@ -76,25 +73,15 @@ test.describe('GstackSkillLauncher — lifecycle sections', () => {
     expect(foundPhase).toBe(true)
   })
 
-  test('/investigate skill is visible with Analyze + Fix badge', async ({ page }) => {
-    await page.goto('/repos')
-    const firstLink = page.locator('tbody tr').first().getByRole('link').first()
-    await firstLink.waitFor({ timeout: 8000 }).catch(() => {})
-    if (!await firstLink.isVisible()) { test.skip(true, 'No repos'); return }
-    await firstLink.click()
-    await page.getByRole('tab', { name: /Agent/i }).click()
+  test('/investigate skill is visible as a read-only report', async ({ page }) => {
+    if (!await openFactoryRepoAgentTab(page)) { test.skip(true, NOT_FACTORY_OWNER); return }
     // The Understand phase should be open by default
     await expect(page.getByText('/investigate', { exact: true }).first()).toBeVisible({ timeout: 8000 })
-    await expect(page.getByText('Analyze + Fix').first()).toBeVisible()
+    await expect(page.getByText('Report only').first()).toBeVisible()
   })
 
   test('/health skill shows Report only badge', async ({ page }) => {
-    await page.goto('/repos')
-    const firstLink = page.locator('tbody tr').first().getByRole('link').first()
-    await firstLink.waitFor({ timeout: 8000 }).catch(() => {})
-    if (!await firstLink.isVisible()) { test.skip(true, 'No repos'); return }
-    await firstLink.click()
-    await page.getByRole('tab', { name: /Agent/i }).click()
+    if (!await openFactoryRepoAgentTab(page)) { test.skip(true, NOT_FACTORY_OWNER); return }
     // Click Monitor phase to open it
     await page.getByText('Monitor', { exact: true }).click()
     await expect(page.getByText('/health', { exact: true }).first()).toBeVisible({ timeout: 3000 })
@@ -102,12 +89,7 @@ test.describe('GstackSkillLauncher — lifecycle sections', () => {
   })
 
   test('/ship skill shows Creates PR badge', async ({ page }) => {
-    await page.goto('/repos')
-    const firstLink = page.locator('tbody tr').first().getByRole('link').first()
-    await firstLink.waitFor({ timeout: 8000 }).catch(() => {})
-    if (!await firstLink.isVisible()) { test.skip(true, 'No repos'); return }
-    await firstLink.click()
-    await page.getByRole('tab', { name: /Agent/i }).click()
+    if (!await openFactoryRepoAgentTab(page)) { test.skip(true, NOT_FACTORY_OWNER); return }
     // Click Ship phase
     await page.getByRole('button', { name: 'Expand Ship skills' }).click()
     await expect(page.getByText('/ship', { exact: true }).first()).toBeVisible({ timeout: 3000 })

@@ -1,21 +1,24 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { queueAdvisorAction } from '@/lib/actions/nexus'
+import { queueAdvisorAction } from '@/lib/actions/agent-queue'
 import type { AdvisorAction } from '@/lib/ai/advisor'
 import { toast } from 'sonner'
-import { Bot, Loader2, CheckCircle, ExternalLink, GitPullRequest, AlertCircle, Clock, FileText, XCircle } from 'lucide-react'
+import { Bot, Loader2, CheckCircle, ExternalLink, GitPullRequest, AlertCircle, Clock, FileText, XCircle, ShieldCheck } from 'lucide-react'
 
-type Stage = 'idle' | 'launching' | 'queued' | 'preparing' | 'running' | 'pr_ready' | 'ci_failing' | 'needs_human' | 'awaiting_approval' | 'merged' | 'rejected' | 'report_ready' | 'failed' | 'timed_out'
+type Stage = 'idle' | 'launching' | 'queued' | 'preparing' | 'running' | 'pr_ready' | 'ci_failing' | 'needs_human' | 'awaiting_approval' | 'merged' | 'rejected' | 'report_ready' | 'verified' | 'failed' | 'timed_out'
 
-interface StatusPayload { status: Stage; stage: string; prUrl?: string; nexusUrl?: string }
+interface StatusPayload { status: Stage; stage: string; prUrl?: string | null; reason?: string | null; monitorUrl?: string }
 
-const TERMINAL: Stage[] = ['pr_ready', 'ci_failing', 'needs_human', 'awaiting_approval', 'merged', 'rejected', 'report_ready', 'failed', 'timed_out']
-const POLL_MS  = 5000
-const MAX_POLLS = 180  // 15 min
+const TERMINAL: Stage[] = ['pr_ready', 'ci_failing', 'needs_human', 'awaiting_approval', 'merged', 'rejected', 'report_ready', 'verified', 'failed', 'timed_out']
+const POLL_MS  = 10_000
+// The factory runs on the owner's Mac, so a request can wait hours for it (asleep, on battery).
+// Live polling stops after 15 min; the request itself keeps waiting and shows on the Agents page.
+const MAX_POLLS = 90
+const AGENTS_PAGE = '/agent-performance'
 
-function isAutoExecuteSafe(action: AdvisorAction): boolean {
-  // Substantial-effort tasks need human review — too risky to auto-execute
+/** Substantial-effort actions often exceed what the free model tiers can land in one change. */
+function isLikelyToLand(action: AdvisorAction): boolean {
   return action.effort !== 'substantial'
 }
 
@@ -23,7 +26,7 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
   const [stage, setStage]   = useState<Stage>('idle')
   const [label, setLabel]   = useState('')
   const [prUrl, setPrUrl]   = useState<string | null>(null)
-  const [nexusUrl, setNexus] = useState<string | null>(null)
+  const [reason, setReason] = useState<string | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const polls = useRef(0)
 
@@ -41,11 +44,11 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
         const data = await res.json() as StatusPayload & { taskId?: string | null }
         if (cancelled) return
         // Only hydrate if there's a real in-flight state (not idle/unknown)
-        if (!data.status || data.status === ('idle' as Stage)) return
+        if (!data.status || data.status === 'idle') return
         setStage(data.status)
         setLabel(data.stage ?? data.status)
-        if (data.prUrl)    setPrUrl(data.prUrl)
-        if (data.nexusUrl) setNexus(data.nexusUrl)
+        if (data.prUrl)  setPrUrl(data.prUrl)
+        if (data.reason) setReason(data.reason)
         // Resume polling if non-terminal and we have the taskId
         if (data.taskId && !TERMINAL.includes(data.status)) {
           poll(data.taskId)
@@ -61,9 +64,9 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
     intervalRef.current = setInterval(async () => {
       polls.current++
       if (polls.current > MAX_POLLS) {
+        // Not a timeout: the request is still queued for the factory. Stop polling only.
         clearInterval(intervalRef.current!)
-        setStage('timed_out')
-        setLabel('Timed out')
+        setLabel('Waiting for the factory — see Agents')
         return
       }
       try {
@@ -72,27 +75,22 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
         const data = await res.json() as StatusPayload
         setStage(data.status)
         setLabel(data.stage)
-        if (data.nexusUrl) setNexus(data.nexusUrl)
-        if (data.prUrl)    setPrUrl(data.prUrl)
+        if (data.prUrl)  setPrUrl(data.prUrl)
+        setReason(data.reason ?? null)
         if (TERMINAL.includes(data.status)) {
           clearInterval(intervalRef.current!)
           if (data.status === 'pr_ready' && data.prUrl) {
-            toast.success('PR created by agent!', {
+            toast.success('Draft PR opened by the factory', {
               action: { label: 'View PR →', onClick: () => window.open(data.prUrl!, '_blank') },
               duration: 10000,
             })
           } else if (data.status === 'failed') {
-            toast.error('Agent failed', {
-              description: 'Check the Agents page or Nexus for details',
-              action: data.nexusUrl
-                ? { label: 'Open Nexus →', onClick: () => window.open(data.nexusUrl!, '_blank') }
-                : undefined,
+            toast.error('Agent request failed', {
+              description: `${data.reason ?? 'The factory could not land it.'} The Agents page has the full trace.`,
             })
-          } else if (data.status === 'timed_out') {
-            toast.warning('Agent timed out after 15 min', {
-              action: data.nexusUrl
-                ? { label: 'Check Nexus →', onClick: () => window.open(data.nexusUrl!, '_blank') }
-                : undefined,
+          } else if (data.status === 'verified') {
+            toast.info('Verified — held at stage report', {
+              description: 'The change passed the judge. Promote owner-requested to "pr" in factory.config.json to open PRs.',
             })
           }
         }
@@ -101,34 +99,32 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
   }
 
   async function handleRun() {
-    if (!isAutoExecuteSafe(action)) {
-      toast.warning('High-risk task — opening Nexus for manual review', {
-        description: 'Substantial-effort tasks need human review before the agent runs.',
+    if (!isLikelyToLand(action)) {
+      toast.warning('Substantial task', {
+        description: 'The factory works at $0 on free models and keeps changes small — this one may not land in one PR.',
       })
-      // Still queue it, but without autoExecute so it waits in the review queue
     }
     setStage('launching')
     try {
       const result = await queueAdvisorAction(action)
-      setNexus(result.nexusUrl)
       setStage('queued')
-      setLabel('Queued')
+      setLabel('Queued — waiting for the factory')
       poll(result.taskId)
-      toast.info('Agent queued', { description: 'Running — results will appear in Agent History', duration: 3000 })
+      toast.info('Queued for the factory', { description: 'Follow it on the Agents page; results also appear in Agent History.', duration: 4000 })
     } catch (err) {
       setStage('idle')
-      toast.error(err instanceof Error ? err.message : 'Failed to start agent')
+      toast.error(err instanceof Error ? err.message : 'Failed to queue the agent')
     }
   }
 
   // ── Idle / Launching ───────────────────────────────────────────────────────
   if (stage === 'idle' || stage === 'launching') {
-    const risky = !isAutoExecuteSafe(action)
+    const risky = !isLikelyToLand(action)
     return (
       <button
         onClick={handleRun}
         disabled={stage === 'launching'}
-        title={risky ? 'Substantial task — will queue for manual Nexus review' : 'Run agent automatically'}
+        title={risky ? 'Substantial task — the factory will try it, but it may be too large for one judged change' : 'Queue for the factory (sandboxed, judged, draft PR)'}
         className={`flex items-center gap-1 h-6 px-2 text-[10px] font-medium rounded border transition-colors disabled:opacity-50 ${
           risky
             ? 'border-amber-300 text-amber-600 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400'
@@ -136,7 +132,7 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
         }`}
       >
         {stage === 'launching' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
-        {stage === 'launching' ? 'Starting…' : risky ? 'Queue →' : 'Run Agent'}
+        {stage === 'launching' ? 'Queuing…' : risky ? 'Queue →' : 'Run Agent'}
       </button>
     )
   }
@@ -151,12 +147,22 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
     )
   }
 
-  // ── Report Ready (findings-only skills: /health, /investigate) ────────────
+  // ── Report Ready (report skills: /health, /review, /investigate …) ─────────
   if (stage === 'report_ready') {
     return (
       <a href="#agent-history" onClick={e => { e.preventDefault(); document.getElementById('agent-history')?.scrollIntoView({ behavior: 'smooth' }) }}
         className="flex items-center gap-1 text-[10px] font-medium text-violet-600 hover:text-violet-700 cursor-pointer">
         <FileText className="w-3 h-3" />Report Ready
+      </a>
+    )
+  }
+
+  // ── Verified, held (owner-requested at stage `report`) ─────────────────────
+  if (stage === 'verified') {
+    return (
+      <a href={AGENTS_PAGE} title={reason ?? 'Verified by the judge; no PR at stage report'}
+        className="flex items-center gap-1 text-[10px] font-medium text-sky-600 hover:text-sky-700">
+        <ShieldCheck className="w-3 h-3" />Verified — held
       </a>
     )
   }
@@ -192,7 +198,7 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
     return (
       <a href={prUrl ?? '#'} target={prUrl ? '_blank' : '_self'} rel="noopener noreferrer"
         className="flex items-center gap-1 text-[10px] font-medium text-amber-600 hover:text-amber-700">
-        <AlertCircle className="w-3 h-3" />CI failing — fix queued
+        <AlertCircle className="w-3 h-3" />CI failing on the PR
       </a>
     )
   }
@@ -210,8 +216,7 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
   // ── Failed / Timed out ─────────────────────────────────────────────────────
   if (stage === 'failed' || stage === 'timed_out') {
     return (
-      <a href={nexusUrl ?? '/agent-performance'} target={nexusUrl ? '_blank' : '_self'}
-        rel="noopener noreferrer"
+      <a href={AGENTS_PAGE} title={reason ?? undefined}
         className="flex items-center gap-1 text-[10px] font-medium text-red-500 hover:text-red-600">
         <AlertCircle className="w-3 h-3" />
         {stage === 'failed' ? 'Failed →' : 'Timed out →'}
@@ -222,11 +227,12 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
   // ── In-progress ────────────────────────────────────────────────────────────
   const spinning = stage === 'preparing' || stage === 'running'
   return (
-    <span className="flex items-center gap-1 text-[10px] font-medium text-indigo-500">
+    <a href={AGENTS_PAGE} title={reason ?? 'Follow it on the Agents page'}
+      className="flex items-center gap-1 text-[10px] font-medium text-indigo-500 hover:text-indigo-600">
       {spinning
         ? <Loader2 className="w-3 h-3 animate-spin" />
         : <Clock className="w-3 h-3" />}
       {label || stage}
-    </span>
+    </a>
   )
 }

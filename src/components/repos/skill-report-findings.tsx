@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp, GitPullRequest, Search, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { queueGstackSkill } from '@/lib/actions/nexus'
-import type { GstackSkill } from '@/lib/actions/nexus-utils'
+import { queueGstackSkill } from '@/lib/actions/agent-queue'
+import type { GstackSkill } from '@/lib/skills/skill-policy'
+import { modeForSkill } from '@/lib/agents/factory-request-utils'
 import { getSuggestedActions, getDefaultActions, getActionableFindings, FINDINGS_PREVIEW_COUNT } from '@/lib/skills/suggest-actions'
 import { toast } from 'sonner'
 
@@ -13,16 +14,17 @@ interface SkillReportFindingsProps {
   skillName?: string
   repoId: number
   repoName: string
-  nexusEnabled: boolean
+  /** The factory takes requests for this repo (owner + allowlist). */
+  factoryEnabled: boolean
 }
 
 /**
  * Renders the full findings list from a skill report (no truncation) with:
  * - "Show all / Show less" toggle
- * - Actionable queue buttons based on finding type
+ * - Actionable queue buttons based on finding type (queued for the factory; the owner decides)
  * - Suggested next skill based on what the report found
  */
-export function SkillReportFindings({ findings, skillName, repoId, repoName, nexusEnabled }: SkillReportFindingsProps) {
+export function SkillReportFindings({ findings, skillName, repoId, repoName, factoryEnabled }: SkillReportFindingsProps) {
   const [showAll, setShowAll] = useState(false)
   const [queuingFor, setQueuingFor] = useState<string | null>(null)
 
@@ -36,7 +38,8 @@ export function SkillReportFindings({ findings, skillName, repoId, repoName, nex
   const defaultActions = inferredActions.length === 0
     ? getDefaultActions(skillName, findings, repoName)
     : []
-  const suggestedActions = inferredActions.length > 0 ? inferredActions : defaultActions
+  // Only skills the factory can run (no /canary: it needs a browser the sandbox doesn't have).
+  const suggestedActions = (inferredActions.length > 0 ? inferredActions : defaultActions).filter(a => modeForSkill(a.skill) !== null)
   const hasActionableFindings = getActionableFindings(findings).length > 0
 
   // Report ran but found nothing — give a clear "clean" signal rather than
@@ -56,7 +59,7 @@ export function SkillReportFindings({ findings, skillName, repoId, repoName, nex
     setQueuingFor(skill)
     try {
       await queueGstackSkill(repoId, skill, objective)
-      toast.success(`/${skill} queued`, { description: 'Track progress in Agent History.', duration: 4000 })
+      toast.success(`/${skill} queued for the factory`, { description: 'Follow it on the Agents page or in Agent History.', duration: 4000 })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to queue')
     } finally {
@@ -117,17 +120,17 @@ export function SkillReportFindings({ findings, skillName, repoId, repoName, nex
                   size="sm"
                   variant={action.skill === 'investigate' ? 'destructive' : 'default'}
                   className="h-7 px-3 text-[11px] shrink-0"
-                  disabled={queuingFor !== null || !nexusEnabled}
-                  title={!nexusEnabled ? 'Configure NEXUS_API_URL and NEXUS_API_TOKEN to queue agent tasks' : undefined}
-                  onClick={() => nexusEnabled && handleQueueAction(action.skill, action.objective)}
+                  disabled={queuingFor !== null || !factoryEnabled}
+                  title={!factoryEnabled ? 'The factory does not take requests for this repo' : undefined}
+                  onClick={() => factoryEnabled && handleQueueAction(action.skill, action.objective)}
                 >
                   {queuingFor === action.skill ? '…' : `Run /${action.skill}`}
                 </Button>
               </div>
             ))}
           </div>
-          {!nexusEnabled && (
-            <p className="text-[9px] text-muted-foreground">Configure Nexus to queue agent tasks from here.</p>
+          {!factoryEnabled && (
+            <p className="text-[9px] text-muted-foreground">The factory does not take requests for this repo (owner and allowlist only).</p>
           )}
         </div>
       )}

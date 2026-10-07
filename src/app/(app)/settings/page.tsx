@@ -297,7 +297,7 @@ export default async function SettingsPage() {
 
       <Separator />
 
-      {/* Agent Execution — Nexus connection */}
+      {/* Agent Execution — the factory (Agent HQ, roadmap Phase 81) */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -307,24 +307,29 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Connect to AI-DevOps Nexus to queue advisor actions for agent execution.
-            When configured, a &quot;Queue →&quot; button appears on each advisor action.
+            Run agent, the gstack launcher and auto-dispatch queue requests for the factory: it runs them
+            sandboxed on free models, judges every change and opens draft PRs you merge. Queue, schedules and
+            traces are on the <a href="/agent-performance" className="underline hover:text-foreground">Agents page</a>.
           </p>
           <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-2 text-xs font-mono">
-            <p className="text-muted-foreground font-sans text-xs font-medium mb-2">Add to your environment variables:</p>
-            <p><span className="text-indigo-400">NEXUS_API_URL</span>=https://your-nexus-instance.onrender.com</p>
-            <p><span className="text-indigo-400">NEXUS_API_TOKEN</span>=nexus-your-service-token</p>
+            <p className="text-muted-foreground font-sans text-xs font-medium mb-2">Environment variables (Vercel):</p>
+            <p><span className="text-indigo-400">FACTORY_USER_ID</span>=your RepoHQ user id (the factory&apos;s owner)</p>
+            <p><span className="text-indigo-400">REDIS_URL</span>=rediss://… (agent-hq-redis from render.yaml)</p>
           </div>
           <div className="flex items-center gap-2">
-            {process.env.NEXUS_API_URL ? (
+            {process.env.FACTORY_USER_ID === session.user.id ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-xs text-emerald-600 font-medium">Connected — {process.env.NEXUS_API_URL}</span>
+                <span className="text-xs text-emerald-600 font-medium">
+                  You own the factory{process.env.REDIS_URL ? ' — queue connected' : ' — no REDIS_URL: requests wait for the next scheduled cycle'}
+                </span>
               </>
             ) : (
               <>
                 <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />
-                <span className="text-xs text-muted-foreground">Not configured</span>
+                <span className="text-xs text-muted-foreground">
+                  {process.env.FACTORY_USER_ID ? 'The factory runs for another account' : 'Not configured (FACTORY_USER_ID)'}
+                </span>
               </>
             )}
           </div>

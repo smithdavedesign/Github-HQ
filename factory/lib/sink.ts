@@ -30,8 +30,6 @@ export function sinkDb(cfg: FactoryConfig): Db | null {
   return db(cfg)
 }
 
-export type SinkDb = Db
-
 export async function repoIdFor(d: Db, userId: string, fullName: string): Promise<number | null> {
   const repo = await d.query.repositories.findFirst({
     where: and(eq(schema.repositories.userId, userId), ilike(schema.repositories.fullName, fullName)),

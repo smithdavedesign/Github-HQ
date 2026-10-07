@@ -11,7 +11,7 @@
  * Any divergence between the two functions is a bug.
  */
 import { describe, it, expect } from 'vitest'
-import { isGstackSkill } from '../../src/lib/actions/nexus-utils'
+import { isGstackSkill } from '../../src/lib/skills/skill-policy'
 import { secretsEqual } from '../../src/lib/crypto-utils'
 import { getSuggestedActions } from '../../src/lib/skills/suggest-actions'
 
@@ -61,7 +61,7 @@ describe('isGstackSkill', () => {
     const raw: unknown = 'ship'
     if (isGstackSkill(raw)) {
       // TypeScript would error here if raw weren't narrowed to GstackSkill
-      const skill: import('../../src/lib/actions/nexus-utils').GstackSkill = raw
+      const skill: import('../../src/lib/skills/skill-policy').GstackSkill = raw
       expect(skill).toBe('ship')
     } else {
       expect.fail('should have been a valid skill')

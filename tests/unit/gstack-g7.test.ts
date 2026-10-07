@@ -4,8 +4,9 @@
  * No DB or network calls — all pure functions.
  */
 import { describe, it, expect } from 'vitest'
-import { SKILL_META } from '../../src/lib/actions/nexus-utils'
-import type { GstackSkill } from '../../src/lib/actions/nexus-utils'
+import { SKILL_META } from '../../src/lib/skills/skill-policy'
+import type { GstackSkill } from '../../src/lib/skills/skill-policy'
+import { modeForSkill } from '../../src/lib/agents/factory-request-utils'
 
 // ─── Skill taxonomy completeness ──────────────────────────────────────────────
 
@@ -49,15 +50,23 @@ describe('SKILL_META — taxonomy', () => {
     }
   })
 
-  it('/ship is the only PR-creating skill', () => {
+  // Agent HQ (roadmap Phase 81): the factory turns fix skills into one judged draft PR and runs
+  // every other skill as a read-only report (docs/agent-hq-migration-prd.md §8).
+  it('/ship, /qa and /document-release are the PR-creating skills', () => {
     const prSkills = ALL_SKILLS.filter(s => SKILL_META[s].type === 'pr')
-    expect(prSkills).toEqual(['ship'])
+    expect(prSkills.sort()).toEqual(['document-release', 'qa', 'ship'])
   })
 
-  it('fix-type skills make code changes', () => {
-    const fixSkills: GstackSkill[] = ['investigate', 'qa', 'document-release']
-    for (const skill of fixSkills) {
-      expect(SKILL_META[skill].type, `${skill} should be fix`).toBe('fix')
+  it('/investigate is a read-only report in the factory', () => {
+    expect(SKILL_META.investigate.type).toBe('report')
+    expect(modeForSkill('investigate')).toBe('report')
+  })
+
+  it('the launcher label agrees with what the factory does', () => {
+    for (const skill of ALL_SKILLS) {
+      const mode = modeForSkill(skill)
+      if (mode === null) continue // canary: not available in the factory
+      expect(SKILL_META[skill].type === 'pr', `${skill}: type ${SKILL_META[skill].type} vs mode ${mode}`).toBe(mode === 'fix')
     }
   })
 })
@@ -162,67 +171,19 @@ describe('skill phase groupings', () => {
   })
 })
 
-// ─── Nexus agent-runner skill routing ────────────────────────────────────────
+// ─── skill → factory routing (Phase 81) ──────────────────────────────────────
 
-// Mirrors resolveSkillCommand() mapping from AI-Took-My-Job/agent-runner.ts
-const EXPECTED_SCRIPT_MAP: Record<string, string> = {
-  investigate:        'gstack-investigate.sh',
-  review:             'gstack-review.sh',
-  'qa-only':          'gstack-qa-only.sh',
-  qa:                 'gstack-qa.sh',
-  ship:               'gstack-ship.sh',
-  'document-release': 'gstack-document-release.sh',
-  health:             'gstack-health.sh',
-  canary:             'gstack-canary.sh',
-  retro:              'gstack-retro.sh',
-}
-
-describe('skill → script routing', () => {
-  it('every GstackSkill has a corresponding script', () => {
+describe('skill → factory routing', () => {
+  it('every skill but canary has a factory mode', () => {
     for (const skill of ALL_SKILLS) {
-      expect(EXPECTED_SCRIPT_MAP, `${skill} missing from routing map`).toHaveProperty(skill)
+      if (skill === 'canary') expect(modeForSkill(skill)).toBeNull()
+      else expect(['fix', 'report']).toContain(modeForSkill(skill))
     }
   })
 
-  it('all script names follow the gstack-{skill}.sh naming pattern', () => {
-    for (const [skill, script] of Object.entries(EXPECTED_SCRIPT_MAP)) {
-      const expectedPattern = `gstack-${skill}.sh`
-      expect(script, `${skill} script name mismatch`).toBe(expectedPattern)
-    }
-  })
-
-  it('report-only skills route to separate scripts from write skills', () => {
-    const reportScripts = ALL_SKILLS
-      .filter(s => SKILL_META[s].type === 'report')
-      .map(s => EXPECTED_SCRIPT_MAP[s])
-    const writeScripts = ALL_SKILLS
-      .filter(s => SKILL_META[s].type !== 'report')
-      .map(s => EXPECTED_SCRIPT_MAP[s])
-    // No overlap
-    const overlap = reportScripts.filter(s => writeScripts.includes(s))
-    expect(overlap).toHaveLength(0)
-  })
-})
-
-// ─── canary visibility logic ──────────────────────────────────────────────────
-
-describe('canary visibility', () => {
-  function shouldShowCanary(homepage: string | null | undefined): boolean {
-    return !!(homepage && homepage.startsWith('http'))
-  }
-
-  it('shows canary when homepage is configured', () => {
-    expect(shouldShowCanary('https://open-travel-azure.vercel.app')).toBe(true)
-  })
-
-  it('hides canary when no homepage', () => {
-    expect(shouldShowCanary(null)).toBe(false)
-    expect(shouldShowCanary(undefined)).toBe(false)
-    expect(shouldShowCanary('')).toBe(false)
-  })
-
-  it('requires http/https scheme', () => {
-    expect(shouldShowCanary('ftp://example.com')).toBe(false)
+  it('canary says why it is unavailable', () => {
+    expect(SKILL_META.canary.typeLabel).toBe('Unavailable')
+    expect(SKILL_META.canary.description).toMatch(/sandbox/)
   })
 })
 

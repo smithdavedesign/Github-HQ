@@ -26,6 +26,10 @@ import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
 import * as schema from '../src/lib/db/schema.js'
 import { eq, and, desc, inArray, gt, count } from 'drizzle-orm'
+import { randomUUID } from 'node:crypto'
+import { OPEN_REQUEST_STATUSES, isAllowlisted, modeForSkill, newRequestRow, queuedEventValues } from '../src/lib/agents/factory-request-utils.js'
+import { requestJobOptions, withQueue } from '../factory/lib/queue.js'
+import factoryConfig from '../factory/factory.config.json'
 
 const DATABASE_URL = process.env.DATABASE_URL
 const USER_ID = process.env.MCP_USER_ID
@@ -120,12 +124,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     // ── G7: Full lifecycle gstack skill integration ───────────────────
     {
       name: 'queue_gstack_skill',
-      description: 'Trigger a gstack skill across the full repo lifecycle. Skills by phase — Understand: /investigate (debug+fix), /review (code review); Build Quality: /qa-only (report bugs), /qa (fix bugs); Ship: /ship (create PR), /document-release (update docs); Monitor: /health (code quality score), /canary (live app check); Reflect: /retro (weekly commit analysis). Returns a taskId to poll with get_active_work().',
+      description: 'Queue a gstack skill for the RepoHQ factory (the only agent executor; it runs sandboxed on free models and judges every change). Fix skills open a draft PR — /ship (implement), /qa (find + fix bugs), /document-release (docs only). Report skills come back as findings, no PR — /investigate (root cause), /review (code review), /qa-only (bugs with repro), /health (code health score), /retro (weekly commits). Only repos on the factory allowlist. Returns a taskId; follow it with get_active_work() or get_skill_findings().',
       inputSchema: {
         type: 'object',
         properties: {
           repo_name: { type: 'string', description: 'Repository name (e.g. "repohq")' },
-          skill:     { type: 'string', enum: ['investigate', 'review', 'qa-only', 'qa', 'ship', 'document-release', 'health', 'canary', 'retro'], description: 'gstack skill to run' },
+          skill:     { type: 'string', enum: ['investigate', 'review', 'qa-only', 'qa', 'ship', 'document-release', 'health', 'retro'], description: 'gstack skill to run' },
           objective: { type: 'string', description: 'What the agent should do — defaults to a sensible objective if omitted' },
         },
         required: ['repo_name', 'skill'],
@@ -874,79 +878,55 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const objective = rawObjective?.trim() || defaultObjective
 
-        // Lifecycle guard
+        // The factory (roadmap Phase 81) is the only executor: allowlisted repos, skills it can run.
+        const mode = modeForSkill(skill)
+        if (!mode) {
+          return { content: [{ type: 'text', text: `/${skill} isn't available in the factory (it needs a browser and live network access the sandbox doesn't have).` }] }
+        }
+        if (!isAllowlisted(repo.fullName, factoryConfig.repos)) {
+          return { content: [{ type: 'text', text: `${repo.fullName} is not on the factory allowlist (factory/factory.config.json "repos"), so no agent will run on it.` }] }
+        }
+
+        // Lifecycle guard: one open request or open agent PR per repo
         const lifecycle = await getOpenAgentPRMap()
         if (lifecycle.has(repo.id)) {
           const existing = lifecycle.get(repo.id)!
           return { content: [{ type: 'text', text: `⚠️ ${repo.name} already has an agent PR in flight (task ${existing.taskId}). Review or merge it first before launching another skill.` }] }
         }
-
-        // Queue via Nexus
-        const nexusUrl = process.env.NEXUS_API_URL?.replace(/\/$/, '')
-        const nexusToken = process.env.NEXUS_API_TOKEN
-        if (!nexusUrl || !nexusToken) {
-          return { content: [{ type: 'text', text: `Nexus not configured (NEXUS_API_URL / NEXUS_API_TOKEN missing). Cannot queue skill.` }] }
+        const openRequest = await db.query.agentRequests.findFirst({
+          where: and(eq(schema.agentRequests.userId, USER_ID!), eq(schema.agentRequests.repoId, repo.id), inArray(schema.agentRequests.status, [...OPEN_REQUEST_STATUSES])),
+          columns: { id: true, status: true },
+        })
+        if (openRequest) {
+          return { content: [{ type: 'text', text: `⚠️ ${repo.name} already has a ${openRequest.status} factory request (task ${openRequest.id}). Wait for it, or cancel it on the Agents page.` }] }
         }
 
-        const executionMode = skill === 'ship' ? 'fix' : 'investigate'
-        const riskTier = skill === 'ship' ? 'tier2' : 'tier3'
-
-        const res = await fetch(`${nexusUrl}/internal/agent-tasks`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${nexusToken}` },
-          body: JSON.stringify({
-            objective,
-            targetRepository: repo.fullName,
-            executionMode,
-            acceptanceCriteria: skill === 'investigate'
-              ? ['Root cause identified and documented', 'Findings listed with file paths', 'No new issues introduced']
-              : skill === 'health'
-                ? ['Code quality report produced', 'Critical issues listed', 'Health score computed']
-                : ['Changes implement the objective', 'Tests pass', 'PR created'],
-            contextNotes: JSON.stringify({
-              repoHQRepoId:   repo.id,
-              repoHQRepoName: repo.name,
-              skillName:      skill,
-              riskTier,
-              source:         'repohq-mcp-agent',
-              autoExecute:    true,
-            }),
-          }),
-        })
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({})) as { error?: { message?: string } }
-          return { content: [{ type: 'text', text: `Nexus error: ${err.error?.message ?? res.statusText}` }], isError: true }
+        const request = {
+          id: randomUUID(), userId: USER_ID!, repoId: repo.id, repo: repo.fullName, mode, skill,
+          objective, source: 'mcp' as const, now: new Date(),
         }
-
-        const data = await res.json() as { agentTaskId: string; status: string }
-
-        // Record in portfolio_events
-        await db.insert(schema.portfolioEvents).values({
-          userId:    USER_ID!,
-          repoId:    repo.id,
-          eventType: 'agent_task_queued',
-          title:     `gstack /${skill}: ${objective.slice(0, 80)}`,
-          description: objective,
-          metadata: {
-            taskId:    data.agentTaskId,
-            skillName: skill,
-            source:    'repohq-mcp-agent',
-            riskTier,
-            nexusUrl,
-          },
-        })
+        await db.batch([
+          db.insert(schema.agentRequests).values(newRequestRow(request)),
+          db.insert(schema.portfolioEvents).values(queuedEventValues(request, `gstack /${skill}: ${objective.slice(0, 80)}`)),
+        ])
+        // Instant pickup through the queue when REDIS_URL is set; otherwise the factory worker
+        // re-queues the row from Neon at its next cycle.
+        let viaQueue = false
+        if (process.env.REDIS_URL) {
+          viaQueue = await withQueue(process.env.REDIS_URL, q => q.add('request', { requestId: request.id }, requestJobOptions(request.id)))
+            .then(() => true, () => false)
+        }
 
         return {
           content: [{
             type: 'text',
             text: [
-              `✓ gstack /${skill} queued for **${repo.name}**`,
-              `Task ID: \`${data.agentTaskId}\``,
+              `✓ /${skill} queued for the factory on **${repo.name}** (${mode === 'fix' ? 'draft PR' : 'report, no PR'})`,
+              `Task ID: \`${request.id}\``,
               `Objective: ${objective}`,
-              ``,
-              `Track progress with: \`get_active_work("${repo.name}")\``,
-            ].join('\n'),
+              viaQueue ? '' : 'Note: REDIS_URL is not set here, so the factory picks this up at its next scheduled cycle.',
+              `Track progress with: \`get_active_work("${repo.name}")\`${mode === 'report' ? ` — then \`get_skill_findings("${repo.name}", "${skill}")\`` : ''}`,
+            ].filter(Boolean).join('\n'),
           }],
         }
       }

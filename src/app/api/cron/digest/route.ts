@@ -5,7 +5,7 @@ import { generateDigest } from '@/lib/ai/digest'
 import { generateAdvisor, getLatestAdvisor } from '@/lib/ai/advisor'
 import { generateCeoReport } from '@/lib/ai/ceo-report'
 import { verifyCronSecret } from '@/lib/cron-auth'
-import { autoDispatchAdvisorActions, queueAdvisorActionForUser } from '@/lib/agents/nexus-dispatch'
+import { autoDispatchAdvisorActions, queueSkillForUser } from '@/lib/agents/factory-queue'
 import { getAccuracyByImpactType } from '@/lib/actions/advisor-accuracy'
 import { distillAttempts } from '@/lib/agents/attempt-distiller'
 import { isNotNull, eq } from 'drizzle-orm'
@@ -95,12 +95,9 @@ export async function GET(request: Request) {
             columns: { id: true, name: true },
           }).then(r => r.filter((_, i) => i < 3)) // max 3 focused retros
           for (const repo of focusedRepos) {
-            await queueAdvisorActionForUser(user.id, {
-              repoId: repo.id, repoName: repo.name,
-              action: `Run weekly retro on ${repo.name}`,
-              impactType: 'health', effort: 'quick', estimatedImpact: 'Weekly insight',
-              reasoning: 'Auto-scheduled weekly retro',
-            } as never).catch(() => null) // non-fatal
+            // A report request (/retro): the factory reads the week's commits, opens no PR.
+            await queueSkillForUser(user.id, repo.id, 'retro', `Weekly retro for ${repo.name}: what shipped, what's risky, what's unfinished.`, 'auto-dispatch')
+              .catch(() => null) // non-fatal
           }
         } catch { /* non-fatal */ }
       }
@@ -112,12 +109,9 @@ export async function GET(request: Request) {
             columns: { id: true, name: true },
           }).then(r => r.filter((_, i) => i < 5)) // max 5 health checks
           for (const repo of focusedRepos) {
-            await queueAdvisorActionForUser(user.id, {
-              repoId: repo.id, repoName: repo.name,
-              action: `Run weekly health check on ${repo.name}`,
-              impactType: 'health', effort: 'quick', estimatedImpact: 'Health score',
-              reasoning: 'Auto-scheduled weekly health check',
-            } as never).catch(() => null) // non-fatal
+            // A report request (/health): findings and a 0–10 score, no PR.
+            await queueSkillForUser(user.id, repo.id, 'health', `Weekly health check for ${repo.name}.`, 'auto-dispatch')
+              .catch(() => null) // non-fatal
           }
         } catch { /* non-fatal */ }
       }

@@ -6,34 +6,18 @@
  * - Skill row expand/collapse on click
  * - Objective textarea interaction
  * - Run button state (disabled when empty, label change)
- * - Canary disabled state when no homepage
+ * - Canary unavailable in the factory (needs a browser the sandbox doesn't have)
  * - Type badge presence and correctness
  * - Aria accessibility attributes on interactive elements
+ *
+ * The launcher renders only for the factory owner on allowlisted repos (Agent HQ, Phase 81):
+ * see tests/e2e/helpers/factory.ts.
  */
 import { test, expect } from '@playwright/test'
-import { neon } from '@neondatabase/serverless'
-
-const DB_URL = process.env.DATABASE_URL ?? ''
-
-async function getFirstRepoWithHomepage() {
-  if (!DB_URL) return null
-  const sql = neon(DB_URL)
-  const [row] = await sql`SELECT id, name, homepage FROM repositories WHERE homepage IS NOT NULL AND homepage LIKE 'http%' LIMIT 1`
-  return row ? { id: row.id as number, name: row.name as string, homepage: row.homepage as string } : null
-}
-
-async function getFirstRepoWithoutHomepage() {
-  if (!DB_URL) return null
-  const sql = neon(DB_URL)
-  const [row] = await sql`SELECT id, name FROM repositories WHERE (homepage IS NULL OR homepage = '') LIMIT 1`
-  return row ? { id: row.id as number, name: row.name as string } : null
-}
+import { getFactoryRepo, getNonFactoryRepo, NOT_FACTORY_OWNER } from './helpers/factory'
 
 async function getFirstRepo() {
-  if (!DB_URL) return null
-  const sql = neon(DB_URL)
-  const [row] = await sql`SELECT id, name FROM repositories LIMIT 1`
-  return row ? { id: row.id as number, name: row.name as string } : null
+  return getFactoryRepo()
 }
 
 // ─── Phase section structure ──────────────────────────────────────────────────
@@ -41,7 +25,7 @@ async function getFirstRepo() {
 test.describe('GstackSkillLauncher — phase structure', () => {
   test('all 5 phase labels are present in the DOM', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -54,7 +38,7 @@ test.describe('GstackSkillLauncher — phase structure', () => {
 
   test('phase headers have aria-expanded attribute', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -66,7 +50,7 @@ test.describe('GstackSkillLauncher — phase structure', () => {
 
   test('Understand phase is open by default — /investigate visible without click', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -75,7 +59,7 @@ test.describe('GstackSkillLauncher — phase structure', () => {
 
   test('clicking a closed phase header opens it', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -88,7 +72,7 @@ test.describe('GstackSkillLauncher — phase structure', () => {
 
   test('clicking an open phase header closes it', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -104,7 +88,7 @@ test.describe('GstackSkillLauncher — phase structure', () => {
 test.describe('GstackSkillLauncher — skill rows', () => {
   test('clicking a skill row expands it and shows objective textarea', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -122,7 +106,7 @@ test.describe('GstackSkillLauncher — skill rows', () => {
 
   test('skill row has aria-expanded attribute', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -139,7 +123,7 @@ test.describe('GstackSkillLauncher — skill rows', () => {
 
   test('clicking expanded skill row collapses it', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -155,7 +139,7 @@ test.describe('GstackSkillLauncher — skill rows', () => {
 
   test('Run button is disabled when objective is empty', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -168,7 +152,7 @@ test.describe('GstackSkillLauncher — skill rows', () => {
 
   test('Run button is enabled when objective has content', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -183,19 +167,20 @@ test.describe('GstackSkillLauncher — skill rows', () => {
 // ─── Type badges ──────────────────────────────────────────────────────────────
 
 test.describe('GstackSkillLauncher — type badges', () => {
-  test('/investigate shows "Analyze + Fix" badge', async ({ page }) => {
+  test('/investigate shows "Report only" (a read-only factory report)', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
     await expect(page.getByText('Understand', { exact: true }).first()).toBeAttached({ timeout: 8000 })
-    await expect(page.getByText('Analyze + Fix').first()).toBeVisible()
+    await expect(page.getByText('Report only').first()).toBeVisible()
+    await expect(page.getByText('Analyze + Fix')).toHaveCount(0)
   })
 
   test('/health shows "Report only" badge when Monitor is open', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -206,7 +191,7 @@ test.describe('GstackSkillLauncher — type badges', () => {
 
   test('/ship shows "Creates PR" badge when Ship is open', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -217,7 +202,7 @@ test.describe('GstackSkillLauncher — type badges', () => {
 
   test('/review shows "Report only" badge', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -228,36 +213,19 @@ test.describe('GstackSkillLauncher — type badges', () => {
   })
 })
 
-// ─── Canary visibility ────────────────────────────────────────────────────────
+// ─── Canary (no factory equivalent) ───────────────────────────────────────────
 
 test.describe('GstackSkillLauncher — canary', () => {
-  test.skip(!DB_URL, 'DATABASE_URL not set')
-
-  test('canary shows "Needs deployment URL" when no homepage', async ({ page }) => {
-    const repo = await getFirstRepoWithoutHomepage()
-    if (!repo) { test.skip(true, 'No repos without homepage'); return }
+  test('canary is shown as unavailable in the factory', async ({ page }) => {
+    const repo = await getFirstRepo()
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-
-    // Open Monitor phase
-    await page.getByText('Monitor', { exact: true }).first().click()
-
-    await expect(page.getByText('Needs deployment URL')).toBeVisible({ timeout: 3000 })
-  })
-
-  test('canary shows as a launchable skill when homepage exists', async ({ page }) => {
-    const repo = await getFirstRepoWithHomepage()
-    if (!repo) { test.skip(true, 'No repos with homepage'); return }
-
-    await page.goto(`/repos/${repo.id}`)
-    await page.getByRole('tab', { name: /Agent/i }).click()
-
     await page.getByText('Monitor', { exact: true }).first().click()
 
     await expect(page.getByText('/canary')).toBeVisible({ timeout: 3000 })
-    // Should NOT show the disabled notice
-    await expect(page.getByText('Needs deployment URL')).not.toBeVisible()
+    await expect(page.getByText('Not available in the factory')).toBeVisible()
   })
 })
 
@@ -266,7 +234,7 @@ test.describe('GstackSkillLauncher — canary', () => {
 test.describe('GstackSkillLauncher — objective textarea', () => {
   test('default objective is pre-filled from server', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -279,7 +247,7 @@ test.describe('GstackSkillLauncher — objective textarea', () => {
 
   test('objective textarea is editable', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -292,7 +260,7 @@ test.describe('GstackSkillLauncher — objective textarea', () => {
 
   test('objective survives phase collapse and re-expand within session', async ({ page }) => {
     const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+    if (!repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
@@ -314,23 +282,17 @@ test.describe('GstackSkillLauncher — objective textarea', () => {
   })
 })
 
-// ─── Nexus disabled state ─────────────────────────────────────────────────────
+// ─── Factory disabled state ───────────────────────────────────────────────────
 
-test.describe('GstackSkillLauncher — nexus disabled', () => {
-  test('shows disabled notice when Nexus not configured', async ({ page }) => {
-    // This test passes when the env var is missing — the UI should show a notice
-    // In CI without Nexus env vars this tests the actual disabled state
-    const repo = await getFirstRepo()
-    if (!repo) { test.skip(true, 'No repos'); return }
+test.describe('GstackSkillLauncher — repo not on the factory allowlist', () => {
+  test('explains why agent skills are off', async ({ page }) => {
+    const repo = await getNonFactoryRepo()
+    if (!repo) { test.skip(true, `no non-allowlisted repo, or ${NOT_FACTORY_OWNER}`); return }
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
 
-    // Either the launcher is visible (Nexus configured) or the disabled notice is shown
-    const launcherVisible = await page.getByText('GSTACK SKILLS').isVisible({ timeout: 8000 }).catch(() => false)
-    const disabledVisible = await page.getByText('gstack skills not available').isVisible().catch(() => false)
-
-    // One or the other must be visible — this verifies the Agent tab renders
-    expect(launcherVisible || disabledVisible).toBe(true)
+    await expect(page.getByText(/Agent skills are not available/)).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText(/factory allowlist/).first()).toBeVisible()
   })
 })
