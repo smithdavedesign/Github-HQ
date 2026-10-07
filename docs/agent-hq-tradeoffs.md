@@ -154,7 +154,7 @@ Render ran Nexus's machine. Now you keep the worker's running:
 - the keychain entries (`repohq-factory-database-url`, `repohq-factory-redis-url`);
 - Docker Desktop: updates, restarts, its VM disk;
 - disk space: about 2 GB of sandbox images, plus logs and clones in `~/.repohq-factory`;
-- the local AI stack: Ollama and LiteLLM, which the weekly model scout restarts.
+- the local AI stack: Ollama and LiteLLM, which the weekly model scout restarts ([runbook](ai-stack/operations.md)).
 
 *What helps:* recommendation 3. Squeeze more reliability out of this Mac before buying another one.
 

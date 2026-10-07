@@ -196,7 +196,7 @@ This gives the PRD's "measure → learn → next mission" a concrete number: **%
 
 ## 6. Model scout (weekly, $0)
 
-Free slugs rotate (the ai-stack README already documents `cloud-or` 404s). A weekly local job:
+Free slugs rotate (the [ai-stack runbook](ai-stack/operations.md#troubleshooting) already documents `cloud-or` 404s). A weekly local job:
 
 1. `GET https://openrouter.ai/api/v1/models` → filter `pricing.prompt == "0" && pricing.completion == "0" && "tools" ∈ supported_parameters`.
 2. Run a **fixed eval suite** through Claude Code via LiteLLM, extending today's spike:
@@ -317,7 +317,7 @@ When the Mac stops being enough, or isolation matters more than RAM, the whole w
 AI DEV VM: OpenClaw · Chrome · LiteLLM · Ollama · MCP servers · git · Docker · 1Password CLI (AI-Agent vault) · project workspace
 ```
 
-The factory needs no change for that move. It already talks to everything through LiteLLM, keeps its state in one directory, and is deployed from a pinned checkout. On a 16 GB M1 Pro the VM can't also host local models, so this waits for more RAM or a separate box (ai-stack roadmap: hardware upgrade).
+The factory needs no change for that move. It already talks to everything through LiteLLM, keeps its state in one directory, and is deployed from a pinned checkout. On a 16 GB M1 Pro the VM can't also host local models, so this waits for more RAM or a separate box ([ai-stack roadmap](ai-stack/roadmap.md#later--conditional): hardware upgrade).
 
 ### Running locally on 16 GB
 
@@ -546,4 +546,4 @@ RepoHQ had two executors that wrote code: the factory, and Nexus (AI-Took-My-Job
 
 ---
 
-_Related: [architecture.md](architecture.md) · [agentic-full-flow.md](agentic-full-flow.md) · [roadmap.md](roadmap.md#autonomous-factory-roadmap) · local stack docs: [smithdavedesign/ai-stack-docs](https://github.com/smithdavedesign/ai-stack-docs)_
+_Related: [architecture.md](architecture.md) · [agentic-full-flow.md](agentic-full-flow.md) · [roadmap.md](roadmap.md#autonomous-factory-roadmap) · local stack docs: [ai-stack/](ai-stack/README.md)_

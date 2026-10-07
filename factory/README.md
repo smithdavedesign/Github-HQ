@@ -1,6 +1,6 @@
 # RepoHQ Factory
 
-The local self-improvement loop from [docs/autonomous-factory.md](../docs/autonomous-factory.md). It runs on this Mac against the local AI stack (`~/ai-stack`: Ollama → LiteLLM), finds verifiable problems in allowlisted repos, fixes them with the cheapest model that has proven it can, and opens **draft** PRs. Merging is always yours, and each merge or close teaches the router.
+The local self-improvement loop from [docs/autonomous-factory.md](../docs/autonomous-factory.md). It runs on this Mac against the local AI stack (`~/ai-stack`: Ollama → LiteLLM; documented in [docs/ai-stack](../docs/ai-stack/README.md)), finds verifiable problems in allowlisted repos, fixes them with the cheapest model that has proven it can, and opens **draft** PRs. Merging is always yours, and each merge or close teaches the router.
 
 It is also RepoHQ's only agent executor (roadmap Phase 81, [PRD](../docs/agent-hq-migration-prd.md)): "Run agent", the skill launcher, Monday auto-dispatch and the MCP `queue_gstack_skill` tool all become requests the worker runs (see "Worker").
 
