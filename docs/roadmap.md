@@ -21,7 +21,7 @@ The roadmap stopped being a list of phases. For the next 30 days everything serv
 
 **Frozen for the 30 days:** billing and multi-tenancy (Distribution D1–D5), valuation, simulation, goals and CEO-report work (collapsed under "More insights" on the dashboard), new agent frameworks or executors, always-on infrastructure, auto-merge (trust ladder levels 3+), and new roadmap phases.
 
-**The one infrastructure change allowed during the window: a RepoHQ GitHub App for factory PRs** (Phase 66). Factory PRs are opened with your own `gh` login, and GitHub never lets a PR's author approve it. So "require a review before merging" on `main` (Phase 65's L4 backstop) would block every factory PR or force an admin bypass. The opt-in fine-grained token doesn't help, since it's still you. A bot identity:
+**The one infrastructure change allowed during the window: a RepoHQ GitHub App for factory PRs** (Phase 66, shipped 2026-10-07). Factory PRs are opened with your own `gh` login, and GitHub never lets a PR's author approve it. So "require a review before merging" on `main` (Phase 65's L4 backstop) would block every factory PR or force an admin bypass. The opt-in fine-grained token doesn't help, since it's still you. A bot identity:
 - lets you approve factory PRs, so branch protection can be switched on;
 - separates bot work from yours in the history;
 - has GitHub enforce that the factory never approves its own work.
@@ -107,13 +107,13 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 - [x] `awaiting_approval` lifecycle stage in RepoHQ
 - [ ] Signed, single-use approval links. A first `/approve/[token]` page was removed in the 2026-10 audit: nothing issued tokens, approving changed nothing downstream, single-use lived in per-instance memory, and the secret fell back to a hard-coded string. Rebuild when the factory actually pauses for approval: a dedicated required secret, DB-backed single use, and the approval recorded where the factory reads it
 - [ ] OpenClaw → WhatsApp relay for approvals (needs owner sign-off before any outbound WhatsApp)
-- [ ] Branch protection on `main` for every allowlisted repo (L4 backstop). Owner action via GitHub settings. **Blocked by the Phase 66 GitHub App:** while factory PRs are authored by your login you can't approve them, so a required review would block them
+- [ ] Branch protection on `main` for every allowlisted repo (L4 backstop). Owner action via GitHub settings. **Unblocked 2026-10-07** by the Phase 66 GitHub App: once factory PRs are authored by `repohq-factory[bot]` you can approve them, so require 1 approving review
 
 ### Phase 66 — Agent Identity & Secrets
 - [x] Secrets read at runtime only: the OpenRouter key from `~/ai-stack/litellm/.env` (into an HTTP header), the RepoHQ DB URL from `.env.local`; never written to prompts, logs or new files
 - [x] `op run` support in the launchd wrapper (`FACTORY_OP_ENV_FILE`)
 - [ ] 1Password `AI-Agent` vault + service account (owner action), then move both secrets into it
-- [ ] **Next (prioritised 2026-10-07):** factory PRs authored by a dedicated RepoHQ GitHub App instead of the owner's `gh` login. Contents/PR/label write on the allowlisted repos only; installation token minted per run on the Mac; Copilot calls keep your login. Unblocks Phase 65 branch protection (an author can't approve their own PR), separates bot work from yours, and lets GitHub enforce "the factory never approves its own work". Supersedes the opt-in fine-grained token, which is still your identity. The Nexus App retires with Nexus (create a new one rather than repurposing it)
+- [x] **Done 2026-10-07:** the `repohq-factory` GitHub App (App ID 5227130) authors factory branches, commits, PRs and labels (`factory/lib/github-app.ts`; operator notes in factory/README.md). Owner action left: narrow the installation to the allowlisted repos. Original item: factory PRs authored by a dedicated RepoHQ GitHub App instead of the owner's `gh` login. Contents/PR/label write on the allowlisted repos only; installation token minted per run on the Mac; Copilot calls keep your login. Unblocks Phase 65 branch protection (an author can't approve their own PR), separates bot work from yours, and lets GitHub enforce "the factory never approves its own work". Supersedes the opt-in fine-grained token, which is still your identity. The Nexus App retires with Nexus (create a new one rather than repurposing it)
 
 ### Phase 68 — Redundant Free Model Pool ✅
 OpenRouter's 50 free requests/day can't be the single brain. M1 became a LiteLLM pool across independent free providers (design: [autonomous-factory.md §3.1](autonomous-factory.md#31-the-free-model-pool-no-single-quota-is-a-point-of-failure)).

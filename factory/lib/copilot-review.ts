@@ -3,7 +3,8 @@ import { summarizeCopilotReview, type PrReviewSummary } from './git'
 
 /** Ask GitHub Copilot code review for an independent review (the Reviewer role). */
 export async function requestCopilotReview(url: string): Promise<boolean> {
-  const r = await run('gh', ['pr', 'edit', url, '--add-reviewer', '@copilot'], { timeoutMs: 60_000 })
+  // Copilot review is a feature of your Copilot seat: request it with your own login, not the factory's app.
+  const r = await run('gh', ['pr', 'edit', url, '--add-reviewer', '@copilot'], { timeoutMs: 60_000, env: { GH_TOKEN: '' } })
   return r.code === 0
 }
 

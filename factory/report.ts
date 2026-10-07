@@ -87,8 +87,9 @@ async function openPrsAcross(cfg: FactoryConfig): Promise<OpenPr[] | null> {
   const owners = [...new Set(cfg.repos.map(r => r.split('/')[0]).filter(Boolean))]
   const out: OpenPr[] = []
   for (const owner of owners) {
+    // Your own login: the factory's GitHub App only sees the allowlisted repos, and this lists every repo you own.
     const r = await run('gh', ['search', 'prs', '--owner', owner, '--state', 'open', '--archived=false', '--limit', '100',
-      '--json', 'repository,number,title,url,author,createdAt,isDraft,labels'], { timeoutMs: 60_000 })
+      '--json', 'repository,number,title,url,author,createdAt,isDraft,labels'], { timeoutMs: 60_000, env: { GH_TOKEN: '' } })
     if (r.code !== 0) return null
     out.push(...parseGhSearchPrs(r.output))
   }
@@ -96,7 +97,7 @@ async function openPrsAcross(cfg: FactoryConfig): Promise<OpenPr[] | null> {
 }
 
 async function ownerLogin(): Promise<string | null> {
-  const r = await run('gh', ['api', 'user', '--jq', '.login'], { timeoutMs: 30_000 })
+  const r = await run('gh', ['api', 'user', '--jq', '.login'], { timeoutMs: 30_000, env: { GH_TOKEN: '' } })
   return r.code === 0 && r.output.trim() ? r.output.trim() : null
 }
 
