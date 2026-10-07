@@ -98,7 +98,7 @@ describe('Run agent from the skill launcher', () => {
     await cancelRequest(taskId)
     expect(await requestRow(DB, taskId)).toMatchObject({ status: 'cancelled', reason: 'Cancelled from the Agents page', resolved_at: expect.any(Date) })
     expect(await queue.getJob(taskId)).toBeUndefined()
-    await expect(cancelRequest(taskId)).rejects.toThrow('Only a queued request can be cancelled.')
+    await expect(cancelRequest(taskId)).rejects.toThrow('Only a queued or running request can be cancelled.')
     // The repo is free again.
     expect((await getRepoLifecycle(FLOW.ownerId, s.repoId)).stage).not.toBe('queued')
   })
