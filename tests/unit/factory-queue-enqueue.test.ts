@@ -70,7 +70,10 @@ describe('refusals write nothing', () => {
     lifecycle.mockResolvedValue({ stage: 'running', taskId: 't0', prUrl: null, queuedAt: new Date() })
     expect(await enqueueRequest(input())).toEqual({ ok: false, reason: `An agent task is already active for ${repo!.name} (stage: running). Wait for it to finish (or cancel it on the Agents page).` })
     lifecycle.mockResolvedValue({ stage: 'pr_ready', taskId: 't0', prUrl: 'https://github.com/o/r/pull/2', queuedAt: new Date() })
-    expect(await enqueueRequest(input())).toMatchObject({ ok: false, reason: expect.stringContaining('— PR: https://github.com/o/r/pull/2') })
+    expect(await enqueueRequest(input())).toEqual({ ok: false, reason: `${repo!.name} already has an open agent PR: https://github.com/o/r/pull/2. Merge or close it first.` })
+    // CI failing on it is no reason to start another one: the PR is still open.
+    lifecycle.mockResolvedValue({ stage: 'needs_human', taskId: 't0', prUrl: 'https://github.com/o/r/pull/2', queuedAt: new Date() })
+    expect(await enqueueRequest(input())).toEqual({ ok: false, reason: `${repo!.name} already has an open agent PR that fails CI: https://github.com/o/r/pull/2. Merge or close it first.` })
     expect(batches).toEqual([])
   })
 

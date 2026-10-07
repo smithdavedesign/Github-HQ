@@ -299,7 +299,7 @@ The factory (`factory/`) is the only thing that writes code ([PRD](docs/agent-hq
 
 **Auto-dispatch:** Enable in Settings → Agent Auto-Dispatch. Every Monday the advisor queues eligible actions for the factory. Controls: effort gate (quick / quick+medium / all), max tasks per week (1–10), skip security tasks, minimum accuracy threshold.
 
-**No auto-chaining and no CI-fix loop:** the factory runs the repo's checks before it opens a PR. A PR that still fails CI is flagged `needs human` with a notification; you decide what runs next.
+**No auto-chaining and no CI-fix loop:** the factory runs the repo's checks before it opens a PR. A PR that still fails CI is flagged `needs human` with a notification; you decide what runs next. Like any open agent PR, it blocks new requests on its repo until it's merged or closed.
 
 Neon is the source of truth and Redis only wakes the worker: a lost job is re-queued from the row. See [docs/autonomous-factory.md](docs/autonomous-factory.md) for the factory design and [factory/README.md](factory/README.md) for the operator guide. What the move off Nexus's Render workers costs (above all: requests wait for the Mac, and run on free models), and what to do about it, is in [docs/agent-hq-tradeoffs.md](docs/agent-hq-tradeoffs.md).
 

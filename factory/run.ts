@@ -40,7 +40,7 @@ import { nightShiftReadiness, readinessLine, scheduledPolicy } from './lib/night
 import { freeQuota, m1Deferred } from './lib/quota'
 import { readManagedModels } from './lib/litellm-config'
 import { buildPrompt, filterTasks, fitLocalContext, investigationPrompt, isEnvironmentFailure, ownerReportTask, ownerRequestedTask, parseFindings, parseReport, redCiTask, reportPrompt, tasksFromScan, type FactoryTask } from './lib/tasks'
-import { ownerOutcome, pendingOwnerRequests, recordOwnerBlocked, recordOwnerResult, type OwnerOutcome, type OwnerRequest } from './lib/owner-requests'
+import { ownerOutcome, pendingOwnerRequests, recordOwnerBlocked, recordOwnerResult, staleBotPrBlock, type OwnerOutcome, type OwnerRequest } from './lib/owner-requests'
 import { claimRequest, loadRequest, mirrorOwnerRequest, resolveRequest, resolvedFromRow, toOwnerRequest, type AgentRequestRow, type ResolvedRequest } from './lib/agent-requests'
 import { RESULT_PREFIX, Tracer, finishRun, formatProtocolLine, startRun, type RunResult } from './lib/trace'
 import { isAllowlisted, isOpenRequestStatus } from '../src/lib/agents/factory-request-utils'
@@ -207,12 +207,24 @@ async function main(): Promise<RunResult> {
   // Front door (ai-stack/repohq/CONTRACT.md): owner requests are explicit human intent, so their
   // repos jump the sensed queue (deduped, respecting --repo). One owner task per repo per cycle.
   // An Agent HQ request job runs exactly its own request and nothing else.
-  const ownerReqs = request
+  const pending = request
     ? [toOwnerRequest(request)]
     : pendingOwnerRequests(cfg.home, readLedger(cfg.home)).filter(r => !args.repo || r.repo === args.repo)
-  if (ownerReqs.length > 0) log(`owner requests: ${ownerReqs.map(r => `${r.repo.split('/')[1]}(${r.taskId})`).join(' · ')}`)
+  if (pending.length > 0) log(`owner requests: ${pending.map(r => `${r.repo.split('/')[1]}(${r.taskId})`).join(' · ')}`)
   // OpenClaw's JSONL requests show up in Agent HQ too (no-op for stored requests).
-  for (const r of ownerReqs) await mirrorOwnerRequest(cfg, r, new Date())
+  for (const r of pending) await mirrorOwnerRequest(cfg, r, new Date())
+  // Stale bot PRs stop new factory PRs on their repo (blockOnStaleBotPrs), requested ones included.
+  const opensPrs = cfg.capabilities['owner-requested'] === 'pr' && !args.dryRun
+  const ownerReqs: OwnerRequest[] = []
+  for (const r of pending) {
+    const reason = staleBotPrBlock(r, ranked.find(o => o.repo.toLowerCase() === r.repo.toLowerCase())?.blocked ?? null, opensPrs)
+    if (!reason) { ownerReqs.push(r); continue }
+    log(`${r.repo}: owner request ${r.taskId} rejected — ${reason}`)
+    if (!r.stored) recordOwnerBlocked(cfg.home, { ownerTaskId: r.taskId, repo: r.repo, runId, now: new Date(), reason })
+    await resolveOwner(cfg, r, r.repo, { status: 'rejected', reason })
+  }
+  // A request job whose request was refused runs nothing in its place.
+  if (request && ownerReqs.length === 0) return { status: 'ok', reason: 'request rejected: stale bot PRs on the repo' }
   const fullQueue = request && args.repo ? [args.repo] : [...new Set([...ownerReqs.map(r => r.repo), ...queue])]
   for (const repo of fullQueue) {
     if (prs >= cfg.maxPrsPerCycle || openedToday + prs >= cfg.maxPrsPerDay) break
@@ -381,7 +393,7 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     // close the loop so the front door reports it instead of re-queuing it every cycle.
     if (ownerReq && !tasks.some(t => t.ownerTaskId === ownerReq.taskId)) {
       const ownerKind = ownerReq.mode === 'report' ? 'owner-report' : 'owner-requested'
-      const reason = openKinds.has(`${repo}:${ownerKind}`) ? 'an owner-requested PR is already open for this repo — review or close it first' : 'blocked as a dead end (repeated failures) — try a more specific request'
+      const reason = openKinds.has(`${repo}:${ownerKind}`) ? 'an owner-requested PR is already open for this repo — review or close it first' : 'this request already failed twice (a dead end) — queue a more specific one'
       if (!ownerReq.stored) recordOwnerBlocked(cfg.home, { ownerTaskId: ownerReq.taskId, repo, runId, now, reason })
       await resolveOwner(cfg, ownerReq, repo, { status: 'rejected', reason })
     }

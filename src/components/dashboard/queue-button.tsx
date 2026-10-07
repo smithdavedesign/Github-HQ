@@ -16,6 +16,7 @@ const POLL_MS  = 10_000
 // Live polling stops after 15 min; the request itself keeps waiting and shows on the Agents page.
 const MAX_POLLS = 90
 const AGENTS_PAGE = '/agent-performance'
+const CI_FAILING_HINT = 'CI fails on the agent PR. Fix it on the branch or close the PR: new requests on this repo wait until it is merged or closed.'
 
 /** Substantial-effort actions often exceed what the free model tiers can land in one change. */
 function isLikelyToLand(action: AdvisorAction): boolean {
@@ -196,7 +197,7 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
   // ── CI Failing ─────────────────────────────────────────────────────────────
   if (stage === 'ci_failing') {
     return (
-      <a href={prUrl ?? '#'} target={prUrl ? '_blank' : '_self'} rel="noopener noreferrer"
+      <a href={prUrl ?? '#'} target={prUrl ? '_blank' : '_self'} rel="noopener noreferrer" title={CI_FAILING_HINT}
         className="flex items-center gap-1 text-[10px] font-medium text-amber-600 hover:text-amber-700">
         <AlertCircle className="w-3 h-3" />CI failing on the PR
       </a>
@@ -206,7 +207,7 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
   // ── Needs human / awaiting approval ───────────────────────────────────────
   if (stage === 'needs_human' || stage === 'awaiting_approval') {
     return (
-      <a href={prUrl ?? '#'} target={prUrl ? '_blank' : '_self'} rel="noopener noreferrer"
+      <a href={prUrl ?? '#'} target={prUrl ? '_blank' : '_self'} rel="noopener noreferrer" title={stage === 'needs_human' ? CI_FAILING_HINT : undefined}
         className="flex items-center gap-1 text-[10px] font-medium text-red-500 hover:text-red-600">
         <AlertCircle className="w-3 h-3" />{stage === 'awaiting_approval' ? 'Awaiting approval →' : 'Needs human review →'}
       </a>

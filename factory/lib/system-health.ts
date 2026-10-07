@@ -1,10 +1,11 @@
-import { snapshotFreshness, staleDataMessage } from '../../src/lib/health/freshness'
+import { factoryStaleMessage, snapshotFreshness, staleDataMessage, type FactoryActivity } from '../../src/lib/health/freshness'
 
 /**
  * System health for the morning report: the things that broke silently for weeks before the
  * 2026-10 audit (docs/audit-2026-10.md). Scheduled workflows GitHub disabled for inactivity,
- * RepoHQ data that stopped arriving, and Agent HQ requests that fail or sit waiting (roadmap
- * Phase 81 — they replaced the Nexus executor, whose failure rate this block used to watch).
+ * RepoHQ data that stopped arriving, Agent HQ requests that fail or sit waiting (roadmap
+ * Phase 81 — they replaced the Nexus executor, whose failure rate this block used to watch), and
+ * a factory that hasn't done any agent work in 36 h.
  * Pure; factory/report.ts gathers the inputs.
  */
 
@@ -25,6 +26,8 @@ export interface SystemHealth {
   latestSnapshot: string | null
   /** Agent HQ requests over the last 7 days; null = no sink. */
   requests: RequestHealth | null
+  /** When the factory last did agent work (the dashboard's idle banner); null/absent = no sink. */
+  factory?: FactoryActivity | null
 }
 
 /** From `gh workflow list --all --json name,state`. Manually disabled workflows are a choice, not an incident. */
@@ -60,6 +63,9 @@ export function systemHealthLines(h: SystemHealth, now: Date): { lines: string[]
   const fresh = snapshotFreshness(h.latestSnapshot, now)
   const stale = staleDataMessage(fresh)
   if (stale) { alarm = true; lines.push(`⚠ RepoHQ data: ${stale}`) } else if (fresh.latest) lines.push(`RepoHQ data: last health snapshot ${fresh.latest}.`)
+  // The report runs while cycles can't (Docker down, on battery), so this is where that shows up.
+  const idle = factoryStaleMessage(h.factory ?? null, now)
+  if (idle) { alarm = true; lines.push(`⚠ Factory: ${idle}`) }
   const r = h.requests
   const resolvedCount = r ? Object.values(r.resolved).reduce((n, x) => n + (x ?? 0), 0) : 0
   if (r && (resolvedCount > 0 || r.waiting > 0)) {

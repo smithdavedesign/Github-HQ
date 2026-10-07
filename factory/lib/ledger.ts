@@ -215,7 +215,16 @@ export function openPrAttempts(entries: LedgerEntry[]): AttemptEntry[] {
 }
 
 /**
- * `${repo}:${kind}` pairs that failed ≥ 2 times in the window with no verified fix since.
+ * What a dead end is counted against. Sensed work is one task per repo and kind that comes
+ * back every cycle, so its failures add up. An owner request is a task of its own: its
+ * failures say nothing about the next request of the same kind on that repo.
+ */
+export function deadEndKey(repo: string, kind: string, ownerTaskId?: string): string {
+  return ownerTaskId ? `${repo}:${kind}:${ownerTaskId}` : `${repo}:${kind}`
+}
+
+/**
+ * Tasks (`deadEndKey`) that failed ≥ 2 times in the window with no verified fix since.
  * M0 failures don't count: the local model failing is expected and escalates to M1,
  * so it must not lock the task out of the tiers that can actually do it.
  */
@@ -225,7 +234,7 @@ export function deadEnds(entries: LedgerEntry[], now: Date, windowDays = 14): Se
   const lastSuccess = new Map<string, number>()
   for (const a of attemptsOf(entries)) {
     const t = new Date(a.at).getTime()
-    const key = `${a.repo}:${a.kind}`
+    const key = deadEndKey(a.repo, a.kind, a.ownerTaskId)
     if (a.outcome === 'verified') lastSuccess.set(key, Math.max(lastSuccess.get(key) ?? 0, t))
     // M0 model failures escalate, so they don't count — but deterministic fixes (npm audit fix) never escalate.
     const countsAsDeadEnd = a.tier !== 'M0' || a.harness === 'npm-audit-fix' || a.harness === 'lint-autofix'

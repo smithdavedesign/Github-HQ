@@ -933,6 +933,13 @@ The factory becomes the only executor, and Nexus's queue infrastructure (Redis/B
 - [x] Agents page (`/agent-performance`): automation panel (worker, queue counts, schedulers, recent runs, owner controls: run now, pause/resume), requests (cancel, retry), per-request and per-run trace timeline; crons recorded as runs (`withAutomationRun`); 36 h factory-freshness banner
 - [x] Nexus removed from this repo: dispatch, webhook, task polling, `NEXUS_*` env, the Nexus card halves and the morning report's Nexus line (now Agent HQ request outcomes); docs updated
 - [x] Validation: unit tests for the guards, routes, actions and lifecycle; flow tests (`tests/flow`) that run the migration, the app, the real worker and the browser UI end to end on a throwaway Postgres + Redis (`npm run test:flow`, `npm run test:flow:e2e`, CI job `flow`)
+- [x] Review fixes (2026-10-07):
+  - Dead ends count per request, so two failed requests no longer block the next one on the repo for 14 days.
+  - The 36 h banner counts finished cycles and requests only, so Docker being down no longer silences it; the morning report raises it too.
+  - An agent PR failing CI (`needs_human`) blocks its repo until it's merged or closed.
+  - The weekly `/retro` and `/health` pick allowlisted repos (focused first), not the first rows.
+  - Requests honour `blockOnStaleBotPrs` when they would open a PR.
+  - The Agents page poll keeps one Redis connection per server instance.
 - [ ] Owner cutover: Redis from the Blueprint, `REDIS_URL` + `FACTORY_USER_ID` in Vercel, `npm run db:push` + `npm run factory:migrate`, `install-launchd.sh`, suspend then retire Nexus on Render, archive `AI-Took-My-Job` (runbook: PRD §11)
 - [ ] Promote `owner-requested` to `pr` once fix requests verify reliably (until then they end `verified`, no PR)
 - [ ] Trial week: keep Nexus suspended and fill in the scorecard ([trade-offs](agent-hq-tradeoffs.md#judging-the-trial-week)), then decide the next step from it

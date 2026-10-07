@@ -3,6 +3,7 @@
  * the factory freshness banner, and the panel's display helpers.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { FactoryActivity } from '@/lib/health/freshness'
 
 // The recorder writes through the app's db; capture its calls instead of touching Neon.
 const calls: { op: string; values?: Record<string, unknown> }[] = []
@@ -58,13 +59,24 @@ describe('withAutomationRun (cron routes on the automation timeline)', () => {
 
 describe('factoryStaleMessage', () => {
   const now = new Date('2026-10-07T12:00:00Z')
-  it('is quiet while the worker finished something recently, or before it ever ran', () => {
-    expect(factoryStaleMessage(new Date('2026-10-07T01:00:00Z'), now)).toBeNull()
+  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000)
+  const activity = (a: Partial<FactoryActivity>): FactoryActivity => ({ lastWorkAt: null, firstRunAt: hoursAgo(30 * 24), skipReason: null, ...a })
+  it('is quiet while the worker did agent work recently, or before it ever ran', () => {
+    expect(factoryStaleMessage(activity({ lastWorkAt: hoursAgo(11) }), now)).toBeNull()
+    expect(factoryStaleMessage({ lastWorkAt: null, firstRunAt: null, skipReason: null }, now)).toBeNull()
     expect(factoryStaleMessage(null, now)).toBeNull()
   })
-  it('flags a day and a half without a finished run', () => {
-    const last = new Date(now.getTime() - (FACTORY_STALE_AFTER_HOURS + 2) * 3_600_000)
-    expect(factoryStaleMessage(last, now)).toMatch(/hasn't finished a run in 38 hours.*install-launchd/)
+  it('flags a day and a half without a finished cycle or request', () => {
+    expect(factoryStaleMessage(activity({ lastWorkAt: hoursAgo(FACTORY_STALE_AFTER_HOURS + 2) }), now))
+      .toMatch(/hasn't finished a cycle or request in 38 hours.*install-launchd/)
+  })
+  it('says why when the runs since then were skipped (Docker down)', () => {
+    expect(factoryStaleMessage(activity({ lastWorkAt: hoursAgo(40), skipReason: 'Docker is not running (repo code never runs on the host)' }), now))
+      .toMatch(/40 hours.*recent runs were skipped: Docker is not running/)
+  })
+  it('counts from the first run when the worker has never done any work', () => {
+    expect(factoryStaleMessage(activity({ firstRunAt: hoursAgo(10) }), now)).toBeNull()
+    expect(factoryStaleMessage(activity({ firstRunAt: hoursAgo(50) }), now)).toMatch(/50 hours \(none since the worker was set up\)/)
   })
 })
 

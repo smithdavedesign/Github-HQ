@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { agentRequests, portfolioEvents } from '@/lib/db/schema'
 import { eq, and, inArray, desc } from 'drizzle-orm'
 import { getRepoLifecycle } from '@/lib/agents/lifecycle'
-import { LIFECYCLE_TIMEOUT_MS } from '@/lib/agents/lifecycle-utils'
+import { LIFECYCLE_TIMEOUT_MS, prFollowUpStage } from '@/lib/agents/lifecycle-utils'
 import { stageForRequest } from '@/lib/agents/factory-request-utils'
 
 export type AgentTaskStage =
@@ -83,16 +83,9 @@ export async function GET(request: Request) {
   const find = (t: string) => matching.find(e => e.eventType === t)
   const prUrlOf = (e: (typeof matching)[number] | undefined) => (e?.metadata as { prUrl?: string } | null)?.prUrl ?? null
 
-  const prMerged = find('agent_pr_merged')
-  if (prMerged) return ok('merged', { prUrl: prUrlOf(prMerged) })
-  const needsHuman = find('agent_needs_human')
-  if (needsHuman) return ok('needs_human', { prUrl: prUrlOf(needsHuman) })
-  const awaitingApproval = find('agent_awaiting_approval')
-  if (awaitingApproval) return ok('awaiting_approval', { prUrl: prUrlOf(awaitingApproval) })
-  const ciFailed = find('agent_ci_failed')
-  if (ciFailed) return ok('ci_failing', { prUrl: prUrlOf(ciFailed) })
-  const prRejected = find('agent_pr_rejected')
-  if (prRejected) return ok('rejected', { prUrl: prUrlOf(prRejected) })
+  // Newest first (the query's order), as prFollowUpStage expects.
+  const followUp = prFollowUpStage(matching)
+  if (followUp) return ok(followUp.stage, { prUrl: prUrlOf(followUp.event) })
 
   const skillReport = find('agent_skill_report')
   const reportPreview = () => {

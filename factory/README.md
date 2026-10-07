@@ -86,6 +86,15 @@ Setup (once): create the Key Value from `render.yaml` (Render → Blueprints), p
 
 Promotion still applies: requests use the `owner-requested` (fix) and `owner-report` (report) capabilities. `owner-requested` starts at `report`, so a fix request ends `verified` (judged, held, no PR) until you promote it to `pr`.
 
+What holds a request back. Each of these ends it `rejected`, with the reason:
+- An `owner-requested` PR already open on the repo.
+- Stale bot PRs on the repo, when the request would open a PR (below).
+- A dead end: that request failed twice already. Dead ends count per request, so one request's failures don't block the next on the same repo.
+
+RepoHQ itself refuses a new request while the repo has one open, or an agent PR that isn't merged or closed yet, CI failing or not.
+
+If no cycle or request finishes for 36 h, RepoHQ shows a banner and the morning report raises it. Skipped runs (Docker down, on battery, LiteLLM down) and the daily report don't count. The message gives the last skip reason.
+
 Compared with Nexus's always-on Render worker, this setup trades availability and model quality for one governed, sandboxed, $0 path. Requests wait for this Mac, they never escalate to paid models (they run under the $0 unattended policy), and the Mac's upkeep is now yours. The full assessment and what to do about each cost: [docs/agent-hq-tradeoffs.md](../docs/agent-hq-tradeoffs.md).
 
 Tests: `npm run test:flow` runs this worker end to end against a throwaway Postgres + Redis (`docker compose --profile flow up -d`), with `FACTORY_WORKER_CHILD` pointing it at a scripted stand-in for run.ts; see [tests/flow](../tests/flow/README.md). Never set `FACTORY_WORKER_CHILD` on the real worker.
@@ -154,7 +163,7 @@ At the start of each cycle the factory senses every allowlisted repo with read-o
 
 - **Red CI** becomes a `red-ci` task. At `report` it's a sandboxed root-cause investigation on the free pool. At `pr` it's a fix whose oracle is the failing workflow passing on the PR.
 - **Dependabot alerts** are reported (enable them per repo under Settings → Code security; all 9 repos had them off on 2026-10-06). Fixes go through `deps-audit`.
-- **Stale bot PRs** (autonomous branch, open 7+ days, nobody reviewed) are listed, and **that repo gets no new factory PRs until you review or close them** (`blockOnStaleBotPrs: false` turns this off).
+- **Stale bot PRs** (autonomous branch, open 7+ days, nobody reviewed) are listed, and **that repo gets no new factory PRs until you review or close them** (`blockOnStaleBotPrs: false` turns this off). That covers requests too. A fix request that would open a PR is rejected with the reason. Report requests, and fixes held at stage `report`, still run.
 
 ## KPIs and the job record
 

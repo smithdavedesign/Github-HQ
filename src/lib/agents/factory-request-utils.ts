@@ -126,6 +126,29 @@ export function isAllowlisted(repoFullName: string, allowlist: readonly string[]
   return allowlist.some(r => r.toLowerCase() === name)
 }
 
+export interface WeeklyRepoCandidate {
+  id: number
+  name: string
+  fullName: string
+  isFocused: boolean | null
+  isArchived: boolean | null
+  lastPush: Date | null
+}
+
+/**
+ * Repos for the weekly /retro and /health runs (digest cron). Only ones the factory takes work
+ * for: any other repo is refused at enqueue, so picking it would quietly run nothing. Focused
+ * repos come first, then the most recently pushed.
+ */
+export function pickWeeklySkillRepos<R extends WeeklyRepoCandidate>(repos: R[], allowlist: readonly string[], limit: number): R[] {
+  return repos
+    .filter(r => !r.isArchived && isAllowlisted(r.fullName, allowlist))
+    .sort((a, b) => Number(!!b.isFocused) - Number(!!a.isFocused)
+      || (b.lastPush?.getTime() ?? 0) - (a.lastPush?.getTime() ?? 0)
+      || a.name.localeCompare(b.name))
+    .slice(0, limit)
+}
+
 /**
  * Bullet findings from a factory report (the "## Findings" section; PRD §8), as the
  * string list the skill-report UI and the MCP findings tools read. Capped like the old webhook.

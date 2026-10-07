@@ -142,7 +142,7 @@ After the build, [agent-hq-tradeoffs.md](agent-hq-tradeoffs.md) weighs everythin
 |---|---|---|
 | `queued` | `queued` | yes |
 | `running` | `running` | yes |
-| `pr` | `pr_ready`, then `merged` / `rejected` / `ci_failing` / `needs_human` from PR events | while open |
+| `pr` | `pr_ready`, then `merged` / `rejected` / `ci_failing` / `needs_human` from PR events (a merge is final; otherwise the newest event wins) | until merged or closed, failing CI or not |
 | `verified` | `verified` (new: "Verified, held at stage report") | no |
 | `reported` | `report_ready` | no |
 | `rejected`, `failed` | `failed`, with the judge's reason | no |
@@ -154,6 +154,11 @@ The factory writes the same `portfolio_events` RepoHQ already consumes, each key
 - `agent_execution_failed` feeds the feed and stats.
 
 The 15-minute lifecycle timeout applies only to legacy Nexus tasks.
+
+The factory holds a request back for three more reasons, each a `rejected` row with the reason:
+- An `owner-requested` PR of its own is already open on the repo.
+- Stale bot PRs on the repo (`blockOnStaleBotPrs`), when the request would open a PR (a fix with `owner-requested` at `pr`). Reports, and fixes held at `report`, still run.
+- A dead end: this request already failed twice. Dead ends count per request, so other requests on the repo still run.
 
 ## 8. Skills to modes
 
@@ -183,7 +188,9 @@ The 15-minute lifecycle timeout applies only to legacy Nexus tasks.
 3. **Trace:** click any request or run to see its timeline.
    - Steps: claimed → sense → clone → sandbox install → baseline checks → task → tier attempt (model, requests, tokens) → judge verdict → adversary verdict → PR / findings → resolved, each with status, duration and detail.
    - The `agent_jobs` attempt rows sit inline. The active job shows live BullMQ progress.
-4. **Freshness:** the dashboard banner and the morning report also flag "factory worker hasn't completed a job in 36 h" (audit §9.4).
+4. **Freshness:** the dashboard banner and the morning report also flag "the factory hasn't finished a cycle or request in 36 h" (audit §9.4). Skipped runs (Docker down, on battery) and the daily report don't count, and the message gives the last skip reason.
+
+The panel's poll reads Redis over one connection per server instance (`withSharedQueue`), dropped and reopened after any failure. Writes (a request's job, Run now, Pause, Cancel) open a fresh one each (`withQueue`).
 
 The factory controls show only for the owner (`session.user.id === FACTORY_USER_ID`). A repo's "Run agent" is enabled only when it's on the allowlist; otherwise the button explains why.
 
@@ -212,7 +219,7 @@ The factory controls show only for the owner (`session.user.id === FACTORY_USER_
 1. In Vercel, delete `NEXUS_API_URL`, `NEXUS_API_TOKEN` and `NEXUS_WEBHOOK_SECRET`.
 2. In Render, **suspend** `ai-devops-nexus-worker` and `ai-devops-nexus-web`.
 3. Tasks still in flight on Nexus at cutover are abandoned; nothing waits on them.
-4. Close the stale Nexus bot PRs (audit §8). Until they are reviewed or closed, the factory opens no new PRs on those repos (`blockOnStaleBotPrs`).
+4. Close the stale Nexus bot PRs (audit §8). Until they are reviewed or closed, the factory opens no new PRs on those repos (`blockOnStaleBotPrs`). That includes fix requests once `owner-requested` is at `pr`: they are rejected with the reason.
 
 **5. Verify**
 

@@ -1,5 +1,6 @@
 import type { ModelTier, TaskTier } from '../../src/lib/agents/model-router'
 import { errorExcerpt, filesFromEslintOutput, filesFromTscOutput, type AuditCounts, type CheckName, type CheckResult, type CheckSpec, type PackageJson } from './checks'
+import { deadEndKey } from './ledger'
 
 /**
  * Turn scan results into concrete, verifiable tasks. Only work with an
@@ -256,9 +257,9 @@ export function parseFindings(text: string): string | null {
   return /^#+\s*Proposed fix/im.test(report) && report.length >= 80 ? report.slice(0, 3000) : null
 }
 
-/** Drop tasks with an open factory PR or that keep failing (dead ends). */
+/** Drop tasks with an open factory PR or that keep failing (dead ends, keyed by `deadEndKey`). */
 export function filterTasks(tasks: FactoryTask[], repo: string, openKinds: Set<string>, deadEnds: Set<string>): FactoryTask[] {
-  return tasks.filter(t => !openKinds.has(`${repo}:${t.kind}`) && !deadEnds.has(`${repo}:${t.kind}`))
+  return tasks.filter(t => !openKinds.has(`${repo}:${t.kind}`) && !deadEnds.has(deadEndKey(repo, t.kind, t.ownerTaskId)))
 }
 
 const RULES = [

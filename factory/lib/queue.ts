@@ -89,24 +89,67 @@ export function workerConnection(url: string): ConnectionOptions {
   return { ...redisOptionsFromUrl(url), maxRetriesPerRequest: null }
 }
 
-/**
- * Open the queue, run `fn`, close it. Short-lived producers connect per call: a handful of
- * requests a day doesn't justify a pooled connection that a frozen serverless function would
- * leave half-open. Rejects after `timeoutMs` so a slow Redis can't hold up a page or an action.
- */
-export async function withQueue<T>(url: string, fn: (queue: Queue) => Promise<T>, timeoutMs = 8_000): Promise<T> {
+function openQueue(url: string): Queue {
   const queue = new Queue(QUEUE_NAME, { connection: producerConnection(url), prefix: QUEUE_PREFIX })
-  // Connection errors surface through the awaited call below; don't let them become unhandled events.
+  // Connection errors surface through the awaited calls; don't let them become unhandled events.
   queue.on('error', () => {})
+  return queue
+}
+
+/** Rejects after `timeoutMs` so a slow Redis can't hold up a page or an action. */
+async function withinMs<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
-      fn(queue),
+      work,
       new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`Redis did not answer within ${timeoutMs} ms`)), timeoutMs) }),
     ])
   } finally {
     if (timer) clearTimeout(timer)
+  }
+}
+
+/**
+ * Open the queue, run `fn`, close it. Writes (a request's job, Run now, pause, cancel) and
+ * short-lived processes (the MCP server's calls, scripts) connect per call: a fresh connection is
+ * the surer way to land a job, and closing it lets a script exit.
+ */
+export async function withQueue<T>(url: string, fn: (queue: Queue) => Promise<T>, timeoutMs = 8_000): Promise<T> {
+  const queue = openQueue(url)
+  try {
+    return await withinMs(fn(queue), timeoutMs)
+  } finally {
     await queue.close().catch(() => {})
+  }
+}
+
+/** One queue per Redis URL per process, on globalThis so Next.js dev reloads reuse it too. */
+function sharedQueues(): Map<string, Queue> {
+  const g = globalThis as { __agentHqSharedQueues?: Map<string, Queue> }
+  g.__agentHqSharedQueues ??= new Map()
+  return g.__agentHqSharedQueues
+}
+
+/**
+ * Like `withQueue`, but on a connection the process keeps: for reads a page repeats, like the
+ * Agents page's poll (every 15 s per open tab; a new connection would cost a TLS handshake to
+ * Render on every poll). Opened on first use, never at import (`next build` has no Redis). A call
+ * that fails or times out drops it, since it may be half-open after the function was frozen or
+ * still waiting on a Redis that's down, and the next call connects afresh.
+ */
+export async function withSharedQueue<T>(url: string, fn: (queue: Queue) => Promise<T>, timeoutMs = 8_000): Promise<T> {
+  const queues = sharedQueues()
+  let queue = queues.get(url)
+  if (!queue) {
+    queue = openQueue(url)
+    queues.set(url, queue)
+  }
+  try {
+    return await withinMs(fn(queue), timeoutMs)
+  } catch (err) {
+    if (queues.get(url) === queue) queues.delete(url)
+    await queue.close().catch(() => {})
+    throw err
   }
 }
 

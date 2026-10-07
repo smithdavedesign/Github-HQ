@@ -9,25 +9,25 @@ import { latestSnapshotDate } from '@/lib/health/history'
 import { factoryStaleMessage, snapshotFreshness, staleDataMessage } from '@/lib/health/freshness'
 import { StaleDataBanner } from '@/components/layout/stale-data-banner'
 import { factoryAccess } from '@/lib/agents/factory-queue'
-import { latestFactoryRunFinishedAt } from '@/lib/agents/agent-hq-data'
+import { factoryActivity } from '@/lib/agents/factory-activity'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
   const isFactoryOwner = factoryAccess(session.user.id).ok
-  const [user, latestSnapshot, lastFactoryRun] = await Promise.all([
+  const [user, latestSnapshot, factory] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, session.user.id),
       columns: { lastSyncedAt: true },
     }),
     latestSnapshotDate(session.user.id).catch(() => null),
-    isFactoryOwner ? latestFactoryRunFinishedAt(session.user.id).catch(() => null) : Promise.resolve(null),
+    isFactoryOwner ? factoryActivity(db, session.user.id).catch(() => null) : Promise.resolve(null),
   ])
   // Request time is the point: the banner says how old the data is right now.
   const now = new Date()
   const staleMessage = staleDataMessage(snapshotFreshness(latestSnapshot, now))
-  const factoryMessage = factoryStaleMessage(lastFactoryRun, now)
+  const factoryMessage = factoryStaleMessage(factory, now)
 
   return (
     <div className="flex h-screen overflow-hidden">

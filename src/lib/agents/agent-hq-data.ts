@@ -8,10 +8,10 @@ import 'server-only'
  * Redis is optional here. Without REDIS_URL, or when it doesn't answer, the panel still shows
  * everything Neon knows and says why the live parts are missing.
  */
-import { and, desc, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { agentJobs, agentRequests, automationRuns, repositories, traceEvents } from '@/lib/db/schema'
-import { WORKER_STATUS_KEY, parseWorkerStatus, withQueue, type WorkerStatus } from '../../../factory/lib/queue'
+import { WORKER_STATUS_KEY, parseWorkerStatus, withSharedQueue, type WorkerStatus } from '../../../factory/lib/queue'
 
 export interface QueueSnapshot {
   waiting: number
@@ -100,7 +100,8 @@ async function liveQueue(): Promise<Pick<AgentHqOverview, 'redis' | 'redisError'
   const url = process.env.REDIS_URL
   if (!url) return { redis: 'not-configured', redisError: null, worker: null, queue: null, activeJob: null, schedulers: [] }
   try {
-    return await withQueue(url, async q => {
+    // The panel polls this every 15 s per open tab: one kept connection, not one per poll.
+    return await withSharedQueue(url, async q => {
       const [counts, paused, schedulers, active, client] = await Promise.all([
         q.getJobCounts('waiting', 'active', 'delayed', 'prioritized', 'completed', 'failed'),
         q.isPaused(),
@@ -150,16 +151,6 @@ export async function getAgentHqOverview(userId: string): Promise<AgentHqOvervie
       attempts: r.attempts, createdAt: r.createdAt.toISOString(), claimedAt: iso(r.claimedAt), resolvedAt: iso(r.resolvedAt),
     })),
   }
-}
-
-/** When the factory last finished any run (cycle, request, report, scout) — the freshness banner's input. */
-export async function latestFactoryRunFinishedAt(userId: string): Promise<Date | null> {
-  const [row] = await db.select({ finishedAt: automationRuns.finishedAt })
-    .from(automationRuns)
-    .where(and(eq(automationRuns.userId, userId), isNotNull(automationRuns.finishedAt)))
-    .orderBy(desc(automationRuns.finishedAt))
-    .limit(1)
-  return row?.finishedAt ?? null
 }
 
 export interface TraceStep {

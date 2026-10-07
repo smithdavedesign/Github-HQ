@@ -14,6 +14,7 @@ const { queueAdvisorAction, queueGstackSkill } = await import('@/lib/actions/age
 const { cancelRequest, retryRequest, runNow, setQueuePaused } = await import('@/lib/actions/automation')
 const { getAgentHqOverview, getTrace } = await import('@/lib/agents/agent-hq-data')
 const { getRepoLifecycle } = await import('@/lib/agents/lifecycle')
+const { weeklySkillReposFor } = await import('@/lib/agents/factory-queue')
 const taskStatus = await import('@/app/api/agent-task-status/route')
 const agentHqRoute = await import('@/app/api/agent-hq/route')
 const traceRoute = await import('@/app/api/agent-hq/trace/route')
@@ -49,6 +50,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await queue?.close()
+  // The connection the Agents page data keeps (factory/lib/queue.ts withSharedQueue).
+  const kept = (globalThis as { __agentHqSharedQueues?: Map<string, Queue> }).__agentHqSharedQueues
+  for (const q of kept?.values() ?? []) await q.close()
   await closePools()
 })
 
@@ -145,6 +149,39 @@ describe('Run agent on an advisor action', () => {
   })
 })
 
+describe('an open agent PR blocks its repo until it is merged or closed', () => {
+  const PR = 'https://github.com/flow/pr/pull/7'
+  let taskId: string
+  /** A PR event for the request, `minutes` after it opened (the sync crons write these). */
+  const prEvent = (type: string, minutes: number) => q(DB,
+    `INSERT INTO portfolio_events (user_id, repo_id, event_type, title, metadata, occurred_at) VALUES ($1, $2, $3, $3, $4, $5)`,
+    [FLOW.ownerId, s.repoId, type, JSON.stringify({ taskId, prUrl: PR }), new Date(Date.now() + minutes * 60_000).toISOString()])
+
+  it('a PR is open: the repo is blocked', async () => {
+    taskId = (await queueGstackSkill(s.repoId, 'ship', objective('Fix the failing test', 'pr'))).taskId
+    await q(DB, `UPDATE agent_requests SET status = 'pr', pr_url = $2, resolved_at = now() WHERE id = $1`, [taskId, PR])
+    await prEvent('agent_pr_created', 1)
+    expect((await getRepoLifecycle(FLOW.ownerId, s.repoId)).stage).toBe('pr_ready')
+    await expect(queueGstackSkill(s.repoId, 'review', 'Review it')).rejects.toThrow(`already has an open agent PR: ${PR}`)
+  })
+
+  it('CI fails on it and it is handed to the owner: still blocked', async () => {
+    await prEvent('agent_ci_failed', 2)
+    await prEvent('agent_needs_human', 3)
+    expect(await getRepoLifecycle(FLOW.ownerId, s.repoId)).toMatchObject({ stage: 'needs_human', prUrl: PR })
+    expect((await status(`taskId=${taskId}`)).body).toMatchObject({ status: 'needs_human', prUrl: PR })
+    await expect(queueGstackSkill(s.repoId, 'review', 'Review it')).rejects.toThrow(`already has an open agent PR that fails CI: ${PR}`)
+  })
+
+  it('the owner closes it: the repo is free again', async () => {
+    await prEvent('agent_pr_rejected', 4)
+    expect((await getRepoLifecycle(FLOW.ownerId, s.repoId)).stage).toBe('rejected')
+    const r = await queueGstackSkill(s.repoId, 'review', 'Review it')
+    expect(r.status).toBe('queued')
+    await cancelOpen()
+  })
+})
+
 describe('who may queue work', () => {
   it('only allowlisted repos', async () => {
     await expect(queueGstackSkill(s.outsideRepoId, 'health', 'x')).rejects.toThrow(`${FLOW.outsideRepo} is not on the factory allowlist`)
@@ -166,6 +203,11 @@ describe('who may queue work', () => {
     }
     // Nothing was written by any refusal.
     expect(await q(DB, `SELECT 1 FROM agent_requests WHERE status IN ('queued', 'running')`)).toHaveLength(0)
+  })
+
+  it('the weekly /retro and /health runs pick only repos the factory takes work for', async () => {
+    expect((await weeklySkillReposFor(FLOW.ownerId, 5)).map(r => r.id)).toEqual([s.repoId])
+    expect(await weeklySkillReposFor(FLOW.otherUserId, 5)).toEqual([])
   })
 })
 
@@ -219,6 +261,18 @@ describe('owner controls and the Agents page data', () => {
     expect(await getTrace(FLOW.otherUserId, { requestId: r.taskId })).toBeNull()
     expect(await getTrace(FLOW.ownerId, { requestId: r.taskId })).toEqual({ runs: [], steps: [], attempts: [] })
     await cancelOpen()
+  })
+
+  it('polling the overview keeps one Redis connection instead of opening one per poll', async () => {
+    // Redis counts every connection it accepts: five polls must not be five handshakes.
+    const accepted = async () => {
+      const client = await queue.client as unknown as { info(section: string): Promise<string> }
+      return Number(/total_connections_received:(\d+)/.exec(await client.info('stats'))![1])
+    }
+    await getAgentHqOverview(FLOW.ownerId)
+    const before = await accepted()
+    for (let i = 0; i < 5; i++) expect((await getAgentHqOverview(FLOW.ownerId)).redis).toBe('connected')
+    expect(await accepted()).toBe(before)
   })
 
   it('without Redis the overview degrades to what Neon knows', async () => {

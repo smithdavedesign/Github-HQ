@@ -78,8 +78,9 @@ Asleep, lid closed, on battery, Docker Desktop stopped, logged out or travelling
 worker is a LaunchAgent in your login session (`gui/<uid>`), so after a reboot it starts only when
 you log in. Requests wait rather than fail. They stay `queued` with the reason shown on the Agents
 page, and they're never re-routed to a paid model. But "Run agent" is no longer near-instant the way
-it was on Render. The freshness banner (no finished run in 36 h) and the morning report (a request
-waiting 48 h) flag a worker that has gone quiet.
+it was on Render. The freshness banner and the morning report flag a worker that has gone quiet:
+no cycle or request finished in 36 h (skipped runs, such as Docker being down, don't count), or a
+request waiting 48 h.
 
 What already makes the Mac behave like infrastructure:
 - launchd restarts a worker that dies (`KeepAlive`).
@@ -143,7 +144,7 @@ not PRs.
 | Lost | Why | Instead |
 |---|---|---|
 | Automatic follow-on skills (`suggestedNextSkill` auto-chain) | Spawning depth stays 1 ([autonomous-factory.md](autonomous-factory.md) §14.1, decision 2): fixed pipelines are safer than dynamic chains | Findings still suggest a next skill; you queue it |
-| The agent fixing CI on its own open PRs | The judge runs the repo's checks before any PR opens | A PR that still fails CI is flagged `needs human`, with a notification |
+| The agent fixing CI on its own open PRs | The judge runs the repo's checks before any PR opens | A PR that still fails CI is flagged `needs human`, with a notification, and blocks new requests on its repo until it's merged or closed |
 | `/canary` | The sandbox has no browser and no live network access | — |
 | Nexus's full gstack skills: learnings, checkpoint mode, the brief in `CLAUDE.md`, the skill router (G1–G6) | They ran Claude Code with gstack's scripts on the Render worker | Each skill is prompt guidance inside the factory's fix or report task (`factory/lib/tasks.ts`) |
 

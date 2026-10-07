@@ -2,6 +2,8 @@ import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
 import { and, eq, gte, ilike, inArray, sql } from 'drizzle-orm'
 import * as schema from '../../src/lib/db/schema'
+import { factoryActivity } from '../../src/lib/agents/factory-activity'
+import type { FactoryActivity } from '../../src/lib/health/freshness'
 import type { FactoryConfig } from './config'
 import type { AttemptEntry } from './ledger'
 import type { RequestHealth } from './system-health'
@@ -76,6 +78,15 @@ export async function latestHealthSnapshot(cfg: FactoryConfig): Promise<string |
       .where(eq(schema.repositories.userId, cfg.repohq.userId!))
     out = row?.latest ?? null
   })
+  return out
+}
+
+/** The idle-factory check for the morning report: the same rule as the dashboard banner. Null without the sink. */
+export async function factoryActivityOf(cfg: FactoryConfig): Promise<FactoryActivity | null> {
+  const d = db(cfg)
+  if (!d) return null
+  let out: FactoryActivity | null = null
+  await safely('factoryActivity', async () => { out = await factoryActivity(d, cfg.repohq.userId!) })
   return out
 }
 

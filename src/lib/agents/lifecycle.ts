@@ -3,6 +3,7 @@ import { agentRequests, portfolioEvents } from '@/lib/db/schema'
 import { eq, and, inArray, desc } from 'drizzle-orm'
 import {
   LIFECYCLE_TIMEOUT_MS,
+  prFollowUpStage,
   type AgentLifecycleStage,
 } from './lifecycle-utils'
 import { stageForRequest } from './factory-request-utils'
@@ -39,19 +40,9 @@ const prUrlOf = (e: TaskEvent | undefined) => (e?.metadata as { prUrl?: string }
  * After a PR exists: merged / closed / needs human / CI failing, from the PR events the
  * sync cron writes (pr-merge-checker, ci-checker). Null while the PR is simply open.
  */
-function prFollowUpStage(eventsForTask: TaskEvent[]): { stage: AgentLifecycleStage; prUrl: string | null } | null {
-  const find = (t: string) => eventsForTask.find(e => e.eventType === t)
-  const merged = find('agent_pr_merged')
-  if (merged) return { stage: 'merged', prUrl: prUrlOf(merged) }
-  const awaiting = find('agent_awaiting_approval')
-  if (awaiting) return { stage: 'awaiting_approval', prUrl: prUrlOf(awaiting) }
-  const needsHuman = find('agent_needs_human')
-  if (needsHuman) return { stage: 'needs_human', prUrl: prUrlOf(needsHuman) }
-  const ciFailed = find('agent_ci_failed')
-  if (ciFailed) return { stage: 'ci_failing', prUrl: prUrlOf(ciFailed) }
-  const rejected = find('agent_pr_rejected')
-  if (rejected) return { stage: 'rejected', prUrl: prUrlOf(rejected) }
-  return null
+function prFollowUp(eventsForTask: TaskEvent[]): { stage: AgentLifecycleStage; prUrl: string | null } | null {
+  const followUp = prFollowUpStage(eventsForTask)
+  return followUp && { stage: followUp.stage, prUrl: prUrlOf(followUp.event) }
 }
 
 /**
@@ -106,7 +97,7 @@ export async function getRepoLifecycle(userId: string, repoId: number): Promise<
     }).catch(() => undefined)
     if (row) {
       if (row.status === 'pr') {
-        const followUp = prFollowUpStage(eventsForTask)
+        const followUp = prFollowUp(eventsForTask)
         return { stage: followUp?.stage ?? 'pr_ready', taskId, prUrl: followUp?.prUrl ?? row.prUrl, queuedAt, reason: row.reason }
       }
       return { stage: stageForRequest(row.status), taskId, prUrl: row.prUrl, queuedAt, reason: row.reason }
@@ -122,7 +113,7 @@ export async function getRepoLifecycle(userId: string, repoId: number): Promise<
   const failedEvent = eventsForTask.find(e => e.eventType === 'agent_execution_failed')
   if (failedEvent) return { stage: 'failed', taskId, prUrl: null, queuedAt }
 
-  const followUp = prFollowUpStage(eventsForTask)
+  const followUp = prFollowUp(eventsForTask)
   if (followUp) return { ...followUp, taskId, queuedAt }
 
   const prCreatedEvent = eventsForTask.find(e => e.eventType === 'agent_pr_created')

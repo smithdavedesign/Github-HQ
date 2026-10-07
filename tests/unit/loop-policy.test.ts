@@ -11,9 +11,14 @@ describe('loop policy', () => {
   it('treats terminal stages as non-retryable', () => {
     expect(isTerminalStage('merged')).toBe(true)
     expect(isTerminalStage('failed')).toBe(true)
-    expect(isTerminalStage('needs_human')).toBe(true)
     expect(isTerminalStage('awaiting_approval')).toBe(true)
     expect(isTerminalStage('running')).toBe(false)
+    // Its PR is still open (failing CI), so new requests wait for it…
+    expect(isTerminalStage('needs_human')).toBe(false)
+  })
+
+  it('…but a PR handed to a human still ends the autonomous loop', () => {
+    expect(shouldContinueAutonomousLoop({ retryCount: 0, lifecycleStage: 'needs_human' })).toBe(false)
   })
 
   it('enforces the default retry budget', () => {

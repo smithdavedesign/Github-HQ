@@ -19,7 +19,7 @@ import { getRepoLifecycle, BLOCKING_STAGES } from '@/lib/agents/lifecycle'
 import type { AccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy-utils'
 import {
-  isAllowlisted, modeForSkill, newRequestRow, queuedEventValues, type NewRequest, type RequestSource,
+  isAllowlisted, modeForSkill, newRequestRow, pickWeeklySkillRepos, queuedEventValues, type NewRequest, type RequestSource,
 } from '@/lib/agents/factory-request-utils'
 import {
   resolveAdvisorSkill,
@@ -60,6 +60,17 @@ export async function factoryRepoIdsFor(userId: string): Promise<number[]> {
     columns: { id: true, fullName: true },
   })
   return rows.filter(r => isAllowlisted(r.fullName, factoryAllowlist())).map(r => r.id)
+}
+
+/** The repos the weekly /retro and /health runs use (pickWeeklySkillRepos); none unless the user is the factory owner. */
+export async function weeklySkillReposFor(userId: string, limit: number): Promise<{ id: number; name: string }[]> {
+  if (!factoryAccess(userId).ok) return []
+  const rows = await db.query.repositories.findMany({
+    where: eq(repositories.userId, userId),
+    columns: { id: true, name: true, fullName: true, isFocused: true, isArchived: true },
+    with: { metrics: { columns: { lastPush: true } } },
+  })
+  return pickWeeklySkillRepos(rows.map(r => ({ ...r, lastPush: r.metrics?.lastPush ?? null })), factoryAllowlist(), limit)
 }
 
 /** May this user queue factory work (on this repo)? The reason is what the UI shows when not. */
@@ -145,8 +156,11 @@ export async function enqueueRequest(input: EnqueueInput): Promise<QueueResult> 
   // Server-side lifecycle guard: one open request (or open agent PR) per repo, whatever the caller.
   const lifecycle = await getRepoLifecycle(input.userId, input.repoId)
   if (BLOCKING_STAGES.has(lifecycle.stage)) {
-    const detail = lifecycle.prUrl ? ` — PR: ${lifecycle.prUrl}` : ` (stage: ${lifecycle.stage})`
-    return { ok: false, reason: `An agent task is already active for ${repo.name}${detail}. Wait for it to finish (or cancel it on the Agents page).` }
+    if (lifecycle.prUrl) {
+      const failing = lifecycle.stage === 'ci_failing' || lifecycle.stage === 'needs_human' ? ' that fails CI' : ''
+      return { ok: false, reason: `${repo.name} already has an open agent PR${failing}: ${lifecycle.prUrl}. Merge or close it first.` }
+    }
+    return { ok: false, reason: `An agent task is already active for ${repo.name} (stage: ${lifecycle.stage}). Wait for it to finish (or cancel it on the Agents page).` }
   }
 
   const request: NewRequest = {

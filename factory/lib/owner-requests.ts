@@ -141,7 +141,19 @@ export function recordOwnerResult(
   return true
 }
 
-/** Terminal result for a request the Director never attempted (open PR / dead end filtered it out). */
+/**
+ * Why an owner request can't run on a repo the stale-bot-PR rule blocks (`blockOnStaleBotPrs`;
+ * `blocked` from rankOpportunities), or null when it can. The rule stops new factory PRs there
+ * until the old bot PRs are reviewed or closed, so it only holds back a request that would open
+ * one: a fix with `owner-requested` at stage `pr`. A report, or a fix held at stage `report`
+ * (or in a dry run), opens no PR and still runs.
+ */
+export function staleBotPrBlock(req: Pick<OwnerRequest, 'mode'>, blocked: string | null, opensPrs: boolean): string | null {
+  if (!blocked || req.mode === 'report' || !opensPrs) return null
+  return `no new factory PRs on this repo: ${blocked} — review or close them, then retry the request`
+}
+
+/** Terminal result for a request the Director never attempted (open PR / dead end / stale bot PRs). */
 export function recordOwnerBlocked(
   home: string,
   opts: { ownerTaskId: string; repo: string; runId: string; reason: string; now: Date },

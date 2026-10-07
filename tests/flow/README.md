@@ -46,9 +46,9 @@ anything that reads or writes them in local time shows up as an hours-off assert
 | File | Covers |
 |---|---|
 | `migration.flow.test.ts` | `npm run factory:migrate` on a pre-Phase-81 database lands on exactly what `db:push` creates; idempotent; cascade rules |
-| `enqueue.flow.test.ts` | Run agent / skill launcher / advisor actions → row + event + job; guards; cancel, retry, run now, pause; Redis down; the Agents overview; the API routes |
+| `enqueue.flow.test.ts` | Run agent / skill launcher / advisor actions → row + event + job; guards (an open agent PR blocks its repo until merged or closed, failing CI or not); the weekly skill runs' repos; cancel, retry, run now, pause; Redis down; the Agents overview and its kept Redis connection; the API routes |
 | `worker.flow.test.ts` | The worker end to end: report, PR, verified, rejected; deferral and retry; failure retries; crash; allowlist; cancelled jobs; queue pause; `PAUSE`; Run now + reconcile; pruning; live Agents data; SIGTERM mid-run; the real run.ts |
-| `morning-report.flow.test.ts` | The morning report's Agent HQ line against real rows, in a non-UTC zone |
+| `morning-report.flow.test.ts` | The morning report's Agent HQ lines against real rows, in a non-UTC zone: request outcomes, and the idle-factory check (skipped runs and the daily report don't count) |
 | `e2e/*.spec.ts` | The browser: Agents page (worker, schedules, run now, traces, pause), Run agent from a repo's Agent tab to Report ready / PR Ready, cancel + retry, access for other users and signed-out visitors |
 
 Set `FLOW_DEBUG=1` to print the worker's (and `next dev`'s) output. Without the Chromium that

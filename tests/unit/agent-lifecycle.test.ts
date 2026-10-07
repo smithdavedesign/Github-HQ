@@ -3,7 +3,7 @@
  * Tests the stage derivation rules used by getRepoLifecycle().
  */
 import { describe, it, expect } from 'vitest'
-import { BLOCKING_STAGES, TERMINAL_STAGES } from '../../src/lib/agents/lifecycle-utils'
+import { BLOCKING_STAGES, TERMINAL_STAGES, prFollowUpStage } from '../../src/lib/agents/lifecycle-utils'
 
 // ─── Stage classification ─────────────────────────────────────────────────────
 
@@ -13,6 +13,11 @@ describe('BLOCKING_STAGES', () => {
     expect(BLOCKING_STAGES.has('preparing')).toBe(true)
     expect(BLOCKING_STAGES.has('running')).toBe(true)
     expect(BLOCKING_STAGES.has('pr_ready')).toBe(true)
+  })
+
+  it('an open agent PR blocks whatever its CI says', () => {
+    expect(BLOCKING_STAGES.has('ci_failing')).toBe(true)
+    expect(BLOCKING_STAGES.has('needs_human')).toBe(true)
   })
 
   it('does NOT include terminal stages', () => {
@@ -46,6 +51,38 @@ describe('TERMINAL_STAGES', () => {
     for (const stage of TERMINAL_STAGES) {
       expect(BLOCKING_STAGES.has(stage)).toBe(false)
     }
+  })
+})
+
+// ─── After the PR exists (prFollowUpStage, shared by the lifecycle and the status route) ──
+
+describe('prFollowUpStage', () => {
+  // Newest first, as both callers query them.
+  const stageOf = (...types: string[]) => prFollowUpStage(types.map(eventType => ({ eventType })))?.stage ?? null
+
+  it('is null while the PR is simply open', () => {
+    expect(stageOf('agent_pr_created', 'agent_task_queued')).toBeNull()
+  })
+
+  it('a CI failure handed to the owner keeps the repo blocked', () => {
+    const stage = stageOf('agent_needs_human', 'agent_ci_failed', 'agent_pr_created')
+    expect(stage).toBe('needs_human')
+    expect(BLOCKING_STAGES.has(stage!)).toBe(true)
+  })
+
+  it('closing the failing PR ends the block', () => {
+    const stage = stageOf('agent_pr_rejected', 'agent_needs_human', 'agent_ci_failed', 'agent_pr_created')
+    expect(stage).toBe('rejected')
+    expect(BLOCKING_STAGES.has(stage!)).toBe(false)
+  })
+
+  it('a reopened PR that fails again blocks again', () => {
+    expect(stageOf('agent_ci_failed', 'agent_pr_rejected', 'agent_needs_human', 'agent_ci_failed')).toBe('ci_failing')
+  })
+
+  it('a merge is final', () => {
+    expect(stageOf('agent_pr_merged', 'agent_needs_human', 'agent_ci_failed')).toBe('merged')
+    expect(stageOf('agent_ci_failed', 'agent_pr_merged')).toBe('merged')
   })
 })
 

@@ -66,6 +66,15 @@ describe('system health', () => {
     expect(r.lines[0]).toMatch(/hq "Cron — Sync".*gh workflow enable <name> --repo o\/hq/)
   })
 
+  it('alarms when the factory did no agent work for 36 h, and says why its runs were skipped', () => {
+    const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000)
+    const idle = systemHealthLines({ ...healthy, factory: { lastWorkAt: hoursAgo(40), firstRunAt: hoursAgo(900), skipReason: 'Docker is not running (repo code never runs on the host)' } }, NOW)
+    expect(idle.alarm).toBe(true)
+    expect(idle.lines.filter(l => l.startsWith('⚠'))).toEqual([expect.stringMatching(/^⚠ Factory: .*40 hours.*skipped: Docker is not running/)])
+    const busy = systemHealthLines({ ...healthy, factory: { lastWorkAt: hoursAgo(3), firstRunAt: hoursAgo(900), skipReason: null } }, NOW)
+    expect(busy).toEqual(systemHealthLines(healthy, NOW))
+  })
+
   it('says when it could not check, without alarming; no requests, no line', () => {
     const r = systemHealthLines({ disabledWorkflows: null, latestSnapshot: null, requests: null }, NOW)
     expect(r).toEqual({ lines: ['Scheduled workflows: could not check (gh unavailable).'], alarm: false })

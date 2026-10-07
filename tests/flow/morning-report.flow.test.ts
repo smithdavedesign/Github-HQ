@@ -1,12 +1,17 @@
 /**
- * The morning report's Agent HQ line (roadmap Phase 81, factory/lib/system-health.ts) against a
+ * The morning report's Agent HQ lines (roadmap Phase 81, factory/lib/system-health.ts) against a
  * real database, in a non-UTC time zone. Timestamps are stored as zone-less UTC: a Date sent as a
  * raw parameter goes out in local time, and a raw timestamp read back parses as local time — both
- * shift the numbers by the UTC offset (7–8 hours here). requestOutcomes must do neither.
+ * shift the numbers by the UTC offset (7–8 hours here). requestOutcomes and factoryActivity
+ * must do neither.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { neon } from '@neondatabase/serverless'
+import { drizzle } from 'drizzle-orm/neon-http'
 import { loadConfig } from '../../factory/lib/config'
-import { requestOutcomes } from '../../factory/lib/sink'
+import { factoryActivityOf, requestOutcomes } from '../../factory/lib/sink'
+import { factoryActivity } from '../../src/lib/agents/factory-activity'
+import * as schema from '../../src/lib/db/schema'
 import { requestsFailing, systemHealthLines } from '../../factory/lib/system-health'
 import { FLOW, closePools, createDatabase, neonUrl, q, seed } from './harness/flow'
 
@@ -40,6 +45,24 @@ beforeAll(async () => {
   // Someone else's requests never count.
   await q(DB, `INSERT INTO agent_requests (id, user_id, repo, mode, objective, source, status, created_at) VALUES ('other-1', $1, 'o/r', 'fix', 'x', 'mcp', 'queued', $2)`,
     [FLOW.otherUserId, new Date(now.getTime() - 90 * HOUR).toISOString()])
+
+  // Factory runs: the last cycle that did work was 40 hours ago. Since then Docker has been down
+  // (cycles skipped), a request run failed, and the daily report kept finishing ok.
+  const run = (id: string, userId: string | null, kind: string, status: string, startedAgo: number, reason?: string) =>
+    q(DB, `INSERT INTO automation_runs (id, user_id, kind, trigger, status, summary, started_at, finished_at) VALUES ($1, $2, $3, 'schedule', $4, $5, $6, $7)`, [
+      id, userId, kind, status, reason ? JSON.stringify({ reason }) : null,
+      new Date(now.getTime() - startedAgo).toISOString(), new Date(now.getTime() - startedAgo + 60_000).toISOString(),
+    ])
+  await run('first', FLOW.ownerId, 'factory-scout', 'ok', 30 * DAY)
+  await run('work', FLOW.ownerId, 'factory-cycle', 'ok', 40 * HOUR)
+  await run('skip-old', FLOW.ownerId, 'factory-cycle', 'skipped', 30 * HOUR, 'on battery power (plug in for the night shift)')
+  await run('request-failed', FLOW.ownerId, 'factory-request', 'failed', 20 * HOUR)
+  await run('skip-new', FLOW.ownerId, 'factory-cycle', 'skipped', HOUR, 'Docker is not running (repo code never runs on the host)')
+  await run('report', FLOW.ownerId, 'factory-report', 'ok', 2 * HOUR)
+  await run('cron', null, 'cron:sync', 'ok', HOUR)
+  // The other user's worker did work after its last skip: no reason to show.
+  await run('other-skip', FLOW.otherUserId, 'factory-cycle', 'skipped', 10 * HOUR, 'Docker is not running (repo code never runs on the host)')
+  await run('other-work', FLOW.otherUserId, 'factory-request', 'ok', 5 * HOUR)
 })
 
 afterAll(closePools)
@@ -71,5 +94,33 @@ describe('requestOutcomes (the morning report\'s Agent HQ line)', () => {
   it('without the sink configured there is no line at all', async () => {
     const noSink = loadConfig({ ...process.env, FACTORY_USER_ID: '' } as NodeJS.ProcessEnv)
     expect(await requestOutcomes(noSink, new Date(now.getTime() - 7 * DAY), now)).toBeNull()
+    expect(await factoryActivityOf(noSink)).toBeNull()
+  })
+})
+
+describe('factoryActivity (the idle-factory banner and report line)', () => {
+  const cfg = () => loadConfig({ ...process.env, FACTORY_USER_ID: FLOW.ownerId, FACTORY_DATABASE_URL: neonUrl(DB) } as NodeJS.ProcessEnv)
+
+  it('only finished cycles and requests count as work; skipped runs and the daily report do not', async () => {
+    expect(await factoryActivityOf(cfg())).toEqual({
+      lastWorkAt: new Date(now.getTime() - 40 * HOUR + 60_000),
+      firstRunAt: new Date(now.getTime() - 30 * DAY),
+      skipReason: 'Docker is not running (repo code never runs on the host)',
+    })
+  })
+
+  it('so the report raises the alarm while Docker is down', async () => {
+    const health = systemHealthLines({ disabledWorkflows: [], latestSnapshot: null, requests: null, factory: await factoryActivityOf(cfg()) }, now)
+    expect(health.alarm).toBe(true)
+    expect(health.lines[1]).toMatch(/^⚠ Factory: The factory hasn't finished a cycle or request in 39 hours.*skipped: Docker is not running/)
+  })
+
+  it('a skip older than the last work is not the reason', async () => {
+    const db = drizzle(neon(neonUrl(DB)), { schema })
+    expect(await factoryActivity(db, FLOW.otherUserId)).toEqual({
+      lastWorkAt: new Date(now.getTime() - 5 * HOUR + 60_000),
+      firstRunAt: new Date(now.getTime() - 10 * HOUR),
+      skipReason: null,
+    })
   })
 })

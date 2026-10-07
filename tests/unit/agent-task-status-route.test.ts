@@ -71,13 +71,20 @@ describe('Agent HQ requests: the row', () => {
     expect((await get('taskId=t1')).body).toMatchObject({ status: 'report_ready', previewFindings: ['a', 'b'], skillName: 'health' })
   })
 
-  it('PR outcome events win over the row, in order: merged, needs human, awaiting approval, CI failing, rejected', async () => {
+  it('PR outcome events win over the row: a merge is final, otherwise the newest one', async () => {
     row = { status: 'pr', prUrl: 'u', reason: null }
-    const chain = ['agent_pr_rejected', 'agent_ci_failed', 'agent_awaiting_approval', 'agent_needs_human', 'agent_pr_merged']
-    const stages = ['rejected', 'ci_failing', 'awaiting_approval', 'needs_human', 'merged']
-    for (let i = 0; i < chain.length; i++) {
-      events = chain.slice(0, i + 1).map(t => ev(t, 't1', { prUrl: 'u' }))
-      expect((await get('taskId=t1')).body).toMatchObject({ status: stages[i], prUrl: 'u' })
+    const cases: [string[], string][] = [
+      [['agent_ci_failed'], 'ci_failing'],
+      [['agent_needs_human', 'agent_ci_failed'], 'needs_human'],
+      // Closed after it failed CI: it no longer blocks the repo.
+      [['agent_pr_rejected', 'agent_needs_human', 'agent_ci_failed'], 'rejected'],
+      [['agent_awaiting_approval'], 'awaiting_approval'],
+      [['agent_ci_failed', 'agent_pr_merged'], 'merged'],
+    ]
+    for (const [types, stage] of cases) {
+      // Newest first, as the route's query orders them.
+      events = types.map(t => ev(t, 't1', { prUrl: 'u' }))
+      expect((await get('taskId=t1')).body).toMatchObject({ status: stage, prUrl: 'u' })
     }
   })
 

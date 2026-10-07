@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import {
   OPEN_REQUEST_STATUSES, SKILL_MODES, findingsFromReport, isAllowlisted, isOpenRequestStatus, modeForSkill,
-  newRequestRow, queuedEventValues, requestStatusLabel, stageForRequest, MAX_OBJECTIVE_CHARS,
+  newRequestRow, pickWeeklySkillRepos, queuedEventValues, requestStatusLabel, stageForRequest, MAX_OBJECTIVE_CHARS,
 } from '@/lib/agents/factory-request-utils'
 import { BLOCKING_STAGES, TERMINAL_STAGES } from '@/lib/agents/lifecycle-utils'
 import { requestOutcomeRecords, resolvedFromRow, toOwnerRequest } from '../../factory/lib/agent-requests'
@@ -72,6 +72,28 @@ describe('new request rows and their queued event', () => {
   it('allowlist matching is case-insensitive', () => {
     expect(isAllowlisted('SmithDaveDesign/Github-HQ', ['smithdavedesign/github-hq'])).toBe(true)
     expect(isAllowlisted('someone/else', ['smithdavedesign/github-hq'])).toBe(false)
+  })
+})
+
+describe('pickWeeklySkillRepos (the weekly /retro and /health runs)', () => {
+  const repo = (id: number, name: string, opts: { focused?: boolean; archived?: boolean; pushedDaysAgo?: number } = {}) => ({
+    id, name, fullName: `me/${name}`, isFocused: opts.focused ?? false, isArchived: opts.archived ?? false,
+    lastPush: opts.pushedDaysAgo === undefined ? null : new Date(now.getTime() - opts.pushedDaysAgo * 86_400_000),
+  })
+  const allowlist = ['me/a', 'me/b', 'me/c', 'me/d', 'me/archived']
+
+  it('only picks repos the factory takes work for, so none is refused at enqueue', () => {
+    const repos = [repo(1, 'off-list-1'), repo(2, 'off-list-2'), repo(3, 'off-list-3'), repo(4, 'a', { pushedDaysAgo: 1 })]
+    expect(pickWeeklySkillRepos(repos, allowlist, 3).map(r => r.name)).toEqual(['a'])
+  })
+
+  it('focused repos first, then the most recently pushed; archived ones never', () => {
+    const repos = [
+      repo(1, 'a', { pushedDaysAgo: 9 }), repo(2, 'b', { pushedDaysAgo: 1 }), repo(3, 'c'),
+      repo(4, 'd', { focused: true, pushedDaysAgo: 30 }), repo(5, 'archived', { focused: true, archived: true }),
+    ]
+    expect(pickWeeklySkillRepos(repos, allowlist, 3).map(r => r.name)).toEqual(['d', 'b', 'a'])
+    expect(pickWeeklySkillRepos(repos, allowlist, 10).map(r => r.name)).toEqual(['d', 'b', 'a', 'c'])
   })
 })
 
