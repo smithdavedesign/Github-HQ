@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import type { ModelTier } from '../../src/lib/agents/model-router'
-import { reviewerModel } from './adversary'
+import { reviewerModel, reviewerRequestExtras } from './adversary'
 import type { FactoryConfig } from './config'
 import { run } from './proc'
 import type { FactoryTask } from './tasks'
@@ -141,7 +141,7 @@ export async function runLocalReview(
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.litellm.key}` },
       body: JSON.stringify({
-        model, temperature: 0, max_tokens: 1500,
+        model, temperature: 0, max_tokens: 1500, ...reviewerRequestExtras(model),
         messages: [{ role: 'user', content: buildLocalReviewPrompt(task, patch, checklistText(opts.checklist ?? null)) }],
       }),
       signal: AbortSignal.timeout(cfg.judge.adversarial.timeoutMs),

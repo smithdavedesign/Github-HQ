@@ -79,7 +79,8 @@ describe('local review (gstack /review on the local stack when Copilot is out)',
     expect(r).toMatchObject({ model: 'local-qwen3', issues: [], dropped: 0 })
     const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(url).toBe('http://litellm.test/v1/chat/completions')
-    expect(JSON.parse(init.body).model).toBe('local-qwen3')
+    // Thinking off for the local Qwen3, or it reasons away the whole budget and returns nothing.
+    expect(JSON.parse(init.body)).toMatchObject({ model: 'local-qwen3', reasoning_effort: 'none' })
   })
 
   it('no reviewer for the tier, or the call fails: no review', async () => {
