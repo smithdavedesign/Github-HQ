@@ -11,12 +11,14 @@ const queueSkill = vi.fn()
 const enqueue = vi.fn()
 const withQueue = vi.fn()
 let updated: { id: string }[] = []
+let selected: { status: string }[] = []
 let found: Record<string, unknown> | undefined
 
 vi.mock('@/lib/auth', () => ({ auth: async () => session }))
 vi.mock('@/lib/db', () => ({
   db: {
     update: () => ({ set: () => ({ where: () => ({ returning: async () => updated }) }) }),
+    select: () => ({ from: () => ({ where: async () => selected }) }),
     query: { agentRequests: { findFirst: async () => found } },
   },
 }))
@@ -39,6 +41,7 @@ beforeEach(() => {
   for (const f of [queueAdvisor, queueSkill, enqueue, withQueue]) f.mockReset()
   withQueue.mockResolvedValue(undefined)
   updated = []
+  selected = [{ status: 'queued' }]
   found = undefined
 })
 afterEach(() => { process.env = { ...env } })
@@ -102,14 +105,25 @@ describe('Agents page controls: owner only', () => {
 })
 
 describe('cancel', () => {
-  it('only a queued request; its job is removed when there is one', async () => {
+  it('a queued request: its job is removed when there is one', async () => {
     updated = [{ id: 't1' }]
     const remove = vi.fn()
     withQueue.mockImplementation(async (_url: string, fn: (q: unknown) => unknown) => fn({ getJob: async () => ({ remove }) }))
     await cancelRequest('t1')
     expect(remove).toHaveBeenCalled()
     updated = []
-    await expect(cancelRequest('t1')).rejects.toThrow('Only a queued request can be cancelled.')
+    await expect(cancelRequest('t1')).rejects.toThrow('Only a queued or running request can be cancelled.')
+  })
+
+  it('a running request: the worker is asked to stop its run (a flag it checks every heartbeat)', async () => {
+    updated = [{ id: 't1' }]
+    selected = [{ status: 'running' }]
+    const set = vi.fn()
+    const remove = vi.fn()
+    withQueue.mockImplementation(async (_url: string, fn: (q: unknown) => unknown) => fn({ client: Promise.resolve({ set }), getJob: async () => ({ remove }) }))
+    await cancelRequest('t1')
+    expect(set).toHaveBeenCalledWith('agent-hq:cancel:t1', '1', { EX: 86_400 })
+    expect(remove).not.toHaveBeenCalled() // an active job is locked by the worker
   })
 
   it('a Redis failure does not undo the cancel (the worker drops jobs of closed requests)', async () => {

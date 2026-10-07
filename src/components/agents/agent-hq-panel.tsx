@@ -311,8 +311,9 @@ function Requests({ requests, snapshotAt, onChanged }: { requests: RequestRow[];
                         PR<ExternalLink className="w-2.5 h-2.5" />
                       </a>
                     )}
-                    {r.status === 'queued' && (
+                    {(r.status === 'queued' || r.status === 'running') && (
                       <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px] gap-1" disabled={pending}
+                        title={r.status === 'running' ? 'Stops the run within a minute (or drops it if the Mac slept mid-run)' : undefined}
                         onClick={() => act('Request cancelled', () => cancelRequest(r.id))}>
                         <XCircle className="w-3 h-3" />Cancel
                       </Button>

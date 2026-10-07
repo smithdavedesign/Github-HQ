@@ -79,7 +79,9 @@ export function copilotArgs(req: Pick<HarnessRequest, 'model' | 'prompt' | 'read
 }
 
 async function runCopilot(req: HarnessRequest, cfg: FactoryConfig, runner: Runner): Promise<HarnessResult> {
-  const r = await runner('copilot', copilotArgs(req), { cwd: req.cwd, timeoutMs: req.timeoutMs ?? cfg.harnessTimeoutMs })
+  // The Copilot CLI would sign in with GH_TOKEN when it's set: keep it on your own Copilot login,
+  // not the factory's scoped repo token (factory.sh).
+  const r = await runner('copilot', copilotArgs(req), { cwd: req.cwd, timeoutMs: req.timeoutMs ?? cfg.harnessTimeoutMs, env: { GH_TOKEN: '' } })
   return {
     ok: r.code === 0 && !r.timedOut,
     harness: 'copilot',

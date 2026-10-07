@@ -35,6 +35,13 @@ if [ -n "${FACTORY_USER_ID:-}" ] && [ -z "${FACTORY_DATABASE_URL:-}" ]; then
   FACTORY_DATABASE_URL="$(security find-generic-password -s repohq-factory-database-url -w 2>/dev/null || true)"
   [ -n "$FACTORY_DATABASE_URL" ] && export FACTORY_DATABASE_URL
 fi
+# Optional: a fine-grained GitHub token limited to the factory's repos (docs/agent-hq-tradeoffs.md §9).
+# When it's in the keychain, every gh and git call the factory makes uses it instead of your own
+# gh login, which can reach every repo you own. Copilot checks still use your login.
+if [ -z "${GH_TOKEN:-}" ]; then
+  GH_TOKEN="$(security find-generic-password -s repohq-factory-gh-token -w 2>/dev/null || true)"
+  if [ -n "$GH_TOKEN" ]; then export GH_TOKEN; else unset GH_TOKEN; fi
+fi
 # Agent HQ queue (Phase 81): the Redis URL, also from the keychain.
 if [ -z "${REDIS_URL:-}" ]; then
   REDIS_URL="$(security find-generic-password -s repohq-factory-redis-url -w 2>/dev/null || true)"

@@ -31,14 +31,14 @@ import { loadConfig, type FactoryConfig } from './lib/config'
 import { lockHolder } from './lib/lock'
 import { run } from './lib/proc'
 import {
-  QUEUE_NAME, QUEUE_PREFIX, WORKER_HEARTBEAT_MS, WORKER_STATUS_KEEP_SECONDS, WORKER_STATUS_KEY, isFactoryJobName,
+  QUEUE_NAME, QUEUE_PREFIX, WORKER_HEARTBEAT_MS, cancelKey, WORKER_STATUS_KEEP_SECONDS, WORKER_STATUS_KEY, isFactoryJobName,
   parseWorkerStatus, requestJobOptions, scheduledJobTemplate, withinMs, workerConnection, type FactoryJobName,
   type RequestJobData, type ScheduledJobData, type ScheduledJobName, type WorkerStatus,
 } from './lib/queue'
 import { dockerAvailable } from './lib/sandbox'
 import { finishRun, parseProtocolLine, pruneRuns, startRun, type RunKind, type RunResult } from './lib/trace'
 import { HEARTBEAT_TIMEOUT_MS, configProblem, heartbeatAction, pickupCheck, recentStarts } from './lib/worker-health'
-import { JOB_TIMEOUT_MS, childCommand, gateFor, needsRequeue, requestFollowUp, runStatusFor, type HostState } from './lib/worker-policy'
+import { JOB_TIMEOUT_MS, childCommand, gateFor, needsRequeue, requestFollowUp, requestOutcomeOf, runStatusFor, type HostState } from './lib/worker-policy'
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const SCHEDULED: ScheduledJobName[] = ['cycle', 'report', 'scout']
@@ -145,6 +145,16 @@ async function beat(queue: Queue, cfg: FactoryConfig, restart: (reason: string) 
       await queue.client.then(c => c.disconnect(true)).catch(() => {})
       return
     }
+    // A request cancelled while running: stop its run (the cancelled row keeps the result out).
+    if (active?.job.name === 'request') {
+      const id = (active.job.data as RequestJobData).requestId
+      const client = await queue.client
+      if (await withinMs(client.get(cancelKey(id)), HEARTBEAT_TIMEOUT_MS) && active.child.pid) {
+        log(`request ${id}: cancelled from the Agents page — stopping its run`)
+        killGroup(active.child.pid, 'SIGTERM')
+        await withinMs(client.del(cancelKey(id)), HEARTBEAT_TIMEOUT_MS).catch(() => {})
+      }
+    }
     if (active || await withinMs(queue.isPaused(), HEARTBEAT_TIMEOUT_MS)) { waitingSince = null; return }
     const counts = await withinMs(queue.getJobCounts('waiting', 'prioritized', 'active'), HEARTBEAT_TIMEOUT_MS)
     const check = pickupCheck({ waiting: (counts.waiting ?? 0) + (counts.prioritized ?? 0), active: counts.active ?? 0 }, waitingSince, Date.now())
@@ -187,10 +197,16 @@ async function reconcileRequests(queue: Queue, cfg: FactoryConfig): Promise<void
 async function processJob(cfg: FactoryConfig, queue: Queue, job: Job, token?: string): Promise<RunResult> {
   if (!isFactoryJobName(job.name)) throw new UnrecoverableError(`unknown job "${job.name}"`)
   const name = job.name
-  const gate = gateFor(name, await hostState(cfg, name))
+  const gate = gateFor(name, await hostState(cfg, name), name !== 'request' && triggerOf(job) === 'schedule')
   if (gate.action === 'wait') {
     log(`${name} ${job.id}: ${gate.reason} — retrying in ${Math.round(gate.delayMs / 60_000)} min`)
-    if (name === 'request') await deferRequest(cfg, (job.data as RequestJobData).requestId, gate.reason, new Date())
+    // The row shows why it waits. Written once per reason, not every 15 minutes: a request
+    // waiting days for the Mac would otherwise keep Neon's compute awake.
+    const data = job.data as RequestJobData
+    if (name === 'request' && data.waitReason !== gate.reason) {
+      await deferRequest(cfg, data.requestId, gate.reason, new Date())
+      await job.updateData({ ...data, waitReason: gate.reason })
+    }
     await job.moveToDelayed(Date.now() + gate.delayMs, token)
     throw new DelayedError()
   }
@@ -242,13 +258,22 @@ async function processRequest(cfg: FactoryConfig, queue: Queue, job: Job, token?
   await startRun(cfg, { id: runId, kind: 'factory-request', trigger: 'request', requestId: row.id, jobId: job.id ?? null }, new Date())
   log(`request ${row.id}: ${row.mode} on ${row.repo}${row.skill ? ` (/${row.skill})` : ''}, pickup ${row.attempts}`)
   const result = await runChild(cfg, job, 'request', runId, row.id)
-  const after = await loadRequest(cfg, row.id).catch(() => null)
+  let after = await loadRequest(cfg, row.id).catch(() => null)
+  // The run reached an outcome but its write to the row didn't land: write it here, don't re-run.
+  const handed = requestOutcomeOf(result)
+  if (handed && after && (after.status === 'running' || after.status === 'queued')) {
+    log(`request ${row.id}: the run's outcome (${handed.status}) wasn't saved — writing it from the worker`)
+    await resolveRequest(cfg, resolvedFromRow(row), handed, runId, new Date())
+    after = await loadRequest(cfg, row.id).catch(() => after)
+  }
   const follow = stopping
     ? { action: 'defer' as const, reason: 'the worker restarted mid-run — retrying', delayMs: 60_000, failures: data.failures ?? 0 }
     : requestFollowUp(result, after?.status ?? 'running', data.failures ?? 0)
+  // The handed-over outcome is in the request row; the run summary keeps the counts.
+  const { requestOutcome: _handed, ...summary } = result.summary ?? {}
   await finishRun(cfg, runId, {
     status: runStatusFor(result),
-    summary: { ...result.summary, requestStatus: after?.status ?? null, ...(result.reason ? { reason: result.reason } : {}) },
+    summary: { ...summary, requestStatus: after?.status ?? null, ...(result.reason ? { reason: result.reason } : {}) },
     ...(result.status === 'failed' ? { error: result.reason } : {}),
   }, new Date())
   log(`request ${row.id}: run ${result.status}, request ${after?.status ?? 'unknown'}${follow.action !== 'done' ? ` → ${follow.action}: ${follow.reason}` : ''}`)
@@ -260,7 +285,7 @@ async function processRequest(cfg: FactoryConfig, queue: Queue, job: Job, token?
     await job.moveToDelayed(Date.now() + follow.delayMs, token)
     throw new DelayedError()
   }
-  return { ...result, summary: { ...result.summary, requestStatus: after?.status ?? null } }
+  return { ...result, summary: { ...summary, requestStatus: after?.status ?? null } }
 }
 
 /** Run one job's entry point as a child process; its stdout protocol lines become job progress. */

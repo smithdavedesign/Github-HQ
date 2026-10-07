@@ -34,7 +34,12 @@ export interface FactoryConfig {
    * Copilot code review requested on every factory PR (the independent Reviewer).
    * Both spend premium requests, so each has a daily cap.
    */
-  copilot: { enabled: boolean; model: string; maxTasksPerDay: number; review: boolean; maxReviewsPerDay: number }
+  /**
+   * `localFallback`: when Copilot doesn't review a factory PR (no premium requests left, review
+   * off, daily limit), the local AI stack reviews it with gstack's /review checklist instead
+   * (factory/lib/local-review.ts).
+   */
+  copilot: { enabled: boolean; model: string; maxTasksPerDay: number; review: boolean; maxReviewsPerDay: number; localFallback: boolean }
   harnessTimeoutMs: number
   /** M0 (local 7B) either finishes fast or not at all. */
   m0TimeoutMs: number
@@ -165,6 +170,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FactoryConfig 
       maxTasksPerDay: json.copilot?.maxTasksPerDay ?? 6,
       review: json.copilot?.review ?? true,
       maxReviewsPerDay: json.copilot?.maxReviewsPerDay ?? 8,
+      localFallback: json.copilot?.localFallback ?? true,
     },
     harnessTimeoutMs: json.harnessTimeoutMs ?? 15 * 60_000,
     m0TimeoutMs: json.m0TimeoutMs ?? 4 * 60_000,

@@ -63,7 +63,7 @@ describe('AgentHqPanel', () => {
     expect(html).toContain('waiting for AC power')
     expect(html).toContain('diff too large')
     expect(html).toContain('https://github.com/o/github-hq/pull/9')
-    expect(html.match(/Cancel/g)?.length).toBe(1) // only the queued one
+    expect(html.match(/>Cancel</g)?.length).toBe(2) // the queued and the running one
     expect(html.match(/Retry/g)?.length).toBe(1) // only the rejected one
   })
 

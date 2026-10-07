@@ -172,16 +172,20 @@ export function buildMorningReport(input: ReportInput): MorningReport {
     ],
   })
 
-  // ── Reviewer: Copilot code review ───────────────────────────────────────────
+  // ── Reviewer: Copilot code review, or the local stack's gstack /review when Copilot can't ─────
   const reviewed = openPrs.filter(a => reviews.has(a.id))
+  const byLocal = reviewed.filter(a => reviews.get(a.id)!.reviewer === 'local').length
   const waiting = openPrs.filter(a => a.reviewRequested && !reviews.has(a.id))
   sections.push({
-    id: 'reviewer', role: 'Reviewer', skill: '/review (GitHub Copilot code review)', title: 'Independent review of open PRs',
+    id: 'reviewer', role: 'Reviewer', skill: '/review (GitHub Copilot code review; gstack /review on the local stack as fallback)', title: 'Independent review of open PRs',
     lines: [
-      `${reviewed.length} reviewed by Copilot, ${waiting.length} waiting, ${openPrs.length - reviewed.length - waiting.length} not requested.`,
+      `${reviewed.length - byLocal} reviewed by Copilot, ${byLocal} by the local reviewer, ${waiting.length} waiting, ${openPrs.length - reviewed.length - waiting.length} not reviewed.`,
       ...reviewed.map(a => {
         const r = reviews.get(a.id)!
-        return `${short(a.repo)} ${a.kind}: ${r.comments === 0 ? 'no line comments' : plural(r.comments, 'line comment')} — ${a.prUrl}`
+        const what = r.reviewer === 'local'
+          ? (r.comments === 0 ? 'local review: no findings' : `local review: ${plural(r.comments, 'finding')}`)
+          : (r.comments === 0 ? 'no line comments' : plural(r.comments, 'line comment'))
+        return `${short(a.repo)} ${a.kind}: ${what} — ${a.prUrl}`
       }),
       `Copilot reviews today: ${input.copilot.reviewsToday}/${input.copilot.maxReviewsPerDay}.`,
     ],
@@ -303,6 +307,29 @@ function renderHtml(subject: string, sections: RoleSection[]): string {
     <tr><td><div style="font:700 18px system-ui,sans-serif;color:#111827">${esc(subject)}</div>
     <div style="font:13px system-ui,sans-serif;color:#6b7280">One update per role, from the factory's own records.</div></td></tr>${body}
   </table></body></html>`
+}
+
+/**
+ * A cycle's log file: `cycle-20261006-160505.log` from the launchd calendar, or
+ * `cycle-20261007T050500-bfaceaca.log` from the Agent HQ worker (Phase 81).
+ */
+export function isCycleLog(fileName: string): boolean {
+  return /^cycle-(\d{8}-\d{6}|\d{8}T\d{6}-[0-9a-f]{8})\.log$/.test(fileName)
+}
+
+/** Start and exit code from a cycle log; the worker's header adds ` run <id>` before the closing `===`. */
+export function cycleLogEntry(text: string): { at: string; exit: number | null } | null {
+  const at = /=== cycle (\S+)(?: run \S+)? ===/.exec(text)?.[1]
+  if (!at || Number.isNaN(Date.parse(at))) return null
+  const exit = /=== exit (\d+) ===/.exec(text)?.[1]
+  return { at, exit: exit === undefined ? null : Number(exit) }
+}
+
+/** Why a `himalaya message send` failed, never empty: a timeout or a silent exit used to log nothing. */
+export function emailFailureReason(r: { code: number | null; output: string; timedOut: boolean }): string {
+  if (r.timedOut) return 'no answer from Gmail within 60 s (no network?)'
+  const tail = r.output.trim().split('\n').map(l => l.trim()).filter(Boolean).slice(-2).join(' | ')
+  return tail || `himalaya exited ${r.code ?? 'without a code'} with no output`
 }
 
 /** RFC 5322 multipart/alternative message for `himalaya message send`. */

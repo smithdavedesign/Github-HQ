@@ -29,6 +29,7 @@ import { eq, and, desc, inArray, gt, count } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { OPEN_REQUEST_STATUSES, isAllowlisted, modeForSkill, newRequestRow, queuedEventValues } from '../src/lib/agents/factory-request-utils.js'
 import { requestJobOptions, withQueue } from '../factory/lib/queue.js'
+import { isGstackSkill, isSkillAllowedForRepo, parseEnvSkillAllowlistMap, parseRepoSkillAllowlist } from '../src/lib/skills/skill-policy.js'
 import factoryConfig from '../factory/factory.config.json'
 
 const DATABASE_URL = process.env.DATABASE_URL
@@ -850,10 +851,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const repo = await db.query.repositories.findFirst({
           where: and(eq(schema.repositories.userId, USER_ID), eq(schema.repositories.name, repo_name)),
           with: { metrics: { columns: { buildStatus: true, healthScore: true } }, securityFindings: { where: eq(schema.securityFindings.state, 'open') } },
-          columns: { id: true, name: true, fullName: true },
+          columns: { id: true, name: true, fullName: true, tags: true },
         })
         if (!repo) {
           return { content: [{ type: 'text', text: `Repo "${repo_name}" not found. Make sure it's synced.` }] }
+        }
+        // The same guards as RepoHQ's enqueueRequest (src/lib/agents/factory-queue.ts). The worker
+        // only loads its owner's rows, so another user's request would sit queued forever.
+        const factoryOwner = process.env.FACTORY_USER_ID
+        if (factoryOwner && factoryOwner !== USER_ID) {
+          return { content: [{ type: 'text', text: 'The factory runs agents for its owner only (MCP_USER_ID is not FACTORY_USER_ID).' }] }
+        }
+        if (!isGstackSkill(skill)) {
+          return { content: [{ type: 'text', text: `Unknown skill "/${skill}".` }] }
+        }
+        if (!isSkillAllowedForRepo(skill, repo.fullName, parseRepoSkillAllowlist(repo.tags), parseEnvSkillAllowlistMap(process.env.REPO_GSTACK_SKILL_ALLOWLIST_JSON))) {
+          return { content: [{ type: 'text', text: `Repo policy blocks /${skill} for ${repo.fullName}. Add tag gstack-allow:${skill} (or set REPO_GSTACK_SKILL_ALLOWLIST_JSON) to allow it.` }] }
         }
 
         // Smart default objectives based on skill + repo state
@@ -911,10 +924,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ])
         // Instant pickup through the queue when REDIS_URL is set; otherwise the factory worker
         // re-queues the row from Neon at its next cycle.
-        let viaQueue = false
-        if (process.env.REDIS_URL) {
-          viaQueue = await withQueue(process.env.REDIS_URL, q => q.add('request', { requestId: request.id }, requestJobOptions(request.id)))
+        let queueNote = ''
+        if (!process.env.REDIS_URL) queueNote = 'Note: REDIS_URL is not set here, so the factory picks this up at its next scheduled cycle.'
+        else {
+          const added = await withQueue(process.env.REDIS_URL, q => q.add('request', { requestId: request.id }, requestJobOptions(request.id)))
             .then(() => true, () => false)
+          if (!added) queueNote = 'Note: the queue didn\'t answer, so the factory picks this up at its next scheduled cycle (the request is saved).'
         }
 
         return {
@@ -924,7 +939,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               `✓ /${skill} queued for the factory on **${repo.name}** (${mode === 'fix' ? 'draft PR' : 'report, no PR'})`,
               `Task ID: \`${request.id}\``,
               `Objective: ${objective}`,
-              viaQueue ? '' : 'Note: REDIS_URL is not set here, so the factory picks this up at its next scheduled cycle.',
+              queueNote,
               `Track progress with: \`get_active_work("${repo.name}")\`${mode === 'report' ? ` — then \`get_skill_findings("${repo.name}", "${skill}")\`` : ''}`,
             ].filter(Boolean).join('\n'),
           }],
@@ -1146,15 +1161,16 @@ async function getOpenAgentPRMap(): Promise<Map<number, { prUrl: string; taskId:
   const events = await db.query.portfolioEvents.findMany({
     where: and(
       eq(schema.portfolioEvents.userId, USER_ID!),
-      inArray(schema.portfolioEvents.eventType, ['agent_pr_created', 'agent_pr_merged', 'agent_task_queued']),
+      inArray(schema.portfolioEvents.eventType, ['agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected', 'agent_task_queued']),
     ),
     columns: { repoId: true, eventType: true, metadata: true, occurredAt: true },
     orderBy: [desc(schema.portfolioEvents.occurredAt)],
   })
 
+  // Merged or closed without merging: either way the PR no longer holds the repo.
   const mergedTaskIds = new Set<string>()
   for (const e of events) {
-    if (e.eventType === 'agent_pr_merged') {
+    if (e.eventType === 'agent_pr_merged' || e.eventType === 'agent_pr_rejected') {
       const meta = e.metadata as { taskId?: string } | null
       if (meta?.taskId) mergedTaskIds.add(meta.taskId)
     }

@@ -35,7 +35,9 @@ export function copilotHasQuota(q: CopilotQuota | null): boolean {
 }
 
 export async function copilotQuota(): Promise<CopilotQuota | null> {
-  const r = await run('gh', ['api', '/copilot_internal/user'], { timeoutMs: 30_000 })
+  // Copilot belongs to your own account: ask with your gh login, not the factory's scoped
+  // GH_TOKEN (factory.sh), which can't read this endpoint. A failed check reads as "has quota".
+  const r = await run('gh', ['api', '/copilot_internal/user'], { timeoutMs: 30_000, env: { GH_TOKEN: '' } })
   if (r.code !== 0) return null
   try {
     return parseCopilotQuota(JSON.parse(r.output))

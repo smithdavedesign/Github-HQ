@@ -85,8 +85,18 @@ describe('buildMorningReport', () => {
     expect(section('qa').lines.join('\n')).toContain('README deleted 4 existing lines')
   })
   it('Reviewer reports Copilot results and pending reviews', () => {
-    expect(section('reviewer').lines[0]).toBe('1 reviewed by Copilot, 1 waiting, 0 not requested.')
+    expect(section('reviewer').lines[0]).toBe('1 reviewed by Copilot, 0 by the local reviewer, 1 waiting, 0 not reviewed.')
     expect(section('reviewer').lines.join('\n')).toContain('2 line comments')
+  })
+  it('Reviewer counts the local stack\'s gstack /review when Copilot couldn\'t review', () => {
+    const local = buildMorningReport(input([
+      ...entries,
+      att({ id: 'p3', repo: 'o/web', prUrl: 'https://github.com/o/web/pull/4' }),
+      { type: 'review', attemptId: 'p3', at: hoursAgo(1), reviewer: 'local', comments: 2, highlights: ['critical: unparameterised SQL'] },
+    ]))
+    const lines = local.sections.find(s => s.id === 'reviewer')!.lines
+    expect(lines[0]).toBe('1 reviewed by Copilot, 1 by the local reviewer, 1 waiting, 0 not reviewed.')
+    expect(lines.join('\n')).toContain('web fix-lint: local review: 2 findings — https://github.com/o/web/pull/4')
   })
   it('Security lists high/critical advisories', () => {
     expect(section('security').lines.join('\n')).toContain('api: 1 critical, 2 high')

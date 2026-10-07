@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, ne, sql } from 'drizzle-orm'
 import * as schema from '../../src/lib/db/schema'
 import { findingsFromReport, OPEN_REQUEST_STATUSES, type RequestMode } from '../../src/lib/agents/factory-request-utils'
 import type { FactoryConfig } from './config'
@@ -64,14 +64,22 @@ export async function deferRequest(cfg: FactoryConfig, id: string, reason: strin
   })
 }
 
-/** Requests still open (queued or running), oldest first: the worker's reconcile input. */
+/**
+ * Requests still open (queued or running), oldest first: the worker's reconcile input. OpenClaw's
+ * mirrored rows are left out: the cycle serves them from the JSONL front door, which is where
+ * their result must go. Re-queued as worker jobs they ran a second time and never reported back.
+ */
 export async function openRequests(cfg: FactoryConfig): Promise<Pick<AgentRequestRow, 'id' | 'status' | 'repo' | 'createdAt'>[]> {
   const d = sinkDb(cfg)
   if (!d) return []
   let rows: Pick<AgentRequestRow, 'id' | 'status' | 'repo' | 'createdAt'>[] = []
   await safely('openRequests', async () => {
     rows = await d.query.agentRequests.findMany({
-      where: and(eq(schema.agentRequests.userId, cfg.repohq.userId!), inArray(schema.agentRequests.status, [...OPEN_REQUEST_STATUSES])),
+      where: and(
+        eq(schema.agentRequests.userId, cfg.repohq.userId!),
+        inArray(schema.agentRequests.status, [...OPEN_REQUEST_STATUSES]),
+        ne(schema.agentRequests.source, 'openclaw'),
+      ),
       columns: { id: true, status: true, repo: true, createdAt: true },
       orderBy: (r, { asc }) => [asc(r.createdAt)],
       limit: 200,
@@ -80,17 +88,50 @@ export async function openRequests(cfg: FactoryConfig): Promise<Pick<AgentReques
   return rows
 }
 
-/** OpenClaw's JSONL request → an agent_requests row (once), so it's visible and traced in Agent HQ. */
-export async function mirrorOwnerRequest(cfg: FactoryConfig, req: OwnerRequest, now: Date): Promise<void> {
+/**
+ * OpenClaw's JSONL request → an agent_requests row, so it's visible and traced in Agent HQ. The
+ * first cycle inserts it as running; a later cycle picking it up again flips it from queued back to
+ * running. Returns the row's status (null when there's no sink or it couldn't be read), so a
+ * request cancelled in Agent HQ isn't run.
+ */
+export async function mirrorOwnerRequest(cfg: FactoryConfig, req: OwnerRequest, now: Date): Promise<string | null> {
   const d = sinkDb(cfg)
-  if (!d || req.stored) return
+  if (!d || req.stored) return null
+  let status: string | null = null
   await safely('mirrorOwnerRequest', async () => {
     const repoId = await repoIdFor(d, cfg.repohq.userId!, req.repo)
+    const mine = and(eq(schema.agentRequests.id, req.taskId), eq(schema.agentRequests.userId, cfg.repohq.userId!), eq(schema.agentRequests.source, 'openclaw'))
     await d.insert(schema.agentRequests).values({
       id: req.taskId, userId: cfg.repohq.userId!, repoId, repo: req.repo, mode: 'fix', objective: req.task.slice(0, 4_000),
       source: 'openclaw', status: 'running', attempts: 1, claimedAt: now,
       createdAt: req.requestedAt ? new Date(req.requestedAt) : now, updatedAt: now,
     }).onConflictDoNothing()
+    await d.update(schema.agentRequests)
+      .set({ status: 'running', claimedAt: now, attempts: sql`${schema.agentRequests.attempts} + 1`, reason: null, updatedAt: now })
+      .where(and(mine, eq(schema.agentRequests.status, 'queued')))
+    const [row] = await d.select({ status: schema.agentRequests.status }).from(schema.agentRequests).where(mine)
+    status = row?.status ?? null
+  })
+  return status
+}
+
+/**
+ * The cycle is ending and these mirrored OpenClaw requests are still running (it stopped before
+ * their repo, or deferred them): back to queued with the reason, until the next cycle picks them up
+ * from the JSONL again. Never throws.
+ */
+export async function requeueMirrored(cfg: FactoryConfig, ids: string[], reason: string, now: Date): Promise<void> {
+  const d = sinkDb(cfg)
+  if (!d || ids.length === 0) return
+  await safely('requeueMirrored', async () => {
+    await d.update(schema.agentRequests)
+      .set({ status: 'queued', reason: reason.slice(0, 500), updatedAt: now })
+      .where(and(
+        inArray(schema.agentRequests.id, ids),
+        eq(schema.agentRequests.userId, cfg.repohq.userId!),
+        eq(schema.agentRequests.source, 'openclaw'),
+        eq(schema.agentRequests.status, 'running'),
+      ))
   })
 }
 
@@ -154,25 +195,46 @@ export function requestOutcomeRecords(
   return { events: [], notifications: [] }
 }
 
-/** Write a request's terminal outcome (only if it's still open) and its events. Never throws. */
+/** Waits before each retry of a failed outcome write: a Neon blip mustn't lose a run's result. */
+const RESOLVE_RETRY_WAITS_MS = [2_000, 5_000]
+
+/**
+ * Write a request's terminal outcome (only if it's still open) and its events. Never throws. A
+ * failed write is retried, and the run also hands its outcome to the worker, which writes it if
+ * the row is still open afterwards (worker-policy.ts `requestOutcomeOf`). Without that, a lost
+ * write made the worker re-run the request, and the re-run could end differently (a fix whose PR
+ * was already open came back "rejected", and agent_pr_created was never written).
+ */
 export async function resolveRequest(cfg: FactoryConfig, req: ResolvedRequest, outcome: OwnerOutcome, runId: string, now: Date): Promise<void> {
   const d = sinkDb(cfg)
   if (!d) return
-  await safely('resolveRequest', async () => {
-    const updated = await d.update(schema.agentRequests)
-      .set({
-        status: outcome.status, prUrl: outcome.prUrl ?? null, findings: outcome.findings?.slice(0, 8_000) ?? null,
-        reason: outcome.reason?.slice(0, 1_000) ?? null, runId, resolvedAt: now, updatedAt: now,
-      })
-      .where(and(eq(schema.agentRequests.id, req.id), eq(schema.agentRequests.userId, cfg.repohq.userId!), inArray(schema.agentRequests.status, [...OPEN_REQUEST_STATUSES])))
-      .returning({ id: schema.agentRequests.id })
-    // Cancelled while running (or resolved twice): leave the row and don't emit events again.
-    if (updated.length === 0) return
-    const repoId = req.repoId ?? await repoIdFor(d, cfg.repohq.userId!, req.repo)
-    const records = requestOutcomeRecords(cfg.repohq.userId!, { ...req, repoId }, outcome, runId)
-    if (records.events.length > 0) await d.insert(schema.portfolioEvents).values(records.events)
-    if (records.notifications.length > 0) await d.insert(schema.notifications).values(records.notifications)
-  })
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await writeOutcome(cfg, d, req, outcome, runId, now)
+    } catch (err) {
+      const wait = RESOLVE_RETRY_WAITS_MS[attempt]
+      console.warn(`[factory sink] resolveRequest failed${wait ? ` — retrying in ${wait / 1000}s` : ''}:`, err instanceof Error ? err.message : err)
+      if (wait === undefined) return
+      await new Promise(resolve => setTimeout(resolve, wait))
+    }
+  }
+}
+
+/** Throws on a DB error, so the caller can retry. */
+async function writeOutcome(cfg: FactoryConfig, d: NonNullable<ReturnType<typeof sinkDb>>, req: ResolvedRequest, outcome: OwnerOutcome, runId: string, now: Date): Promise<void> {
+  const updated = await d.update(schema.agentRequests)
+    .set({
+      status: outcome.status, prUrl: outcome.prUrl ?? null, findings: outcome.findings?.slice(0, 8_000) ?? null,
+      reason: outcome.reason?.slice(0, 1_000) ?? null, runId, resolvedAt: now, updatedAt: now,
+    })
+    .where(and(eq(schema.agentRequests.id, req.id), eq(schema.agentRequests.userId, cfg.repohq.userId!), inArray(schema.agentRequests.status, [...OPEN_REQUEST_STATUSES])))
+    .returning({ id: schema.agentRequests.id })
+  // Cancelled while running (or resolved twice): leave the row and don't emit events again.
+  if (updated.length === 0) return
+  const repoId = req.repoId ?? await repoIdFor(d, cfg.repohq.userId!, req.repo)
+  const records = requestOutcomeRecords(cfg.repohq.userId!, { ...req, repoId }, outcome, runId)
+  if (records.events.length > 0) await d.insert(schema.portfolioEvents).values(records.events)
+  if (records.notifications.length > 0) await d.insert(schema.notifications).values(records.notifications)
 }
 
 /** Mark an open request failed (the run crashed or ended without resolving it). Never throws. */

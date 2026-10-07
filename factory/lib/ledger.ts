@@ -60,8 +60,9 @@ export interface ReviewEntry {
   type: 'review'
   attemptId: string
   at: string
-  reviewer: 'copilot'
-  /** Inline comments left by the reviewer (0 = clean review). */
+  /** copilot = GitHub Copilot code review · local = the local AI stack's gstack /review (local-review.ts). */
+  reviewer: 'copilot' | 'local'
+  /** Inline comments left by the reviewer (0 = clean review); for a local review, its findings. */
   comments: number
   highlights: string[]
 }
