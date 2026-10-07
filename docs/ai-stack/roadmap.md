@@ -21,7 +21,7 @@ Where the platform is headed. Organized by horizon, not hard dates. Honest about
 
 | Item | Status | Notes |
 |---|---|---|
-| Set Anthropic spend cap | 🔜 | The one safety net for the now-paid companion + briefing. [console.anthropic.com](https://console.anthropic.com) → Billing. |
+| Set Anthropic spend cap | ✅ | Done 2026-10-06: $25/month. |
 | Real reboot | 🔜 | Validates auto-start resilience (unproven at 80+ days uptime) **and** clears accumulated swap. See [operations](operations.md#reboot-resilience). |
 | Confirm briefing timeout fix | 🧭 | Raised 180→300s; confirm on next scheduled 8 AM run. If it still times out, simplify the prompt or switch its model. |
 
@@ -89,7 +89,7 @@ What separates a companion you *talk to* from one that *acts for you* — and th
 | **Gmail** | App Password + authorized connection | ✅ **verified both paths** | companion-native himalaya live (inbox listed). _Gotcha: App Passwords copy with non-breaking spaces — strip all non-alphanumeric to 16 chars._ |
 | **Apple Notes / Reminders** | — (local) | ✅ working | runs via osascript through gated exec; no secret |
 | **Calendar** | macOS/EventKit (`icalBuddy`) | ✅ **verified** | add-events via gated Calendar.app; Google syncs in via macOS Internet Accounts |
-| Anthropic spend cap | — | 🔜 | Set at console.anthropic.com (housekeeping, not an integration) |
+| Anthropic spend cap | — | ✅ done | $25/month, set 2026-10-06 |
 
 _Slack was not in the original ask (gmail/github/calendar/notes) — available as a future add via `channels.slack` + bot token._
 
@@ -134,7 +134,7 @@ Integrations currently force the companion onto **paid `cloud-smart`** (free `cl
 - **Vercel deploy** — activate the MCP (OAuth) *or* issue a full-scope token (current token is read-only); then wire `/setup-deploy` + env vars
 - **Sentry** (error tracking) — `sentry-cli` installed; needs a DSN to integrate
 - ~~**Event triggers**~~ — shipped as factory **Phase 78**: red CI, Dependabot alerts and stale bot PRs are sensed every cycle. The front door stays the owner-initiated path
-- **Anthropic spend cap** — the companion runs on paid `cloud-smart`
+- ~~**Anthropic spend cap**~~ — done 2026-10-06 ($25/month); the companion runs on paid `cloud-smart`
 - **Security:** the full-exec companion reads untrusted content — keep it off untrusted inboxes/pages; perimeter (WhatsApp allowlist + loopback) is the only guard
 
 ---

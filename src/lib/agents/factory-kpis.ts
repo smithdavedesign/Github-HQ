@@ -7,6 +7,7 @@
  * accept, how much review it needed, and how much ran without your intervention.
  */
 import type { ModelTier } from './model-router'
+import { USEFUL_PR_VALUE } from './pr-value'
 
 export interface JobRecord {
   id: string
@@ -23,6 +24,8 @@ export interface JobRecord {
   requests: number | null
   /** Alias of the adversarial reviewer, if one ran (a free-agent review costs one free request). */
   adversaryModel: string | null
+  /** Your 0–5 rating from the PR's `value:N` label (pr-value.ts); null/absent = unrated. */
+  value?: number | null
 }
 
 export interface FactoryKpis {
@@ -48,6 +51,14 @@ export interface FactoryKpis {
   humanEditedPrs: number
   /** Merged without your edits ÷ (every resolved PR + every approval request). */
   autonomy: number | null
+  /** Merged PRs you rated with a `value:N` label. */
+  ratedPrs: number
+  /** Mean rating of the rated merged PRs (0–5). */
+  avgValue: number | null
+  /** Merged PRs rated useful (value ≥ 2). */
+  usefulPrs: number
+  /** Useful PRs per night the factory ran: the 30-day experiment's headline. */
+  usefulPerNight: number | null
 }
 
 const HOUR = 3_600_000
@@ -83,6 +94,8 @@ export function computeFactoryKpis(
   const trackedMerged = tracked.filter(j => j.outcome === 'merged').length
 
   const resolved = [...merged, ...closed]
+  const rated = merged.filter(j => typeof j.value === 'number')
+  const useful = rated.filter(j => j.value! >= USEFUL_PR_VALUE).length
   const untouched = merged.filter(j => (j.humanCommits ?? 0) === 0).length
 
   return {
@@ -99,19 +112,24 @@ export function computeFactoryKpis(
     reviewHoursMedian: median(resolved.filter(j => j.resolvedAt).map(j => (j.resolvedAt!.getTime() - j.startedAt.getTime()) / HOUR)),
     humanEditedPrs: merged.length - untouched,
     autonomy: ratio(untouched, resolved.length + (opts.approvalsNeeded ?? 0)),
+    ratedPrs: rated.length,
+    avgValue: rated.length ? rated.reduce((n, j) => n + j.value!, 0) / rated.length : null,
+    usefulPrs: useful,
+    usefulPerNight: nightsRan.size && rated.length ? useful / nightsRan.size : null,
   }
 }
 
 /** An `agent_jobs` row (as Drizzle returns it) → KPI input. */
 export function jobRecordFromRow(r: {
   id: string; startedAt: Date; tier: string; status: string; prUrl: string | null; outcome: string | null
-  resolvedAt: Date | null; humanCommits: number | null; requests: number | null; adversaryModel: string | null
+  resolvedAt: Date | null; humanCommits: number | null; requests: number | null; adversaryModel: string | null; value?: number | null
 }): JobRecord {
   return {
     id: r.id, startedAt: r.startedAt, tier: r.tier as ModelTier,
     status: r.status === 'verified' || r.status === 'rate_limited' ? r.status : 'failed',
     prUrl: r.prUrl, outcome: r.outcome === 'merged' || r.outcome === 'rejected' ? r.outcome : null,
     resolvedAt: r.resolvedAt, humanCommits: r.humanCommits, requests: r.requests, adversaryModel: r.adversaryModel,
+    value: r.value ?? null,
   }
 }
 
@@ -121,5 +139,6 @@ const pct = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%
 export function kpiHeadline(k: FactoryKpis): string {
   const y = k.overnightYield === null ? 'no nights yet' : `${k.overnightYield.toFixed(1)} approved PRs/night over ${k.nights} night(s)`
   const eff = k.acceptedPer100FreeRequests === null ? '' : ` · ${k.acceptedPer100FreeRequests.toFixed(1)} merged per 100 free requests`
-  return `Overnight yield: ${y} · acceptance ${pct(k.acceptance)} · autonomy ${pct(k.autonomy)}${eff}`
+  const val = k.avgValue === null ? '' : ` · value ${k.avgValue.toFixed(1)}/5 over ${k.ratedPrs} rated`
+  return `Overnight yield: ${y} · acceptance ${pct(k.acceptance)} · autonomy ${pct(k.autonomy)}${val}${eff}`
 }

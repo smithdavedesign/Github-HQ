@@ -12,6 +12,9 @@ import { rankOpportunities } from './sensors'
 import { computeFactoryKpis, kpiHeadline } from '../../src/lib/agents/factory-kpis'
 import { toJobRecords } from './ledger'
 import { kpiTrend, nightShiftReadiness, readinessLine } from './night-shift'
+import { AGING_PR_DAYS, PR_SOURCE_LABEL, prAgeDays, prSource, sortForReview, type OpenPr } from '../../src/lib/agents/open-prs'
+import { prValueFromLabels } from '../../src/lib/agents/pr-value'
+import { nextActionLines, type NextActions } from '../../src/lib/portfolio/next-actions'
 
 export interface ReportInput {
   now: Date
@@ -36,9 +39,15 @@ export interface ReportInput {
   capabilities?: Record<Capability, CapabilityStage>
   /** Disabled workflows, stale RepoHQ data, failing or stuck agent requests (factory/lib/system-health.ts). */
   systemHealth?: SystemHealth
+  /** Every open PR across the owner's repos (`gh search prs`); null = the search failed, absent = not gathered. */
+  openPrsAll?: OpenPr[] | null
+  /** The owner's GitHub login, to tell their own PRs from contributors'. */
+  ownerLogin?: string | null
+  /** "What should I do next?" from RepoHQ's repo data (src/lib/portfolio/next-actions.ts). */
+  nextActions?: NextActions | null
 }
 
-export type RoleId = 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro' | 'ladder'
+export type RoleId = 'inbox' | 'next' | 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro' | 'ladder'
 
 export interface RoleSection {
   id: RoleId
@@ -106,6 +115,16 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   const stale = [...signals.values()].filter(s => s.botPrs?.stale.length)
 
   const sections: RoleSection[] = []
+
+  // ── Inbox: every open PR waiting for you, so none get lost ──────────────────
+  if (input.openPrsAll !== undefined) {
+    sections.push({ id: 'inbox', role: 'Your review queue', skill: 'open PRs across your repos', title: 'Waiting for you, oldest first', lines: inboxLines(input.openPrsAll, attempts, reviews, now, input.ownerLogin) })
+  }
+
+  // ── Next: what deserves your attention, and why ─────────────────────────────
+  if (input.nextActions) {
+    sections.push({ id: 'next', role: 'Chief of Staff', skill: 'RepoHQ decision states', title: 'What to do next', lines: nextActionLines(input.nextActions) })
+  }
 
   // ── PM: what goes to the Architect next ─────────────────────────────────────
   const inTarget = openPrs.length >= input.prTarget.min
@@ -256,6 +275,9 @@ export function buildMorningReport(input: ReportInput): MorningReport {
         const t = kpiTrend(toJobRecords(entries), now)
         return t.direction ? [`Trend (last 15 nights vs the 15 before): ${t.direction} — yield ${t.previous.overnightYield?.toFixed(1)} → ${t.recent.overnightYield?.toFixed(1)}/night.`] : []
       })(),
+      kpis.ratedPrs > 0
+        ? `PR value: ${kpis.avgValue!.toFixed(1)}/5 over ${plural(kpis.ratedPrs, 'rated PR')}; ${kpis.usefulPrs} useful (value ≥ 2)${kpis.usefulPerNight !== null ? `, ${kpis.usefulPerNight.toFixed(2)} useful PRs/night` : ''}.`
+        : 'PR value: none rated yet — add a value:0…value:5 label when you merge a factory PR.',
       ...(kpis.reviewHoursMedian !== null ? [`Review load: median ${kpis.reviewHoursMedian.toFixed(1)}h from PR to your decision; ${kpis.humanEditedPrs} merged PR(s) needed your edits.`] : []),
       `${plural(counted.length, 'attempt')}, ${verified.length} verified, ${merged.length} merged, ${rejected.length} closed without merging.`,
       verified.length ? `${Math.round(((verified.length - paid) / verified.length) * 100)}% of verified fixes cost $0 at the margin.` : 'No verified fixes yet this week.',
@@ -285,8 +307,39 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   }
 
   const day = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
-  const subject = `${health?.alarm ? '⚠ ' : ''}RepoHQ factory · ${day} · ${plural(openPrs.length, 'PR')} to review · ${plural(kpis.lastNightPrs, 'new PR')} last night`
+  const toReview = input.openPrsAll ? input.openPrsAll.length : openPrs.length
+  const subject = `${health?.alarm ? '⚠ ' : ''}RepoHQ factory · ${day} · ${plural(toReview, 'PR')} to review · ${plural(kpis.lastNightPrs, 'new PR')} last night`
   return { subject, sections, text: renderText(subject, sections), html: renderHtml(subject, sections) }
+}
+
+/** One line per open PR, oldest first; factory PRs carry what they fix and the reviewer's verdict. */
+export function inboxLines(
+  prs: OpenPr[] | null, attempts: AttemptEntry[], reviews: Map<string, ReviewEntry>, now: Date, ownerLogin?: string | null,
+): string[] {
+  if (prs === null) return ['Could not list open PRs (gh search failed) — check `gh auth status`.']
+  if (prs.length === 0) return ['No open PRs anywhere. Inbox zero.']
+  const byUrl = new Map(attempts.filter(a => a.prUrl).map(a => [a.prUrl!, a]))
+  const sorted = sortForReview(prs)
+  const aging = sorted.filter(p => prAgeDays(p, now) >= AGING_PR_DAYS).length
+  const lines = sorted.slice(0, 25).map(p => {
+    const a = byUrl.get(p.url)
+    const src = prSource(p, { ownerLogin, factoryUrls: new Set(byUrl.keys()) })
+    const age = prAgeDays(p, now)
+    const r = a ? reviews.get(a.id) : undefined
+    const what = a ? `${KIND_LABEL[a.kind] ?? a.kind} (${a.tier})` : p.title.slice(0, 80)
+    const notes = [
+      ...(a?.adversary && a.adversary.verdict !== 'PASS' ? [`reviewer: ${a.adversary.verdict}`] : []),
+      ...(r ? [r.comments === 0 ? 'review clean' : plural(r.comments, 'review comment')] : []),
+      ...(p.isDraft ? ['draft'] : []),
+      ...(prValueFromLabels(p.labels) !== null ? [`value:${prValueFromLabels(p.labels)}`] : []),
+    ]
+    return `${age >= AGING_PR_DAYS ? '⚠ ' : ''}${short(p.repo)}#${p.number} · ${age}d · ${PR_SOURCE_LABEL[src]} · ${what}${notes.length ? ` [${notes.join(', ')}]` : ''} — ${p.url}`
+  })
+  return [
+    `${plural(prs.length, 'open PR')}${aging ? `, ${aging} open ${AGING_PR_DAYS}+ days (⚠)` : ''}. Merge or close each; rate factory PRs with a value:N label when you merge.`,
+    ...lines,
+    ...(prs.length > 25 ? [`…and ${prs.length - 25} more.`] : []),
+  ]
 }
 
 function renderText(subject: string, sections: RoleSection[]): string {

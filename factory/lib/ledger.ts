@@ -122,6 +122,17 @@ export interface SignalsEntry {
 }
 
 /** red-ci PRs: did the workflow that was failing pass on the PR? (the red-ci oracle) */
+/**
+ * The owner's 0–5 rating of a merged factory PR, read from its `value:N` label (30-day
+ * experiment, src/lib/agents/pr-value.ts). The latest entry per attempt wins.
+ */
+export interface ValueEntry {
+  type: 'value'
+  attemptId: string
+  at: string
+  value: number
+}
+
 export interface CiOracleEntry {
   type: 'ci_oracle'
   attemptId: string
@@ -152,7 +163,7 @@ export interface OwnerResultEntry {
   reason?: string
 }
 
-export type LedgerEntry = AttemptEntry | ResolutionEntry | ScanEntry | ScoutEntry | ApprovalEntry | ReviewEntry | SignalsEntry | CiOracleEntry | OwnerResultEntry
+export type LedgerEntry = AttemptEntry | ResolutionEntry | ScanEntry | ScoutEntry | ApprovalEntry | ReviewEntry | SignalsEntry | CiOracleEntry | OwnerResultEntry | ValueEntry
 
 export function ledgerPath(home: string): string {
   return path.join(home, 'ledger.jsonl')
@@ -303,12 +314,13 @@ export function todaysUsage(entries: LedgerEntry[], now: Date): { prs: number; c
 /** KPI input (Phase 79): every counted attempt with how its PR ended. */
 export function toJobRecords(entries: LedgerEntry[]): JobRecord[] {
   const res = new Map(entries.filter((x): x is ResolutionEntry => x.type === 'resolution').map(r => [r.attemptId, r]))
+  const values = new Map(entries.filter((x): x is ValueEntry => x.type === 'value').map(v => [v.attemptId, v.value]))
   return attemptsOf(entries).map(a => {
     const r = res.get(a.id)
     return {
       id: a.id, startedAt: new Date(a.at), tier: a.tier, status: a.outcome, prUrl: a.prUrl ?? null,
       outcome: r?.outcome ?? null, resolvedAt: r ? new Date(r.at) : null, humanCommits: r?.humanCommits ?? null,
-      requests: a.requests ?? null, adversaryModel: a.adversary?.model ?? null,
+      requests: a.requests ?? null, adversaryModel: a.adversary?.model ?? null, value: values.get(a.id) ?? null,
     }
   })
 }
@@ -324,6 +336,19 @@ export function latestSignals(entries: LedgerEntry[]): Map<string, SignalsEntry>
 export function pendingCiOracles(entries: LedgerEntry[]): AttemptEntry[] {
   const done = new Set(entries.filter((e): e is CiOracleEntry => e.type === 'ci_oracle').map(e => e.attemptId))
   return openPrAttempts(entries).filter(a => a.kind === 'red-ci' && !done.has(a.id))
+}
+
+/**
+ * Merged PRs resolved in the last `windowDays` that have no rating yet: reconcile keeps
+ * checking their labels, since the owner may add `value:N` after merging.
+ */
+export function pendingValues(entries: LedgerEntry[], now: Date, windowDays = 30): AttemptEntry[] {
+  const rated = new Set(entries.filter((e): e is ValueEntry => e.type === 'value').map(v => v.attemptId))
+  const merged = new Map(entries.filter((e): e is ResolutionEntry => e.type === 'resolution' && e.outcome === 'merged').map(r => [r.attemptId, r]))
+  return attemptsOf(entries).filter(a => {
+    const r = merged.get(a.id)
+    return a.prUrl && r && !rated.has(a.id) && now.getTime() - new Date(r.at).getTime() <= windowDays * 86_400_000
+  })
 }
 
 /** Open PRs whose requested Copilot review hasn't been recorded yet. */

@@ -23,11 +23,39 @@ describe('night shift readiness gate', () => {
     expect(r.cleanNights).toBe(1)
     expect(r.lastHostNight).toBe('2026-10-01')
   })
-  it('is ready after 7 clean nights; rate-limited attempts are ignored', () => {
+  const NOW = new Date(2026, 9, 8, 12, 0)
+  it('7 clean nights pass the sandbox half; rate-limited attempts are ignored', () => {
     const entries: LedgerEntry[] = [att(1, 'host', { outcome: 'rate_limited' }), ...[1, 2, 3, 4, 5, 6, 7].map(d => att(d, 'docker'))]
-    expect(nightShiftReadiness(entries)).toMatchObject({ cleanNights: CLEAN_NIGHTS_REQUIRED, ready: true })
-    expect(readinessLine(nightShiftReadiness(entries))).toMatch(/ready/)
-    expect(readinessLine(nightShiftReadiness([]))).toMatch(/0\/7/)
+    expect(nightShiftReadiness(entries, 7, NOW)).toMatchObject({ cleanNights: CLEAN_NIGHTS_REQUIRED, sandboxReady: true })
+    expect(readinessLine(nightShiftReadiness([], 7, NOW))).toMatch(/0\/7/)
+  })
+  it('clean nights alone are not enough: the gate also needs accepted, useful PRs', () => {
+    const entries: LedgerEntry[] = [1, 2, 3, 4, 5, 6, 7].map(d => att(d, 'docker'))
+    const r = nightShiftReadiness(entries, 7, NOW)
+    expect(r).toMatchObject({ sandboxReady: true, ready: false, quality: { met: false } })
+    expect(readinessLine(r)).toMatch(/5 more merged or closed PR\(s\).*3 more rated PR\(s\)/)
+  })
+  it('is ready with 7 clean nights, ≥ 50% acceptance over ≥ 5 resolved PRs and rated value ≥ 2', () => {
+    const prs = [1, 2, 3, 4, 5, 6, 7].map(d => att(d, 'docker', { prUrl: `https://github.com/o/app/pull/${d}` }))
+    const res = (a: AttemptEntry, outcome: 'merged' | 'rejected'): LedgerEntry => ({ type: 'resolution', attemptId: a.id, at: NOW.toISOString(), outcome })
+    const val = (a: AttemptEntry, value: number): LedgerEntry => ({ type: 'value', attemptId: a.id, at: NOW.toISOString(), value })
+    const entries: LedgerEntry[] = [
+      ...prs, res(prs[0], 'merged'), res(prs[1], 'merged'), res(prs[2], 'merged'), res(prs[3], 'rejected'), res(prs[4], 'rejected'),
+      val(prs[0], 3), val(prs[1], 2), val(prs[2], 1),
+    ]
+    const r = nightShiftReadiness(entries, 7, NOW)
+    expect(r.quality).toMatchObject({ resolved: 5, rated: 3, met: true })
+    expect(r.ready).toBe(true)
+    expect(readinessLine(r)).toMatch(/ready.*60% accepted, value 2\.0\/5/)
+  })
+  it('low acceptance or low value keeps the gate shut', () => {
+    const prs = [1, 2, 3, 4, 5].map(d => att(d, 'docker', { prUrl: `https://github.com/o/app/pull/${d}` }))
+    const entries: LedgerEntry[] = [
+      ...prs,
+      ...prs.map((a, i): LedgerEntry => ({ type: 'resolution', attemptId: a.id, at: NOW.toISOString(), outcome: i < 2 ? 'merged' : 'rejected' })),
+      { type: 'value', attemptId: prs[0].id, at: NOW.toISOString(), value: 1 },
+    ]
+    expect(nightShiftReadiness(entries, 7, NOW).quality.missing).toEqual(['acceptance 40% < 50%', '2 more rated PR(s) (value:N label)'])
   })
 })
 

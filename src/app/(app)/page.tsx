@@ -24,6 +24,10 @@ import { ActiveAgentsCard } from '@/components/dashboard/active-agents-card'
 import { PortfolioCostCard } from '@/components/dashboard/portfolio-cost-card'
 import { getActiveAgentSummary } from '@/lib/actions/repositories'
 import { CollapsibleSection } from '@/components/dashboard/collapsible-section'
+import { OpenPrsCard } from '@/components/dashboard/open-prs-card'
+import { NextActionsCard } from '@/components/dashboard/next-actions-card'
+import { loadOpenPrs, type OpenPrsResult } from '@/lib/github/open-prs-query'
+import { getNextActions } from '@/lib/portfolio/next-actions-query'
 import { getMyAccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { getGoals } from '@/lib/actions/goals'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
@@ -50,7 +54,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats, activeAgents, costBreakdown, factoryKpis, factoryRepoIds] = await Promise.all([
+  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats, activeAgents, costBreakdown, factoryKpis, factoryRepoIds, openPrs, next] = await Promise.all([
     getDashboardStats(),
     getRepositoriesSlim(),
     getOpportunityData(),
@@ -73,7 +77,10 @@ export default async function DashboardPage() {
     getPortfolioCostBreakdown(),
     loadFactoryKpis(session.user.id).catch(() => null),
     factoryRepoIdsFor(session.user.id).catch((): number[] => []),
+    loadOpenPrs(session.user.id).catch((): OpenPrsResult => ({ ok: false, reason: 'GitHub search failed' })),
+    getNextActions(session.user.id).catch(() => null),
   ])
+  const now = new Date()
 
   const topRepos = repos
     .filter((r) => r.metrics?.healthScore != null)
@@ -89,6 +96,14 @@ export default async function DashboardPage() {
         <p className="text-muted-foreground text-sm mt-1">
           Overview of all {stats.total} repositories
         </p>
+      </div>
+
+      {/* ── NEEDS YOU ─────────────────────────────────────────────── */}
+      <SectionLabel label="Needs you" />
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+        {next && <NextActionsCard next={next} />}
+        <OpenPrsCard result={openPrs} now={now} />
       </div>
 
       {/* ── STATUS ────────────────────────────────────────────────── */}
@@ -148,25 +163,27 @@ export default async function DashboardPage() {
         />
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <PortfolioValuation totalValue={valuation.totalValue} valuedRepos={valuation.valuedRepos} revenueValue={valuation.revenueValue} totalRepos={stats.total} />
-        <LifecycleDistribution distribution={lifecycleDistribution} />
-      </div>
+      <LifecycleDistribution distribution={lifecycleDistribution} />
 
       <AdvisorCard advisor={advisor} timeAllocation={timeAllocation} hoursPerWeek={userRecord?.hoursPerWeek ?? 10} factoryRepoIds={factoryRepoIds} accuracyStats={accuracyStats} />
 
-      <GoalsCard goals={activeGoals} />
+      {/* ── MORE INSIGHTS (unused so far: collapsed until they earn a place, audit §9.3) ── */}
+      <CollapsibleSection label="More insights" storageKey="dashboard-more-insights-open" defaultOpen={false}>
+        <PortfolioValuation totalValue={valuation.totalValue} valuedRepos={valuation.valuedRepos} revenueValue={valuation.revenueValue} totalRepos={stats.total} />
 
-      <CeoReportCard report={ceoReport} />
+        <GoalsCard goals={activeGoals} />
 
-      {profileRecommendations.length > 0 && (
-        <ProfileOptimizerCard repos={profileRecommendations} githubLogin={userRecord?.githubLogin} />
-      )}
+        <CeoReportCard report={ceoReport} />
+
+        {profileRecommendations.length > 0 && (
+          <ProfileOptimizerCard repos={profileRecommendations} githubLogin={userRecord?.githubLogin} />
+        )}
+
+        <SimulationCard defaultHours={userRecord?.hoursPerWeek ?? 10} />
+      </CollapsibleSection>
 
       {/* ── PLANNING (collapsible — collapsed by default) ─────────── */}
       <CollapsibleSection label="Planning" storageKey="dashboard-planning-open" defaultOpen={true}>
-        <SimulationCard defaultHours={userRecord?.hoursPerWeek ?? 10} />
-
         <OpportunityPanel needsAttention={opportunity.needsAttention} highPotentialDormant={opportunity.highPotentialDormant} />
 
         {archiveCandidates.length > 0 && (

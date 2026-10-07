@@ -23,18 +23,19 @@ import {
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
 import { collectPackageInfo, confirmFailures, detectPackageManager, installCommand, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
-import { addPrLabel, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
+import { addPrLabel, ensureValueLabels, prLabels, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { commentOnPr, loadGstackChecklist, localReviewComment, runLocalReview, type LocalReview } from './lib/local-review'
 import { copilotHasQuota, copilotQuota } from './lib/copilot-quota'
 import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
-import { appendEntry, deadEnds, latestSignals, monthToDateUsd, openPrAttempts, pendingCiOracles, pendingReviews, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry, type SignalsEntry } from './lib/ledger'
+import { appendEntry, deadEnds, latestSignals, monthToDateUsd, openPrAttempts, pendingCiOracles, pendingReviews, pendingValues, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry, type SignalsEntry } from './lib/ledger'
 import { listAliases } from './lib/litellm-ops'
 import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
 
 import { run, type Runner } from './lib/proc'
 import { Sandbox, dockerAvailable, ensureSandboxImages, sandboxModels, sweepSandboxes } from './lib/sandbox'
-import { healthScores, recordApprovalNeeded, recordAttempt, recordResolution } from './lib/sink'
+import { healthScores, recordApprovalNeeded, recordAttempt, recordResolution, recordValue } from './lib/sink'
+import { prValueFromLabels } from '../src/lib/agents/pr-value'
 import { failedLog, rankOpportunities, senseRepo } from './lib/sensors'
 import { acquireLock } from './lib/lock'
 import { nightShiftReadiness, readinessLine, scheduledPolicy } from './lib/night-shift'
@@ -293,6 +294,17 @@ async function humanCommitsOn(prUrl: string): Promise<number | null> {
   return r.code === 0 && Number.isFinite(n) && n > 0 ? n - 1 : null
 }
 
+/** The `value:N` labels exist once per repo (marker file per repo, so it's one `gh` round per repo ever). */
+async function ensureRatingLabels(cfg: FactoryConfig, repos: string[]) {
+  const dir = path.join(cfg.home, 'value-labels')
+  mkdirSync(dir, { recursive: true })
+  for (const repo of new Set(repos)) {
+    const marker = path.join(dir, repo.replace('/', '__'))
+    if (existsSync(marker)) continue
+    if (await ensureValueLabels(repo)) writeFileSync(marker, new Date().toISOString())
+  }
+}
+
 /** Learn step: merged/closed factory PRs become resolutions the router reads; Copilot reviews are recorded. */
 async function reconcile(cfg: FactoryConfig) {
   for (const a of pendingReviews(readLedger(cfg.home))) {
@@ -313,6 +325,16 @@ async function reconcile(cfg: FactoryConfig) {
       await recordResolution(cfg, a.id, outcome, humanCommits)
       log(`reconciled ${a.prUrl} → ${state.toLowerCase()}`)
     }
+  }
+  // PR value (30-day experiment): the owner rates a merged PR with a `value:N` label, maybe days later.
+  await ensureRatingLabels(cfg, openPrAttempts(readLedger(cfg.home)).map(a => a.repo))
+  for (const a of pendingValues(readLedger(cfg.home), new Date())) {
+    const labels = await prLabels(a.prUrl!)
+    const value = labels ? prValueFromLabels(labels) : null
+    if (value === null) continue
+    appendEntry(cfg.home, { type: 'value', attemptId: a.id, at: new Date().toISOString(), value })
+    await recordValue(cfg, a.id, value)
+    log(`rated ${a.prUrl}: value ${value}/5`)
   }
   // red-ci oracle: the workflow that was failing on the base branch must pass on the PR.
   for (const a of pendingCiOracles(readLedger(cfg.home))) {

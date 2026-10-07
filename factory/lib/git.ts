@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { parseDiff, type DiffInfo } from './verify'
 import { run, type Runner } from './proc'
+import { PR_VALUE_LABELS } from '../../src/lib/agents/pr-value'
 
 // Use gh as the credential helper per command — no global git config changes.
 const CRED = ['-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential']
@@ -141,6 +142,28 @@ export async function createDraftPr(dir: string, opts: { base: string; head: str
 export async function addPrLabel(prUrl: string, repo: string, label: string): Promise<boolean> {
   await run('gh', ['label', 'create', label, '--repo', repo, '--color', 'FBCA04', '--description', 'RepoHQ factory: the adversarial reviewer raised concerns', '--force'], { timeoutMs: 60_000 })
   return (await run('gh', ['pr', 'edit', prUrl, '--add-label', label], { timeoutMs: 60_000 })).code === 0
+}
+
+/** Create (or refresh) the `value:0`…`value:5` rating labels in a repo; true when all exist. */
+export async function ensureValueLabels(repo: string): Promise<boolean> {
+  let ok = true
+  for (const l of PR_VALUE_LABELS) {
+    const r = await run('gh', ['label', 'create', l.name, '--repo', repo, '--color', l.color, '--description', l.description, '--force'], { timeoutMs: 60_000 })
+    ok &&= r.code === 0
+  }
+  return ok
+}
+
+/** A PR's label names; null when gh fails. */
+export async function prLabels(url: string): Promise<string[] | null> {
+  const r = await run('gh', ['pr', 'view', url, '--json', 'labels', '--jq', '[.labels[].name]'], { timeoutMs: 60_000 })
+  if (r.code !== 0) return null
+  try {
+    const names = JSON.parse(r.output) as unknown
+    return Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string') : null
+  } catch {
+    return null
+  }
 }
 
 export type PrState = 'OPEN' | 'MERGED' | 'CLOSED' | 'UNKNOWN'
