@@ -102,7 +102,7 @@ export default async function SettingsPage() {
             Agent Auto-Dispatch
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Automatically queue advisor actions on Monday morning. You wake up with PRs ready to review.
+            Automatically queue advisor actions for the factory on Monday morning.
           </p>
         </CardHeader>
         <CardContent>
@@ -212,10 +212,12 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2 text-sm">
+            {/* Mirrors .github/workflows/cron-*.yml, the canonical triggers (AGENTS.md "Cron jobs"). */}
             {[
-              { label: 'GitHub Sync', schedule: 'Daily at 02:00 UTC', path: '/api/cron/sync' },
+              { label: 'GitHub Sync', schedule: 'Every 6 hours', path: '/api/cron/sync' },
               { label: 'Security Scan', schedule: 'Daily at 03:00 UTC', path: '/api/cron/security' },
-              { label: 'Deployment Checks', schedule: 'Daily at 04:00 UTC', path: '/api/cron/deployments' },
+              { label: 'Deployment Checks', schedule: 'Every 12 hours', path: '/api/cron/deployments' },
+              { label: 'Weekly Digest', schedule: 'Mondays at 06:00 UTC', path: '/api/cron/digest' },
               { label: 'AI Summaries', schedule: 'Sundays at 05:00 UTC', path: '/api/cron/ai-summary' },
             ].map(({ label, schedule, path }) => (
               <div key={path} className="flex items-center justify-between py-1.5 border-b last:border-0">
@@ -228,7 +230,7 @@ export default async function SettingsPage() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground mt-3">
-            Running on Vercel Hobby (daily limit). Upgrade to Pro for higher frequency.
+            Triggered by GitHub Actions. GitHub pauses scheduled workflows after 60 days without a commit; a banner appears when scheduled data stops arriving. Each run shows on the Agents page.
           </p>
         </CardContent>
       </Card>

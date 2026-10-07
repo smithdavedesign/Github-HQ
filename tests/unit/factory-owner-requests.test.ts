@@ -65,6 +65,17 @@ describe('ownerRequestedTask', () => {
     expect(p).toMatch(/smallest change/i) // RULES carried in
     expect(p).toContain('npm test')
   })
+
+  it('tells the model the repo is already checked out, never to clone it', () => {
+    // A free model read "use this exact URL for git clone" as an order, was refused by the sandbox
+    // and gave up asking for approval (2026-10-07).
+    for (const task of [ownerRequestedTask('o/r', 'add a dark mode toggle', 'owner-1')]) {
+      const p = buildPrompt(task, 'M1', null, ['npm test'], 'o/r')
+      expect(p).toMatch(/already checked out in your current working directory/)
+      expect(p).toMatch(/do not clone/)
+      expect(p).not.toMatch(/URL for git clone/)
+    }
+  })
 })
 
 // ─── the judge gate for a free-form owner change ─────────────────────────────

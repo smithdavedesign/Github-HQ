@@ -60,7 +60,10 @@ test.describe('Agent Performance — factory KPIs (Phase 79)', () => {
     if (!uid) { test.skip(true, 'No user'); return }
 
     await page.goto('/agent-performance')
-    const hadKpis = await page.getByTestId('factory-kpis').isVisible().catch(() => false)
+    // Wait for the page before reading the baseline: an immediate isVisible() saw no KPIs yet,
+    // took a zero baseline and then miscounted the owner's real merged/closed PRs.
+    await expect(page.getByText(/Activity Log|No agent activity yet/).first()).toBeVisible({ timeout: 8000 })
+    const hadKpis = await page.getByTestId('factory-kpis').isVisible()
     const before = hadKpis ? await counts(page) : { merged: 0, closed: 0 }
 
     await seedJob(uid, 1, { outcome: 'merged', hoursAgo: 30 })

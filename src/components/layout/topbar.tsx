@@ -28,9 +28,14 @@ interface TopbarProps {
     image?: string | null
   }
   lastSyncedAt?: Date | null
+  /**
+   * When the server rendered the page. "Synced … ago" is measured from it, not the clock, so the
+   * server render and the hydration print the same text (they disagreed at minute boundaries).
+   */
+  renderedAt: number
 }
 
-export function Topbar({ user, lastSyncedAt }: TopbarProps) {
+export function Topbar({ user, lastSyncedAt, renderedAt }: TopbarProps) {
   const { theme, setTheme } = useTheme()
   const [syncing, setSyncing] = useState(false)
   const router = useRouter()
@@ -67,7 +72,7 @@ export function Topbar({ user, lastSyncedAt }: TopbarProps) {
         <MobileNav />
         {lastSyncedAt ? (
           <span className="text-xs text-muted-foreground hidden sm:block truncate">
-            Synced {formatRelative(lastSyncedAt)}
+            Synced {formatRelative(lastSyncedAt, renderedAt)}
           </span>
         ) : (
           <span className="text-xs text-muted-foreground hidden sm:block">Never synced</span>
@@ -130,8 +135,8 @@ export function Topbar({ user, lastSyncedAt }: TopbarProps) {
   )
 }
 
-function formatRelative(date: Date): string {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
+function formatRelative(date: Date, now: number): string {
+  const seconds = Math.floor((now - date.getTime()) / 1000)
   if (seconds < 60) return 'just now'
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`

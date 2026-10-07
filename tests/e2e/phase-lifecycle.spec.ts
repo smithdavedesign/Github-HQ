@@ -181,8 +181,9 @@ test.describe('Run Agent button — lifecycle hydration', () => {
 
     await page.goto(`/repos/${repoId}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    // Agent tab should render — either advisory section or history
-    await expect(page.getByText('No agent activity yet')).toBeVisible({ timeout: 8000 })
+    // Agent tab should render: its skills launcher is always there, whatever the repo's history.
+    await expect(page.getByText('/investigate').first()).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText(/Application error|Something went wrong/i)).toHaveCount(0)
   })
 
   test('seeded queued task shows non-idle button state', async ({ page }) => {

@@ -22,7 +22,7 @@ test.describe('Auto-Dispatch settings card', () => {
 
   test('shows the main enable toggle', async ({ page }) => {
     await page.goto('/settings')
-    await expect(page.getByText('Enable automatic task dispatch on Monday')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText('Enable auto-dispatch', { exact: true })).toBeVisible({ timeout: 8000 })
   })
 
   test('expanded controls hidden when toggle is off', async ({ page }) => {

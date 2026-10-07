@@ -8,10 +8,9 @@ test.describe('Graveyard page', () => {
 
   test('shows repo count or empty state', async ({ page }) => {
     await page.goto('/repos/graveyard')
-    // Either shows a repo count line or the empty state
-    const hasRepos = await page.locator('text=repos shelved').isVisible().catch(() => false)
-    const isEmpty = await page.locator('text=No repos marked as Sunsetting or Archived yet').isVisible().catch(() => false)
-    expect(hasRepos || isEmpty).toBe(true)
+    // Either shows a repo count line or the empty state (auto-waiting: an immediate isVisible()
+    // ran before the page streamed in)
+    await expect(page.getByText(/repos shelved/).or(page.getByText('No repos marked as Sunsetting or Archived yet')).first()).toBeVisible({ timeout: 8000 })
   })
 
   test('has back link to repositories', async ({ page }) => {

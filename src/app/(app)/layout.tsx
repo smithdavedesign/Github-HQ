@@ -40,6 +40,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             image: session.user.image,
           }}
           lastSyncedAt={user?.lastSyncedAt}
+          renderedAt={now.getTime()}
         />
         {staleMessage && <StaleDataBanner message={staleMessage} />}
         {factoryMessage && <StaleDataBanner message={factoryMessage} />}
