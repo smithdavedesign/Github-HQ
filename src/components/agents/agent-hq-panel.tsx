@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Activity, AlertTriangle, BatteryLow, CalendarClock, ChevronDown, ChevronRight, Container, ExternalLink, Pause,
+  Activity, AlertTriangle, BatteryLow, CalendarClock, ChevronDown, ChevronRight, ExternalLink, Pause,
   Play, PauseCircle, RotateCcw, Server, XCircle, Loader2, ListOrdered,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -12,13 +12,12 @@ import { Button } from '@/components/ui/button'
 import { formatDistanceToNow } from '@/lib/utils'
 import { requestStatusLabel } from '@/lib/agents/factory-request-utils'
 import type { AgentHqOverview, RequestRow, RunRow } from '@/lib/agents/agent-hq-data'
+import { workerState, type WorkerState, type WorkerStatus } from '../../../factory/lib/worker-state'
 import { cancelRequest, retryRequest, runNow, setQueuePaused } from '@/lib/actions/automation'
 import { TraceView } from './trace-view'
 import { fmtDuration, fmtIn, runKindLabel } from './format'
 
 const POLL_MS = 15_000
-/** The worker refreshes its status every minute; older than this and it's considered offline. */
-const OFFLINE_AFTER_MS = 3 * 60_000
 
 const REQUEST_STATUS_STYLE: Record<string, string> = {
   queued:    'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-900/40 dark:text-slate-300',
@@ -69,10 +68,47 @@ export function AgentHqPanel({ initial }: { initial: AgentHqOverview }) {
 
 // ─── Automation: worker, queue, schedules, recent runs ─────────────────────────
 
+/** Off isn't an error (nothing to fix, requests wait); not working is. */
+const WORKER_DOT: Record<WorkerState['kind'], string> = {
+  online: 'bg-emerald-500',
+  'not-working': 'bg-red-500',
+  off: 'bg-slate-400',
+  'not-set-up': 'bg-amber-500',
+}
+
+/** The worker in one line: online, not working (and why), off (since when, and why), or not set up. */
+function WorkerLine({ state, worker, snapshotAt }: { state: WorkerState; worker: WorkerStatus | null; snapshotAt: number }) {
+  const where = worker
+    ? <> on <span className="font-medium">{worker.host}</span>{worker.version ? <> · <span className="font-mono">{worker.version}</span></> : null}</>
+    : null
+  switch (state.kind) {
+    case 'online':
+      return <span>Worker online{where} · seen {formatDistanceToNow(worker!.lastSeenAt, snapshotAt)}</span>
+    case 'not-working':
+      return (
+        <span>
+          <span className="font-medium text-red-500">Worker not working</span> — {state.reason}{where ? <> ·{where}</> : null}
+        </span>
+      )
+    case 'off':
+      return (
+        <span>
+          <span className="font-medium">Worker off</span> — {state.stopped
+            ? <>stopped {formatDistanceToNow(state.lastSeenAt, snapshotAt)}: the Mac shut down or restarted, or the worker was reinstalled.</>
+            : <>last seen {formatDistanceToNow(state.lastSeenAt, snapshotAt)}: the Mac is asleep, shut down or offline.</>}
+          {' '}Requests wait until it&apos;s back.
+        </span>
+      )
+    case 'not-set-up':
+      return <span className="text-amber-600">Worker not set up — run <code className="font-mono">bash factory/bin/install-launchd.sh</code> on the Mac.</span>
+  }
+}
+
 function Automation({ data, snapshotAt, onChanged }: { data: AgentHqOverview; snapshotAt: number; onChanged: () => void }) {
   const [pending, start] = useTransition()
   const worker = data.worker
-  const online = !!worker && snapshotAt - new Date(worker.lastSeenAt).getTime() < OFFLINE_AFTER_MS
+  const state = workerState(worker, snapshotAt)
+  const live = state.kind === 'online' || state.kind === 'not-working'
   const queue = data.queue
 
   function act(label: string, fn: () => Promise<unknown>) {
@@ -127,14 +163,11 @@ function Automation({ data, snapshotAt, onChanged }: { data: AgentHqOverview; sn
         )}
         {data.redis === 'connected' && (
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`w-2 h-2 rounded-full ${online ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden />
+            <span className={`w-2 h-2 rounded-full ${WORKER_DOT[state.kind]}`} aria-hidden />
             <Server className="w-3.5 h-3.5 text-muted-foreground" />
-            {online && worker
-              ? <span>Worker online on <span className="font-medium">{worker.host}</span>{worker.version ? <> · <span className="font-mono">{worker.version}</span></> : null} · seen {formatDistanceToNow(worker.lastSeenAt, snapshotAt)}</span>
-              : <span className="text-red-500">Worker offline — the Mac is asleep, or the worker isn&apos;t running (bash factory/bin/install-launchd.sh)</span>}
-            {worker?.pausedFile && <Badge variant="outline" className="text-[10px] h-4 gap-1"><PauseCircle className="w-2.5 h-2.5" />PAUSE file</Badge>}
-            {worker?.onAc === false && <Badge variant="outline" className="text-[10px] h-4 gap-1 text-amber-600"><BatteryLow className="w-2.5 h-2.5" />on battery</Badge>}
-            {worker?.dockerUp === false && <Badge variant="outline" className="text-[10px] h-4 gap-1 text-red-500"><Container className="w-2.5 h-2.5" />Docker down</Badge>}
+            <WorkerLine state={state} worker={worker} snapshotAt={snapshotAt} />
+            {live && worker?.pausedFile && <Badge variant="outline" className="text-[10px] h-4 gap-1"><PauseCircle className="w-2.5 h-2.5" />PAUSE file</Badge>}
+            {live && worker?.onAc === false && <Badge variant="outline" className="text-[10px] h-4 gap-1 text-amber-600"><BatteryLow className="w-2.5 h-2.5" />on battery</Badge>}
             {queue?.paused && <Badge variant="outline" className="text-[10px] h-4">queue paused</Badge>}
           </div>
         )}

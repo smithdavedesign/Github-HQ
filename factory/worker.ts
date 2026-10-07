@@ -31,12 +31,13 @@ import { loadConfig, type FactoryConfig } from './lib/config'
 import { lockHolder } from './lib/lock'
 import { run } from './lib/proc'
 import {
-  QUEUE_NAME, QUEUE_PREFIX, WORKER_STATUS_KEY, WORKER_STATUS_TTL_SECONDS, isFactoryJobName, requestJobOptions,
-  scheduledJobTemplate, workerConnection, type FactoryJobName, type RequestJobData, type ScheduledJobData,
-  type ScheduledJobName, type WorkerStatus,
+  QUEUE_NAME, QUEUE_PREFIX, WORKER_HEARTBEAT_MS, WORKER_STATUS_KEEP_SECONDS, WORKER_STATUS_KEY, isFactoryJobName,
+  parseWorkerStatus, requestJobOptions, scheduledJobTemplate, withinMs, workerConnection, type FactoryJobName,
+  type RequestJobData, type ScheduledJobData, type ScheduledJobName, type WorkerStatus,
 } from './lib/queue'
 import { dockerAvailable } from './lib/sandbox'
 import { finishRun, parseProtocolLine, pruneRuns, startRun, type RunKind, type RunResult } from './lib/trace'
+import { HEARTBEAT_TIMEOUT_MS, configProblem, heartbeatAction, pickupCheck, recentStarts } from './lib/worker-health'
 import { JOB_TIMEOUT_MS, childCommand, gateFor, needsRequeue, requestFollowUp, runStatusFor, type HostState } from './lib/worker-policy'
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
@@ -49,20 +50,30 @@ let version: string | null = null
 let active: { child: ChildProcess; job: Job; since: string } | null = null
 let stopping = false
 let docker: { up: boolean; at: number } | null = null
+/** Status-record state (worker-health.ts): recent starts, a problem to report, the heartbeat's health. */
+let starts: string[] = []
+let problem: string | null = null
+let heartbeatFailures = 0
+let beating = false
+let waitingSince: number | null = null
 
 async function main() {
   const url = process.env.REDIS_URL
   if (!url) throw new Error('REDIS_URL is not set (the agent-hq-redis Key Value from render.yaml; see factory/README.md "Worker")')
   const cfg = loadConfig()
   mkdirSync(path.join(cfg.home, 'logs'), { recursive: true })
-  if (!cfg.repohq.userId || !cfg.repohq.databaseUrl) {
-    log('warning: the RepoHQ sink is not configured (FACTORY_USER_ID) — Agent HQ requests cannot be loaded; scheduled work only')
-  }
+  problem = configProblem(cfg.repohq)
+  if (problem) log(`warning: ${problem}`)
   const rev = await run('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD'], { timeoutMs: 10_000 })
   version = rev.code === 0 ? rev.output.trim() : null
 
   const queue = new Queue(QUEUE_NAME, { connection: workerConnection(url), prefix: QUEUE_PREFIX })
   queue.on('error', err => log(`queue connection: ${err.message}`))
+  // Status first, so even a worker that dies during setup shows up as one launchd keeps
+  // restarting. A clean stop before this start (a reinstall, a reboot) isn't part of a loop.
+  const previous = parseWorkerStatus(await withinMs(queue.client.then(c => c.get(WORKER_STATUS_KEY)), HEARTBEAT_TIMEOUT_MS).catch(() => null))
+  starts = previous?.stoppedAt ? [startedAt] : recentStarts(previous?.starts, new Date(startedAt))
+  await withinMs(publishStatus(queue, cfg), HEARTBEAT_TIMEOUT_MS).catch(err => log(`status update failed: ${err instanceof Error ? err.message : err}`))
   await syncSchedulers(queue, cfg)
   await reconcileRequests(queue, cfg)
 
@@ -79,23 +90,70 @@ async function main() {
   worker.on('error', err => log(`worker connection: ${err.message}`))
   worker.on('failed', (job, err) => { if (!(err instanceof DelayedError)) log(`job ${job?.name} ${job?.id} failed: ${err.message}`) })
 
-  await publishStatus(queue, cfg)
-  const heartbeat = setInterval(() => { void publishStatus(queue, cfg) }, 60_000)
+  const heartbeat = setInterval(() => { void beat(queue, cfg, restart) }, WORKER_HEARTBEAT_MS)
   log(`ready — queue "${QUEUE_NAME}" on ${new URL(url).hostname}, ${cfg.repos.length} repos allowlisted${version ? `, ${version}` : ''}`)
 
+  // Close what can be closed; a stuck connection may never answer, so nothing here waits long.
+  const stop = async (stoppedStatus: { stoppedAt: string; stopReason: string } | null) => {
+    clearInterval(heartbeat)
+    if (active?.child.pid) killGroup(active.child.pid, 'SIGTERM')
+    await withinMs(worker.close(), 30_000).catch(() => {})
+    if (stoppedStatus) await withinMs(publishStatus(queue, cfg, stoppedStatus), 5_000).catch(() => {})
+    await withinMs(queue.close(), 5_000).catch(() => {})
+  }
+  // A clean stop (launchd at shutdown or reinstall, Ctrl-C) is recorded, so the Agents page says
+  // the worker stopped instead of guessing.
   const shutdown = async (signal: string) => {
     if (stopping) return
     stopping = true
     log(`${signal} — stopping${active ? ` (interrupting ${active.job.name} ${active.job.id})` : ''}`)
-    clearInterval(heartbeat)
-    if (active?.child.pid) killGroup(active.child.pid, 'SIGTERM')
-    await worker.close().catch(() => {})
-    await queue.client.then(c => c.del(WORKER_STATUS_KEY)).catch(() => {})
-    await queue.close().catch(() => {})
+    await stop({ stoppedAt: new Date().toISOString(), stopReason: signal })
     process.exit(0)
+  }
+  // The worker can't heal itself (worker-health.ts): exit for launchd to start a fresh one. Not
+  // recorded as a stop; if it keeps happening, the start history shows the restart loop.
+  async function restart(reason: string) {
+    if (stopping) return
+    stopping = true
+    log(`restarting: ${reason}`)
+    await stop(null)
+    process.exit(1)
   }
   process.on('SIGTERM', () => { void shutdown('SIGTERM') })
   process.on('SIGINT', () => { void shutdown('SIGINT') })
+}
+
+/**
+ * One heartbeat: refresh the status record within HEARTBEAT_TIMEOUT_MS, then check that queued
+ * jobs are being taken. A failed write reconnects the status connection (a command still waiting
+ * on the dead one is resent on the new one); five in a row on an idle worker restart it.
+ */
+async function beat(queue: Queue, cfg: FactoryConfig, restart: (reason: string) => Promise<void>): Promise<void> {
+  if (beating || stopping) return
+  beating = true
+  try {
+    try {
+      await withinMs(publishStatus(queue, cfg), HEARTBEAT_TIMEOUT_MS)
+      if (heartbeatFailures > 0) log(`status updates recovered after ${heartbeatFailures} failure(s)`)
+      heartbeatFailures = 0
+    } catch (err) {
+      heartbeatFailures++
+      const action = heartbeatAction(heartbeatFailures, !!active)
+      log(`status update failed (${heartbeatFailures} in a row): ${err instanceof Error ? err.message : err} — ${action === 'exit' ? 'restarting the worker' : 'reconnecting'}`)
+      if (action === 'exit') return await restart(`Redis stopped answering status updates ${heartbeatFailures} times in a row`)
+      await queue.client.then(c => c.disconnect(true)).catch(() => {})
+      return
+    }
+    if (active || await withinMs(queue.isPaused(), HEARTBEAT_TIMEOUT_MS)) { waitingSince = null; return }
+    const counts = await withinMs(queue.getJobCounts('waiting', 'prioritized', 'active'), HEARTBEAT_TIMEOUT_MS)
+    const check = pickupCheck({ waiting: (counts.waiting ?? 0) + (counts.prioritized ?? 0), active: counts.active ?? 0 }, waitingSince, Date.now())
+    waitingSince = check.waitingSince
+    if (check.stuck) await restart('jobs have been waiting 10+ minutes and the worker isn\'t taking them')
+  } catch (err) {
+    log(`queue check failed: ${err instanceof Error ? err.message : err}`)
+  } finally {
+    beating = false
+  }
 }
 
 /** Job schedulers = config (factory.config.json `schedules`), in this machine's time zone. */
@@ -290,19 +348,16 @@ async function hostState(cfg: FactoryConfig, job: FactoryJobName): Promise<HostS
   }
 }
 
-/** Liveness for the Agents page: expires on its own if the worker stops refreshing it. */
-async function publishStatus(queue: Queue, cfg: FactoryConfig): Promise<void> {
-  try {
-    const status: WorkerStatus = {
-      host: hostname(), pid: process.pid, startedAt, lastSeenAt: new Date().toISOString(),
-      pausedFile: existsSync(path.join(cfg.home, 'PAUSE')), onAc: await onAcPower(), dockerUp: await dockerUp(cfg),
-      version, activeJob: active ? { id: active.job.id ?? '', name: active.job.name, since: active.since } : null,
-    }
-    const client = await queue.client
-    await client.set(WORKER_STATUS_KEY, JSON.stringify(status), { EX: WORKER_STATUS_TTL_SECONDS })
-  } catch (err) {
-    log(`status update failed: ${err instanceof Error ? err.message : err}`)
+/** The status record the Agents page reads (factory/lib/queue.ts `workerState`). Throws on failure. */
+async function publishStatus(queue: Queue, cfg: FactoryConfig, stopped?: { stoppedAt: string; stopReason: string }): Promise<void> {
+  const status: WorkerStatus = {
+    host: hostname(), pid: process.pid, startedAt, lastSeenAt: new Date().toISOString(),
+    pausedFile: existsSync(path.join(cfg.home, 'PAUSE')), onAc: await onAcPower(), dockerUp: await dockerUp(cfg),
+    version, activeJob: active ? { id: active.job.id ?? '', name: active.job.name, since: active.since } : null,
+    problem, starts, stoppedAt: stopped?.stoppedAt ?? null, stopReason: stopped?.stopReason ?? null,
   }
+  const client = await queue.client
+  await client.set(WORKER_STATUS_KEY, JSON.stringify(status), { EX: WORKER_STATUS_KEEP_SECONDS })
 }
 
 main().catch(err => {

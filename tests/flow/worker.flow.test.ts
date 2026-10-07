@@ -127,7 +127,7 @@ describe('worker start', () => {
 
   it('publishes a heartbeat the Agents page reads', async () => {
     const status = parseWorkerStatus(await workerStatusRaw())
-    expect(status).toMatchObject({ pid: worker.child.pid, pausedFile: false, dockerUp: null })
+    expect(status).toMatchObject({ pid: worker.child.pid, pausedFile: false, dockerUp: null, problem: null, stoppedAt: null, starts: [status!.startedAt] })
     expect(status!.host).toBeTruthy()
     expect(Date.now() - new Date(status!.lastSeenAt).getTime()).toBeLessThan(120_000)
   })
@@ -408,12 +408,13 @@ describe('the Agents page data with a live worker', () => {
     expect(await status(id)).toMatchObject({ status: 'running' })
   })
 
-  it('SIGTERM mid-run: the request goes back to the queue, the worker exits cleanly and clears its heartbeat', async () => {
+  it('SIGTERM mid-run: the request goes back to the queue, the worker exits cleanly and records the stop', async () => {
     const [{ id }] = await q<{ id: string }>(DB, `SELECT id FROM agent_requests WHERE status = 'running'`)
     expect(await worker.stop()).toBe(0)
     expect(await requestRow(DB, id)).toMatchObject({ status: 'queued', reason: 'the worker restarted mid-run — retrying' })
     expect(await (await queue.getJob(id))!.getState()).toBe('delayed')
-    expect(await workerStatusRaw()).toBeNull()
+    // Recorded, not deleted: the Agents page says "stopped", not "asleep".
+    expect(parseWorkerStatus(await workerStatusRaw())).toMatchObject({ stopReason: 'SIGTERM', stoppedAt: expect.any(String), pid: worker.child.pid })
     await cancelRequest(id)
   })
 })

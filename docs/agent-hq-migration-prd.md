@@ -132,7 +132,7 @@ After the build, [agent-hq-tradeoffs.md](agent-hq-tradeoffs.md) weighs everythin
   4. If the result is `deferred`, the row returns to `queued` and the job is re-delayed.
 - **Reconcile.** On worker start and at each scheduled cycle, rows that are `queued` with no job, or `running` with no active job, are re-added (idempotent, because `jobId` = request ID). This also covers enqueues whose Redis call failed.
 - **The JSONL front door stays.** OpenClaw requests are mirrored into `agent_requests` (`source: openclaw`) when picked up, so they appear in the UI and the trace.
-- **Heartbeat.** The worker writes a small status hash to Redis (host, pid, started, last seen, paused, on AC, Docker up). Nothing polls Neon on a timer, which keeps Neon's compute free to scale to zero.
+- **Heartbeat.** Every 30 s the worker writes a small status record to Redis: host, pid, started, last seen, paused, on AC, Docker up, a problem it can't get past, recent starts, and a clean stop. The record is kept for a week. Each write times out after 10 s and reconnects, and a worker that stays stuck restarts itself. Nothing polls Neon on a timer, which keeps Neon's compute free to scale to zero.
 
 ## 7. Request lifecycle in RepoHQ
 
@@ -176,7 +176,13 @@ The factory holds a request back for three more reasons, each a `rejected` row w
 `/agent-performance` becomes **Agents**. The route is kept and the nav label changes. The factory KPIs stay at the bottom. Data refreshes every 15 seconds with TanStack Query through session-guarded GET routes.
 
 1. **Automation**, a Bull-Board-style panel:
-   - **Worker:** online or offline (Redis heartbeat), host, last seen, PAUSE, AC power, Docker.
+   - **Worker:** one of four states, from the Redis heartbeat (`factory/lib/worker-state.ts`):
+     - online;
+     - not working, with the reason (Docker down, config missing, restart loop);
+     - off (asleep, shut down or offline, or stopped cleanly; requests wait);
+     - not set up.
+
+     It also shows the host, last seen, PAUSE and AC power.
    - **Queue:** waiting / active / delayed / completed / failed counts.
    - **Schedulers:** each with its pattern, time zone and next run.
    - **Recent runs:** factory jobs and the five Vercel crons together, with trigger, status, duration and a summary.
