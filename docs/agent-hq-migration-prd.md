@@ -52,6 +52,8 @@ Right now two systems write code. One is **Nexus**: paid Claude, unsandboxed, ru
 | CI-fix-on-existing-branch loop (`queueCIFix`) removed | The judge runs the repo's checks before any PR opens. CI failing on an agent PR becomes a notification (`agent_needs_human`), not another agent run |
 | GitHub Actions stays the canonical cron trigger | The Vercel cron routes are traced (§9) but not re-scheduled in BullMQ: the Mac isn't always on, and `AGENTS.md` forbids duplicate schedules |
 
+After the build, [agent-hq-tradeoffs.md](agent-hq-tradeoffs.md) weighs everything leaving the Render workers costs: availability, model quality, throughput, the features dropped, the ops burden, PR identity and Redis. It ranks them, proposes a scorecard for the trial week, and sequences what to do about each.
+
 ## 4. Target architecture
 
 ```
@@ -225,6 +227,7 @@ The flow tests already ran this whole path on a throwaway database before cutove
 2. Delete the four Nexus Render services (web, worker, Redis, Postgres).
 3. Archive `smithdavedesign/AI-Took-My-Job` on GitHub.
 4. Remove it from the `repos` list in `factory.config.json`.
+5. Keep the Nexus GitHub App. It lives on GitHub, not Render, and factory PRs can move to it from your own `gh` login (roadmap Phase 66; [trade-offs](agent-hq-tradeoffs.md) cost 7).
 
 **Rollback** (before step 6): re-set the three `NEXUS_*` variables, un-suspend Render, and revert the PR.
 

@@ -86,6 +86,8 @@ Setup (once): create the Key Value from `render.yaml` (Render → Blueprints), p
 
 Promotion still applies: requests use the `owner-requested` (fix) and `owner-report` (report) capabilities. `owner-requested` starts at `report`, so a fix request ends `verified` (judged, held, no PR) until you promote it to `pr`.
 
+Compared with Nexus's always-on Render worker, this setup trades availability and model quality for one governed, sandboxed, $0 path. Requests wait for this Mac, they never escalate to paid models (they run under the $0 unattended policy), and the Mac's upkeep is now yours. The full assessment and what to do about each cost: [docs/agent-hq-tradeoffs.md](../docs/agent-hq-tradeoffs.md).
+
 Tests: `npm run test:flow` runs this worker end to end against a throwaway Postgres + Redis (`docker compose --profile flow up -d`), with `FACTORY_WORKER_CHILD` pointing it at a scripted stand-in for run.ts; see [tests/flow](../tests/flow/README.md). Never set `FACTORY_WORKER_CHILD` on the real worker.
 
 ## Sandbox

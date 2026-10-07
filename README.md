@@ -301,7 +301,7 @@ The factory (`factory/`) is the only thing that writes code ([PRD](docs/agent-hq
 
 **No auto-chaining and no CI-fix loop:** the factory runs the repo's checks before it opens a PR. A PR that still fails CI is flagged `needs human` with a notification; you decide what runs next.
 
-Neon is the source of truth and Redis only wakes the worker: a lost job is re-queued from the row. See [docs/autonomous-factory.md](docs/autonomous-factory.md) for the factory design and [factory/README.md](factory/README.md) for the operator guide.
+Neon is the source of truth and Redis only wakes the worker: a lost job is re-queued from the row. See [docs/autonomous-factory.md](docs/autonomous-factory.md) for the factory design and [factory/README.md](factory/README.md) for the operator guide. What the move off Nexus's Render workers costs (above all: requests wait for the Mac, and run on free models), and what to do about it, is in [docs/agent-hq-tradeoffs.md](docs/agent-hq-tradeoffs.md).
 
 ---
 
@@ -363,6 +363,7 @@ npm run db:generate   # Generate migration files
 - [Roadmap](docs/roadmap.md) — all phases shipped + upcoming, gstack roadmap, distribution roadmap
 - [Audit (2026-10)](docs/audit-2026-10.md) — whole-system audit: live site, security, architecture, roadmap triage
 - [One agent system PRD](docs/agent-hq-migration-prd.md) — the factory as the only executor, the queue and worker, the Agents page, the cutover runbook
+- [Trade-offs of leaving the Render workers](docs/agent-hq-tradeoffs.md) — what moving execution to the Mac costs (availability, model quality, ops, PR identity) and buys, the trial-week scorecard, and what to do next
 - [Agentic Full Flow](docs/agentic-full-flow.md) / [Execution Flow](docs/agentic-execution-flow.md) — the Nexus-era pipeline (superseded by the PRD; kept for history)
 - [Autonomous Factory](docs/autonomous-factory.md) — free-model-first self-improvement loop: local AI stack lane, model-tier routing, Docker-sandboxed worker, Judge v2 + adversarial review, capability stages, sensors and a ranked queue, job record and KPIs, night shift, infra agent (Horizon 3). Operator guide: [factory/README.md](factory/README.md)
 - [gstack Findings](docs/gstack-findings.md) — running log of skill run findings and resolutions

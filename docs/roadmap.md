@@ -935,6 +935,10 @@ The factory becomes the only executor, and Nexus's queue infrastructure (Redis/B
 - [x] Validation: unit tests for the guards, routes, actions and lifecycle; flow tests (`tests/flow`) that run the migration, the app, the real worker and the browser UI end to end on a throwaway Postgres + Redis (`npm run test:flow`, `npm run test:flow:e2e`, CI job `flow`)
 - [ ] Owner cutover: Redis from the Blueprint, `REDIS_URL` + `FACTORY_USER_ID` in Vercel, `npm run db:push` + `npm run factory:migrate`, `install-launchd.sh`, suspend then retire Nexus on Render, archive `AI-Took-My-Job` (runbook: PRD §11)
 - [ ] Promote `owner-requested` to `pr` once fix requests verify reliably (until then they end `verified`, no PR)
+- [ ] Trial week: keep Nexus suspended and fill in the scorecard ([trade-offs](agent-hq-tradeoffs.md#judging-the-trial-week)), then decide the next step from it
+- [ ] Opt-in paid escalation for requests the owner starts (every source but `auto-dispatch`): local → free → paid only on failure, a per-request ceiling inside a monthly cap; the night shift stays $0 ([trade-offs](agent-hq-tradeoffs.md) recommendation 2)
+- [ ] Worker health: LiteLLM, Ollama, Neon and GitHub probes in the heartbeat and on the Agents page, self-restarts for LiteLLM and Docker, reconcile on wake (recommendation 3)
+- [ ] Later, if needed: an always-on worker host; a cycle that yields to a waiting request; Redis replaced by a Neon poll (recommendations 6–8)
 
 ### Phase 67+ — Horizon 3: Infrastructure Agent
 - [ ] `agent_resources` ledger table (owner, provider, kind, environment, est. cost, `ephemeral`, `ttlAt`, destroy procedure, lifecycle state) + `.infrastructure/resources.json` mirror
