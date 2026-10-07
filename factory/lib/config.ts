@@ -83,7 +83,7 @@ export type CapabilityStage = 'observe' | 'report' | 'pr'
 
 export const CAPABILITIES = [
   'fix-types', 'fix-lint', 'fix-tests', 'lint-autofix', 'deps-audit', 'docs-readme',
-  'red-ci', 'security-alerts', 'adversarial-veto', 'owner-requested',
+  'red-ci', 'security-alerts', 'adversarial-veto', 'owner-requested', 'owner-report',
 ] as const
 export type Capability = typeof CAPABILITIES[number]
 
@@ -96,6 +96,9 @@ export const DEFAULT_CAPABILITIES: Record<Capability, CapabilityStage> = {
   // the full path (sandbox → judge) and reports "verified, held, no PR" so a clean dry run earns trust
   // first. Promote to `pr` (here or in factory.config.json) to actually open labeled draft PRs.
   'owner-requested': 'report',
+  // Agent HQ report requests (Phase 81): read-only investigations that never open a PR, so
+  // `report` is their full capability; `observe` turns them off.
+  'owner-report': 'report',
 }
 
 /** Builder tier → reviewer alias from a different model family (local = Qwen; free-agent = Nemotron → Cohere → Gemini). */

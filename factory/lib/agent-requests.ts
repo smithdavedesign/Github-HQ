@@ -168,7 +168,8 @@ export async function resolveRequest(cfg: FactoryConfig, req: ResolvedRequest, o
       .returning({ id: schema.agentRequests.id })
     // Cancelled while running (or resolved twice): leave the row and don't emit events again.
     if (updated.length === 0) return
-    const records = requestOutcomeRecords(cfg.repohq.userId!, req, outcome, runId)
+    const repoId = req.repoId ?? await repoIdFor(d, cfg.repohq.userId!, req.repo)
+    const records = requestOutcomeRecords(cfg.repohq.userId!, { ...req, repoId }, outcome, runId)
     if (records.events.length > 0) await d.insert(schema.portfolioEvents).values(records.events)
     if (records.notifications.length > 0) await d.insert(schema.notifications).values(records.notifications)
   })

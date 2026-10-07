@@ -22,7 +22,11 @@ export const JOB_NAMES = ['request', 'cycle', 'report', 'scout'] as const
 export type FactoryJobName = typeof JOB_NAMES[number]
 export type ScheduledJobName = Exclude<FactoryJobName, 'request'>
 
-export interface RequestJobData { requestId: string }
+export interface RequestJobData {
+  requestId: string
+  /** Failed runs so far (the worker retries a request up to MAX_REQUEST_ATTEMPTS failures). */
+  failures?: number
+}
 export interface ScheduledJobData { trigger: 'schedule' | 'manual' }
 
 /** Requests are explicit human intent: they run before scheduled work (lower = sooner). */
@@ -116,7 +120,8 @@ export interface WorkerStatus {
   pausedFile: boolean
   /** null when unknown (not macOS). */
   onAc: boolean | null
-  dockerUp: boolean
+  /** null when the sandbox is off (Docker isn't needed). */
+  dockerUp: boolean | null
   /** Deployed commit of the worker (install-launchd.sh pins a checkout). */
   version: string | null
   activeJob: { id: string; name: string; since: string } | null

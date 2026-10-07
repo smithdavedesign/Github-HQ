@@ -173,3 +173,44 @@ describe('factory:migrate 0002 (Agent HQ queue)', () => {
     expect(stmts.every(s => /IF NOT EXISTS/.test(s))).toBe(true)
   })
 })
+
+describe('report-mode tasks (owner-report)', () => {
+  it('is an unscoped read-only task that carries the request id and skill', async () => {
+    const { ownerReportTask, reportPrompt, PIPELINES } = await import('../../factory/lib/tasks')
+    const t = ownerReportTask('o/r', '  audit the auth flow  ', 'req-1', 'review')
+    expect(t).toMatchObject({ kind: 'owner-report', scoped: false, ownerTaskId: 'req-1', skill: 'review', objective: 'audit the auth flow' })
+    expect(t.title).toMatch(/^\/review: /)
+    expect(PIPELINES['owner-report']).toMatch(/no PR/)
+    const p = reportPrompt(t, 'o/r')
+    expect(p).toMatch(/senior reviewer/) // the review skill's focus
+    expect(p).toContain('audit the auth flow')
+    expect(p).toMatch(/Do NOT modify any files/)
+    expect(p).toMatch(/## Findings/)
+  })
+
+  it('parseReport keeps the report from its Summary heading and needs a Findings section', async () => {
+    const { parseReport } = await import('../../factory/lib/tasks')
+    const text = 'I looked around.\n## Summary\nTwo issues in auth.\n## Findings\n- src/auth.ts:10 — token logged\n## Suggested next step\n- redact it'
+    expect(parseReport(text)).toMatch(/^## Summary/)
+    expect(parseReport('## Summary\nno findings heading here at all, just prose that is long enough')).toBeNull()
+    expect(parseReport('nothing structured')).toBeNull()
+  })
+
+  it('fix skills add their guidance; document-release stays docs-only', async () => {
+    const { ownerRequestedTask } = await import('../../factory/lib/tasks')
+    expect(ownerRequestedTask('o/r', 'refresh the docs', 'req-2', 'document-release').objective).toMatch(/Documentation files only/)
+    expect(ownerRequestedTask('o/r', 'fix login', 'req-3', 'qa').objective).toMatch(/Do not edit test files/)
+    expect(ownerRequestedTask('o/r', 'ship it', 'req-4', 'ship').objective).not.toMatch(/Documentation files only/)
+  })
+
+  it('owner-report is a capability (default report) and never feeds model routing', async () => {
+    const { DEFAULT_CAPABILITIES } = await import('../../factory/lib/config')
+    const { toAttemptRecords } = await import('../../factory/lib/ledger')
+    expect(DEFAULT_CAPABILITIES['owner-report']).toBe('report')
+    const entries = [{
+      type: 'attempt', id: 'a', runId: 'r', at: now.toISOString(), repo: 'o/r', kind: 'owner-report', taskTier: 2, tier: 'M1', model: 'm',
+      harness: 'claude-code', outcome: 'failed', reason: 'no structured report', exploring: false, durationMs: 1, costUsd: 0, inputTokens: 0, outputTokens: 0,
+    }] as LedgerEntry[]
+    expect(toAttemptRecords(entries)).toEqual([])
+  })
+})

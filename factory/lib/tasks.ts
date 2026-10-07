@@ -7,7 +7,7 @@ import { errorExcerpt, filesFromEslintOutput, filesFromTscOutput, type AuditCoun
  * auth, payments and migrations never are.
  */
 
-export type TaskKind = 'fix-types' | 'lint-autofix' | 'fix-lint' | 'fix-tests' | 'deps-audit' | 'docs-readme' | 'red-ci' | 'owner-requested'
+export type TaskKind = 'fix-types' | 'lint-autofix' | 'fix-lint' | 'fix-tests' | 'deps-audit' | 'docs-readme' | 'red-ci' | 'owner-requested' | 'owner-report'
 
 /**
  * Fixed pipelines (roadmap Phase 78): every task kind is sense → one worker step → verify → PR.
@@ -22,6 +22,7 @@ export const PIPELINES: Record<TaskKind, string> = {
   'docs-readme': 'README gaps → model edit → README judge → PR',
   'red-ci': 'base-branch workflow failing → investigate (report) or fix (pr; oracle: the workflow passes on the PR)',
   'owner-requested': 'owner asks (front door) → model (sandbox, free-pool) → judge (checks pass, no regress, diff ≤ budget) → draft PR labeled owner-requested',
+  'owner-report': 'owner asks for a report (Agent HQ) → read-only investigation (sandbox, free-pool) → structured findings back to RepoHQ, no PR',
 }
 
 export interface FactoryTask {
@@ -37,8 +38,10 @@ export interface FactoryTask {
   verify: CheckName[]
   /** red-ci: the failing workflow (its passing on the PR is the oracle). */
   ci?: { workflow: string; url: string; base: string }
-  /** owner-requested: the front-door queue taskId, carried through to the ledger so results correlate back. */
+  /** owner-requested / owner-report: the request id (front-door queue or agent_requests), carried through to the ledger so results correlate back. */
   ownerTaskId?: string
+  /** owner-report: the gstack skill the report was asked as (shapes the prompt). */
+  skill?: string
 }
 
 /** Max files for a task to count as scoped (M0-eligible). */
@@ -151,14 +154,76 @@ export function redCiTask(run: { workflow: string; url: string; conclusion: stri
  * no regression of any previously-passing check. It never auto-merges: the draft PR is
  * labeled `owner-requested` and reviewed as owner intent.
  */
-export function ownerRequestedTask(repo: string, task: string, ownerTaskId: string): FactoryTask {
+export function ownerRequestedTask(repo: string, task: string, ownerTaskId: string, skill?: string): FactoryTask {
   const text = task.trim()
+  const guidance = skill ? FIX_SKILL_GUIDANCE[skill] : undefined
   return {
     kind: 'owner-requested', taskTier: 2, scoped: false, files: [],
     title: `Owner request: ${text.length > 60 ? `${text.slice(0, 57)}…` : text}`,
-    objective: `${text}\n\nThis is an owner request for ${repo}. Make the smallest change that satisfies it. Keep all existing checks (typecheck, lint, tests) passing — do not break anything that works today.`,
+    objective: `${text}${guidance ? `\n\n${guidance}` : ''}\n\nThis is an owner request for ${repo}. Make the smallest change that satisfies it. Keep all existing checks (typecheck, lint, tests) passing — do not break anything that works today.`,
     evidence: '', verify: [], ownerTaskId,
   }
+}
+
+/** Agent HQ fix skills (docs/agent-hq-migration-prd.md §8): what each asks of the change. */
+const FIX_SKILL_GUIDANCE: Record<string, string> = {
+  // The judge rejects test-file edits on owner requests (verify.ts), so the fix stays in source.
+  qa: 'Find bugs in the area the request describes and fix them in the source code. Do not edit test files; every existing test must keep passing.',
+  'document-release': 'Update README, docs and CHANGELOG so they match the code as it is today. Documentation files only: change no functional code.',
+}
+
+/** Agent HQ report skills: the focus of a read-only investigation (docs/agent-hq-migration-prd.md §8). */
+const REPORT_SKILL_FOCUS: Record<string, string> = {
+  review: 'Review the code like a senior reviewer before merge: security issues, logic errors, missing error handling, risky structure.',
+  'qa-only': "Find bugs: run the project's checks and tests, read the code paths the request names, and list each bug with how to reproduce it.",
+  health: 'Assess code health: typecheck errors, lint problems, failing or missing tests, dead code, outdated or vulnerable dependencies. End the summary with a 0–10 health score.',
+  investigate: 'Find the root cause of the problem the request describes. Reproduce it if you can and point at the exact code responsible.',
+  retro: "Look back at the last 7 days of commits (`git log --since='7 days ago' --stat`): what shipped, what's risky, what's unfinished.",
+}
+
+/**
+ * A read-only report the owner asked for through Agent HQ (agent_requests.mode = report). It runs
+ * like a red-ci investigation — one sandboxed agent run on the free pool, file changes discarded —
+ * and its structured report comes back as findings. Never a PR.
+ */
+export function ownerReportTask(repo: string, task: string, ownerTaskId: string, skill?: string): FactoryTask {
+  const text = task.trim()
+  const label = skill ? `/${skill}` : 'Report'
+  return {
+    kind: 'owner-report', taskTier: 2, scoped: false, files: [],
+    title: `${label}: ${text.length > 60 ? `${text.slice(0, 57)}…` : text}`,
+    objective: text, evidence: '', verify: [], ownerTaskId, ...(skill ? { skill } : {}),
+  }
+}
+
+/** Prompt for an owner report: the skill's focus, the request, and the report format parseReport reads. */
+export function reportPrompt(task: FactoryTask, repo: string): string {
+  const focus = (task.skill && REPORT_SKILL_FOCUS[task.skill]) ?? 'Investigate what the request asks about.'
+  return [
+    focus,
+    '',
+    `Request for ${repo}:`,
+    task.objective,
+    '',
+    'There is no network beyond the npm registry and no secrets; say so where a check needs them.',
+    'Do NOT modify any files. Finish with exactly this report:',
+    '## Summary',
+    '(two or three sentences)',
+    '## Findings',
+    '(one bullet per finding: `- path:line — what is wrong and why it matters`; write `- none` if there are none)',
+    '## Evidence',
+    '(file:line references, command output)',
+    '## Suggested next step',
+    '(one bullet: the change to make next, specific enough to queue as a fix request)',
+  ].join('\n')
+}
+
+/** The report part of an owner report, or null if the model didn't produce one. */
+export function parseReport(text: string): string | null {
+  const start = text.search(/^#+\s*Summary/im)
+  if (start < 0) return null
+  const report = text.slice(start).trim()
+  return /^#+\s*Findings/im.test(report) && report.length >= 60 ? report.slice(0, 6000) : null
 }
 
 /** Read-only root-cause investigation prompt (gstack /investigate, as a fixed single step). */

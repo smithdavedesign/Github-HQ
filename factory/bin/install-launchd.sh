@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Deploy the factory to ~/.repohq-factory/app and install (or remove with --uninstall) its launchd schedules.
+# Deploy the factory to ~/.repohq-factory/app and install (or remove with --uninstall) its launchd jobs.
 # Re-run after committing factory changes to redeploy.
+#
+# With a REDIS_URL (Agent HQ, roadmap Phase 81 — env, keychain, or REDIS_URL in .env.local):
+#   com.repohq.factory.worker — the BullMQ worker (factory/worker.ts), always on (KeepAlive). It runs
+#                               Agent HQ requests and the scheduled cycle / report / scout, whose
+#                               times are now BullMQ job schedulers (factory.config.json `schedules`).
+# Without one, the pre-Phase-81 calendar (no Agent HQ requests):
 #   com.repohq.factory.cycle  — hourly 20:00–06:00 (Night Shift v2) plus 12:00 and 16:00 local (≤ 1 PR per cycle,
 #                               ≤ maxPrsPerDay per factory day) → 3–8 draft PRs by morning
 #   com.repohq.factory.report — 06:45 local: one update per gstack role, emailed
@@ -36,13 +42,37 @@ plist() { # label mode calendar-xml
 PLIST
 }
 
-LABELS="com.repohq.factory.cycle com.repohq.factory.report com.repohq.factory.scout"
+# Always-on job for the Agent HQ worker. ThrottleInterval keeps a misconfigured worker from
+# restart-looping faster than once a minute.
+worker_plist() {
+  cat <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.repohq.factory.worker</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>$APP/factory/bin/factory.sh</string><string>worker</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>60</integer>
+  <key>StandardOutPath</key><string>$HOME/.repohq-factory/logs/launchd-worker.out</string>
+  <key>StandardErrorPath</key><string>$HOME/.repohq-factory/logs/launchd-worker.err</string>
+  <key>ProcessType</key><string>Standard</string>
+  <key>Nice</key><integer>5</integer>
+</dict>
+</plist>
+PLIST
+}
+
+CALENDAR_LABELS="com.repohq.factory.cycle com.repohq.factory.report com.repohq.factory.scout"
+LABELS="$CALENDAR_LABELS com.repohq.factory.worker"
 for label in $LABELS; do
   launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
   rm -f "$AGENTS/$label.plist"
 done
 if [ "${1:-}" = "--uninstall" ]; then
-  echo "factory schedules removed"
+  echo "factory launchd jobs removed"
   exit 0
 fi
 
@@ -75,18 +105,40 @@ if [ -f "$ROOT/.env.local" ] && ! security find-generic-password -s repohq-facto
   fi
   unset DB_URL
 fi
-CYCLE_HOURS="20 21 22 23 0 1 2 3 4 5 6 12 16"
-CYCLE_TIMES="$(for h in $CYCLE_HOURS; do printf '    <dict><key>Hour</key><integer>%s</integer><key>Minute</key><integer>5</integer></dict>\n' "$h"; done)"
-plist com.repohq.factory.cycle cycle "<array>
+# ── Agent HQ queue (Phase 81): REDIS_URL → keychain, then the worker replaces the calendar ─
+REDIS="${REDIS_URL:-}"
+[ -z "$REDIS" ] && REDIS="$(security find-generic-password -s repohq-factory-redis-url -w 2>/dev/null || true)"
+if [ -z "$REDIS" ] && [ -f "$ROOT/.env.local" ]; then
+  REDIS="$(sed -nE 's/^REDIS_URL=["'"'"']?([^"'"'"']+)["'"'"']?$/\1/p' "$ROOT/.env.local" | head -1)"
+fi
+if [ -n "$REDIS" ]; then
+  security add-generic-password -U -s repohq-factory-redis-url -a "$USER" -w "$REDIS"
+  echo "stored REDIS_URL in the login keychain (service repohq-factory-redis-url)"
+  INSTALL="com.repohq.factory.worker"
+  worker_plist > "$AGENTS/com.repohq.factory.worker.plist"
+else
+  echo "warning: no REDIS_URL (env, keychain or .env.local) — installing the launchd calendar; Agent HQ requests won't run."
+  echo "         Create the Redis from render.yaml, set REDIS_URL and re-run this script to switch to the worker."
+  INSTALL="$CALENDAR_LABELS"
+  CYCLE_HOURS="20 21 22 23 0 1 2 3 4 5 6 12 16"
+  CYCLE_TIMES="$(for h in $CYCLE_HOURS; do printf '    <dict><key>Hour</key><integer>%s</integer><key>Minute</key><integer>5</integer></dict>\n' "$h"; done)"
+  plist com.repohq.factory.cycle cycle "<array>
 $CYCLE_TIMES
   </array>" > "$AGENTS/com.repohq.factory.cycle.plist"
-plist com.repohq.factory.report report '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>' > "$AGENTS/com.repohq.factory.report.plist"
-plist com.repohq.factory.scout scout '<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>10</integer></dict>' > "$AGENTS/com.repohq.factory.scout.plist"
+  plist com.repohq.factory.report report '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>' > "$AGENTS/com.repohq.factory.report.plist"
+  plist com.repohq.factory.scout scout '<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>10</integer></dict>' > "$AGENTS/com.repohq.factory.scout.plist"
+fi
+unset REDIS
 
-for label in $LABELS; do
+for label in $INSTALL; do
   plutil -lint "$AGENTS/$label.plist" >/dev/null
   launchctl bootstrap "$DOMAIN" "$AGENTS/$label.plist"
 done
-echo "installed: $(launchctl list | grep -c com.repohq.factory) factory schedules"
-echo "run now:   launchctl kickstart $DOMAIN/com.repohq.factory.cycle"
+echo "installed: $INSTALL"
+if [ "$INSTALL" = com.repohq.factory.worker ]; then
+  echo "status:    the Agents page in RepoHQ (worker online, queue, schedules) · logs in ~/.repohq-factory/logs"
+  echo "run now:   Agents page → Run now, or: npm run factory -- --dry-run"
+else
+  echo "run now:   launchctl kickstart $DOMAIN/com.repohq.factory.cycle"
+fi
 echo "pause:     touch ~/.repohq-factory/PAUSE"

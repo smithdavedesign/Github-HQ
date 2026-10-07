@@ -193,8 +193,9 @@ export function toAttemptRecords(entries: LedgerEntry[]): AttemptRecord[] {
   const res = resolutionsOf(entries)
   return attemptsOf(entries)
     // Deterministic fixes and read-only investigations say nothing about a model's skill as a
-    // builder; counting them would credit M0 with npm audit fix's near-100% success.
-    .filter(a => a.outcome !== 'rate_limited' && a.harness !== 'npm-audit-fix' && a.harness !== 'lint-autofix' && !(a.kind === 'red-ci' && a.findings !== undefined && !a.prUrl))
+    // builder; counting them would credit M0 with npm audit fix's near-100% success. Agent HQ
+    // report requests (owner-report) are investigations too, whatever their outcome.
+    .filter(a => a.outcome !== 'rate_limited' && a.harness !== 'npm-audit-fix' && a.harness !== 'lint-autofix' && !(a.kind === 'red-ci' && a.findings !== undefined && !a.prUrl) && a.kind !== 'owner-report')
     .map(a => {
       const r = res.get(a.id)
       const outcome = r ? (r.outcome === 'merged' ? 'success' : 'failed') : a.outcome === 'verified' ? 'success' : 'failed'
