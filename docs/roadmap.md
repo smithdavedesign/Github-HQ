@@ -21,6 +21,15 @@ The roadmap stopped being a list of phases. For the next 30 days everything serv
 
 **Frozen for the 30 days:** billing and multi-tenancy (Distribution D1–D5), valuation, simulation, goals and CEO-report work (collapsed under "More insights" on the dashboard), new agent frameworks or executors, always-on infrastructure, auto-merge (trust ladder levels 3+), and new roadmap phases.
 
+**The one infrastructure change allowed during the window: a RepoHQ GitHub App for factory PRs** (Phase 66, shipped 2026-10-07). Factory PRs are opened with your own `gh` login, and GitHub never lets a PR's author approve it. So "require a review before merging" on `main` (Phase 65's L4 backstop) would block every factory PR or force an admin bypass. The opt-in fine-grained token doesn't help, since it's still you. A bot identity:
+- lets you approve factory PRs, so branch protection can be switched on;
+- separates bot work from yours in the history;
+- has GitHub enforce that the factory never approves its own work.
+
+It's small, doesn't touch the experiments, and unblocks the branch-protection item below.
+
+**After the window, in this order:** opt-in paid escalation for owner requests, then per-service worker health probes (both Phase 81), then let the 30 days of data decide between dropping Redis and an always-on host.
+
 **Next candidate once A–D have data:** a deterministic cross-repo duplicate scan (shared dependencies, near-identical modules, repeated auth/GitHub-client code across the 66 repos). Embeddings stay deferred until the cheap version shows the signal exists.
 
 ### Carried over from the history
@@ -98,13 +107,13 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 - [x] `awaiting_approval` lifecycle stage in RepoHQ
 - [ ] Signed, single-use approval links. A first `/approve/[token]` page was removed in the 2026-10 audit: nothing issued tokens, approving changed nothing downstream, single-use lived in per-instance memory, and the secret fell back to a hard-coded string. Rebuild when the factory actually pauses for approval: a dedicated required secret, DB-backed single use, and the approval recorded where the factory reads it
 - [ ] OpenClaw → WhatsApp relay for approvals (needs owner sign-off before any outbound WhatsApp)
-- [ ] Branch protection on `main` for every allowlisted repo (L4 backstop). Owner action via GitHub settings
+- [ ] Branch protection on `main` for every allowlisted repo (L4 backstop). Owner action via GitHub settings. **Unblocked 2026-10-07** by the Phase 66 GitHub App: once factory PRs are authored by `repohq-factory[bot]` you can approve them, so require 1 approving review
 
 ### Phase 66 — Agent Identity & Secrets
 - [x] Secrets read at runtime only: the OpenRouter key from `~/ai-stack/litellm/.env` (into an HTTP header), the RepoHQ DB URL from `.env.local`; never written to prompts, logs or new files
 - [x] `op run` support in the launchd wrapper (`FACTORY_OP_ENV_FILE`)
 - [ ] 1Password `AI-Agent` vault + service account (owner action), then move both secrets into it
-- [ ] Factory PRs authored by a dedicated GitHub App instead of the owner's `gh` login (the Nexus App retires with Nexus; create or repurpose one)
+- [x] **Done 2026-10-07:** the `repohq-factory` GitHub App (App ID 5227130) authors factory branches, commits, PRs and labels (`factory/lib/github-app.ts`; operator notes in factory/README.md). Owner action left: narrow the installation to the allowlisted repos. Original item: factory PRs authored by a dedicated RepoHQ GitHub App instead of the owner's `gh` login. Contents/PR/label write on the allowlisted repos only; installation token minted per run on the Mac; Copilot calls keep your login. Unblocks Phase 65 branch protection (an author can't approve their own PR), separates bot work from yours, and lets GitHub enforce "the factory never approves its own work". Supersedes the opt-in fine-grained token, which is still your identity. The Nexus App retires with Nexus (create a new one rather than repurposing it)
 
 ### Phase 68 — Redundant Free Model Pool ✅
 OpenRouter's 50 free requests/day can't be the single brain. M1 became a LiteLLM pool across independent free providers (design: [autonomous-factory.md §3.1](autonomous-factory.md#31-the-free-model-pool-no-single-quota-is-a-point-of-failure)).
@@ -264,7 +273,9 @@ The factory becomes the only executor, and Nexus's queue infrastructure (Redis/B
 - [ ] Trial week: keep Nexus suspended and fill in the scorecard ([trade-offs](agent-hq-tradeoffs.md#judging-the-trial-week)), then decide the next step from it
 - [ ] Opt-in paid escalation for requests the owner starts (every source but `auto-dispatch`): local → free → paid only on failure, a per-request ceiling inside a monthly cap; the night shift stays $0 ([trade-offs](agent-hq-tradeoffs.md) recommendation 2)
 - [ ] Worker health: LiteLLM, Ollama, Neon and GitHub probes in the heartbeat and on the Agents page, self-restarts for LiteLLM and Docker, reconcile on wake (recommendation 3)
-- [ ] Later, if needed: an always-on worker host; a cycle that yields to a waiting request; Redis replaced by a Neon poll (recommendations 6–8)
+- [ ] Later, if needed: an always-on worker host; a cycle that yields to a waiting request; Redis replaced by a Neon poll (recommendations 6–8). Not during the 30-day window.
+  - **Redis → Neon poll:** the case for dropping Redis is a monthly bill and a failure mode: Render's Key Value proxy silently dropping the connection is what hung the heartbeat on 2026-10-07.
+  - **Caveat:** Neon suspends idle compute, and a worker polling every 30–60 s keeps it awake around the clock and spends compute hours. Poll slowly (minutes) outside the hours a person is likely to queue work, or wake the worker on enqueue some other way, and check the Neon plan's compute allowance first.
 
 ### Phase 67+ — Horizon 3: Infrastructure Agent
 - [ ] `agent_resources` ledger table (owner, provider, kind, environment, est. cost, `ephemeral`, `ttlAt`, destroy procedure, lifecycle state) + `.infrastructure/resources.json` mirror

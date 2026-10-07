@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { appEnvFor } from './github-app'
 
 export interface ProcResult {
   code: number | null
@@ -23,8 +24,16 @@ export interface ProcOptions {
 /** Runs a command somewhere: on the host (`run`) or inside a sandbox container (sandbox.ts). */
 export type Runner = (cmd: string, args: string[], opts?: ProcOptions) => Promise<ProcResult>
 
-/** Run a command without a shell; never throws on non-zero exit. */
-export function run(cmd: string, args: string[], opts: ProcOptions = {}): Promise<ProcResult> {
+/**
+ * Run a command without a shell; never throws on non-zero exit. Host-side `gh` and `git` run as
+ * the factory's GitHub App when it's configured (github-app.ts); the caller's env wins.
+ */
+export async function run(cmd: string, args: string[], opts: ProcOptions = {}): Promise<ProcResult> {
+  const app = await appEnvFor(cmd, opts.env)
+  return spawnRun(cmd, args, Object.keys(app).length ? { ...opts, env: { ...app, ...opts.env } } : opts)
+}
+
+function spawnRun(cmd: string, args: string[], opts: ProcOptions): Promise<ProcResult> {
   const { cwd, env, timeoutMs = 10 * 60_000, input, maxOutput = 20_000 } = opts
   const started = Date.now()
   return new Promise(resolve => {
