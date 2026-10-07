@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { accounts, sessions, users, verificationTokens } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { encrypt } from '@/lib/crypto-utils'
+import { isAllowedGithubLogin } from '@/lib/auth-allowlist'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: DrizzleAdapter(db, {
@@ -26,6 +27,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   session: { strategy: 'database' },
   callbacks: {
+    // A personal tool: only the owner's GitHub login signs in (ALLOWED_GITHUB_LOGINS).
+    async signIn({ account, profile }) {
+      if (account?.provider !== 'github') return false
+      return isAllowedGithubLogin((profile as { login?: string } | undefined)?.login, process.env.ALLOWED_GITHUB_LOGINS)
+    },
     async session({ session, user }) {
       if (session.user) {
         session.user.id = user.id

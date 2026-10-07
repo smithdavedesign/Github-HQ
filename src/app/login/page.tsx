@@ -4,9 +4,11 @@ import { GitBranch } from 'lucide-react'
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const session = await auth()
   if (session) redirect('/')
+  // Auth.js sends a refused sign-in (not on ALLOWED_GITHUB_LOGINS) back here with this error.
+  const { error } = await searchParams
 
   return (
     <div className="min-h-screen flex items-center justify-center page-content">
@@ -29,6 +31,11 @@ export default async function LoginPage() {
 
         {/* Auth */}
         <div className="space-y-3">
+          {error === 'AccessDenied' && (
+            <p role="alert" className="text-center text-sm text-amber-600">
+              This RepoHQ is private: only its owner can sign in.
+            </p>
+          )}
           <form
             action={async () => {
               'use server'
