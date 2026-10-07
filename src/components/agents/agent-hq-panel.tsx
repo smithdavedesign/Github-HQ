@@ -56,21 +56,22 @@ export function AgentHqPanel({ initial }: { initial: AgentHqOverview }) {
     staleTime: 0,
   })
 
+  // Relative times are measured from when the server read the data, not the clock: the server
+  // render and the hydration then print the same text (the panel refetches every 15 s anyway).
+  const snapshotAt = new Date(data.generatedAt).getTime()
   return (
     <div className="space-y-6" data-testid="agent-hq">
-      <Automation data={data} onChanged={() => void refetch()} />
-      <Requests requests={data.requests} onChanged={() => void refetch()} />
+      <Automation data={data} snapshotAt={snapshotAt} onChanged={() => void refetch()} />
+      <Requests requests={data.requests} snapshotAt={snapshotAt} onChanged={() => void refetch()} />
     </div>
   )
 }
 
 // ─── Automation: worker, queue, schedules, recent runs ─────────────────────────
 
-function Automation({ data, onChanged }: { data: AgentHqOverview; onChanged: () => void }) {
+function Automation({ data, snapshotAt, onChanged }: { data: AgentHqOverview; snapshotAt: number; onChanged: () => void }) {
   const [pending, start] = useTransition()
   const worker = data.worker
-  // Relative to when the server read it, so render stays pure (the panel refetches every 15 s).
-  const snapshotAt = new Date(data.generatedAt).getTime()
   const online = !!worker && snapshotAt - new Date(worker.lastSeenAt).getTime() < OFFLINE_AFTER_MS
   const queue = data.queue
 
@@ -129,7 +130,7 @@ function Automation({ data, onChanged }: { data: AgentHqOverview; onChanged: () 
             <span className={`w-2 h-2 rounded-full ${online ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden />
             <Server className="w-3.5 h-3.5 text-muted-foreground" />
             {online && worker
-              ? <span>Worker online on <span className="font-medium">{worker.host}</span>{worker.version ? <> · <span className="font-mono">{worker.version}</span></> : null} · seen {formatDistanceToNow(worker.lastSeenAt)}</span>
+              ? <span>Worker online on <span className="font-medium">{worker.host}</span>{worker.version ? <> · <span className="font-mono">{worker.version}</span></> : null} · seen {formatDistanceToNow(worker.lastSeenAt, snapshotAt)}</span>
               : <span className="text-red-500">Worker offline — the Mac is asleep, or the worker isn&apos;t running (bash factory/bin/install-launchd.sh)</span>}
             {worker?.pausedFile && <Badge variant="outline" className="text-[10px] h-4 gap-1"><PauseCircle className="w-2.5 h-2.5" />PAUSE file</Badge>}
             {worker?.onAc === false && <Badge variant="outline" className="text-[10px] h-4 gap-1 text-amber-600"><BatteryLow className="w-2.5 h-2.5" />on battery</Badge>}
@@ -179,12 +180,12 @@ function Automation({ data, onChanged }: { data: AgentHqOverview; onChanged: () 
         </div>
       )}
 
-      <RecentRuns runs={data.runs} />
+      <RecentRuns runs={data.runs} snapshotAt={snapshotAt} />
     </section>
   )
 }
 
-function RecentRuns({ runs }: { runs: RunRow[] }) {
+function RecentRuns({ runs, snapshotAt }: { runs: RunRow[]; snapshotAt: number }) {
   const [open, setOpen] = useState<string | null>(null)
   if (runs.length === 0) {
     return <p className="text-xs text-muted-foreground">No automated runs recorded yet — they appear here once the worker or a cron runs.</p>
@@ -209,7 +210,7 @@ function RecentRuns({ runs }: { runs: RunRow[] }) {
                 <span className="text-muted-foreground w-16 shrink-0">{r.trigger}</span>
                 <span className="flex-1 min-w-0 truncate text-muted-foreground">{reason ?? ''}</span>
                 <span className="tabular-nums text-muted-foreground shrink-0">{r.durationMs != null ? fmtDuration(r.durationMs) : r.status === 'running' ? '…' : ''}</span>
-                <span className="text-muted-foreground shrink-0 w-16 text-right">{formatDistanceToNow(r.startedAt)}</span>
+                <span className="text-muted-foreground shrink-0 w-16 text-right">{formatDistanceToNow(r.startedAt, snapshotAt)}</span>
               </button>
               {isOpen && (
                 <div className="px-3 pb-3 pt-1 border-t border-border/30">
@@ -226,7 +227,7 @@ function RecentRuns({ runs }: { runs: RunRow[] }) {
 
 // ─── Requests ──────────────────────────────────────────────────────────────────
 
-function Requests({ requests, onChanged }: { requests: RequestRow[]; onChanged: () => void }) {
+function Requests({ requests, snapshotAt, onChanged }: { requests: RequestRow[]; snapshotAt: number; onChanged: () => void }) {
   const [open, setOpen] = useState<string | null>(null)
   const [pending, start] = useTransition()
 
@@ -289,7 +290,7 @@ function Requests({ requests, onChanged }: { requests: RequestRow[]; onChanged: 
                         <RotateCcw className="w-3 h-3" />Retry
                       </Button>
                     )}
-                    <span className="text-muted-foreground w-14 text-right">{formatDistanceToNow(r.createdAt)}</span>
+                    <span className="text-muted-foreground w-14 text-right">{formatDistanceToNow(r.createdAt, snapshotAt)}</span>
                   </div>
                 </div>
                 {isOpen && (

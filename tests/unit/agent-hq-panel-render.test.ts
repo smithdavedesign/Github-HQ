@@ -81,6 +81,22 @@ describe('AgentHqPanel', () => {
     expect(down).toContain('didn&#x27;t answer (ECONNREFUSED)')
   })
 
+  it('prints the same times whenever it renders (server render and hydration must match)', () => {
+    // A request 45 s old in the snapshot, rendered at the snapshot and again 30 s later: measured
+    // against the clock it would read "just now" on the server and "1m ago" in the browser.
+    const overview = { ...base, requests: [{ ...base.requests[0], createdAt: '2026-10-07T11:59:15.000Z' }] }
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date(at))
+      const server = render(overview)
+      vi.setSystemTime(new Date(Date.parse(at) + 30_000))
+      expect(render(overview)).toBe(server)
+      expect(server).toContain('just now')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows flags for PAUSE, battery and Docker', () => {
     const html = render({ ...base, worker: { ...base.worker!, pausedFile: true, onAc: false, dockerUp: false }, queue: { ...base.queue!, paused: true } })
     expect(html).toContain('PAUSE file')
