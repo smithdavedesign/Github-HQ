@@ -25,6 +25,7 @@ Edit `~/.claude/claude.json` (create it if it doesn't exist):
       "env": {
         "DATABASE_URL": "postgresql://neondb_owner:...@...neon.tech/neondb?sslmode=require",
         "MCP_USER_ID": "your-user-id-here",
+        "FACTORY_USER_ID": "your-user-id-here",
         "REDIS_URL": "rediss://red-...:...@oregon-keyvalue.render.com:6379"
       }
     }
@@ -35,6 +36,11 @@ Edit `~/.claude/claude.json` (create it if it doesn't exist):
 `REDIS_URL` is optional: the Agent HQ factory queue (`render.yaml`). With it, `queue_gstack_skill` wakes the
 factory worker at once; without it the request still lands in Neon and the worker queues it at
 its next cycle.
+
+`FACTORY_USER_ID` is the factory owner (the same value as in Vercel and `~/.repohq-factory/env`). With it set,
+`queue_gstack_skill` refuses to queue for any other `MCP_USER_ID`, because the worker only runs its owner's
+requests and anyone else's would sit queued forever. It applies the repo's skill policy too, the same as
+the app's launcher.
 
 ### 3. Restart Claude Code
 

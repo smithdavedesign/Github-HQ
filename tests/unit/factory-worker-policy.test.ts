@@ -18,11 +18,23 @@ describe('gateFor', () => {
     for (const j of ['cycle', 'request', 'report', 'scout'] as const) expect(gateFor(j, host())).toEqual({ action: 'run' })
   })
 
-  it('PAUSE and a held lock make every kind wait (the queue keeps its jobs)', () => {
+  it('PAUSE and a held lock make requests and Run now wait (the queue keeps its jobs)', () => {
     for (const j of ['cycle', 'request', 'report', 'scout'] as const) {
       expect(gateFor(j, host({ pausedFile: true }))).toMatchObject({ action: 'wait', reason: expect.stringMatching(/PAUSE/) })
       expect(gateFor(j, host({ lockHolder: 'run x, pid 9' }))).toMatchObject({ action: 'wait', delayMs: 5 * 60_000 })
     }
+  })
+
+  it('PAUSE skips scheduled jobs instead of letting every missed slot pile up for the resume', () => {
+    for (const j of ['cycle', 'report', 'scout'] as const) {
+      expect(gateFor(j, host({ pausedFile: true }), true)).toMatchObject({ action: 'skip', reason: expect.stringMatching(/PAUSE/) })
+    }
+  })
+
+  it('a held lock skips a scheduled cycle; the report and scout just wait for it', () => {
+    expect(gateFor('cycle', host({ lockHolder: 'run x, pid 9' }), true)).toMatchObject({ action: 'skip', reason: expect.stringMatching(/another factory process/) })
+    expect(gateFor('report', host({ lockHolder: 'run x, pid 9' }), true)).toMatchObject({ action: 'wait', delayMs: 5 * 60_000 })
+    expect(gateFor('scout', host({ lockHolder: 'run x, pid 9' }), true)).toMatchObject({ action: 'wait' })
   })
 
   it('on battery: scheduled cycles skip (Night Shift v2), requests wait, report/scout still run', () => {

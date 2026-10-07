@@ -18,7 +18,7 @@ import { readManagedModels } from './lib/litellm-config'
 import { listAliases } from './lib/litellm-ops'
 import { run } from './lib/proc'
 import { freeQuota } from './lib/quota'
-import { buildMorningReport, toMime, type MorningReport, type RoleId, type RoleSection } from './lib/report'
+import { buildMorningReport, cycleLogEntry, emailFailureReason, isCycleLog, toMime, type MorningReport, type RoleId, type RoleSection } from './lib/report'
 import { factoryActivityOf, latestHealthSnapshot, recordNotification, requestOutcomes } from './lib/sink'
 import { copilotQuota } from './lib/copilot-quota'
 import { inactivityDisabled, type SystemHealth } from './lib/system-health'
@@ -67,9 +67,9 @@ async function main() {
     console.log(`\n${report.text}`)
     return
   }
-  const sent = await sendEmail(cfg, report, now)
-  if (!sent) {
-    await recordNotification(cfg, report.subject, `Morning report saved to ${stem}.html (email not configured — run factory/bin/setup-email.sh).`)
+  const email = await sendEmail(cfg, report, now)
+  if (!email.sent) {
+    await recordNotification(cfg, report.subject, `Morning report saved to ${stem}.html (not emailed: ${email.reason}).`)
   }
 }
 
@@ -119,33 +119,47 @@ async function writeHeadlines(cfg: FactoryConfig, sections: RoleSection[]): Prom
   }
 }
 
-async function sendEmail(cfg: FactoryConfig, report: MorningReport, now: Date): Promise<boolean> {
+/**
+ * Waits before each retry. The 06:45 report can land on a Mac that just woke without network
+ * (2026-10-06: the one send hung 15 minutes and failed with no message), so one try isn't enough.
+ */
+const EMAIL_RETRY_WAITS_MS = [60_000, 3 * 60_000, 6 * 60_000]
+
+async function sendEmail(cfg: FactoryConfig, report: MorningReport, now: Date): Promise<{ sent: true } | { sent: false; reason: string }> {
   const to = process.env.FACTORY_REPORT_EMAIL
   const himalayaConfig = path.join(cfg.home, 'himalaya.toml')
   if (!to || !existsSync(himalayaConfig)) {
     log('email not configured (FACTORY_REPORT_EMAIL + ~/.repohq-factory/himalaya.toml) — saved only')
-    return false
+    return { sent: false, reason: 'email not configured — run factory/bin/setup-email.sh' }
   }
   const from = process.env.FACTORY_REPORT_FROM ?? to
-  const r = await run('himalaya', ['-c', himalayaConfig, 'message', 'send'], { input: toMime(report, from, to, now), timeoutMs: 60_000 })
-  if (r.code !== 0) {
-    log(`email failed: ${r.output.trim().split('\n').slice(-2).join(' | ')}`)
-    return false
+  const mime = toMime(report, from, to, now)
+  let reason = ''
+  for (let attempt = 0; attempt <= EMAIL_RETRY_WAITS_MS.length; attempt++) {
+    if (attempt > 0) {
+      const wait = EMAIL_RETRY_WAITS_MS[attempt - 1]
+      log(`email attempt ${attempt} failed (${reason}) — retrying in ${wait / 60_000} min`)
+      await new Promise(resolve => setTimeout(resolve, wait))
+    }
+    const r = await run('himalaya', ['-c', himalayaConfig, 'message', 'send'], { input: mime, timeoutMs: 60_000 })
+    if (r.code === 0) {
+      log(`emailed ${to}${attempt > 0 ? ` (attempt ${attempt + 1})` : ''}`)
+      return { sent: true }
+    }
+    reason = emailFailureReason(r)
   }
-  log(`emailed ${to}`)
-  return true
+  log(`email failed after ${EMAIL_RETRY_WAITS_MS.length + 1} attempts: ${reason}`)
+  return { sent: false, reason }
 }
 
-/** Cycle runs in the last 24h, from the launchd wrapper's logs. */
+/** Cycle runs in the last 24h, from their logs (the worker's and the old launchd calendar's). */
 function recentCycles(cfg: FactoryConfig, now: Date): { at: string; exit: number | null }[] {
   const dir = path.join(cfg.home, 'logs')
   if (!existsSync(dir)) return []
-  return readdirSync(dir).filter(f => /^cycle-\d{8}-\d{6}\.log$/.test(f)).flatMap(f => {
-    const text = readFileSync(path.join(dir, f), 'utf8')
-    const at = /=== cycle (\S+) ===/.exec(text)?.[1]
-    if (!at || now.getTime() - new Date(at).getTime() > 86_400_000) return []
-    const exit = /=== exit (\d+) ===/.exec(text)?.[1]
-    return [{ at, exit: exit === undefined ? null : Number(exit) }]
+  return readdirSync(dir).flatMap(f => {
+    if (!isCycleLog(f)) return []
+    const entry = cycleLogEntry(readFileSync(path.join(dir, f), 'utf8'))
+    return entry && now.getTime() - new Date(entry.at).getTime() <= 86_400_000 ? [entry] : []
   })
 }
 

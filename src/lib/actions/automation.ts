@@ -1,13 +1,13 @@
 'use server'
 
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { agentRequests } from '@/lib/db/schema'
 import { enqueueRequest, factoryAccess } from '@/lib/agents/factory-queue'
 import { isGstackSkill } from '@/lib/skills/skill-policy'
 import type { RequestSource } from '@/lib/agents/factory-request-utils'
-import { manualJobOptions, withQueue, type ScheduledJobName } from '../../../factory/lib/queue'
+import { cancelKey, manualJobOptions, withQueue, type ScheduledJobName } from '../../../factory/lib/queue'
 
 // Agents page controls (roadmap Phase 81, docs/agent-hq-migration-prd.md §9). Every action derives
 // the user from the session and refuses anyone but the factory's owner.
@@ -48,14 +48,22 @@ export async function setQueuePaused(paused: boolean): Promise<{ paused: boolean
 export async function cancelRequest(requestId: string): Promise<void> {
   const userId = await ownerId()
   const now = new Date()
+  const [before] = await db.select({ status: agentRequests.status }).from(agentRequests)
+    .where(and(eq(agentRequests.id, requestId), eq(agentRequests.userId, userId)))
   const updated = await db.update(agentRequests)
     .set({ status: 'cancelled', reason: 'Cancelled from the Agents page', resolvedAt: now, updatedAt: now })
-    .where(and(eq(agentRequests.id, requestId), eq(agentRequests.userId, userId), eq(agentRequests.status, 'queued')))
+    .where(and(eq(agentRequests.id, requestId), eq(agentRequests.userId, userId), inArray(agentRequests.status, ['queued', 'running'])))
     .returning({ id: agentRequests.id })
-  if (updated.length === 0) throw new Error('Only a queued request can be cancelled.')
-  // Best effort: the worker also drops a job whose request is no longer open.
+  if (updated.length === 0) throw new Error('Only a queued or running request can be cancelled.')
+  // Best effort: the worker also drops a job whose request is no longer open (a running one left
+  // behind by a Mac that slept mid-run, too). A running job is asked to stop at the worker's next
+  // heartbeat; its result can't overwrite the cancelled row.
   const url = process.env.REDIS_URL
-  if (url) await withQueue(url, async q => { await (await q.getJob(requestId))?.remove() }).catch(() => {})
+  if (!url) return
+  await withQueue(url, async q => {
+    if (before?.status === 'running') await (await q.client).set(cancelKey(requestId), '1', { EX: 86_400 })
+    else await (await q.getJob(requestId))?.remove()
+  }).catch(() => {})
 }
 
 /** Queue a finished request again as a new one (same repo, skill and objective). */

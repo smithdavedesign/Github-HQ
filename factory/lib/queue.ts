@@ -28,6 +28,12 @@ export const WORKER_STATUS_KEEP_SECONDS = 7 * 86_400
  */
 export const WORKER_HEARTBEAT_MS = 30_000
 
+/**
+ * Set when the owner cancels a running request; the worker stops that request's run at its next
+ * heartbeat. A queued request's job is just removed.
+ */
+export const cancelKey = (requestId: string) => `${QUEUE_PREFIX}:cancel:${requestId}`
+
 export const JOB_NAMES = ['request', 'cycle', 'report', 'scout'] as const
 export type FactoryJobName = typeof JOB_NAMES[number]
 export type ScheduledJobName = Exclude<FactoryJobName, 'request'>
@@ -36,6 +42,8 @@ export interface RequestJobData {
   requestId: string
   /** Failed runs so far (the worker retries a request up to MAX_REQUEST_ATTEMPTS failures). */
   failures?: number
+  /** The gate reason last written to the row, so a waiting request doesn't rewrite it every 15 min. */
+  waitReason?: string
 }
 export interface ScheduledJobData { trigger: 'schedule' | 'manual' }
 

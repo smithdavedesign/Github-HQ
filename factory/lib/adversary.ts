@@ -48,6 +48,17 @@ export function reviewerModel(builder: ModelTier, cfg: Pick<FactoryConfig, 'judg
   return cfg.judge.adversarial.reviewers[builder] ?? null
 }
 
+/**
+ * Extra request fields for a reviewer alias. The local reviewers run thinking models (Qwen3) on
+ * Ollama, which spend the whole token budget reasoning and return empty content, so every review
+ * came back unparseable and silently skipped (found 2026-10-07). LiteLLM turns
+ * `reasoning_effort: "none"` into Ollama's thinking switch. Cloud aliases don't get it: some
+ * providers reject the parameter.
+ */
+export function reviewerRequestExtras(model: string): { reasoning_effort?: 'none' } {
+  return model.startsWith('local-') ? { reasoning_effort: 'none' } : {}
+}
+
 export const MAX_DIFF_CHARS = 24_000
 
 export function buildAdversaryPrompt(task: FactoryTask, patch: string): string {
@@ -113,7 +124,7 @@ export async function runAdversary(
     const res = await fetchImpl(`${cfg.litellm.url}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.litellm.key}` },
-      body: JSON.stringify({ model, temperature: 0, max_tokens: 1500, messages: [{ role: 'user', content: buildAdversaryPrompt(task, patch) }] }),
+      body: JSON.stringify({ model, temperature: 0, max_tokens: 1500, ...reviewerRequestExtras(model), messages: [{ role: 'user', content: buildAdversaryPrompt(task, patch) }] }),
       signal: AbortSignal.timeout(cfg.judge.adversarial.timeoutMs),
     })
     if (!res.ok) return null

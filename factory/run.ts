@@ -25,6 +25,7 @@ import { loadConfig, type FactoryConfig } from './lib/config'
 import { collectPackageInfo, confirmFailures, detectPackageManager, installCommand, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
 import { addPrLabel, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
+import { commentOnPr, loadGstackChecklist, localReviewComment, runLocalReview, type LocalReview } from './lib/local-review'
 import { copilotHasQuota, copilotQuota } from './lib/copilot-quota'
 import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
 import { appendEntry, deadEnds, latestSignals, monthToDateUsd, openPrAttempts, pendingCiOracles, pendingReviews, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry, type SignalsEntry } from './lib/ledger'
@@ -41,7 +42,7 @@ import { freeQuota, m1Deferred } from './lib/quota'
 import { readManagedModels } from './lib/litellm-config'
 import { buildPrompt, filterTasks, fitLocalContext, investigationPrompt, isEnvironmentFailure, ownerReportTask, ownerRequestedTask, parseFindings, parseReport, redCiTask, reportPrompt, tasksFromScan, type FactoryTask } from './lib/tasks'
 import { ownerOutcome, pendingOwnerRequests, recordOwnerBlocked, recordOwnerResult, staleBotPrBlock, type OwnerOutcome, type OwnerRequest } from './lib/owner-requests'
-import { claimRequest, loadRequest, mirrorOwnerRequest, resolveRequest, resolvedFromRow, toOwnerRequest, type AgentRequestRow, type ResolvedRequest } from './lib/agent-requests'
+import { claimRequest, loadRequest, mirrorOwnerRequest, requeueMirrored, resolveRequest, resolvedFromRow, toOwnerRequest, type AgentRequestRow, type ResolvedRequest } from './lib/agent-requests'
 import { RESULT_PREFIX, Tracer, finishRun, formatProtocolLine, startRun, type RunResult } from './lib/trace'
 import { isAllowlisted, isOpenRequestStatus } from '../src/lib/agents/factory-request-utils'
 import { judge, type DiffInfo, type Verdict } from './lib/verify'
@@ -82,6 +83,12 @@ let requestDeferred: string | null = null
 let requestError: string | null = null
 /** Why the ladder gave up on a task without writing an attempt (e.g. no free pool for a report). */
 let skipReason: string | null = null
+/**
+ * An Agent HQ request job's outcome, also handed to the worker in the result: if writing it to the
+ * row failed, the worker writes it rather than re-running the request.
+ */
+let requestOutcome: OwnerOutcome | null = null
+let requestId: string | null = null
 
 async function main(): Promise<RunResult> {
   const args = parseArgs(process.argv.slice(2))
@@ -102,6 +109,7 @@ async function main(): Promise<RunResult> {
   // Agent HQ request (Phase 81): one stored request, run through the owner-task path on its repo.
   let request: AgentRequestRow | null = null
   if (args.request) {
+    requestId = args.request
     request = await loadRequest(cfg, args.request)
     if (!request) return { status: 'failed', reason: `request ${args.request} not found` }
     if (!isOpenRequestStatus(request.status)) return { status: 'skipped', reason: `request is already ${request.status}` }
@@ -197,8 +205,10 @@ async function main(): Promise<RunResult> {
   }
   let prs = 0
   const openedToday = todaysUsage(readLedger(cfg.home), new Date()).prs
-  // A report request opens no PR, so the daily PR cap doesn't hold it back.
-  if (openedToday >= cfg.maxPrsPerDay && request?.mode !== 'report') {
+  // The PR caps only hold back work that can open a PR: not a report request, nor a fix request
+  // while owner-requested is held at stage report (it ends verified, no PR).
+  const capsApply = !request || (request.mode !== 'report' && cfg.capabilities['owner-requested'] === 'pr')
+  if (openedToday >= cfg.maxPrsPerDay && capsApply) {
     log(`daily PR cap reached (${openedToday}/${cfg.maxPrsPerDay}) — reconcile only`)
     if (request) return { status: 'deferred', reason: `daily PR cap reached (${openedToday}/${cfg.maxPrsPerDay})`, retryInMinutes: 120 }
     printReport(cfg)
@@ -211,12 +221,24 @@ async function main(): Promise<RunResult> {
     ? [toOwnerRequest(request)]
     : pendingOwnerRequests(cfg.home, readLedger(cfg.home)).filter(r => !args.repo || r.repo === args.repo)
   if (pending.length > 0) log(`owner requests: ${pending.map(r => `${r.repo.split('/')[1]}(${r.taskId})`).join(' · ')}`)
-  // OpenClaw's JSONL requests show up in Agent HQ too (no-op for stored requests).
-  for (const r of pending) await mirrorOwnerRequest(cfg, r, new Date())
+  // OpenClaw's JSONL requests show up in Agent HQ too (no-op for stored requests). One cancelled
+  // there is closed in the JSONL instead of run.
+  const mirrored: string[] = []
+  const live: OwnerRequest[] = []
+  for (const r of pending) {
+    const status = await mirrorOwnerRequest(cfg, r, new Date())
+    if (status === 'cancelled') {
+      log(`${r.repo}: owner request ${r.taskId} was cancelled in Agent HQ — not running it`)
+      recordOwnerBlocked(cfg.home, { ownerTaskId: r.taskId, repo: r.repo, runId, now: new Date(), reason: 'cancelled in Agent HQ' })
+      continue
+    }
+    if (!r.stored) mirrored.push(r.taskId)
+    live.push(r)
+  }
   // Stale bot PRs stop new factory PRs on their repo (blockOnStaleBotPrs), requested ones included.
   const opensPrs = cfg.capabilities['owner-requested'] === 'pr' && !args.dryRun
   const ownerReqs: OwnerRequest[] = []
-  for (const r of pending) {
+  for (const r of live) {
     const reason = staleBotPrBlock(r, ranked.find(o => o.repo.toLowerCase() === r.repo.toLowerCase())?.blocked ?? null, opensPrs)
     if (!reason) { ownerReqs.push(r); continue }
     log(`${r.repo}: owner request ${r.taskId} rejected — ${reason}`)
@@ -227,7 +249,7 @@ async function main(): Promise<RunResult> {
   if (request && ownerReqs.length === 0) return { status: 'ok', reason: 'request rejected: stale bot PRs on the repo' }
   const fullQueue = request && args.repo ? [args.repo] : [...new Set([...ownerReqs.map(r => r.repo), ...queue])]
   for (const repo of fullQueue) {
-    if (prs >= cfg.maxPrsPerCycle || openedToday + prs >= cfg.maxPrsPerDay) break
+    if (capsApply && (prs >= cfg.maxPrsPerCycle || openedToday + prs >= cfg.maxPrsPerDay)) break
     try {
       prs += await improveRepo(cfg, repo, args, aliases, sensed.find(x => x.repo === repo) ?? null, ownerReqs.find(r => r.repo === repo) ?? null, !!request)
     } catch (err) {
@@ -237,12 +259,14 @@ async function main(): Promise<RunResult> {
       if (request) requestError = message
     }
   }
+  await requeueMirrored(cfg, mirrored, 'waiting for the next cycle (this one ended before finishing it)', new Date())
   log(`done — ${prs} PR(s) opened`)
   tracer.step('run', 'ok', `${prs} PR(s) opened`, { prs })
   printReport(cfg)
-  if (request && requestDeferred) return { status: 'deferred', reason: requestDeferred, retryInMinutes: 60 }
-  if (request && requestError) return { status: 'failed', reason: requestError }
-  return { status: 'ok', summary: { prs, repos: fullQueue.length } }
+  const outcome = requestOutcome ? { requestOutcome } : {}
+  if (request && requestDeferred && !requestOutcome) return { status: 'deferred', reason: requestDeferred, retryInMinutes: 60 }
+  if (request && requestError && !requestOutcome) return { status: 'failed', reason: requestError }
+  return { status: 'ok', summary: { prs, repos: fullQueue.length, ...outcome } }
 }
 
 /**
@@ -452,6 +476,7 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
 /** Write an owner task's outcome to its agent_requests row (an Agent HQ request, or a mirrored JSONL one). */
 async function resolveOwner(cfg: FactoryConfig, req: OwnerRequest, repo: string, outcome: OwnerOutcome): Promise<void> {
   const resolved: ResolvedRequest = { id: req.taskId, repo, repoId: null, mode: req.mode ?? 'fix', skill: req.skill ?? null, objective: req.task }
+  if (req.taskId === requestId) requestOutcome = outcome
   await resolveRequest(cfg, resolved, outcome, runId, new Date())
   const failed = outcome.status === 'failed' || outcome.status === 'rejected'
   tracer.step('request', failed ? 'fail' : 'ok', `${outcome.status}${outcome.prUrl ? ` ${outcome.prUrl}` : outcome.reason ? ` — ${outcome.reason}` : ''}`,
@@ -670,6 +695,7 @@ async function attempt(
   // Advisory adversarial pass (Phase 77): only after the deterministic judge passed, only for
   // model-written changes, and it can never approve, only label or (once promoted) veto.
   let adversary: AdversaryResult | null = null
+  let localReview: LocalReview | null = null
   if (verdict.ok && !deps && !lintFix) {
     adversary = await runAdversary(cfg, tier, task, await patchText(dir, hostBase, 3))
     if (adversary) {
@@ -719,12 +745,35 @@ async function attempt(
     if (adversaryAction(adversary, cfg.capabilities['adversarial-veto']) === 'label' && await addPrLabel(entry.prUrl, repo, NEEDS_REVIEW_LABEL)) {
       log(`${repo}: labelled ${NEEDS_REVIEW_LABEL} (adversarial review ${adversary?.verdict})`)
     }
-    if (cfg.copilot.review && copilotQuotaLeft && todaysUsage(readLedger(cfg.home), new Date()).copilotReviews < cfg.copilot.maxReviewsPerDay) {
+    const copilotReason = !cfg.copilot.review ? 'Copilot code review is turned off'
+      : !copilotQuotaLeft ? 'Copilot code review is unavailable (premium requests used up this month)'
+      : todaysUsage(readLedger(cfg.home), new Date()).copilotReviews >= cfg.copilot.maxReviewsPerDay ? 'The daily Copilot review limit was reached'
+      : null
+    if (!copilotReason) {
       entry.reviewRequested = await requestCopilotReview(entry.prUrl)
       if (entry.reviewRequested) log(`${repo}: Copilot review requested`)
     }
+    // Copilot didn't take it: the local AI stack reviews with gstack's /review checklist instead.
+    if (!entry.reviewRequested && cfg.copilot.localFallback && !deps && !lintFix) {
+      const checklist = loadGstackChecklist()
+      const review = await runLocalReview(cfg, tier, task, await patchText(dir, hostBase, 3), { checklist })
+      const why = copilotReason ?? 'Requesting a Copilot review failed'
+      if (review && await commentOnPr(entry.prUrl, localReviewComment(review, why, checklist !== null))) {
+        localReview = review
+        log(`${repo}: local review (${review.model}) posted — ${review.issues.length} finding(s)`)
+        tracer.step('review', 'ok', `local review (${review.model}): ${review.issues.length} finding(s)`, { issues: review.issues.length }, { jobId: attemptId })
+      } else {
+        log(`${repo}: local review unavailable (${review ? 'commenting failed' : 'no reply from the reviewer model'})`)
+      }
+    }
   }
   appendEntry(cfg.home, entry)
+  if (localReview) {
+    appendEntry(cfg.home, {
+      type: 'review', attemptId: entry.id, at: new Date().toISOString(), reviewer: 'local', comments: localReview.issues.length,
+      highlights: localReview.issues.slice(0, 3).map(i => `${i.severity}: ${i.problem}`),
+    })
+  }
   lastAttemptId = entry.id
   await recordAttempt(cfg, entry, task.title)
   return args.dryRun || reportOnly ? 'verified' : 'pr'

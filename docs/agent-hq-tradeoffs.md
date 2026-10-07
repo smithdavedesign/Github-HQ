@@ -71,6 +71,7 @@ That's the execution-provider step. It's worth doing when a second machine exist
 | 6 | The Mac is the single point of failure, and the ops burden | Medium | Health probes and self-restarts before new hardware |
 | 7 | PR identity | Medium | A GitHub App identity is worth doing |
 | 8 | Redis is the most optional piece | Low | Keep it through the trial; it's the easiest thing to drop later |
+| 9 | What a compromise reaches, and what one disk holds | Medium | A scoped token for the worker now; a separate macOS user if the factory grows |
 
 ### 1. It only works when the Mac does
 
@@ -191,6 +192,27 @@ real-time, and the queue would work without it. But dropping it isn't free. The 
 
 *What helps:* recommendation 8, after the trial week, if Redis's cost or the open endpoint bothers you.
 
+### 9. What a compromise reaches, and what one disk holds
+
+Nexus ran on Render, on a machine that held only its own secrets. The worker now runs on your
+personal Mac, in your user account. The sandbox keeps repo code and the model away from all of
+this. A sandbox escape, or a compromised dependency of the factory itself (it runs on the host
+with `npm ci`), would reach:
+- your `gh` login. Its scopes (`repo`, `workflow`) cover every repo you own, private ones
+  included, not just the 9 on the factory's list, and it can edit their workflows.
+- the production `DATABASE_URL` and `REDIS_URL` in the keychain;
+- everything else your user can read: other projects, `~/.openclaw`, browser profiles.
+
+Two smaller costs come with it:
+- **One disk.** The routing ledger (`~/.repohq-factory/ledger.jsonl`), which the tier ladder and
+  dead-end rules learn from, lives only on this Mac. Neon has the requests, runs and attempts,
+  but not the ledger.
+- **A slow request holds the only worker.** The worst case is a request timing out three times
+  at 2 hours each, about 6 hours, while every cycle waits behind it.
+
+*What helps:* recommendation 9 now, and a separate macOS user for the worker if the factory
+takes on more repos.
+
 ## What it buys
 
 - **One governed path for all agent work.** Every request goes through the same sandbox, judge and
@@ -230,6 +252,7 @@ your time, not on architecture diagrams.
 | If it gets annoying | 6 | An always-on host | Costs 1, 3, 6 |
 | | 7 | Let a cycle yield to a waiting request | Cost 3 |
 | | 8 | Drop Redis for a Neon poll | Cost 8 |
+| Now (2026-10-07) | 9 | A fine-grained token limited to the factory's repos | Cost 9 |
 
 **1. Keep Nexus suspended for the trial week.** This is already the runbook. Suspend at cutover
 (PRD §11, step 4) and delete only after a week of clean runs (step 6). Until then, rollback is
@@ -283,6 +306,11 @@ your PRs, commits and reviews are yours, and the bot's are the factory's. This i
 66's open item. The Nexus app lives on GitHub, not Render, so retiring Nexus's services doesn't
 remove it.
 
+*Decided 2026-10-07: deferred.* RepoHQ is a personal tool, and `main` has no rule that requires an
+approving review, so authorship costs little. The security half (how far the factory's GitHub
+credential reaches) is handled by recommendation 9 without building token minting. Revisit if
+branch protection or a second contributor makes bot authorship matter.
+
 **5. Promote `owner-requested`.** Once a handful of fix requests have ended `verified` with diffs you
 would have merged, set `capabilities.owner-requested` to `pr` in `factory/factory.config.json`. The
 morning report's Director section shows the evidence for each capability. Merging stays human
@@ -316,6 +344,30 @@ would otherwise scale to zero after 5 idle minutes. The PRD chose Redis partly t
 ([PRD](agent-hq-migration-prd.md) §6, §13). Polling less often than its 5-minute idle timeout (say every
 10 minutes) lets Neon sleep, at the price of pickup taking minutes. Bring Redis back if there are ever several workers or real-time
 dispatch to coordinate. Don't build for a scale you don't have.
+
+**9. A fine-grained token for the worker.** This is supported and opt-in: once the token is in the
+keychain, `factory/bin/factory.sh` exports it as `GH_TOKEN`, and every `gh` and `git` call the
+factory makes uses it in place of your login. Copilot calls keep your own login, because Copilot
+belongs to your account.
+
+To set it up:
+1. In GitHub, go to *Settings → Developer settings → Fine-grained tokens*. Set **Repository access**
+   to *Only select repositories*: the ones in `factory/factory.config.json`.
+2. Grant these permissions:
+   - Contents: read and write (clone, push);
+   - Pull requests: read and write (create, label, request review);
+   - Issues: read and write (label creation);
+   - Actions: read (CI runs and logs);
+   - Checks and Commit statuses: read;
+   - Dependabot alerts: read;
+   - Metadata: read (required).
+3. Run `security add-generic-password -U -s repohq-factory-gh-token -a "$USER" -w`, which prompts
+   for the token.
+4. Run `launchctl kickstart -k gui/$(id -u)/com.repohq.factory.worker`.
+
+A leaked or stolen token then reaches those repos with those rights, and nothing else. Give it an
+expiry and rotate it when GitHub reminds you; while it's expired, factory pushes fail visibly in the
+morning report. Delete the keychain item to go back to your `gh` login.
 
 ## The operations view
 

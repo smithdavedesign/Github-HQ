@@ -24,8 +24,10 @@ Verify   (host) the sandbox's result comes back as a patch, applied to the host 
          no forbidden paths, size cap; README edits additive with real scripts/tools only
 Gate     draft PR on a feature/bot/factory-… branch against the default branch (or
          `integrationBranch` if a repo still has one); you merge
-Review   GitHub Copilot code review requested on every PR (independent Reviewer, ≤ 8/day;
-         paused while the seat's premium requests are spent)
+Review   GitHub Copilot code review requested on every PR (independent Reviewer, ≤ 8/day).
+         When Copilot can't (premium requests spent, review off, daily limit): the local AI
+         stack reviews the diff with gstack's /review checklist and comments on the PR
+         (lib/local-review.ts; reviewer = a different model family from the builder)
 Learn    PR merged → success, closed → failure → ledger → router (per difficulty) → agent_jobs → KPIs
 Report   06:45 email: one update per gstack role (PM → Architect plan, Builder, QA, Reviewer,
          Security, Ops, Retro), built from the ledger; headlines by the local model
@@ -57,7 +59,7 @@ touch ~/.repohq-factory/PAUSE           # kill switch (rm to resume)
 
 ## Configuration
 
-- `factory/factory.config.json`: `copilot.{enabled, model, maxTasksPerDay, review, maxReviewsPerDay}` and `maxPrsPerDay` (default 8). Copilot tasks and reviews spend your seat's premium requests (× the model's multiplier); `gpt-5-mini` is an included model on paid plans, so set a stronger `copilot.model` only if your allowance covers it.
+- `factory/factory.config.json`: `copilot.{enabled, model, maxTasksPerDay, review, maxReviewsPerDay, localFallback}` and `maxPrsPerDay` (default 8). Copilot tasks and reviews spend your seat's premium requests (× the model's multiplier); `gpt-5-mini` is an included model on paid plans, so set a stronger `copilot.model` only if your allowance covers it.
 - `factory/factory.config.json`: `integrationBranch` (default `integration/agent`): used only by repos that still have that branch; everything else, including RepoHQ and Nexus since 2026-10, gets PRs against the default branch.
 - Ledger hygiene: if a verdict turns out to be a judge bug, set `"voided": "<why>"` on that attempt in `~/.repohq-factory/ledger.jsonl`. It stays for history but stops counting for routing, dead ends and stats.
 - `factory/factory.config.json`: the **allowlist** (`repos`). The factory never touches a repo that isn't listed. Also `allowFreeCloud` (private repos allowed on M1), `monthlyBudgetUsd` (M2; default 0, which means never pay) and `maxPrsPerCycle`.
@@ -95,12 +97,15 @@ Neon is the source of truth and Redis only wakes the worker: on start and after 
 
 Setup (once): create the Key Value from `render.yaml` (Render → Blueprints), put its external URL in RepoHQ's `.env.local` as `REDIS_URL` (and in Vercel with `FACTORY_USER_ID`), run `npm run db:push` and `npm run factory:migrate`, then `bash factory/bin/install-launchd.sh`. It stores the URL in the login keychain (`repohq-factory-redis-url`) and installs `com.repohq.factory.worker` (KeepAlive) in place of the calendar. Local development: `docker compose up -d redis` and `REDIS_URL=redis://127.0.0.1:6379`.
 
+Optional: give the worker its own fine-grained GitHub token, limited to the factory's repos, instead of your `gh` login, which reaches every repo you own. Put it in the keychain as `repohq-factory-gh-token` and `factory.sh` exports it as `GH_TOKEN`. Copilot calls keep your login. The permissions and steps are in [docs/agent-hq-tradeoffs.md](../docs/agent-hq-tradeoffs.md) (recommendation 9).
+
 Promotion still applies: requests use the `owner-requested` (fix) and `owner-report` (report) capabilities. `owner-requested` starts at `report`, so a fix request ends `verified` (judged, held, no PR) until you promote it to `pr`.
 
 What holds a request back. Each of these ends it `rejected`, with the reason:
 - An `owner-requested` PR already open on the repo.
 - Stale bot PRs on the repo, when the request would open a PR (below).
 - A dead end: that request failed twice already. Dead ends count per request, so one request's failures don't block the next on the same repo.
+- The judge, not the queue: a fix request can't add or edit tests. Only `fix-tests` tasks may touch test files (`verify.ts`, an anti-gaming rule), so asking for tests ends `failed` with "edited tests for a owner-requested task".
 
 RepoHQ itself refuses a new request while the repo has one open, or an agent PR that isn't merged or closed yet, CI failing or not.
 
