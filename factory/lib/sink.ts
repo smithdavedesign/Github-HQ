@@ -1,9 +1,12 @@
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
-import { and, eq, ilike, sql } from 'drizzle-orm'
+import { and, eq, gte, ilike, inArray, sql } from 'drizzle-orm'
 import * as schema from '../../src/lib/db/schema'
+import { factoryActivity } from '../../src/lib/agents/factory-activity'
+import type { FactoryActivity } from '../../src/lib/health/freshness'
 import type { FactoryConfig } from './config'
 import type { AttemptEntry } from './ledger'
+import type { RequestHealth } from './system-health'
 import { PIPELINES, type TaskKind } from './tasks'
 
 /**
@@ -12,8 +15,10 @@ import { PIPELINES, type TaskKind } from './tasks'
  * are set. Never throws — the local ledger stays the source of truth.
  *
  * Attempts are written as `agent_attempt` events (repo Agent tab, dead-end
- * detection, attempt distiller). Factory PRs are deliberately NOT written as
- * `agent_pr_created`: that would make RepoHQ's CI checker queue paid Nexus fixes.
+ * detection, attempt distiller). Only Agent HQ requests write `agent_pr_created` /
+ * `agent_skill_report` (factory/lib/agent-requests.ts): those events carry the request
+ * id that RepoHQ's lifecycle, CI checker and advisor accuracy key on. PRs the factory
+ * picked itself have no request and stay `agent_attempt`-only.
  */
 
 type Db = ReturnType<typeof drizzle<typeof schema>>
@@ -25,7 +30,12 @@ function db(cfg: FactoryConfig): Db | null {
   return cached
 }
 
-async function repoIdFor(d: Db, userId: string, fullName: string): Promise<number | null> {
+/** The RepoHQ connection for factory modules that write Agent HQ state (requests, runs, traces). */
+export function sinkDb(cfg: FactoryConfig): Db | null {
+  return db(cfg)
+}
+
+export async function repoIdFor(d: Db, userId: string, fullName: string): Promise<number | null> {
   const repo = await d.query.repositories.findFirst({
     where: and(eq(schema.repositories.userId, userId), ilike(schema.repositories.fullName, fullName)),
     columns: { id: true },
@@ -33,7 +43,7 @@ async function repoIdFor(d: Db, userId: string, fullName: string): Promise<numbe
   return repo?.id ?? null
 }
 
-async function safely(label: string, fn: () => Promise<void>): Promise<void> {
+export async function safely(label: string, fn: () => Promise<void>): Promise<void> {
   try {
     await fn()
   } catch (err) {
@@ -71,18 +81,42 @@ export async function latestHealthSnapshot(cfg: FactoryConfig): Promise<string |
   return out
 }
 
-/** Nexus (remote executor) outcomes since `since`, from RepoHQ's portfolio_events; null without the sink. */
-export async function nexusOutcomes(cfg: FactoryConfig, since: Date): Promise<{ queued: number; failed: number; prs: number } | null> {
+/** The idle-factory check for the morning report: the same rule as the dashboard banner. Null without the sink. */
+export async function factoryActivityOf(cfg: FactoryConfig): Promise<FactoryActivity | null> {
   const d = db(cfg)
   if (!d) return null
-  let out: { queued: number; failed: number; prs: number } | null = null
-  await safely('nexusOutcomes', async () => {
-    const rows = await d.select({ type: schema.portfolioEvents.eventType, n: sql<number>`count(*)::int` })
-      .from(schema.portfolioEvents)
-      .where(and(eq(schema.portfolioEvents.userId, cfg.repohq.userId!), sql`${schema.portfolioEvents.occurredAt} >= ${since}`))
-      .groupBy(schema.portfolioEvents.eventType)
-    const n = (t: string) => rows.find(r => r.type === t)?.n ?? 0
-    out = { queued: n('agent_task_queued'), failed: n('agent_execution_failed') + n('agent_failed'), prs: n('agent_pr_created') }
+  let out: FactoryActivity | null = null
+  await safely('factoryActivity', async () => { out = await factoryActivity(d, cfg.repohq.userId!) })
+  return out
+}
+
+/**
+ * Agent HQ request outcomes (roadmap Phase 81) for the morning report: requests resolved since
+ * `since` by status, and the ones still waiting with the oldest one's age. Null without the sink.
+ */
+export async function requestOutcomes(cfg: FactoryConfig, since: Date, now: Date): Promise<RequestHealth | null> {
+  const d = db(cfg)
+  if (!d) return null
+  let out: RequestHealth | null = null
+  await safely('requestOutcomes', async () => {
+    const userId = cfg.repohq.userId!
+    const [resolved, [waiting]] = await Promise.all([
+      d.select({ status: schema.agentRequests.status, n: sql<number>`count(*)::int` })
+        .from(schema.agentRequests)
+        // gte, not raw sql: the column encodes `since` as UTC (a bare Date param goes out in local time).
+        .where(and(eq(schema.agentRequests.userId, userId), gte(schema.agentRequests.resolvedAt, since)))
+        .groupBy(schema.agentRequests.status),
+      // mapWith: neon-http returns `timestamp` as zone-less text; the column's mapper reads it as UTC.
+      d.select({ n: sql<number>`count(*)::int`, oldest: sql<Date | null>`min(${schema.agentRequests.createdAt})`.mapWith(schema.agentRequests.createdAt) })
+        .from(schema.agentRequests)
+        .where(and(eq(schema.agentRequests.userId, userId), inArray(schema.agentRequests.status, ['queued', 'running']))),
+    ])
+    const oldest = waiting?.oldest ? new Date(waiting.oldest) : null
+    out = {
+      resolved: Object.fromEntries(resolved.map(r => [r.status, r.n])),
+      waiting: waiting?.n ?? 0,
+      oldestWaitingHours: oldest ? Math.floor((now.getTime() - oldest.getTime()) / 3_600_000) : null,
+    }
   })
   return out
 }
@@ -160,6 +194,7 @@ export function agentJobValues(a: AttemptEntry, userId: string, repoId: number |
     reported: a.reported ?? false, prUrl: a.prUrl ?? null,
     adversaryModel: a.adversary?.model ?? null, adversaryVerdict: a.adversary?.verdict ?? null,
     startedAt: new Date(a.at),
+    requestId: a.ownerTaskId ?? null,
   }
 }
 

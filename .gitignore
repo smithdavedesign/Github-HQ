@@ -54,3 +54,6 @@ tests/setup/auth-state.json
 *.log
 
 .neon
+
+# Flow e2e sessions and seed ids (written by tests/flow/e2e/global-setup.ts)
+tests/flow/e2e/.auth/

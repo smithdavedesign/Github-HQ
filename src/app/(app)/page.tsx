@@ -1,5 +1,6 @@
 import { toNum } from '@/lib/utils'
 import { loadFactoryKpis } from '@/lib/agents/factory-kpis-query'
+import { factoryRepoIdsFor } from '@/lib/agents/factory-queue'
 import { getDashboardStats, getRepositories, getRepositoriesSlim, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk, getProfileRecommendations, getShipItWarnings, getAgentStats, getPortfolioCostBreakdown } from '@/lib/actions/repositories'
 import { getPortfolioScoreTrend } from '@/lib/health/portfolio-snapshot'
 import { getWeeklyDiff } from '@/lib/actions/weekly-diff'
@@ -49,7 +50,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats, activeAgents, costBreakdown, factoryKpis] = await Promise.all([
+  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats, activeAgents, costBreakdown, factoryKpis, factoryRepoIds] = await Promise.all([
     getDashboardStats(),
     getRepositoriesSlim(),
     getOpportunityData(),
@@ -71,6 +72,7 @@ export default async function DashboardPage() {
     getActiveAgentSummary(),
     getPortfolioCostBreakdown(),
     loadFactoryKpis(session.user.id).catch(() => null),
+    factoryRepoIdsFor(session.user.id).catch((): number[] => []),
   ])
 
   const topRepos = repos
@@ -141,7 +143,7 @@ export default async function DashboardPage() {
 
       {((agentStats && agentStats.merged > 0) || (factoryKpis && factoryKpis.prsOpened > 0)) && (
         <AgentImpactCard
-          nexus={agentStats}
+          requests={agentStats}
           factory={factoryKpis ? { merged: factoryKpis.merged, closed: factoryKpis.closed, prsOpened: factoryKpis.prsOpened, acceptance: factoryKpis.acceptance } : null}
         />
       )}
@@ -151,7 +153,7 @@ export default async function DashboardPage() {
         <LifecycleDistribution distribution={lifecycleDistribution} />
       </div>
 
-      <AdvisorCard advisor={advisor} timeAllocation={timeAllocation} hoursPerWeek={userRecord?.hoursPerWeek ?? 10} nexusEnabled={!!process.env.NEXUS_API_URL && !!process.env.NEXUS_API_TOKEN} accuracyStats={accuracyStats} />
+      <AdvisorCard advisor={advisor} timeAllocation={timeAllocation} hoursPerWeek={userRecord?.hoursPerWeek ?? 10} factoryRepoIds={factoryRepoIds} accuracyStats={accuracyStats} />
 
       <GoalsCard goals={activeGoals} />
 

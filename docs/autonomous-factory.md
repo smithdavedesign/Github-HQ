@@ -1,7 +1,8 @@
 # RepoHQ — Personal Autonomous Software Factory
 
 > **Status:** Phases 60–64, 68 and 69 shipped; 65–66 partial; 67 not started ([roadmap.md](roadmap.md#autonomous-factory-roadmap)).
-> The local lane runs as `factory/` on a launchd schedule (hourly overnight, 06:45 morning report); operator guide in [factory/README.md](../factory/README.md).
+> The local lane runs as `factory/`, a BullMQ worker kept alive by launchd (its job schedulers keep the old calendar: hourly overnight, 06:45 morning report); operator guide in [factory/README.md](../factory/README.md).
+> Since 2026-10-07 it is the only executor: RepoHQ's "Run agent" queues into it and Nexus is retired (§15, [PRD](agent-hq-migration-prd.md)).
 > Agent work lands as draft PRs against `main`; nothing merges without the owner (the `integration/agent` hop of roadmap Phase 70 was retired 2026-10-06).
 > §12 records what building it changed, including the first scheduled night.
 > Adapted from the *"Personal Autonomous Software Factory — Infrastructure Provisioning & Identity"* PRD (§21),
@@ -195,7 +196,7 @@ This gives the PRD's "measure → learn → next mission" a concrete number: **%
 
 ## 6. Model scout (weekly, $0)
 
-Free slugs rotate (the ai-stack README already documents `cloud-or` 404s). A weekly local job:
+Free slugs rotate (the [ai-stack runbook](ai-stack/operations.md#troubleshooting) already documents `cloud-or` 404s). A weekly local job:
 
 1. `GET https://openrouter.ai/api/v1/models` → filter `pricing.prompt == "0" && pricing.completion == "0" && "tools" ∈ supported_parameters`.
 2. Run a **fixed eval suite** through Claude Code via LiteLLM, extending today's spike:
@@ -262,43 +263,36 @@ Approval goes through a **signed, single-use, expiring link** back to RepoHQ, ne
 
 ## 8. Topology
 
+As built (2026-10-07, roadmap Phase 81). The original plan routed work through Nexus lanes (a local and a Render worker); the factory became the executor instead, and Nexus is retired.
+
 ```mermaid
 flowchart TB
     subgraph Cloud["Always-on (cloud)"]
-        RHQ["RepoHQ — brain\nVercel + Neon\nscore · advise · route · budget ledger · approvals"]
-        NX["Nexus API + BullMQ\nRender\nlanes: agent-local · agent-cloud"]
-        RW["Render worker — M2 lane\nClaude Code + Anthropic"]
+        RHQ["Agent HQ (RepoHQ) — brain + UI\nVercel + Neon\nscore · advise · requests · runs · traces"]
+        RD["Redis (Render Key Value)\nBullMQ queue 'factory'\nrequest · cycle · report · scout"]
     end
 
-    subgraph Mac["This Mac (16 GB) — runs when awake/plugged in"]
-        LW["Local Nexus worker — M0/M1 lane\nmacOS user 'ai-agent' · launchd\nconcurrency 1–2"]
-        AID["Aider (M0)"]
-        CC["Claude Code + gstack (M1)"]
+    subgraph Mac["This Mac (16 GB) — runs when awake and on AC"]
+        W["factory/worker.ts — launchd KeepAlive\nconcurrency 1 · gates: PAUSE · AC · lock · Docker"]
+        SB["Docker sandbox per repo\ninstall · checks · Aider / Claude Code"]
         subgraph Stack["~/ai-stack"]
-            HR["Headroom :8787"] --> LL["LiteLLM :4000\nfree-agent · free-agent-b · local-*"]
-            LL --> OL["Ollama\nQwen2.5-Coder 7B/14B · Qwen3-8B"]
-            LL --> OR["OpenRouter free models"]
+            LL["LiteLLM :4000\nfree-agent · local-*"]
+            LL --> OL["Ollama\nQwen2.5-Coder · Qwen3"]
+            LL --> OR["Free cloud pools"]
         end
-        OC["OpenClaw :18789\nWhatsApp approvals · browser fallback"]
-        OP["1Password 'AI-Agent' vault\nop run (service account)"]
-        SC["Model scout (weekly)"]
+        OC["OpenClaw :18789\nowner asks → queue/owner-requests.jsonl"]
     end
 
-    GH["GitHub\nNexus GitHub App · branch protection"]
+    GH["GitHub\nbranch protection · draft PRs"]
 
-    RHQ -->|dispatch + tier| NX
-    NX -->|agent-local| LW
-    NX -->|agent-cloud| RW
-    LW --> AID --> HR
-    LW --> CC --> LL
-    OP -.secrets via env, never in prompt.-> LW
-    LW & RW -->|branch · draft PR| GH
-    LW & RW -->|agent events + cost telemetry| RHQ
-    RHQ -->|awaiting_approval webhook| OC
-    OC -->|WhatsApp| Human((Owner))
-    Human -->|signed link| RHQ
-    SC -->|eval + update aliases| LL
-    SC -->|model_scout_report| RHQ
+    RHQ -->|agent_requests row + job id| RD
+    RD -->|next job| W
+    W -.->|reconcile: re-add open requests| RHQ
+    OC --> W
+    W --> SB --> LL
+    W -->|judged draft PR| GH
+    W -->|request outcome · automation_runs · trace_events · agent_jobs| RHQ
+    W -->|heartbeat| RD
     GH -->|merge / CI| RHQ
 ```
 
@@ -308,12 +302,12 @@ flowchart TB
 |---|---|
 | What should we do? | RepoHQ advisor + health scoring |
 | Which model/lane, at what cost? | RepoHQ router (§5) + budget ledger (§7) |
-| Who runs it, where? | Nexus lanes → local worker (free) or Render worker (paid) |
+| Who runs it, where? | The factory worker on this Mac, one job at a time (requests first); paid tiers only in manual runs |
 | How is it engineered? | gstack skills via Claude Code, or Aider for M0 |
 | What environment is needed? | Infrastructure stage (Horizon 3, §10) |
 | Is it allowed? | Action level × task tier × data policy |
 | Does a human need to say yes? | `awaiting_approval` → OpenClaw → signed link |
-| Did it work? | CI loop (Phase 55) + merge → health delta → accuracy (Phase 52) |
+| Did it work? | Judge v2 before the PR; CI on agent PRs flags `needs human` (Phase 55); merge → health delta → accuracy (Phase 52) |
 
 ### Later: the AI dev VM
 
@@ -323,7 +317,7 @@ When the Mac stops being enough, or isolation matters more than RAM, the whole w
 AI DEV VM: OpenClaw · Chrome · LiteLLM · Ollama · MCP servers · git · Docker · 1Password CLI (AI-Agent vault) · project workspace
 ```
 
-The factory needs no change for that move. It already talks to everything through LiteLLM, keeps its state in one directory, and is deployed from a pinned checkout. On a 16 GB M1 Pro the VM can't also host local models, so this waits for more RAM or a separate box (ai-stack roadmap: hardware upgrade).
+The factory needs no change for that move. It already talks to everything through LiteLLM, keeps its state in one directory, and is deployed from a pinned checkout. On a 16 GB M1 Pro the VM can't also host local models, so this waits for more RAM or a separate box ([ai-stack roadmap](ai-stack/roadmap.md#later--conditional): hardware upgrade).
 
 ### Running locally on 16 GB
 
@@ -477,7 +471,7 @@ sense → select one task → fixed pipeline → sandboxed worker → verify (de
 | # | Decision | Concretely |
 |---|---|---|
 | 1 | **Sandbox before intelligence** (shipped, §14.3). The worker was too trusted: `npm ci` and test suites of target repos run on the owner's Mac with `gh`, keychain and `~/.ssh` in reach | Docker job container per repo (Phase 76). The **container gets no GitHub credential at all**: the host already commits, pushes and opens the PR *after* the judge passes (`factory/lib/git.ts`), so the container only needs the repo copy, the LiteLLM endpoint and the package registry. No host mounts, no Docker socket, CPU/memory/time limits, destroyed after the job. Checks run *inside* the container too, since the untrusted code is the repo's install and test scripts, not just the model |
-| 2 | **Spawning depth = 1.** Director → worker → done | Workers return a structured result; they never pick the next step. Nexus's `suggestedNextSkill` auto-chain (one hop, behind `autoDispatchEnabled`) is the pattern this rules out for unattended work (open item in Phase 78) |
+| 2 | **Spawning depth = 1.** Director → worker → done | Workers return a structured result; they never pick the next step. Nexus's `suggestedNextSkill` auto-chain (one hop, behind `autoDispatchEnabled`) is the pattern this rules out for unattended work; it was removed with Nexus (Phase 81) |
 | 3 | **Fixed pipelines per task kind**, chosen by the Director; no dynamic skill chains | Pipelines map to task kinds with an oracle, not to gstack skill names (Phase 78). gstack `/qa` drives a browser against a running app, not a failing unit test; `/benchmark` needs baselines none of the repos have; a feature pipeline has no oracle, so it stays report-only |
 | 4 | **Deterministic verification first; the LLM judge last and advisory** | The rule-based judge (`verify.ts`) gets harder to fool (Phase 77). An adversarial LLM pass ("prove this should not merge") runs only after the rules pass, on a different model family from the builder, and can only **veto or flag** `UNCERTAIN`, never approve. `UNCERTAIN` = a PR label asking for a careful human read, not a block |
 | 5 | **The factory never modifies its own judge, loop or router** | Shipped 2026-10-06: in the factory's home repo (Github-HQ is on its own allowlist), the judge rejects any diff touching `factory/**` or `src/lib/agents/model-router.ts`; the Autonomous PR policy workflow fails autonomous branches that touch them, as a backstop. Changes there are human-only |
@@ -485,10 +479,10 @@ sense → select one task → fixed pipeline → sandboxed worker → verify (de
 | 7 | **Coarse routing** | Task difficulty (simple / medium / hard) × tier (local / free cloud / Copilot / paid). No per-skill × model × repo cells until there are thousands of jobs; today a cell needs ≥ 10 attempts to count |
 | 8 | **Promotion ladder per capability**: observe → report → draft PR → auto-verified PR → human merge | A new capability (e.g. red-CI investigation) enters at *report* and moves up only with evidence. **Merge stays human indefinitely**: it's the final control and the router's best learning signal |
 | 9 | **Measure what the factory costs, not just what the model scores** | KPIs in Phase 79: accepted PRs per free request, merge rate, review-load proxies, autonomy |
-| 10 | **Keep scheduled one-shot cycles** rather than a `while (!paused)` daemon | launchd starts a fresh process each cycle: crashes and leaks don't accumulate, `PAUSE` is checked at start, and "nothing worth doing" already means the cycle exits. Same loop shape, more robust host |
-| 11 | **Owner requests enter through the front door, not a second worker** (2026-10-06) | OpenClaw turns a plain-words ask into a queued task (`queue/owner-requests.jsonl`); the factory consumes it as the `owner-requested` task kind through the *same* path — sandbox → free-pool → judge → draft PR → ledger. It's free-form so it has no oracle (nuancing decision #3): acceptance is the judge's **generic gate** (checks still pass, nothing regresses, diff ≤ budget, no forbidden/CI/secret edits, no test gutting) plus a draft PR labeled `owner-requested` for human review — never auto-merged. Depth stays 1; prompt-injection in a request still only yields a sandboxed, judged, human-reviewed draft PR. Contract + code pointers: `ai-stack/repohq/CONTRACT.md`, `factory/lib/owner-requests.ts` |
+| 10 | **Keep scheduled one-shot cycles** rather than a `while (!paused)` daemon | launchd starts a fresh process each cycle: crashes and leaks don't accumulate, `PAUSE` is checked at start, and "nothing worth doing" already means the cycle exits. Same loop shape, more robust host. Phase 81 kept this inside the BullMQ worker: it is a thin supervisor that checks `PAUSE` before each job and runs every job in a fresh child process |
+| 11 | **Owner requests enter through the front door, not a second worker** (2026-10-06) | OpenClaw turns a plain-words ask into a queued task (`queue/owner-requests.jsonl`); the factory consumes it as the `owner-requested` task kind through the *same* path — sandbox → free-pool → judge → draft PR → ledger. It's free-form so it has no oracle (nuancing decision #3): acceptance is the judge's **generic gate** (checks still pass, nothing regresses, diff ≤ budget, no forbidden/CI/secret edits, no test gutting) plus a draft PR labeled `owner-requested` for human review — never auto-merged. Depth stays 1; prompt-injection in a request still only yields a sandboxed, judged, human-reviewed draft PR. Contract + code pointers: `ai-stack/repohq/CONTRACT.md`, `factory/lib/owner-requests.ts`. Since Phase 81 RepoHQ's "Run agent" comes through the same door as an `agent_requests` row (`factory/lib/agent-requests.ts`) |
 
-**Status (2026-10-06):** all ten are in code (Phases 75–80), with two exceptions. #2: Nexus's `suggestedNextSkill` auto-chain is still dynamic; whether to keep it is the owner's decision (roadmap Phase 78). #10: concurrency stays 1 until the night-shift gate passes.
+**Status (2026-10-07):** all eleven are in code (Phases 75–81). #2's last exception, Nexus's auto-chain, went with Nexus in Phase 81. #10: concurrency stays 1 until the night-shift gate passes.
 
 ### 14.2 KPIs
 
@@ -540,6 +534,16 @@ Operator details: [factory/README.md](../factory/README.md) ("Judge v2", "Promot
 
 16 GB RAM: Docker Desktop's VM has 8 GB and Ollama keeps a 7B model (~5 GB) resident on the host. Realistic concurrency is **one container**, two for light repos. The cycle is serial, and stays serial until the sandbox has run a week of nights cleanly.
 
+## 15. One agent system (2026-10-07, roadmap Phase 81)
+
+RepoHQ had two executors that wrote code: the factory, and Nexus (AI-Took-My-Job: paid Claude on a Render worker, no sandbox, no judge). The owner chose one. The factory is now the only thing that writes code; Nexus's infrastructure (the BullMQ queue on Redis, the worker deployment) moved into this repo and its code did not. Full write-up: [agent-hq-migration-prd.md](agent-hq-migration-prd.md).
+
+- **Front door:** RepoHQ (UI, Monday auto-dispatch, MCP) writes an `agent_requests` row and adds a BullMQ job; OpenClaw's JSONL requests are mirrored into the same table. Neon is the record and Redis only wakes the worker.
+- **Worker:** `factory/worker.ts` under launchd `KeepAlive` replaces the cycle/report/scout calendar with job schedulers. Requests (priority 1) run ahead of cycles. Environment problems defer a request, never fail it.
+- **Skills:** fix (`/ship`, `/qa`, `/document-release`) and report (`/investigate`, `/review`, `/qa-only`, `/health`, `/retro`) modes. `owner-requested` stays at stage `report` until the owner promotes it, so fix requests end `verified` rather than as PRs until then.
+- **Visibility:** `automation_runs` and `trace_events` give every job and cron a step timeline, shown on the Agents page with the worker's heartbeat, the queue and owner controls.
+- **Removed:** the Nexus dispatch and webhook, skill auto-chaining, and the CI-fix loop on open agent PRs.
+
 ---
 
-_Related: [architecture.md](architecture.md) · [agentic-full-flow.md](agentic-full-flow.md) · [roadmap.md](roadmap.md#autonomous-factory-roadmap) · local stack docs: [smithdavedesign/ai-stack-docs](https://github.com/smithdavedesign/ai-stack-docs)_
+_Related: [architecture.md](architecture.md) · [agentic-full-flow.md](agentic-full-flow.md) · [roadmap.md](roadmap.md#autonomous-factory-roadmap) · local stack docs: [ai-stack/](ai-stack/README.md)_

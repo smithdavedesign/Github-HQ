@@ -4,7 +4,7 @@ import {
   parseRepoSkillAllowlist,
   parseEnvSkillAllowlistMap,
   isSkillAllowedForRepo,
-} from '../../src/lib/actions/nexus-utils'
+} from '../../src/lib/skills/skill-policy'
 
 describe('resolveAdvisorSkill', () => {
   it('routes security to investigate', () => {

@@ -3,7 +3,6 @@ import { portfolioEvents, users } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { decrypt } from '@/lib/crypto-utils'
 import { respectRateLimit } from '@/lib/github/sync'
-import { DEFAULT_MAX_AUTONOMOUS_RETRIES, shouldContinueAutonomousLoop } from '@/lib/agents/lifecycle-utils'
 
 type PRMeta      = { taskId?: string; prUrl?: string }
 type CIFailMeta  = { taskId?: string; sha?: string; attempt?: number }
@@ -14,12 +13,11 @@ type TerminalMeta = { taskId?: string }
  *
  *  - SHA dedup: skip if we already recorded a ci_failed event for this exact
  *    commit SHA — prevents re-recording the same failure on every 6h sync until
- *    a fix commit is pushed.
- *  - If < MAX_CI_FIX_ATTEMPTS prior fix attempts: records agent_ci_failed and
- *    queues a CI fix task to Nexus with contextNotes.existingBranch so the agent
- *    pushes onto the same PR branch.
- *  - If >= MAX_CI_FIX_ATTEMPTS: records agent_needs_human and fires an in-app
- *    notification.
+ *    a new commit is pushed.
+ *  - Records agent_ci_failed (history) and, once per PR, agent_needs_human with an
+ *    in-app notification. There is no agent fix loop on an open PR any more (roadmap
+ *    Phase 81): the factory runs the repo's checks before it opens a PR, and a PR that
+ *    still fails CI is the owner's call — fix it, or close it and queue a new request.
  *
  * Runs in the 6h sync cron before checkMergedAgentPRs.
  * Returns the number of PRs with newly detected CI failures.
@@ -122,51 +120,7 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
       const checkName    = firstFailed.name
       const errorSummary = (firstFailed.output?.summary ?? `${checkName} failed`).slice(0, 500)
 
-      if (!shouldContinueAutonomousLoop({
-        retryCount: priorAttempts,
-        maxAttempts: DEFAULT_MAX_AUTONOMOUS_RETRIES,
-        lifecycleStage: 'ci_failing',
-        autoDispatchEnabled: true,
-      })) {
-        const alreadyEscalated = events.some(e => {
-          if (e.eventType !== 'agent_needs_human') return false
-          const m = e.metadata as TerminalMeta | null
-          return m?.taskId === meta.taskId
-        })
-        if (alreadyEscalated) continue
-
-        await db.insert(portfolioEvents).values({
-          userId,
-          repoId: prEvent.repoId,
-          eventType: 'agent_needs_human',
-          title: `Agent PR needs human review: ${repo}#${prNumber}`,
-          description: `CI failed ${priorAttempts} times without a working fix`,
-          metadata: {
-            taskId:   meta.taskId,
-            prUrl:    meta.prUrl,
-            branchName,
-            attempts: priorAttempts,
-            reason:   `CI failed ${priorAttempts} times without a working fix`,
-          },
-        })
-
-        const { dispatchNotification } = await import('@/lib/notifications/dispatcher')
-        await dispatchNotification({
-          userId,
-          eventType: 'agent_failed',
-          title: `Agent PR needs human review: ${repo}#${prNumber}`,
-          body: `CI failed ${priorAttempts} times. Manual review required. ${meta.prUrl}`,
-          repoId: prEvent.repoId,
-          metadata: { prUrl: meta.prUrl, taskId: meta.taskId },
-        })
-
-        detected++
-        continue
-      }
-
-      // Record the CI failure, then attempt to queue a fix.
-      // Write the event first so the lifecycle shows ci_failing immediately,
-      // even if Nexus is temporarily down (the next cycle will retry queueing).
+      // History: one ci_failed per failing commit.
       await db.insert(portfolioEvents).values({
         userId,
         repoId: prEvent.repoId,
@@ -184,23 +138,38 @@ export async function checkCIFailuresOnAgentPRs(userId: string): Promise<number>
         },
       })
 
-      const { queueCIFix } = await import('@/lib/agents/nexus-dispatch')
-      const queued = await queueCIFix(
-        userId,
-        prEvent.repoId,
-        `${owner}/${repo}`,
-        branchName,
-        prNumber,
-        errorSummary,
-        meta.taskId,
-      )
+      // Hand it to the owner once per PR: nothing will push a fix onto this branch automatically.
+      const alreadyEscalated = events.some(e => {
+        if (e.eventType !== 'agent_needs_human') return false
+        const m = e.metadata as TerminalMeta | null
+        return m?.taskId === meta.taskId
+      })
+      if (!alreadyEscalated) {
+        const reason = `CI check "${checkName}" fails on the agent PR`
+        await db.insert(portfolioEvents).values({
+          userId,
+          repoId: prEvent.repoId,
+          eventType: 'agent_needs_human',
+          title: `Agent PR needs human review: ${repo}#${prNumber}`,
+          description: reason,
+          metadata: {
+            taskId:   meta.taskId,
+            prUrl:    meta.prUrl,
+            branchName,
+            attempts: priorAttempts + 1,
+            reason,
+          },
+        })
 
-      if (!queued) {
-        // Nexus is down — the ci_failed event is written and the lifecycle shows
-        // ci_failing. The next sync cycle will retry queueing (SHA dedup prevents
-        // double-recording). Not counted as detected since no action was taken.
-        console.warn(`[ci-checker] Nexus unavailable for ${owner}/${repo}#${prNumber} — will retry next cycle`)
-        continue
+        const { dispatchNotification } = await import('@/lib/notifications/dispatcher')
+        await dispatchNotification({
+          userId,
+          eventType: 'agent_failed',
+          title: `Agent PR needs human review: ${repo}#${prNumber}`,
+          body: `${reason}: ${errorSummary.slice(0, 200)}. Fix it on the branch, or close the PR and queue a new request. ${meta.prUrl}`,
+          repoId: prEvent.repoId,
+          metadata: { prUrl: meta.prUrl, taskId: meta.taskId },
+        })
       }
 
       detected++

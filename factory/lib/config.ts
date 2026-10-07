@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import type { ModelTier } from '../../src/lib/agents/model-router'
+import type { ScheduledJobName } from './queue'
 
 export interface FactoryConfig {
   /** State dir: ledger, workspaces, logs, PAUSE kill-switch. */
@@ -60,13 +61,29 @@ export interface FactoryConfig {
   }
   /** Optional RepoHQ sink — mirrors attempts into portfolio_events. */
   repohq: { databaseUrl: string | null; userId: string | null }
+  /**
+   * When the worker runs scheduled work (cron patterns in the worker's local time zone). The
+   * worker turns these into BullMQ job schedulers on start (factory/worker.ts); they replace the
+   * launchd calendar install-launchd.sh used to write. A kind left out is not scheduled.
+   */
+  schedules: Partial<Record<ScheduledJobName, string>>
+}
+
+/**
+ * Night Shift v2 (Phase 80): cycles at :05 hourly 20:00–06:00 plus 12:00 and 16:00; the morning
+ * report at 06:45; the model scout Sundays 17:10 — the calendar launchd ran before Phase 81.
+ */
+export const DEFAULT_SCHEDULES: Record<ScheduledJobName, string> = {
+  cycle: '5 0-6,12,16,20-23 * * *',
+  report: '45 6 * * *',
+  scout: '10 17 * * 0',
 }
 
 export type CapabilityStage = 'observe' | 'report' | 'pr'
 
 export const CAPABILITIES = [
   'fix-types', 'fix-lint', 'fix-tests', 'lint-autofix', 'deps-audit', 'docs-readme',
-  'red-ci', 'security-alerts', 'adversarial-veto', 'owner-requested',
+  'red-ci', 'security-alerts', 'adversarial-veto', 'owner-requested', 'owner-report',
 ] as const
 export type Capability = typeof CAPABILITIES[number]
 
@@ -79,6 +96,9 @@ export const DEFAULT_CAPABILITIES: Record<Capability, CapabilityStage> = {
   // the full path (sandbox → judge) and reports "verified, held, no PR" so a clean dry run earns trust
   // first. Promote to `pr` (here or in factory.config.json) to actually open labeled draft PRs.
   'owner-requested': 'report',
+  // Agent HQ report requests (Phase 81): read-only investigations that never open a PR, so
+  // `report` is their full capability; `observe` turns them off.
+  'owner-report': 'report',
 }
 
 /** Builder tier → reviewer alias from a different model family (local = Qwen; free-agent = Nemotron → Cohere → Gemini). */
@@ -168,6 +188,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FactoryConfig 
       databaseUrl: env.FACTORY_USER_ID ? env.FACTORY_DATABASE_URL ?? readEnvVar(path.join(ROOT, '..', '.env.local'), 'DATABASE_URL') : null,
       userId: env.FACTORY_USER_ID ?? null,
     },
+    schedules: json.schedules ?? DEFAULT_SCHEDULES,
   }
 }
 

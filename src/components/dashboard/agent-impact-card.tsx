@@ -3,16 +3,17 @@ import { Bot, Factory, GitMerge, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 
 interface AgentImpactCardProps {
-  /** Nexus (remote executor) totals from portfolio_events. */
-  nexus: { merged: number; queued: number; successRate: number | null; totalScoreGained: number; recentMergeCount: number } | null
-  /** Local factory, last 30 days, from agent_jobs. */
+  /** Requests queued from RepoHQ (Run agent, skills, auto-dispatch), all time, from portfolio_events.
+   *  Includes the Nexus-era tasks from before the factory became the only executor (Phase 81). */
+  requests: { merged: number; queued: number; successRate: number | null; totalScoreGained: number; recentMergeCount: number } | null
+  /** The factory's PRs (sensed work and requests), last 30 days, from agent_jobs. */
   factory: { merged: number; closed: number; prsOpened: number; acceptance: number | null } | null
 }
 
-// The two executors are reported separately: blended into one "success rate", Nexus's failures
-// (2 merged of 306 queued in the 2026-10 audit) hid the factory's results.
-export function AgentImpactCard({ nexus, factory }: AgentImpactCardProps) {
-  if (!(nexus && nexus.merged > 0) && !(factory && factory.prsOpened > 0)) return null
+// Reported separately: the request line carries the Nexus-era history (2 merged of 306 queued
+// in the 2026-10 audit), which would hide the factory's acceptance if blended into one rate.
+export function AgentImpactCard({ requests, factory }: AgentImpactCardProps) {
+  if (!(requests && requests.merged > 0) && !(factory && factory.prsOpened > 0)) return null
 
   return (
     <Card className="card-elevated" data-testid="agent-impact">
@@ -42,17 +43,17 @@ export function AgentImpactCard({ nexus, factory }: AgentImpactCardProps) {
             </span>
           </div>
         )}
-        {nexus && nexus.queued > 0 && (
+        {requests && requests.queued > 0 && (
           <div className="flex items-center gap-2">
             <GitMerge className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
             <span>
-              <span className="font-medium">Nexus:</span>{' '}
-              <span className="tabular-nums">{nexus.merged} merged of {nexus.queued} queued</span>
-              {nexus.successRate != null && (
-                <span className={nexus.successRate >= 50 ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}> ({nexus.successRate}%)</span>
+              <span className="font-medium">Requests (all time):</span>{' '}
+              <span className="tabular-nums">{requests.merged} merged of {requests.queued} queued</span>
+              {requests.successRate != null && (
+                <span className={requests.successRate >= 50 ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}> ({requests.successRate}%)</span>
               )}
-              {nexus.recentMergeCount > 0 && <span className="text-muted-foreground"> · {nexus.recentMergeCount} this month</span>}
-              {nexus.totalScoreGained > 0 && <span className="text-emerald-600"> · +{nexus.totalScoreGained} pts (30d)</span>}
+              {requests.recentMergeCount > 0 && <span className="text-muted-foreground"> · {requests.recentMergeCount} this month</span>}
+              {requests.totalScoreGained > 0 && <span className="text-emerald-600"> · +{requests.totalScoreGained} pts (30d)</span>}
             </span>
           </div>
         )}

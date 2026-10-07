@@ -7,7 +7,7 @@ import {
   parseEnvHighRiskOptInMap,
   isHighRiskOptedIn,
   isTierAllowedByProgressiveAutonomy,
-} from '../../src/lib/actions/nexus-utils'
+} from '../../src/lib/skills/skill-policy'
 
 describe('resolveSkillPolicyTier', () => {
   it('classifies report-only skills', () => {

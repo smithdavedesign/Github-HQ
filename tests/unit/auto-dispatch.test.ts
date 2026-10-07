@@ -1,10 +1,10 @@
 /**
  * Phase 53 — Auto-dispatch filter logic unit tests.
- * Tests the pure filter rules without DB or Nexus calls.
+ * Tests the pure filter rules without DB or queue calls.
  */
 import { describe, it, expect } from 'vitest'
 import type { AccuracyStats } from '../../src/lib/actions/advisor-accuracy'
-import type { AutoDispatchSettings } from '../../src/lib/agents/nexus-dispatch'
+import type { AutoDispatchSettings } from '../../src/lib/agents/factory-queue'
 import { MIN_DATA_POINTS } from '../../src/lib/actions/advisor-accuracy-utils'
 
 // ─── Mirror of autoDispatchAdvisorActions filter logic ───────────────────────

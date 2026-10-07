@@ -34,7 +34,7 @@ export interface ReportInput {
   headlines?: Partial<Record<RoleId, string>>
   /** Capability stages (promotion ladder, Phase 75). */
   capabilities?: Record<Capability, CapabilityStage>
-  /** Disabled workflows, stale RepoHQ data, Nexus failure rate (factory/lib/system-health.ts). */
+  /** Disabled workflows, stale RepoHQ data, failing or stuck agent requests (factory/lib/system-health.ts). */
   systemHealth?: SystemHealth
 }
 

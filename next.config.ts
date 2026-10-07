@@ -31,6 +31,9 @@ const csp = [
 ].join('; ')
 
 const nextConfig: NextConfig = {
+  // The factory queue client (factory/lib/queue.ts) runs in Node functions only; keep BullMQ and
+  // ioredis out of the server bundle and load them from node_modules at runtime.
+  serverExternalPackages: ['bullmq', 'ioredis'],
   async headers() {
     return [
       {

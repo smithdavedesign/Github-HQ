@@ -215,7 +215,7 @@ test.describe('Run Agent button — lifecycle hydration', () => {
 test.describe('Agent Performance page', () => {
   test('loads and shows required sections', async ({ page }) => {
     await page.goto('/agent-performance')
-    await expect(page.getByRole('heading', { name: 'Agent Performance' })).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible({ timeout: 8000 })
     await expect(page.getByText('Activity Log')).toBeVisible()
   })
 })

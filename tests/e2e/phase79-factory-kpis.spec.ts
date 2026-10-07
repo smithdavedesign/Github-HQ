@@ -87,6 +87,6 @@ test.describe('Agent Performance — factory KPIs (Phase 79)', () => {
     await seedJob(uid, 1, { outcome: 'merged', hoursAgo: 10 })
     await page.goto('/agent-performance')
     await expect(page.getByText(/Factory KPIs \(last 30 days\)/)).toBeVisible({ timeout: 8000 })
-    await expect(page.getByRole('heading', { name: 'Agent Performance' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible()
   })
 })

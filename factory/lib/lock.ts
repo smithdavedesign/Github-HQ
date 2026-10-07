@@ -27,6 +27,18 @@ export function acquireLock(home: string, owner: string): () => void {
   return release
 }
 
+/** Who holds the factory lock right now ("run 2026…-ab12, pid 123"), or null when it's free or stale. */
+export function lockHolder(home: string): string | null {
+  const file = path.join(home, 'factory.lock')
+  if (!existsSync(file)) return null
+  try {
+    const { pid, owner } = JSON.parse(readFileSync(file, 'utf8')) as { pid: number; owner: string }
+    return isAlive(pid) ? `${owner}, pid ${pid}` : null
+  } catch {
+    return null
+  }
+}
+
 function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)

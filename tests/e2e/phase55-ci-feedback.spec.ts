@@ -144,7 +144,7 @@ test.describe('/api/agent-task-status — ci_failing lifecycle', () => {
 test.describe('Agent Performance — CI failure visibility', () => {
   test('page loads correctly', async ({ page }) => {
     await page.goto('/agent-performance')
-    await expect(page.getByRole('heading', { name: 'Agent Performance' })).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible({ timeout: 8000 })
   })
 
   test('seeded agent_ci_failed event appears in activity log', async ({ page }) => {
@@ -166,31 +166,5 @@ test.describe('Agent Performance — CI failure visibility', () => {
     await expect(page.getByText('Activity Log')).toBeVisible({ timeout: 8000 })
 
     await cleanup(prefix)
-  })
-})
-
-// ─── CI fix objective format validation ──────────────────────────────────────
-
-test.describe('CI fix objective content', () => {
-  test('objective includes key fields needed for agent context', () => {
-    // Inline the pure function (mirrors the Phase 55 implementation)
-    const MAX_RETRIES = 3
-    function buildObjective(repoName: string, prNumber: number, branch: string, error: string, attempt: number) {
-      return [
-        `Fix CI failure on PR #${prNumber} in ${repoName} (attempt ${attempt + 1}/${MAX_RETRIES})`,
-        `Branch: ${branch}`,
-        `CI Error:\n${error.slice(0, 300)}`,
-        `- Check out the existing branch (do NOT create a new branch)`,
-      ].join('\n')
-    }
-
-    const obj = buildObjective('Github-HQ', 1, 'nexus/auto-abc', "Module not found: Can't resolve 'stripe'", 0)
-
-    expect(obj).toContain('PR #1')
-    expect(obj).toContain('Github-HQ')
-    expect(obj).toContain('nexus/auto-abc')
-    expect(obj).toContain('stripe')
-    expect(obj).toContain('do NOT create a new branch')
-    expect(obj).toContain('attempt 1/3')
   })
 })

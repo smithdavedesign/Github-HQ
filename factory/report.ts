@@ -19,7 +19,7 @@ import { listAliases } from './lib/litellm-ops'
 import { run } from './lib/proc'
 import { freeQuota } from './lib/quota'
 import { buildMorningReport, toMime, type MorningReport, type RoleId, type RoleSection } from './lib/report'
-import { latestHealthSnapshot, nexusOutcomes, recordNotification } from './lib/sink'
+import { factoryActivityOf, latestHealthSnapshot, recordNotification, requestOutcomes } from './lib/sink'
 import { copilotQuota } from './lib/copilot-quota'
 import { inactivityDisabled, type SystemHealth } from './lib/system-health'
 
@@ -80,11 +80,12 @@ async function gatherSystemHealth(cfg: FactoryConfig, now: Date): Promise<System
     if (r.code !== 0) return null
     try { return inactivityDisabled(repo, JSON.parse(r.output)) } catch { return null }
   }))
-  const [latestSnapshot, nexus] = await Promise.all([
+  const [latestSnapshot, requests, factory] = await Promise.all([
     latestHealthSnapshot(cfg),
-    nexusOutcomes(cfg, new Date(now.getTime() - 7 * 86_400_000)),
+    requestOutcomes(cfg, new Date(now.getTime() - 7 * 86_400_000), now),
+    factoryActivityOf(cfg),
   ])
-  return { disabledWorkflows: lists.every(l => l === null) ? null : lists.flatMap(l => l ?? []), latestSnapshot, nexus }
+  return { disabledWorkflows: lists.every(l => l === null) ? null : lists.flatMap(l => l ?? []), latestSnapshot, requests, factory }
 }
 
 /** One local-model call (routine work → Ollama, $0) that rephrases each role's facts as a headline. */

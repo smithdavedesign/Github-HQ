@@ -7,7 +7,7 @@ import {
   detectPackageManager, installCommand, planChecks, isPlaceholderTestScript,
   filesFromTscOutput, filesFromEslintOutput, errorExcerpt, readmeIssue, type CheckResult,
 } from '../../factory/lib/checks'
-import { tasksFromScan, filterTasks, buildPrompt, fitLocalContext, M0_MAX_BYTES, isEnvironmentFailure } from '../../factory/lib/tasks'
+import { tasksFromScan, filterTasks, buildPrompt, fitLocalContext, M0_MAX_BYTES, isEnvironmentFailure, ownerRequestedTask } from '../../factory/lib/tasks'
 import { judge, parseDiff, referencedScripts, referencedNpxTools, type DiffInfo } from '../../factory/lib/verify'
 import {
   todaysUsage, pendingReviews, localDay, factoryDay,
@@ -239,6 +239,17 @@ describe('ledger', () => {
     expect(deadEnds([att({ tier: 'M0', outcome: 'failed' }), att({ tier: 'M0', outcome: 'failed' })], NOW).size).toBe(0)
     const deps = { tier: 'M0' as const, harness: 'npm-audit-fix', kind: 'deps-audit', outcome: 'failed' as const }
     expect([...deadEnds([att(deps), att(deps)], NOW)]).toEqual(['o/r:deps-audit'])
+  })
+  it('dead ends: an owner request only dead-ends itself, not later requests of its kind', () => {
+    const failed = (ownerTaskId: string) => att({ kind: 'owner-requested', outcome: 'failed', ownerTaskId })
+    // Two requests on the same repo, one failure each: neither is a dead end.
+    expect(deadEnds([failed('req-1'), failed('req-2')], NOW).size).toBe(0)
+    // One request failing twice (e.g. re-run after a crash) blocks that request only.
+    const ends = deadEnds([failed('req-1'), failed('req-1')], NOW)
+    expect([...ends]).toEqual(['o/r:owner-requested:req-1'])
+    const req = (id: string) => ownerRequestedTask('o/r', 'Add a health check endpoint', id)
+    expect(filterTasks([req('req-1')], 'o/r', new Set(), ends)).toEqual([])
+    expect(filterTasks([req('req-3')], 'o/r', new Set(), ends).map(t => t.ownerTaskId)).toEqual(['req-3'])
   })
   it('nextRepos puts never-scanned first, then least recent', () => {
     const entries: LedgerEntry[] = [

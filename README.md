@@ -16,10 +16,10 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 - **Opportunity score** — revenue potential × activity × health × stars; surfaces what to work on next
 - **Portfolio Score** — single 0–100 grade for your whole portfolio with weekly delta
 - **AI Advisor** — top 5 quantified actions with exact score deltas and confidence ratings based on past accuracy
-- **gstack Skill Launcher** — 9 skills across 5 lifecycle phases launched from the repo Agent tab or via MCP
-- **Agent Execution** — queue any advisor action or gstack skill; an AI agent executes via AI-Took-My-Job (Nexus)
+- **gstack Skill Launcher** — 8 skills across 5 lifecycle phases launched from the repo Agent tab or via MCP
+- **Agent Execution** — queue any advisor action or gstack skill; the factory (`factory/`), the only thing that writes code, runs it sandboxed on free models and judges every change
 - **Advisor Learning Loop** — the advisor tracks predicted vs actual outcomes and improves recommendations over time
-- **Auto-Dispatch** — Monday cron automatically queues eligible advisor actions; wake up to PRs ready to review
+- **Auto-Dispatch** — Monday cron queues eligible advisor actions for the factory
 - **Simulation Engine** — "given 10h this week and a goal of max ARR, here's the optimal allocation"
 - **Revenue tracking** — MRR, ARR, costs, P&L per repo; Stripe auto-sync
 - **Lifecycle management** — 8 stages from Idea to Archived with abandonment tracking
@@ -48,35 +48,34 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 
 **Repository Detail**
 - Tabs: Overview, Tech Stack, Analysis, Security, Deployments, Revenue, AI Summary
-- **Agent tab** — gstack skill launcher (9 skills, 5 phases) + AI advisor actions (expandable, Run Agent button) + agent history (tasks queued, PR status + links, skill reports with inline findings preview, predicted vs actual delta)
+- **Agent tab** — gstack skill launcher (8 skills, 5 phases) + AI advisor actions (expandable, Run Agent button) + agent history (tasks queued, PR status + links, skill reports with inline findings preview, predicted vs actual delta)
 - 13-week commit chart, lifecycle + purpose + effort selectors, focus toggle, tags
 
 **gstack Skill Launcher**
-- 9 skills grouped by lifecycle phase, launched from the repo Agent tab or `queue_gstack_skill` MCP tool
-- Each skill has an editable objective field and live status badges (Queued → Running → Report ready / PR Ready / Failed)
+- 8 skills grouped by lifecycle phase, launched from the repo Agent tab or `queue_gstack_skill` MCP tool; enabled for repos on the factory allowlist
+- Each skill has an editable objective field and live status badges (Queued → Running → Report ready / PR Ready / Verified / Failed)
 - Inline findings preview shown when a report skill completes — links to full report in Agent History
 - Last-run history shown for each skill when idle (days ago + finding count)
-- Canary skill auto-hidden if no deployment URL is configured
+- `/canary` is listed but unavailable: checking a live app needs a browser and network access the factory sandbox doesn't have
 
-| Phase | Skills |
+| Phase | Skills (fix = one judged draft PR, report = findings, no changes) |
 |-------|--------|
-| Understand | `/investigate` (diagnose + fix), `/review` (code review, report only) |
-| Build Quality | `/qa-only` (find bugs, report only), `/qa` (find + fix bugs) |
-| Ship | `/ship` (implement + PR), `/document-release` (update docs + CHANGELOG) |
-| Monitor | `/health` (code quality score), `/canary` (live app check) |
-| Reflect | `/retro` (weekly commit analysis) |
+| Understand | `/investigate` (root cause, report), `/review` (code review, report) |
+| Build Quality | `/qa-only` (find bugs, report), `/qa` (find + fix bugs, fix) |
+| Ship | `/ship` (implement, fix), `/document-release` (update docs + CHANGELOG, fix) |
+| Monitor | `/health` (code quality score, report), `/canary` (unavailable) |
+| Reflect | `/retro` (weekly commit analysis, report) |
 
 **Agent Execution Pipeline**
-- "Run Agent" on any advisor action or gstack skill → POSTs to AI-Took-My-Job (Nexus)
-- Agent reads `get_coding_brief` context via MCP before starting
-- `skillName` in contextNotes routes the Nexus worker to the correct gstack script
-- Skill report outcomes (`agent_skill_report` webhook event) store findings + `suggestedNextSkill`; UI shows inline preview
+- "Run Agent" on any advisor action or gstack skill → an `agent_requests` row in Neon plus a BullMQ job; the factory worker takes it next (requests go ahead of scheduled cycles)
+- The skill picks the mode: fix skills become one judged draft PR, report skills a read-only investigation with findings
+- Report outcomes (`agent_skill_report` events) store findings; UI shows inline preview
 - Lifecycle guard — prevents duplicate queuing; button hydrates from DB on mount so stage is always accurate
-- Full status stages: Queued → Preparing → Running → PR Ready / Report Ready → Merged / Failed / Timed out
+- Status stages: Queued → Running → PR Ready / Verified / Report Ready → Merged / Failed
 - Agent history, attempt log, skill report findings, and PR links on repo detail Agent tab
 
 **Agent Observability**
-- `/agent-performance` — accuracy table by action type, success rates, avg delta, trend indicators
+- **Agents** (`/agent-performance`) — the factory worker (online, paused, on AC, Docker), queue counts, schedules and recent runs (factory jobs and crons on one timeline), every request with its step-by-step trace, and owner controls (run now, pause/resume, cancel, retry); then factory KPIs and the advisor accuracy table
 - Portfolio Feed — agent events inline (PR opened, merged with actual delta, failed, skill report)
 - Repo list — "PR open →" badge linking directly to GitHub PR
 - Notifications — in-app bell + optional webhook (Slack, Zapier, Make) for PR ready / failed / health alerts
@@ -92,8 +91,8 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 
 **Integrations**
 - **Stripe** — restricted API key; maps products to repos; MRR auto-syncs daily
-- **AI-Took-My-Job / Nexus** — agent execution pipeline; see [Agentic Execution](#agentic-execution-nexus) below
-- **gstack** — real skill invocation via `OPENCLAW_SESSION=true` + Claude Code CLI; G1–G6 fully shipped
+- **The factory** (`factory/`) — the only agent executor; see [Agentic Execution](#agentic-execution-the-factory) below
+- **gstack** — skill names and lifecycle phases for the launcher; the factory maps each skill to a fix or report task
 - **MCP Server** (`mcp/server.ts`) — 14 tools for Claude Code and any MCP-compatible IDE
 
 **MCP Tools (14)**
@@ -111,7 +110,7 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 | `get_active_work` | Open agent PRs per repo or portfolio-wide; safe-to-start flag |
 | `log_attempt` | Records attempt outcome (success/failed/partial); feeds dead-end detection |
 | `get_accuracy_report` | Advisor calibration table by action type + downgraded repos |
-| `queue_gstack_skill` | Trigger any of the 9 gstack skills on a repo; returns taskId |
+| `queue_gstack_skill` | Queue one of the 8 skills for the factory on an allowlisted repo; returns taskId |
 | `get_skill_history` | Recent skill run history for a repo (prose-formatted) |
 | `get_skill_findings` | Structured JSON findings from most recent skill run + suggestedNextSkill |
 
@@ -143,7 +142,7 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 | Crons | GitHub Actions (primary) + Vercel weekly fallback |
 | Revenue | Stripe REST API (restricted key, no SDK) |
 | IDE | MCP Server (stdio, `@modelcontextprotocol/sdk`) |
-| Agent Execution | AI-Took-My-Job / Nexus (BullMQ + Redis) |
+| Agent Execution | The factory: BullMQ on Redis (Render Key Value) + a worker on the owner's Mac (Docker sandbox, LiteLLM/Ollama) |
 
 ---
 
@@ -215,17 +214,19 @@ Add `CRON_SECRET` to your GitHub repo → Settings → Secrets → Actions. The 
 
 In Settings → Revenue Integration, add a restricted Stripe key with Subscriptions + Products read access.
 
-### 8. (Optional) Connect AI-Took-My-Job (Nexus)
+### 8. (Optional) Run the factory
 
-Add to your environment:
+The factory runs on your own machine (it needs Docker and a local model gateway). Set it up with
+[factory/README.md](factory/README.md), then add to Vercel and `.env.local`:
 
 ```bash
-NEXUS_API_URL=https://your-nexus-instance.com
-NEXUS_API_TOKEN=your-service-token
-NEXUS_WEBHOOK_SECRET=your-webhook-secret
+REDIS_URL=rediss://...        # the agent-hq-redis Key Value from render.yaml
+FACTORY_USER_ID=your-user-id  # the same id as in ~/.repohq-factory/env
 ```
 
-The gstack Skill Launcher and Run Agent buttons will activate once these are set. Without Nexus, the UI shows a "not configured" state.
+The gstack Skill Launcher and Run Agent buttons activate for repos on the factory allowlist
+(`factory/factory.config.json`). Without `FACTORY_USER_ID` they show why they are off. Without
+`REDIS_URL`, requests still queue in Neon and the worker picks them up at its next cycle.
 
 ### Advisor Dispatch Skill Policy
 
@@ -261,14 +262,6 @@ Confidence is derived from per-impact historical accuracy signal (`successRate` 
   - Optional env override map: `REPO_GSTACK_HIGH_RISK_OPT_IN_JSON={"owner/repo":true}`
 - Env override map takes precedence over tags.
 
-### Cross-Skill Objective Continuity
-
-- Auto-chained skills now inherit prior actionable findings and unresolved blocker context.
-- RepoHQ carries this continuity in both places:
-  - Chained objective text (explicit carry-forward summary)
-  - `contextNotes` fields (`parentTaskId`, `inheritedFindings`, `unresolvedBlockers`)
-- This keeps downstream skills aligned with upstream report findings and reduces context loss across skill transitions.
-
 ### 9. (Optional) Enable MCP Server
 
 ```json
@@ -291,52 +284,32 @@ See [mcp/README.md](mcp/README.md) for full setup and tool reference.
 
 ---
 
-## Agentic Execution (Nexus)
+## Agentic Execution (the factory)
 
-> **The core thesis:** RepoHQ has Find, Prioritize, and Measure. Nexus adds Execute. That's why this feels different from every other dashboard feature — it's not another card. It's the loop closing.
+> **The core thesis:** RepoHQ has Find, Prioritize, and Measure. The factory adds Execute — the loop closing.
 
-RepoHQ integrates with **AI-Took-My-Job** (AI-DevOps Nexus) to automatically execute advisor recommendations and gstack skills. When you click "Run Agent" or launch a skill:
+The factory (`factory/`) is the only thing that writes code ([PRD](docs/agent-hq-migration-prd.md), roadmap Phase 81). It replaced the AI-Took-My-Job (Nexus) executor. When you click "Run Agent" or launch a skill:
 
-1. RepoHQ POSTs to Nexus `/internal/agent-tasks` with the objective, skill name, and acceptance criteria
-2. Nexus routes to the correct gstack script based on `skillName` in `contextNotes`
-3. The gstack script sets `OPENCLAW_SESSION=true`, injects the RepoHQ coding brief into `CLAUDE.md`, loads learnings from `~/.gstack/projects/{slug}/learnings.jsonl`, and runs Claude Code CLI
-4. On completion, Nexus fires a webhook back to `/api/webhooks/agent-events`:
-   - `agent_pr_created` → PR link shown in UI, notification dispatched
-   - `agent_pr_merged` → accuracy tracking triggered, health re-synced
-   - `agent_skill_report` → findings stored, inline preview shown in launcher, `suggestedNextSkill` computed
-   - `agent_execution_failed` → error shown in Agent History, notification dispatched
-5. UI polls `/api/agent-task-status?taskId=...` per skill for live stage updates
+1. RepoHQ checks the repo is on the factory allowlist and has no request or agent PR in flight, then writes an `agent_requests` row (`queued`) and an `agent_task_queued` event, and adds a BullMQ job to the `factory` queue on Redis
+2. The factory worker (`factory/worker.ts`, under launchd on the owner's Mac) claims the row and runs one cycle for that repo: clone, sandboxed install and checks, the model ladder (free models first), Judge v2 and an adversarial review
+3. The outcome lands back on the row and as events: `agent_pr_created` (fix skills, a draft PR once `owner-requested` is promoted to `pr`), `verified` (judged and held at stage `report`), `agent_skill_report` (report skills, with findings), or `agent_execution_failed`
+4. The Agents page shows the request, its step-by-step trace and the worker's state; the Run Agent button polls `/api/agent-task-status?taskId=...`
 
-**Lifecycle states:** `idle → queued → preparing → running → pr_ready / report_ready → merged / failed / timed_out / needs_human`
+**Request states:** `queued → running → pr | verified | reported | rejected | failed`, or `cancelled` while queued. A request waiting for the Mac (asleep, on battery, Docker down) stays `queued`, with the reason when the worker deferred it; nothing is re-routed to a paid model.
 
-**Auto-dispatch:** Enable in Settings → Agent Auto-Dispatch. Every Monday the advisor automatically queues eligible actions — you wake up with PRs ready to review. Controls: effort gate (quick / quick+medium / all), max tasks per week (1–10), skip security tasks, minimum accuracy threshold.
+**Auto-dispatch:** Enable in Settings → Agent Auto-Dispatch. Every Monday the advisor queues eligible actions for the factory. Controls: effort gate (quick / quick+medium / all), max tasks per week (1–10), skip security tasks, minimum accuracy threshold.
 
-**Autonomous loop policy:** agent retries are bounded by a default budget of 3 attempts. Terminal stop reasons (`merged`, `failed`, `timed_out`, `needs_human`, `rejected`) halt re-entry, while recoverable CI/test failures can continue until the retry cap is reached.
+**No auto-chaining and no CI-fix loop:** the factory runs the repo's checks before it opens a PR. A PR that still fails CI is flagged `needs human` with a notification; you decide what runs next. Like any open agent PR, it blocks new requests on its repo until it's merged or closed.
 
-The Run Agent button hydrates from the database on mount — it always reflects the true current state even after navigation or page refresh. The server also blocks duplicate queuing server-side.
-
-To enable: add `NEXUS_API_URL`, `NEXUS_API_TOKEN`, and `NEXUS_WEBHOOK_SECRET` to your environment.
-
-See [docs/agentic-full-flow.md](docs/agentic-full-flow.md) for architecture diagrams and sequence flows.
+Neon is the source of truth and Redis only wakes the worker: a lost job is re-queued from the row. See [docs/autonomous-factory.md](docs/autonomous-factory.md) for the factory design and [factory/README.md](factory/README.md) for the operator guide. What the move off Nexus's Render workers costs (above all: requests wait for the Mac, and run on free models), and what to do about it, is in [docs/agent-hq-tradeoffs.md](docs/agent-hq-tradeoffs.md).
 
 ---
 
 ## gstack Integration
 
-[gstack](https://garryslist.org) is a Claude Code skill framework providing specialised agent workflows (`/ship`, `/investigate`, `/qa`, etc.) with multi-turn planning and a learnings system.
+[gstack](https://garryslist.org) is a Claude Code skill framework providing specialised agent workflows (`/ship`, `/investigate`, `/qa`, etc.). RepoHQ keeps its skill names and lifecycle phases; the factory runs each skill as a fix or report task with its own guidance (`factory/lib/tasks.ts`). G1–G6 (Claude Code CLI with gstack scripts, learnings, checkpoint mode, the brief in `CLAUDE.md`, the skill router) ran in the Nexus worker and retired with it.
 
-**G1–G6 are fully shipped:**
-
-| Feature | What it does |
-|---------|-------------|
-| **G1** | Real skill invocation — `claude /investigate`, `claude /ship`, etc. via `OPENCLAW_SESSION=true` |
-| **G2** | UI skill launcher on repo Agent tab + `queue_gstack_skill` MCP tool (all 9 skills) |
-| **G3** | Learnings injected from `~/.gstack/projects/{slug}/learnings.jsonl` before each run; findings logged back after |
-| **G4** | Checkpoint mode (`continuous`) enabled — WIP commits survive crashes; `agent_skill_report` webhook for no-changes outcomes |
-| **G5** | RepoHQ brief written to `CLAUDE.md` in worktree — gstack reads it natively as project context |
-| **G6** | Dynamic skill router in Nexus agent-runner — `skillName` in `contextNotes` selects the correct script; `GSTACK_SCRIPTS_DIR` for override |
-
-Integration test scripts live in `tests/integration/`. Run from the project root:
+The scripts in `tests/integration/` are manual checks that run a skill-style prompt against this codebase with the Claude Code CLI (paid, outside the factory). Run from the project root:
 
 ```bash
 bash tests/integration/gstack-security-check.sh    # /investigate — security
@@ -346,24 +319,28 @@ bash tests/integration/gstack-qa-only-check.sh     # /qa-only — bug hunt
 bash tests/integration/gstack-retro-check.sh       # /retro — weekly analysis
 ```
 
-**G8 (planned):** 2-hop skill auto-chaining on top of the existing BullMQ parallel execution (concurrency: 3).
-
-See the [gstack Integration Roadmap](docs/roadmap.md#gstack-integration-roadmap) for full details.
+See the [gstack Integration Roadmap](docs/roadmap.md#gstack-integration-roadmap) for the history.
 
 ---
 
 ## Testing
 
 ```bash
-npm test              # Vitest unit tests (675+ tests, 37 files)
+npm test              # Vitest unit tests (1,100+ tests, 68 files)
 npm run test:e2e      # Playwright e2e tests (requires dev server)
 npm run test:all      # both
 npm run typecheck     # TypeScript strict check
+
+docker compose --profile flow up -d   # throwaway Postgres + Redis for the flow tests
+npm run test:flow                     # the Agent HQ flow end to end: app → queue → real worker → Neon
+npm run test:flow:e2e                 # the same in the browser (next dev + the worker)
 ```
 
-Unit tests cover: health scoring, opportunity scoring, archive scoring, valuation, portfolio score, simulation engine, opportunity cost, event computation, NL query filters, LLM adapter, nexus integration, notifications, MCP tools, advisor accuracy, agent lifecycle, provider mapping, auto-dispatch filter logic, cache TTL, Nexus output contract, security fixes, gstack G7 integration, skill report logic, phase 56 features, CI feedback loop, and more.
+The flow tests ([tests/flow](tests/flow/README.md)) validate the one-agent-system migration with nothing mocked but the session and the job itself: the factory migration lands on the `db:push` schema, Run agent writes the request and its BullMQ job, the real worker claims, gates, runs, defers, retries and resolves it, and the status API and the Agents page show the outcome and its trace. They run on a disposable database (never `.env.local`'s) and in CI on every pull request.
 
-Integration scripts (`tests/integration/`) run real gstack-style skill workflows against the RepoHQ codebase via Claude Code CLI and validate the Nexus output.json contract.
+Unit tests cover: health scoring, opportunity scoring, archive scoring, valuation, portfolio score, simulation engine, opportunity cost, event computation, NL query filters, LLM adapter, notifications, MCP tools, advisor accuracy, agent lifecycle, provider mapping, auto-dispatch filter logic, cache TTL, security fixes, gstack skill policy, skill report logic, factory queue access, the factory worker and its policies, the Agents page, and more.
+
+Integration scripts (`tests/integration/`) run gstack-style skill prompts against the RepoHQ codebase via Claude Code CLI and check the JSON report shape they ask for (`nexus-agent-output-v1`, kept from the Nexus era).
 
 ---
 
@@ -385,8 +362,10 @@ npm run db:generate   # Generate migration files
 - [Architecture](docs/architecture.md) — system design, scoring formulas, DB schema, risk tiers, design decisions
 - [Roadmap](docs/roadmap.md) — all phases shipped + upcoming, gstack roadmap, distribution roadmap
 - [Audit (2026-10)](docs/audit-2026-10.md) — whole-system audit: live site, security, architecture, roadmap triage
-- [Agentic Full Flow](docs/agentic-full-flow.md) — mermaid architecture + sequence diagrams for the agent pipeline
-- [Agentic Execution Flow](docs/agentic-execution-flow.md) — quick reference for the execution pipeline
+- [One agent system PRD](docs/agent-hq-migration-prd.md) — the factory as the only executor, the queue and worker, the Agents page, the cutover runbook
+- [Trade-offs of leaving the Render workers](docs/agent-hq-tradeoffs.md) — what moving execution to the Mac costs (availability, model quality, ops, PR identity) and buys, the trial-week scorecard, and what to do next
+- [Agentic Full Flow](docs/agentic-full-flow.md) / [Execution Flow](docs/agentic-execution-flow.md) — the Nexus-era pipeline (superseded by the PRD; kept for history)
+- [AI stack](docs/ai-stack/README.md) — the local AI platform the factory runs on: Ollama, Headroom, LiteLLM and its free-model pool, the coding agents, the OpenClaw companion; architecture, runbook, reference, roadmap (moved here from the `ai-stack-docs` repo)
 - [Autonomous Factory](docs/autonomous-factory.md) — free-model-first self-improvement loop: local AI stack lane, model-tier routing, Docker-sandboxed worker, Judge v2 + adversarial review, capability stages, sensors and a ranked queue, job record and KPIs, night shift, infra agent (Horizon 3). Operator guide: [factory/README.md](factory/README.md)
 - [gstack Findings](docs/gstack-findings.md) — running log of skill run findings and resolutions
 - [MCP Setup](mcp/README.md) — IDE integration guide with all 14 tools

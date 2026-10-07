@@ -41,13 +41,14 @@ interface AdvisorCardProps {
   advisor: AdvisorContent | null
   timeAllocation?: TimeAllocationItem[]
   hoursPerWeek?: number
-  nexusEnabled?: boolean
+  /** Repos the factory takes requests for (owner + allowlist); Run Agent shows only on these. */
+  factoryRepoIds?: number[]
   accuracyStats?: AccuracyStats[]
 }
 
 const DEFAULT_VISIBLE = 3
 
-/** Mirrors buildAcceptanceCriteria in nexus.ts — shown in expanded card preview */
+/** Mirrors buildAcceptanceCriteria in src/lib/agents/factory-queue.ts — shown in expanded card preview */
 function getAcceptanceCriteria(action: AdvisorAction): string[] {
   const criteria: string[] = []
   if (action.impactType === 'security')    criteria.push('No new security alerts introduced')
@@ -74,7 +75,7 @@ function ConfidenceBadge({ impactType, accuracyStats }: { impactType: string; ac
   return <span className="text-[10px] ml-1" title={`${stat.successRate}% success rate (${stat.dataPoints} runs) — low confidence`}>🔴</span>
 }
 
-export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10, nexusEnabled = false, accuracyStats }: AdvisorCardProps) {
+export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10, factoryRepoIds = [], accuracyStats }: AdvisorCardProps) {
   const [advisor, setAdvisor] = useState(initialAdvisor)
   const [generating, setGenerating] = useState(false)
   const [showAll, setShowAll] = useState(false)
@@ -236,7 +237,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
                   </div>
 
                   {/* Run Agent button in expanded view */}
-                  {nexusEnabled && (
+                  {factoryRepoIds.includes(action.repoId) && (
                     <div className="flex items-center gap-2 pt-1">
                       <QueueButton action={action} />
                       <Link
@@ -247,7 +248,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
                       </Link>
                     </div>
                   )}
-                  {!nexusEnabled && (
+                  {!factoryRepoIds.includes(action.repoId) && (
                     <Link
                       href={`/repos/${action.repoId}`}
                       className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
@@ -261,7 +262,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
               {/* Collapsed: Run Agent lives in the header row */}
               {!isExpanded && (
                 <div className="flex items-center gap-1.5 px-3 pb-3 -mt-1 ml-0 sm:ml-10 flex-wrap">
-                  {nexusEnabled && <QueueButton action={action} />}
+                  {factoryRepoIds.includes(action.repoId) && <QueueButton action={action} />}
                   <Link
                     href={`/repos/${action.repoId}`}
                     className="text-muted-foreground hover:text-foreground"

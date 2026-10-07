@@ -13,8 +13,9 @@ import { judge, type DiffInfo } from '../../factory/lib/verify'
 import { readLedger, appendEntry, type AttemptEntry, type LedgerEntry, type OwnerResultEntry } from '../../factory/lib/ledger'
 import { DEFAULT_CAPABILITIES } from '../../factory/lib/config'
 import {
-  readOwnerRequests, pendingOwnerRequests, recordOwnerResult, recordOwnerBlocked, queuePath,
+  readOwnerRequests, pendingOwnerRequests, recordOwnerResult, recordOwnerBlocked, queuePath, staleBotPrBlock,
 } from '../../factory/lib/owner-requests'
+import { rankOpportunities } from '../../factory/lib/sensors'
 
 const tmpHome = () => mkdtempSync(path.join(tmpdir(), 'factory-owner-'))
 const writeQueue = (home: string, ...reqs: object[]) => {
@@ -199,5 +200,33 @@ describe('recordOwnerResult', () => {
     attempt(home, 'owner-1', { outcome: 'verified', prUrl: 'u' })
     recordOwnerResult(home, { ownerTaskId: 'owner-1', repo: 'o/r', runId: 'r', result: 'pr', ledger: readLedger(home), now: new Date() })
     expect(pendingOwnerRequests(home, readLedger(home))).toEqual([])
+  })
+})
+
+// ─── Stale bot PRs (blockOnStaleBotPrs) ────────────────────────────────────
+
+describe('staleBotPrBlock', () => {
+  const now = new Date('2026-10-07T10:00:00Z')
+  // What run.ts passes in: the repo's `blocked` from the ranked queue.
+  const blocked = rankOpportunities(['o/r'], [], [{
+    type: 'signals', runId: 'r', at: now.toISOString(), repo: 'o/r', base: 'main', redCi: [],
+    alerts: { status: 'ok', critical: 0, high: 0, medium: 0, low: 0, npmFixable: 0 },
+    botPrs: { open: 2, stale: [{ number: 4, url: 'https://github.com/o/r/pull/4', ageDays: 40 }] },
+  }], now, { blockOnStalePrs: true })[0].blocked
+
+  it('rejects a fix request that would open a PR, saying what to do', () => {
+    expect(blocked).toMatch(/1 stale bot PR/)
+    expect(staleBotPrBlock({ mode: 'fix' }, blocked, true)).toMatch(/^no new factory PRs on this repo: 1 stale bot PR.* — review or close them, then retry the request$/)
+    // JSONL (OpenClaw) requests carry no mode: they are fixes.
+    expect(staleBotPrBlock({}, blocked, true)).not.toBeNull()
+  })
+
+  it('lets through what opens no PR: reports, fixes held at stage report or in a dry run', () => {
+    expect(staleBotPrBlock({ mode: 'report' }, blocked, true)).toBeNull()
+    expect(staleBotPrBlock({ mode: 'fix' }, blocked, false)).toBeNull()
+  })
+
+  it('a repo without stale bot PRs (or with the rule off) blocks nothing', () => {
+    expect(staleBotPrBlock({ mode: 'fix' }, null, true)).toBeNull()
   })
 })

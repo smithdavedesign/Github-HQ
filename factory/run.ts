@@ -5,6 +5,11 @@
  *   npx tsx factory/run.ts --dry-run       # everything except push + PR
  *   npx tsx factory/run.ts --repo=owner/name --max-repos=3
  *   npx tsx factory/run.ts --report        # print the per-tier ledger summary and exit
+ *   npx tsx factory/run.ts --request=<id>  # one Agent HQ request (agent_requests row), owner task only
+ *
+ * The Agent HQ worker (factory/worker.ts) spawns this script per job: it sets
+ * FACTORY_AUTOMATION_RUN_ID (the automation_runs row steps are traced under) and reads the
+ * `::trace::` / `::result::` lines this script prints (factory/lib/trace.ts).
  *
  * Sense (repo's own checks) → Decide (task) → Route (model-router) → Execute
  * (Aider / Claude Code via LiteLLM) → Verify (judge) → Gate (draft PR) →
@@ -34,13 +39,16 @@ import { acquireLock } from './lib/lock'
 import { nightShiftReadiness, readinessLine, scheduledPolicy } from './lib/night-shift'
 import { freeQuota, m1Deferred } from './lib/quota'
 import { readManagedModels } from './lib/litellm-config'
-import { buildPrompt, filterTasks, fitLocalContext, investigationPrompt, isEnvironmentFailure, ownerRequestedTask, parseFindings, redCiTask, tasksFromScan, type FactoryTask } from './lib/tasks'
-import { pendingOwnerRequests, recordOwnerBlocked, recordOwnerResult, type OwnerRequest } from './lib/owner-requests'
+import { buildPrompt, filterTasks, fitLocalContext, investigationPrompt, isEnvironmentFailure, ownerReportTask, ownerRequestedTask, parseFindings, parseReport, redCiTask, reportPrompt, tasksFromScan, type FactoryTask } from './lib/tasks'
+import { ownerOutcome, pendingOwnerRequests, recordOwnerBlocked, recordOwnerResult, staleBotPrBlock, type OwnerOutcome, type OwnerRequest } from './lib/owner-requests'
+import { claimRequest, loadRequest, mirrorOwnerRequest, resolveRequest, resolvedFromRow, toOwnerRequest, type AgentRequestRow, type ResolvedRequest } from './lib/agent-requests'
+import { RESULT_PREFIX, Tracer, finishRun, formatProtocolLine, startRun, type RunResult } from './lib/trace'
+import { isAllowlisted, isOpenRequestStatus } from '../src/lib/agents/factory-request-utils'
 import { judge, type DiffInfo, type Verdict } from './lib/verify'
 import { NEEDS_REVIEW_LABEL, adversaryAction, adversarySection, runAdversary, type AdversaryResult } from './lib/adversary'
 import { trimCheck, type JudgeInputRecord } from './lib/judge-fixture'
 
-interface Args { dryRun: boolean; repo: string | null; maxRepos: number; report: boolean; keep: boolean; scheduled: boolean }
+interface Args { dryRun: boolean; repo: string | null; maxRepos: number; report: boolean; keep: boolean; scheduled: boolean; request: string | null }
 
 function parseArgs(argv: string[]): Args {
   const val = (k: string) => argv.find(a => a.startsWith(`--${k}=`))?.split('=')[1] ?? null
@@ -50,8 +58,10 @@ function parseArgs(argv: string[]): Args {
     maxRepos: Number(val('max-repos') ?? 3),
     report: argv.includes('--report'),
     keep: argv.includes('--keep'),
-    // Set by the launchd wrapper (factory.sh): the night shift's policy applies.
+    // Set by the launchd wrapper (factory.sh) and the Agent HQ worker: the night shift's policy applies.
     scheduled: argv.includes('--scheduled'),
+    // Agent HQ (Phase 81): run one agent_requests row through the owner-task path.
+    request: val('request'),
   }
 }
 
@@ -64,48 +74,96 @@ let lastAttemptId: string | null = null
 /** Built sandbox image tags; null when cfg.sandbox.mode is 'off'. */
 let sandboxImages: { worker: string; egress: string } | null = null
 const log = (...a: unknown[]) => console.log(`[factory ${new Date().toISOString().slice(11, 19)}]`, ...a)
+/** Agent HQ step trace (factory/lib/trace.ts): stdout only until main() knows the run. */
+let tracer = new Tracer(null, null)
+/** Set when an Agent HQ request's owner task was deferred (free quota): the worker retries it later. */
+let requestDeferred: string | null = null
+/** Set when an Agent HQ request's repo failed before its owner task ran (clone, install, …). */
+let requestError: string | null = null
+/** Why the ladder gave up on a task without writing an attempt (e.g. no free pool for a report). */
+let skipReason: string | null = null
 
-async function main() {
+async function main(): Promise<RunResult> {
   const args = parseArgs(process.argv.slice(2))
   let cfg = loadConfig()
   mkdirSync(cfg.home, { recursive: true })
   logDir = path.join(cfg.home, 'logs', runId)
 
-  if (args.report) return printReport(cfg)
-  if (existsSync(path.join(cfg.home, 'PAUSE'))) return log(`paused (${path.join(cfg.home, 'PAUSE')} exists) — nothing to do`)
+  if (args.report) {
+    printReport(cfg)
+    return { status: 'ok' }
+  }
+  await openTrace(cfg, args)
+  if (existsSync(path.join(cfg.home, 'PAUSE'))) {
+    log(`paused (${path.join(cfg.home, 'PAUSE')} exists) — nothing to do`)
+    return { status: 'skipped', reason: 'paused (~/.repohq-factory/PAUSE exists)' }
+  }
+
+  // Agent HQ request (Phase 81): one stored request, run through the owner-task path on its repo.
+  let request: AgentRequestRow | null = null
+  if (args.request) {
+    request = await loadRequest(cfg, args.request)
+    if (!request) return { status: 'failed', reason: `request ${args.request} not found` }
+    if (!isOpenRequestStatus(request.status)) return { status: 'skipped', reason: `request is already ${request.status}` }
+    const allowed = cfg.repos.find(r => isAllowlisted(request!.repo, [r]))
+    if (!allowed) {
+      const reason = `${request.repo} is not on the factory allowlist (factory/factory.config.json "repos")`
+      await resolveRequest(cfg, resolvedFromRow(request), { status: 'rejected', reason }, runId, new Date())
+      tracer.step('request', 'fail', reason)
+      return { status: 'ok', reason }
+    }
+    // A manual `--request` run claims the row itself; the worker claims it before spawning us.
+    if (request.status === 'queued') request = (await claimRequest(cfg, request.id, new Date())) ?? request
+    args.repo = allowed
+    tracer.step('request', 'info', `${request.mode} request on ${request.repo}${request.skill ? ` (/${request.skill})` : ''}`, { source: request.source, attempt: request.attempts })
+  }
   if (cfg.repos.length === 0 && !args.repo) throw new Error('no repos in factory.config.json allowlist')
   if (args.repo && !cfg.repos.includes(args.repo)) throw new Error(`${args.repo} is not in the allowlist`)
 
   if (args.scheduled) {
-    // Night Shift v2 (Phase 80): unattended cycles are always sandboxed and always $0.
+    // Night Shift v2 (Phase 80): unattended cycles — and Agent HQ requests — are always sandboxed and always $0.
     const policy = scheduledPolicy(cfg)
-    if (policy.refuse) return log(`scheduled cycle refused — ${policy.refuse}`)
+    if (policy.refuse) {
+      log(`scheduled cycle refused — ${policy.refuse}`)
+      return { status: 'skipped', reason: `refused: ${policy.refuse}` }
+    }
     for (const n of policy.notes) log(n)
     cfg = policy.cfg
   }
 
-  acquireLock(cfg.home, `run ${runId}`)
+  try {
+    acquireLock(cfg.home, `run ${runId}`)
+  } catch (err) {
+    // Another factory process (a manual run, or the scout restarting LiteLLM) has the lock.
+    return { status: 'deferred', reason: err instanceof Error ? err.message : String(err), retryInMinutes: 5 }
+  }
   mkdirSync(logDir, { recursive: true })
   log(`run ${runId}${args.dryRun ? ' (dry run)' : ''}`)
+  tracer.step('run', 'start', `run ${runId}${args.dryRun ? ' (dry run)' : ''}${args.scheduled ? ' · unattended policy' : ''}`, { ledgerRunId: runId, repo: args.repo })
 
   copilotInstalled = (await run('copilot', ['--version'], { timeoutMs: 30_000 })).code === 0
   const quota = copilotInstalled ? await copilotQuota() : null
   copilotQuotaLeft = copilotHasQuota(quota)
   if (!copilotQuotaLeft) log(`Copilot premium requests used up (resets ${quota?.resetDate ?? 'next month'}) — Copilot builder and reviews paused`)
-  await reconcile(cfg)
+  await tracer.span('reconcile', () => reconcile(cfg))
 
   const aliases = await listAliases(cfg).catch((): string[] => [])
   for (const t of ['M0', 'M1'] as const) {
     if (!aliases.includes(cfg.models[t])) log(`warning: LiteLLM alias ${cfg.models[t]} (${t}) not available`)
   }
-  if (aliases.length === 0) throw new Error('LiteLLM gateway is down — see ~/ai-stack/README.md troubleshooting')
+  if (aliases.length === 0) {
+    log('LiteLLM gateway is down — see ~/ai-stack/README.md troubleshooting')
+    tracer.step('preflight', 'fail', 'LiteLLM gateway is down')
+    return { status: 'deferred', reason: 'LiteLLM gateway is down (see ~/ai-stack/README.md troubleshooting)', retryInMinutes: 30 }
+  }
 
   if (cfg.sandbox.mode === 'docker') {
     // Repo code (install, checks, the model harness) only runs in the sandbox. No Docker → no
     // cycle: never fall back to running untrusted code on the host (roadmap Phase 76).
     if (!(await dockerAvailable())) {
       log('Docker is not running — skipping this cycle (repo code never runs on the host; start Docker Desktop, or see factory/README.md "Sandbox")')
-      return
+      tracer.step('preflight', 'fail', 'Docker is not running')
+      return { status: 'deferred', reason: 'Docker is not running (repo code never runs on the host)', retryInMinutes: 15 }
     }
     const swept = await sweepSandboxes(cfg.home)
     if (swept > 0) log(`removed ${swept} sandbox container(s) left by an earlier run`)
@@ -114,43 +172,95 @@ async function main() {
   } else {
     log('sandbox OFF — repo code runs on the host (trusted fixtures only)')
   }
+  tracer.step('preflight', 'ok', `LiteLLM ${aliases.length} aliases · sandbox ${sandboxImages ? sandboxImages.worker : 'off'}`)
 
   // Sense (Phase 78): red CI, security alerts and stale bot PRs for every candidate repo, then
   // one ranked queue across repos (red CI > security > failing checks > docs, weighted by health).
   const sensed: SignalsEntry[] = []
-  for (const repo of args.repo ? [args.repo] : cfg.repos) {
-    const sig = await senseRepo(repo, cfg.integrationBranch, runId, new Date())
-    appendEntry(cfg.home, sig)
-    sensed.push(sig)
-  }
+  await tracer.span('sense', async () => {
+    for (const repo of args.repo ? [args.repo] : cfg.repos) {
+      const sig = await senseRepo(repo, cfg.integrationBranch, runId, new Date())
+      appendEntry(cfg.home, sig)
+      sensed.push(sig)
+    }
+  }, () => ({ detail: `${sensed.length} repo(s)`, data: { redCi: sensed.filter(x => x.redCi?.length).map(x => x.repo) } }))
   const ranked = rankOpportunities(args.repo ? [args.repo] : cfg.repos, readLedger(cfg.home), sensed, new Date(), {
     health: await healthScores(cfg), blockOnStalePrs: cfg.blockOnStaleBotPrs,
   })
   for (const o of ranked.filter(x => x.blocked)) log(`${o.repo}: no new PRs — ${o.blocked} (review or close them)`)
   log(`queue: ${ranked.filter(x => !x.blocked).slice(0, 5).map(o => `${o.repo.split('/')[1]}(${o.score}${o.reasons.length ? `: ${o.reasons[0]}` : ''})`).join(' · ')}`)
   const queue = ranked.filter(x => !x.blocked).map(x => x.repo).slice(0, args.repo ? 1 : args.maxRepos)
+  if (!request) {
+    tracer.step('queue', 'info', queue.map(r => r.split('/')[1]).join(' · ') || 'nothing to do', {
+      ranked: ranked.slice(0, 5).map(o => ({ repo: o.repo, score: o.score, blocked: o.blocked ?? null })),
+    })
+  }
   let prs = 0
   const openedToday = todaysUsage(readLedger(cfg.home), new Date()).prs
-  if (openedToday >= cfg.maxPrsPerDay) {
+  // A report request opens no PR, so the daily PR cap doesn't hold it back.
+  if (openedToday >= cfg.maxPrsPerDay && request?.mode !== 'report') {
     log(`daily PR cap reached (${openedToday}/${cfg.maxPrsPerDay}) — reconcile only`)
-    return printReport(cfg)
+    if (request) return { status: 'deferred', reason: `daily PR cap reached (${openedToday}/${cfg.maxPrsPerDay})`, retryInMinutes: 120 }
+    printReport(cfg)
+    return { status: 'ok', reason: 'daily PR cap reached', summary: { prs: 0, capReached: true } }
   }
   // Front door (ai-stack/repohq/CONTRACT.md): owner requests are explicit human intent, so their
   // repos jump the sensed queue (deduped, respecting --repo). One owner task per repo per cycle.
-  const ownerReqs = pendingOwnerRequests(cfg.home, readLedger(cfg.home))
-    .filter(r => !args.repo || r.repo === args.repo)
-  if (ownerReqs.length > 0) log(`owner requests: ${ownerReqs.map(r => `${r.repo.split('/')[1]}(${r.taskId})`).join(' · ')}`)
-  const fullQueue = [...new Set([...ownerReqs.map(r => r.repo), ...queue])]
+  // An Agent HQ request job runs exactly its own request and nothing else.
+  const pending = request
+    ? [toOwnerRequest(request)]
+    : pendingOwnerRequests(cfg.home, readLedger(cfg.home)).filter(r => !args.repo || r.repo === args.repo)
+  if (pending.length > 0) log(`owner requests: ${pending.map(r => `${r.repo.split('/')[1]}(${r.taskId})`).join(' · ')}`)
+  // OpenClaw's JSONL requests show up in Agent HQ too (no-op for stored requests).
+  for (const r of pending) await mirrorOwnerRequest(cfg, r, new Date())
+  // Stale bot PRs stop new factory PRs on their repo (blockOnStaleBotPrs), requested ones included.
+  const opensPrs = cfg.capabilities['owner-requested'] === 'pr' && !args.dryRun
+  const ownerReqs: OwnerRequest[] = []
+  for (const r of pending) {
+    const reason = staleBotPrBlock(r, ranked.find(o => o.repo.toLowerCase() === r.repo.toLowerCase())?.blocked ?? null, opensPrs)
+    if (!reason) { ownerReqs.push(r); continue }
+    log(`${r.repo}: owner request ${r.taskId} rejected — ${reason}`)
+    if (!r.stored) recordOwnerBlocked(cfg.home, { ownerTaskId: r.taskId, repo: r.repo, runId, now: new Date(), reason })
+    await resolveOwner(cfg, r, r.repo, { status: 'rejected', reason })
+  }
+  // A request job whose request was refused runs nothing in its place.
+  if (request && ownerReqs.length === 0) return { status: 'ok', reason: 'request rejected: stale bot PRs on the repo' }
+  const fullQueue = request && args.repo ? [args.repo] : [...new Set([...ownerReqs.map(r => r.repo), ...queue])]
   for (const repo of fullQueue) {
     if (prs >= cfg.maxPrsPerCycle || openedToday + prs >= cfg.maxPrsPerDay) break
     try {
-      prs += await improveRepo(cfg, repo, args, aliases, sensed.find(x => x.repo === repo) ?? null, ownerReqs.find(r => r.repo === repo) ?? null)
+      prs += await improveRepo(cfg, repo, args, aliases, sensed.find(x => x.repo === repo) ?? null, ownerReqs.find(r => r.repo === repo) ?? null, !!request)
     } catch (err) {
-      log(`${repo}: ${err instanceof Error ? err.message : err}`)
+      const message = err instanceof Error ? err.message : String(err)
+      log(`${repo}: ${message}`)
+      tracer.step('repo', 'fail', `${repo}: ${message}`)
+      if (request) requestError = message
     }
   }
   log(`done — ${prs} PR(s) opened`)
+  tracer.step('run', 'ok', `${prs} PR(s) opened`, { prs })
   printReport(cfg)
+  if (request && requestDeferred) return { status: 'deferred', reason: requestDeferred, retryInMinutes: 60 }
+  if (request && requestError) return { status: 'failed', reason: requestError }
+  return { status: 'ok', summary: { prs, repos: fullQueue.length } }
+}
+
+/**
+ * Agent HQ trace for this run. The worker passes the automation_runs row it opened
+ * (FACTORY_AUTOMATION_RUN_ID); a manual CLI run opens its own, so every cycle is traced.
+ */
+let ownRun: { cfg: FactoryConfig; id: string } | null = null
+async function openTrace(cfg: FactoryConfig, args: Args): Promise<void> {
+  let id = process.env.FACTORY_AUTOMATION_RUN_ID || null
+  if (!id) {
+    const mine = randomUUID()
+    const opened = await startRun(cfg, { id: mine, kind: args.request ? 'factory-request' : 'factory-cycle', trigger: 'manual', requestId: args.request }, new Date())
+    if (opened) {
+      id = mine
+      ownRun = { cfg, id }
+    }
+  }
+  tracer = new Tracer(cfg, id, args.request)
 }
 
 async function humanCommitsOn(prUrl: string): Promise<number | null> {
@@ -196,10 +306,10 @@ async function reconcile(cfg: FactoryConfig) {
 }
 
 /** Returns the number of PRs opened (0 or 1). */
-async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases: string[], signals: SignalsEntry | null, ownerReq: OwnerRequest | null = null): Promise<number> {
+async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases: string[], signals: SignalsEntry | null, ownerReq: OwnerRequest | null = null, requestOnly = false): Promise<number> {
   const dir = path.join(cfg.home, 'work', runId, repo.replace('/', '__'))
   log(`${repo}: cloning`)
-  await cloneRepo(repo, dir)
+  await tracer.span('clone', () => cloneRepo(repo, dir), () => ({ detail: repo }))
   let sandbox: Sandbox | null = null
   try {
     const integration = await checkoutIntegrationBranch(dir, cfg.integrationBranch)
@@ -223,6 +333,8 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
       const pm = detectPackageManager(basics.files)
       const install = installCommand(pm, basics.files)
       log(`${repo}: ${install.cmd} ${install.args.join(' ')}`)
+      const t0 = Date.now()
+      tracer.step('install', 'start', `${install.cmd} ${install.args.join(' ')}${ws.sandbox ? ' (sandboxed)' : ''}`)
       let ins = await ws.run(install.cmd, install.args, { cwd: ws.dir, timeoutMs: cfg.checkTimeoutMs })
       if (ins.code !== 0 && /ETIMEDOUT|ECONNRESET|EAI_AGAIN|network/i.test(ins.output)) {
         log(`${repo}: install hit a network error — retrying once`)
@@ -232,9 +344,15 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
         writeFileSync(path.join(logDir, `${slug(repo)}-install.log`), ins.output)
         appendEntry(cfg.home, { type: 'scan', runId, at: new Date().toISOString(), repo, checks: { install: false }, tasks: [] })
         log(`${repo}: install failed — skipping (log in ${logDir})`)
+        tracer.step('install', 'fail', `install failed${ins.timedOut ? ' (timed out)' : ''} — ${ins.output.trim().split('\n').slice(-1)[0]?.slice(0, 200) ?? ''}`, undefined, { durationMs: Date.now() - t0 })
+        // An Agent HQ request ends here; a JSONL request stays pending for the next cycle, as before.
+        if (ownerReq?.stored) await resolveOwner(cfg, ownerReq, repo, { status: 'failed', reason: `install failed in the sandbox (${install.cmd} ${install.args.join(' ')}); see logs/${runId}` })
         return 0
       }
+      tracer.step('install', 'ok', undefined, undefined, { durationMs: Date.now() - t0 })
       specs = planChecks(basics.pkg, pm, basics.hasTsconfig)
+      const tc = Date.now()
+      tracer.step('checks', 'start', specs.map(sp => sp.name).join(', ') || '(none)')
       baseline = await runChecks(specs, ws.dir, cfg.checkTimeoutMs, ws.run)
       for (const b of baseline) writeFileSync(path.join(logDir, `${slug(repo)}-baseline-${b.name}.log`), b.output)
       if (baseline.some(b => !b.ok)) {
@@ -249,6 +367,8 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
         await resetWorktree(ws.dir, ws.run)
       }
       if (pm === 'npm' && basics.files.has('package-lock.json')) audit = await runAudit(ws.dir, undefined, ws.run)
+      tracer.step('checks', baseline.every(b => b.ok) ? 'ok' : 'info', baseline.map(b => `${b.name}=${b.ok ? 'ok' : 'FAIL'}`).join(' ') || '(none)',
+        { checks: Object.fromEntries(baseline.map(b => [b.name, b.ok])), ...(audit ? { audit } : {}) }, { durationMs: Date.now() - tc })
     }
 
     const ledger = readLedger(cfg.home)
@@ -261,13 +381,21 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     if (red && cfg.capabilities['red-ci'] !== 'observe') allTasks.unshift(redCiTask(red, base, await failedLog(repo, red.runId)))
     else if (red) allTasks.unshift(redCiTask(red, base, ''))
     // Owner request goes to the very front — explicit human intent outranks sensed work.
-    if (ownerReq) allTasks.unshift(ownerRequestedTask(repo, ownerReq.task, ownerReq.taskId))
-    const tasks = filterTasks(allTasks, repo, openKinds, deadEnds(ledger, now))
+    if (ownerReq) {
+      allTasks.unshift(ownerReq.mode === 'report'
+        ? ownerReportTask(repo, ownerReq.task, ownerReq.taskId, ownerReq.skill)
+        : ownerRequestedTask(repo, ownerReq.task, ownerReq.taskId, ownerReq.skill))
+    }
+    // An Agent HQ request job does exactly what was asked: no sensed work on the side.
+    const candidates = requestOnly && ownerReq ? allTasks.filter(t => t.ownerTaskId === ownerReq.taskId) : allTasks
+    const tasks = filterTasks(candidates, repo, openKinds, deadEnds(ledger, now))
     // If the owner task was filtered (an owner-requested PR is already open, or it's a dead end),
     // close the loop so the front door reports it instead of re-queuing it every cycle.
     if (ownerReq && !tasks.some(t => t.ownerTaskId === ownerReq.taskId)) {
-      recordOwnerBlocked(cfg.home, { ownerTaskId: ownerReq.taskId, repo, runId, now,
-        reason: openKinds.has(`${repo}:owner-requested`) ? 'an owner-requested PR is already open for this repo — review or close it first' : 'blocked as a dead end (repeated failures) — try a more specific request' })
+      const ownerKind = ownerReq.mode === 'report' ? 'owner-report' : 'owner-requested'
+      const reason = openKinds.has(`${repo}:${ownerKind}`) ? 'an owner-requested PR is already open for this repo — review or close it first' : 'this request already failed twice (a dead end) — queue a more specific one'
+      if (!ownerReq.stored) recordOwnerBlocked(cfg.home, { ownerTaskId: ownerReq.taskId, repo, runId, now, reason })
+      await resolveOwner(cfg, ownerReq, repo, { status: 'rejected', reason })
     }
     appendEntry(cfg.home, {
       type: 'scan', runId, at: now.toISOString(), repo,
@@ -277,6 +405,7 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
       envFailures: baseline.filter(b => !b.ok && isEnvironmentFailure(b.output)).map(b => b.name),
     })
     log(`${repo}: checks ${baseline.map(b => `${b.name}=${b.ok ? 'ok' : 'FAIL'}`).join(' ') || '(none)'}; tasks: ${tasks.map(t => t.kind).join(', ') || 'none'}${allTasks.length > tasks.length ? ` (${allTasks.length - tasks.length} skipped: open PR or dead end)` : ''}`)
+    tracer.step('tasks', 'info', tasks.map(t => t.kind).join(', ') || 'none', { tasks: tasks.map(t => ({ kind: t.kind, title: t.title })), skipped: candidates.length - tasks.length })
 
     const sizeOf = (f: string) => { try { return statSync(path.join(dir, f)).size } catch { return 0 } }
     const visibility = await repoVisibility(repo)
@@ -289,11 +418,25 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     const observed = tasks.filter(t => cfg.capabilities[t.kind] === 'observe')
     if (observed.length > 0) log(`${repo}: observe-only: ${observed.map(t => t.kind).join(', ')} (capability stage)`)
     const runnable = tasks.filter(t => cfg.capabilities[t.kind] !== 'observe')
+    if (ownerReq?.stored && observed.some(t => t.ownerTaskId === ownerReq.taskId)) {
+      await resolveOwner(cfg, ownerReq, repo, { status: 'rejected', reason: `${ownerReq.mode === 'report' ? 'owner-report' : 'owner-requested'} is at stage "observe" in factory.config.json — promote it to run requests` })
+    }
     for (const t of runnable.slice(0, 2)) {
+      skipReason = null
       const result = await runLadder(ctx, fitLocalContext(t, sizeOf), ledger, now)
-      // Front door: record the terminal result so OpenClaw's `report` can deliver it (skips on 'deferred').
-      if (t.kind === 'owner-requested' && t.ownerTaskId) {
-        recordOwnerResult(cfg.home, { ownerTaskId: t.ownerTaskId, repo, runId, result, ledger: readLedger(cfg.home), now })
+      // Front door: record the terminal result so OpenClaw's `report` can deliver it (skips on 'deferred'),
+      // and the agent_requests row Agent HQ shows.
+      if (t.ownerTaskId && ownerReq && t.ownerTaskId === ownerReq.taskId) {
+        const outcome = ownerOutcome({ ownerTaskId: t.ownerTaskId, result, ledger: readLedger(cfg.home) })
+        if (!outcome) {
+          requestDeferred = skipReason ?? 'free-tier quota exhausted — retrying later (never escalates to paid)'
+          tracer.step('request', 'info', `deferred: ${requestDeferred}`)
+        } else {
+          if (!ownerReq.stored) recordOwnerResult(cfg.home, { ownerTaskId: t.ownerTaskId, repo, runId, result, ledger: readLedger(cfg.home), now })
+          // No attempt was written (e.g. no free pool for a report): say why instead of a generic reason.
+          if (skipReason && !readLedger(cfg.home).some(e => e.type === 'attempt' && e.ownerTaskId === t.ownerTaskId)) outcome.reason = skipReason
+          await resolveOwner(cfg, ownerReq, repo, outcome)
+        }
       }
       if (result === 'pr') return 1
       if (result === 'verified' || result === 'stop') return 0
@@ -304,6 +447,15 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     await sandbox?.close()
     if (!args.keep) rmSync(dir, { recursive: true, force: true })
   }
+}
+
+/** Write an owner task's outcome to its agent_requests row (an Agent HQ request, or a mirrored JSONL one). */
+async function resolveOwner(cfg: FactoryConfig, req: OwnerRequest, repo: string, outcome: OwnerOutcome): Promise<void> {
+  const resolved: ResolvedRequest = { id: req.taskId, repo, repoId: null, mode: req.mode ?? 'fix', skill: req.skill ?? null, objective: req.task }
+  await resolveRequest(cfg, resolved, outcome, runId, new Date())
+  const failed = outcome.status === 'failed' || outcome.status === 'rejected'
+  tracer.step('request', failed ? 'fail' : 'ok', `${outcome.status}${outcome.prUrl ? ` ${outcome.prUrl}` : outcome.reason ? ` — ${outcome.reason}` : ''}`,
+    { status: outcome.status, ...(outcome.prUrl ? { prUrl: outcome.prUrl } : {}) })
 }
 
 /** Where repo code runs: the sandbox's copy of the clone, or (sandbox off) the host clone itself. */
@@ -338,15 +490,25 @@ interface TaskContext {
  */
 async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType<typeof readLedger>, now: Date): Promise<'pr' | 'verified' | 'reported' | 'deferred' | 'failed' | 'stop'> {
   const { cfg, repo } = ctx
-  if (task.kind === 'red-ci' && cfg.capabilities['red-ci'] === 'report') {
+  if ((task.kind === 'red-ci' && cfg.capabilities['red-ci'] === 'report') || task.kind === 'owner-report') {
     // Investigation only, on the free pool (one read-only agent run; never escalates to paid).
-    if (!ctx.aliases.includes(cfg.models.M1) || ctx.dataClass !== 'public' && !cfg.allowFreeCloud.includes(repo)) {
-      log(`${repo}: red-ci investigation needs the free pool (M1) — skipped`)
+    if (!ctx.aliases.includes(cfg.models.M1)) {
+      skipReason = `the free pool (${cfg.models.M1}) is not available in LiteLLM — investigations run on M1 only`
+      log(`${repo}: ${task.kind} investigation needs the free pool (M1) — skipped`)
+      return 'failed'
+    }
+    if (ctx.dataClass !== 'public' && !cfg.allowFreeCloud.includes(repo)) {
+      skipReason = `${repo} is private: free cloud models (M1) need it in factory.config.json "allowFreeCloud" (docs/autonomous-factory.md §4)`
+      log(`${repo}: ${task.kind} investigation needs the free pool (M1), not allowed for this private repo — skipped`)
       return 'failed'
     }
     const pool = Object.entries(readManagedModels(readFileSync(cfg.litellm.configPath, 'utf8'))).filter(([alias]) => alias.startsWith('free-agent')).map(([, id]) => id)
     const deferred = m1Deferred(pool, await freeQuota(cfg))
-    if (deferred) { log(`${repo}: ${deferred} — deferring red-ci investigation`); return 'deferred' }
+    if (deferred) {
+      skipReason = deferred
+      log(`${repo}: ${deferred} — deferring ${task.kind} investigation`)
+      return 'deferred'
+    }
     return investigate(ctx, task)
   }
   if (task.kind === 'deps-audit' || task.kind === 'lint-autofix') {
@@ -363,6 +525,8 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
     .filter(t => t === 'M2' || t === 'MC' || ctx.aliases.includes(cfg.models[t]))
   const decision = chooseTier({ allowed, stats: computeTierStats(toAttemptRecords(ledger), task.kind, now) })
   log(`${repo}: ${task.kind}${task.scoped ? '' : ' (unscoped)'} → ${decision.tier ?? 'none'} (${decision.reason}); allowed ${allowed.join(',') || 'none'}; data=${ctx.dataClass}`)
+  tracer.step('route', decision.tier ? 'info' : 'fail', `${task.kind} → ${decision.tier ?? 'no tier'} (${decision.reason})`, { allowed, exploring: decision.exploring, dataClass: ctx.dataClass })
+  if (!decision.tier) skipReason = `no model tier is allowed for this task (${decision.reason}; data class ${ctx.dataClass})`
 
   let tier: ModelTier | null = decision.tier
   let exploring = decision.exploring
@@ -370,6 +534,8 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
   while (tier) {
     if (tier === 'M2' && !canUsePaidTier({ monthToDateUsd: monthToDateUsd(readLedger(cfg.home), new Date()), monthlyBudgetUsd: cfg.monthlyBudgetUsd }, cfg.m2EstimateUsd)) {
       const reason = cfg.monthlyBudgetUsd <= 0 ? 'paid tier disabled (monthlyBudgetUsd = 0)' : 'monthly paid budget exhausted'
+      skipReason = `free tiers could not complete it and ${reason}`
+      tracer.step('ladder', 'fail', `stopping at M2 — ${reason}`)
       appendEntry(cfg.home, { type: 'approval_needed', runId, at: new Date().toISOString(), repo, kind: task.kind, reason })
       await recordApprovalNeeded(cfg, repo, `Factory needs approval: ${task.title} in ${repo}`, `Free tiers could not complete this task; ${reason}. Raise FACTORY_MONTHLY_BUDGET_USD to allow M2, or fix manually.`)
       log(`${repo}: stopping at M2 — ${reason}`)
@@ -382,6 +548,7 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
       if (deferred) {
         // No free capacity is "wait", never "escalate to paid" (docs/autonomous-factory.md §3).
         log(`${repo}: ${deferred} — deferring ${task.kind} to the next cycle`)
+        skipReason = deferred
         return 'deferred'
       }
     }
@@ -404,9 +571,12 @@ async function attempt(
   const lintFix = task.kind === 'lint-autofix'
   const lintSpec = specs.find(s => s.name === 'lint')
   const now = new Date()
+  const attemptId = randomUUID()
   const branch = branchName(task, now, runId)
   await checkoutNewBranch(ws.dir, base, branch, ws.run)
   const model = deps || lintFix ? 'npm' : cfg.models[tier]
+  tracer.step('attempt', 'start', `${task.kind} · ${tier} ${deps || lintFix ? '(no model)' : `${harnessFor(tier)} → ${model}`}${ws.sandbox ? ' · sandboxed' : ''}`,
+    { kind: task.kind, tier, model, exploring, parentId }, { jobId: attemptId })
   const promptPkg = { ...pkg, scripts: collectPackageInfo(dir).scripts }
   const prompt = deps ? 'npm audit fix' : lintFix ? (lintSpec?.display ?? 'lint') : buildPrompt(task, tier, promptPkg, specs.filter(s => task.verify.includes(s.name)).map(s => s.display), repo)
   if (!deps && !lintFix) log(`${repo}: ${tier} ${harnessFor(tier)} → ${model}${ws.sandbox ? ' (sandboxed)' : ''}`)
@@ -422,8 +592,10 @@ async function attempt(
   }, harnessCfg, ws.run)
   writeFileSync(path.join(logDir, `${slug(repo)}-${task.kind}-${tier}.log`), `${prompt}\n\n=====\n${h.output}`)
 
+  tracer.step('harness', h.ok ? 'ok' : 'fail', `${h.harness}${h.timedOut ? ' timed out' : h.rateLimited ? ' rate limited' : ''}`,
+    { requests: h.requests ?? null, inputTokens: h.inputTokens, outputTokens: h.outputTokens, costUsd: h.costUsd }, { durationMs: h.durationMs, jobId: attemptId })
   const entry: AttemptEntry = {
-    type: 'attempt', id: randomUUID(), runId, at: now.toISOString(), repo, kind: task.kind, taskTier: task.taskTier,
+    type: 'attempt', id: attemptId, runId, at: now.toISOString(), repo, kind: task.kind, taskTier: task.taskTier,
     tier, model, harness: h.harness, outcome: 'failed', reason: '', exploring, isolation: ws.sandbox ? 'docker' : 'host',
     ...(task.ci ? { ciWorkflow: task.ci.workflow } : {}),
     ...(task.ownerTaskId ? { ownerTaskId: task.ownerTaskId } : {}),
@@ -493,6 +665,7 @@ async function attempt(
     writeFileSync(path.join(logDir, `${slug(repo)}-${task.kind}-${tier}.judge.json`), JSON.stringify(record))
   }
   log(`${repo}: ${tier} ${verdict.ok ? 'VERIFIED' : 'rejected'} — ${verdict.reason}`)
+  tracer.step('judge', verdict.ok ? 'ok' : 'fail', verdict.reason, { files: diff.files.length }, { jobId: attemptId })
 
   // Advisory adversarial pass (Phase 77): only after the deterministic judge passed, only for
   // model-written changes, and it can never approve, only label or (once promoted) veto.
@@ -502,6 +675,8 @@ async function attempt(
     if (adversary) {
       entry.adversary = { model: adversary.model, verdict: adversary.verdict, issues: adversary.issues.length }
       log(`${repo}: adversarial review (${adversary.model}): ${adversary.verdict}${adversary.issues.length ? ` — ${adversary.issues.map(i => i.why).join('; ').slice(0, 200)}` : ''}`)
+      tracer.step('adversary', adversary.verdict === 'PASS' ? 'ok' : adversary.verdict === 'FAIL' ? 'fail' : 'info', `${adversary.model}: ${adversary.verdict}`,
+        { issues: adversary.issues.map(i => i.why).slice(0, 5) }, { jobId: attemptId })
       if (adversaryAction(adversary, cfg.capabilities['adversarial-veto']) === 'reject') {
         const veto: Verdict = { ok: false, reason: `adversarial review vetoed: ${adversary.issues[0]?.why ?? 'FAIL'}` }
         verdict.ok = veto.ok
@@ -528,6 +703,7 @@ async function attempt(
   if (reportOnly) {
     entry.reported = true
     log(`${repo}: ${task.kind} is at stage "report" — verified result recorded for the morning report, no PR`)
+    tracer.step('held', 'info', `${task.kind} is at stage "report": verified, no PR`, undefined, { jobId: attemptId })
   }
   if (!args.dryRun && !reportOnly) {
     await pushBranch(dir, branch)
@@ -536,6 +712,7 @@ async function attempt(
       body: prBody({ task, tier, model, harness: h.harness, verdict: verdict.reason, baseline, after, diff, durationMs: h.durationMs, costUsd: h.costUsd, exploring }) + adversarySection(adversary).join('\n'),
     })
     log(`${repo}: draft PR ${entry.prUrl}`)
+    tracer.step('pr', 'ok', entry.prUrl, { branch, base }, { jobId: attemptId })
     if (task.ownerTaskId && await addPrLabel(entry.prUrl, repo, 'owner-requested')) {
       log(`${repo}: labelled owner-requested (reviewed as owner intent, never auto-merged)`)
     }
@@ -554,35 +731,50 @@ async function attempt(
 }
 
 /**
- * red-ci at stage `report` (Phase 78): a root-cause investigation in the sandbox. Verified = the
- * agent produced the structured report; the findings go to the morning report, no PR. Any file
- * changes are discarded: reproducing a failure runs the repo's own scripts, which may rewrite
- * files (Figma-Jira's `eslint --fix` did on the first live run), and nothing from it ships.
+ * A read-only investigation in the sandbox: red-ci at stage `report` (Phase 78), or an Agent HQ
+ * report request (`owner-report`, Phase 81). Verified = the agent produced the structured report;
+ * the findings go to the morning report (red-ci) or back to the request (owner-report), no PR.
+ * Any file changes are discarded: reproducing a failure runs the repo's own scripts, which may
+ * rewrite files (Figma-Jira's `eslint --fix` did on the first live run), and nothing from it ships.
  */
 async function investigate(ctx: TaskContext, task: FactoryTask): Promise<'reported' | 'failed' | 'deferred'> {
   const { cfg, repo, ws } = ctx
   const now = new Date()
+  const report = task.kind === 'owner-report'
+  const prompt = report ? reportPrompt(task, repo) : investigationPrompt(task)
   const harnessCfg: FactoryConfig = ws.sandbox ? { ...cfg, litellm: { ...cfg.litellm, url: ws.sandbox.litellmUrl } } : cfg
+  const attemptId = randomUUID()
   await resetWorktree(ws.dir, ws.run)
-  log(`${repo}: red-ci → M1 claude-code → ${cfg.models.M1} (read-only investigation${ws.sandbox ? ', sandboxed' : ''})`)
-  const h = await runHarness({ tier: 'M1', model: cfg.models.M1, smallModel: 'local-small', cwd: ws.dir, prompt: investigationPrompt(task), readOnly: true }, harnessCfg, ws.run)
-  writeFileSync(path.join(logDir, `${slug(repo)}-red-ci-investigation.log`), `${investigationPrompt(task)}\n\n=====\n${h.output}`)
+  log(`${repo}: ${task.kind} → M1 claude-code → ${cfg.models.M1} (read-only investigation${ws.sandbox ? ', sandboxed' : ''})`)
+  tracer.step('attempt', 'start', `${task.kind} · M1 claude-code → ${cfg.models.M1} · read-only${ws.sandbox ? ' · sandboxed' : ''}`,
+    { kind: task.kind, tier: 'M1', model: cfg.models.M1 }, { jobId: attemptId })
+  const h = await runHarness({ tier: 'M1', model: cfg.models.M1, smallModel: 'local-small', cwd: ws.dir, prompt, readOnly: true }, harnessCfg, ws.run)
+  writeFileSync(path.join(logDir, `${slug(repo)}-${task.kind}-investigation.log`), `${prompt}\n\n=====\n${h.output}`)
   const discarded = (await diffInfo(ws.dir, ws.run)).files.length
   await resetWorktree(ws.dir, ws.run)
-  const findings = h.ok ? parseFindings(h.text ?? h.output) : null
+  const text = h.text ?? h.output
+  const findings = h.ok ? (report ? parseReport(text) : parseFindings(text)) : null
+  const what = report ? 'structured report' : 'structured root-cause report'
   const entry: AttemptEntry = {
-    type: 'attempt', id: randomUUID(), runId, at: now.toISOString(), repo, kind: task.kind, taskTier: task.taskTier,
+    type: 'attempt', id: attemptId, runId, at: now.toISOString(), repo, kind: task.kind, taskTier: task.taskTier,
     tier: 'M1', model: cfg.models.M1, harness: h.harness, exploring: false, reported: true,
     outcome: h.rateLimited && !h.ok ? 'rate_limited' : findings ? 'verified' : 'failed',
-    reason: (findings ? `investigated: ${task.title}` : h.ok ? 'no structured root-cause report' : `harness failed${h.timedOut ? ' (timeout)' : ''}`)
+    reason: (findings ? `investigated: ${task.title}` : h.ok ? `no ${what}` : `harness failed${h.timedOut ? ' (timeout)' : ''}`)
       + (discarded ? ` (${discarded} file change(s) from reproducing it discarded)` : ''),
     durationMs: h.durationMs, costUsd: h.costUsd, inputTokens: h.inputTokens, outputTokens: h.outputTokens, requests: h.requests,
-    isolation: ws.sandbox ? 'docker' : 'host', ciWorkflow: task.ci?.workflow, ...(findings ? { findings } : {}),
+    isolation: ws.sandbox ? 'docker' : 'host', ...(task.ci ? { ciWorkflow: task.ci.workflow } : {}), ...(findings ? { findings } : {}),
+    ...(task.ownerTaskId ? { ownerTaskId: task.ownerTaskId } : {}),
   }
   appendEntry(cfg.home, entry)
   await recordAttempt(cfg, entry, task.title)
-  log(`${repo}: red-ci investigation ${findings ? 'REPORTED' : 'failed'} — ${findings ? findings.split('\n').find(l => l.trim() && !l.startsWith('#'))?.slice(0, 160) : entry.reason}`)
-  if (entry.outcome === 'rate_limited') return 'deferred'
+  const headline = findings?.split('\n').find(l => l.trim() && !l.startsWith('#'))?.slice(0, 160)
+  log(`${repo}: ${task.kind} investigation ${findings ? 'REPORTED' : 'failed'} — ${findings ? headline : entry.reason}`)
+  tracer.step('report', findings ? 'ok' : 'fail', findings ? headline : entry.reason,
+    { requests: h.requests ?? null, discarded }, { durationMs: h.durationMs, jobId: attemptId })
+  if (entry.outcome === 'rate_limited') {
+    skipReason = 'free-tier rate limit — retrying later (never escalates to paid)'
+    return 'deferred'
+  }
   return findings ? 'reported' : 'failed'
 }
 
@@ -623,7 +815,22 @@ function slug(repo: string) {
   return repo.replace(/[^\w.-]+/g, '_')
 }
 
-main().catch(err => {
-  console.error('[factory] failed:', err instanceof Error ? err.message : err)
-  process.exit(1)
-})
+/** Print the run result for the worker, close a self-opened run record, and wait for trace writes. */
+async function finish(result: RunResult): Promise<void> {
+  console.log(formatProtocolLine(RESULT_PREFIX, result))
+  if (ownRun) {
+    const status = result.status === 'deferred' ? 'skipped' : result.status
+    await finishRun(ownRun.cfg, ownRun.id, { status, summary: { ...result.summary, ...(result.reason ? { reason: result.reason } : {}), ledgerRunId: runId }, ...(status === 'failed' ? { error: result.reason } : {}) }, new Date())
+  }
+  await tracer.flush()
+}
+
+main()
+  .then(finish)
+  .catch(async err => {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[factory] failed:', message)
+    tracer.step('run', 'fail', message)
+    await finish({ status: 'failed', reason: message })
+    process.exit(1)
+  })
