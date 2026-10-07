@@ -4,6 +4,7 @@ import { users } from '@/lib/db/schema'
 import { generateDigest } from '@/lib/ai/digest'
 import { generateAdvisor, getLatestAdvisor } from '@/lib/ai/advisor'
 import { generateCeoReport } from '@/lib/ai/ceo-report'
+import { generateNotionSummary } from '@/lib/ai/notion-summary'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { autoDispatchAdvisorActions, queueAdvisorActionForUser } from '@/lib/actions/nexus'
 import { getAccuracyByImpactType } from '@/lib/actions/advisor-accuracy'
@@ -41,6 +42,7 @@ export async function GET(request: Request) {
         generateDigest(user.id),
         generateAdvisor(user.id),
         generateCeoReport(user.id),
+        generateNotionSummary(user.id),
         // Phase 54-T4: distill the last 7 days of agent_attempt events per repo —
         // a 7-day lookback doesn't care which day this cron runs
         distillAttempts(user.id),
