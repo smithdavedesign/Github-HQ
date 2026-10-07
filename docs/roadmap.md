@@ -958,6 +958,8 @@ The factory becomes the only executor, and Nexus's queue infrastructure (Redis/B
 
 ## Distribution Roadmap
 
+> **Deferred (2026-10-07).** RepoHQ is a personal tool for now (audit §9.2): sign-in is limited to the owner, and the pricing page and subscription webhook are removed. These phases stay here for if it becomes a product.
+
 Features required to open RepoHQ to other users. Tracked separately because they each touch auth, data isolation, billing, or GitHub platform constraints.
 
 ### D1 — GitHub App (real-time webhooks + PR merge detection)
