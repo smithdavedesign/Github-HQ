@@ -70,6 +70,19 @@ function delayedJob(requestId: string): Promise<Job> {
   }, `job ${requestId} delayed`)
 }
 
+/**
+ * The job resolves the request row itself; the worker closes the automation run and completes
+ * the BullMQ job just after. Wait for those too before asserting on them (CI is slow enough to
+ * read in between).
+ */
+function settled(requestId: string): Promise<true> {
+  return waitFor(async () => {
+    const job = await queue.getJob(requestId)
+    if (!job || (await job.getState()) !== 'completed') return null
+    return (await runsFor(requestId)).every(r => r.status !== 'running') || null
+  }, `job ${requestId} settled`)
+}
+
 /** Let a delayed job run now instead of in 15–30 minutes. */
 async function promote(requestId: string): Promise<void> {
   await (await delayedJob(requestId)).promote()
@@ -136,6 +149,7 @@ describe('a report request, end to end', () => {
     expect(row.resolved_at!.getTime()).toBeGreaterThanOrEqual(row.claimed_at!.getTime())
     // UTC wall time all the way through: not hours off in a non-UTC zone.
     expect(Math.abs(row.resolved_at!.getTime() - Date.now())).toBeLessThan(60_000)
+    await settled(id)
   })
 
   it('is one automation run with the step timeline, every step tagged with the request', async () => {
@@ -238,6 +252,7 @@ describe('when a run cannot finish', () => {
 
     await promote(id)
     expect(await waitForRequest(DB, id, ['reported'])).toMatchObject({ attempts: 2, reason: null })
+    await settled(id)
     expect((await runsFor(id)).map(r => r.status)).toEqual(['skipped', 'ok'])
     expect((await getTrace(FLOW.ownerId, { requestId: id }))!.runs).toHaveLength(2)
   })
@@ -257,8 +272,8 @@ describe('when a run cannot finish', () => {
     expect(row.reason).toBe(`${FLOW_FAIL_REASON} (after 3 attempts)`)
     expect(row.attempts).toBe(3)
     expect((await eventsFor(id)).map(e => e.event_type)).toEqual(['agent_task_queued', 'agent_execution_failed'])
+    await settled(id)
     expect((await runsFor(id)).map(r => r.status)).toEqual(['failed', 'failed', 'failed'])
-    expect(await (await queue.getJob(id))!.getState()).toBe('completed')
   })
 
   it('a job that crashes without a result counts as a failed run', async () => {
