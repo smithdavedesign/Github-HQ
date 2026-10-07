@@ -1,0 +1,16 @@
+# GitGuardian secret scanning: known false positives (flagged on PR #25, 2026-10-07).
+# None of these is a credential. Add a real secret here only to fix it, never to silence it.
+version: 2
+secret:
+  ignored_paths:
+    # URL-parsing fixtures with a made-up password.
+    - tests/unit/factory-queue.test.ts
+  ignored_matches:
+    # The throwaway Postgres the flow tests run against (docker-compose.yml, .github/workflows/ci.yml).
+    - name: flow-test postgres password
+      match: postgres
+    # Placeholder connection strings in the MCP setup example.
+    - name: mcp README Neon placeholder
+      match: postgresql://neondb_owner:...@...neon.tech/neondb?sslmode=require
+    - name: mcp README Redis placeholder
+      match: rediss://red-...:...@oregon-keyvalue.render.com:6379
