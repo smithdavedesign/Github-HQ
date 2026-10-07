@@ -22,13 +22,18 @@ RepoHQ is a Next.js 16 App Router application that syncs GitHub repository data 
 │  │  (Drizzle ORM) │  │   Claude    │  │
 │  └────────────────┘  └─────────────┘  │
 └───────────────────────────────────────┘
-           │ POST /internal/agent-tasks
+           │ agent_requests row (Neon) + BullMQ job (ids only)
            ▼
-┌──────────────────────────┐
-│  AI-Took-My-Job / Nexus  │
-│  BullMQ + gstack scripts │
-└──────────────────────────┘
+┌──────────────────────────┐      ┌────────────────────────────────────┐
+│  Redis (Render Key Value)│ ←──→ │  Factory worker (factory/worker.ts)│
+│  queue "factory"         │      │  owner's Mac, launchd KeepAlive    │
+└──────────────────────────┘      │  Docker sandbox · LiteLLM/Ollama   │
+                                  │  → draft PRs, findings, traces     │
+                                  │    written back to Neon            │
+                                  └────────────────────────────────────┘
 ```
+
+The factory is the only thing that writes code (roadmap Phase 81, [PRD](agent-hq-migration-prd.md)). Neon is the source of truth; Redis only wakes the worker, which re-queues any open request it finds in Neon.
 
 ---
 
@@ -93,7 +98,7 @@ All scoring is pure functions in `src/lib/health/scoring.ts` and `src/lib/health
 1. **Triage Digest** — top 3 portfolio priorities with urgency, reason, action (claude-haiku, cached prompt)
 2. **Portfolio Advisor** — pre-computes opportunity score deltas per repo, then asks Claude for top 5 quantified actions
 3. **CEO Report** — portfolio summary, biggest wins, biggest risks, recommended focus (claude-haiku, cached prompt)
-4. **Auto-Dispatch** — if enabled, filters advisor actions through effort/security/accuracy/lifecycle gates and queues eligible tasks to Nexus
+4. **Auto-Dispatch** — if enabled, filters advisor actions through effort/security/accuracy/lifecycle gates and queues eligible tasks for the factory
 
 All stored as jsonb columns on the `digests` row. Dashboard cards show the most recent if < 8 days old.
 
@@ -258,7 +263,7 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 
 **Async request APIs** — Next.js 16 removed synchronous access to `cookies()`, `headers()`, `params`, `searchParams`. All must be `await`ed.
 
-**`'use server'` files export only async functions** — Plain objects or types exported from `'use server'` files cause Turbopack build failures. Constants live in plain `.ts` files (e.g., `src/lib/goals.ts`, `src/lib/lifecycle.ts`, `src/lib/actions/nexus-utils.ts`).
+**`'use server'` files export only async functions** — Plain objects or types exported from `'use server'` files cause Turbopack build failures. Constants live in plain `.ts` files (e.g., `src/lib/goals.ts`, `src/lib/lifecycle.ts`, `src/lib/skills/skill-policy.ts`).
 
 **Prompt caching** — Claude analysis, digest, advisor, and CEO report calls include `cache_control: { type: 'ephemeral' }` on system prompts. Reduces cost significantly for Monday bulk runs.
 
@@ -282,19 +287,23 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 
 *Learning Loop*: `get_accuracy_report()` — full calibration table (success rate, avg delta, signal strength per impactType) + downgraded repos.
 
-*gstack*: `queue_gstack_skill(repo_name, skill, objective?)` — queues any of the 9 skills directly from Claude Code. `get_skill_history(repo_name, skill?)` — prose-formatted run history. `get_skill_findings(repo_name, skill?)` — structured JSON findings + `suggestedNextSkill`.
+*gstack*: `queue_gstack_skill(repo_name, skill, objective?)` — queues one of the 8 factory skills directly from Claude Code (allowlisted repos only). `get_skill_history(repo_name, skill?)` — prose-formatted run history. `get_skill_findings(repo_name, skill?)` — structured JSON findings + `suggestedNextSkill`.
 
 **Advisor Learning Loop** — `src/lib/actions/advisor-accuracy.ts` + `advisor-accuracy-utils.ts` compute per-impactType accuracy from `portfolio_events` on-the-fly (no new table). Time-decay (30d × 2×), risk-adjusted suppress thresholds, `deltaConfidence` flag on resolved deltas. Accuracy table injected into the advisor's user message before each generation so Claude self-calibrates; never blocks advisor generation (try/catch wrapped). Accuracy shown as table on `/agent-performance` and inline confidence badges on the AdvisorCard.
 
-**Auto-Dispatch** — `queueAdvisorActionForUser(userId, action)` is a session-less Nexus queue function called from the digest cron after `generateAdvisor()` completes. `autoDispatchAdvisorActions()` filters through 4 gates: effort gate → security gate → accuracy gate → lifecycle guard. Users configure via Settings → Agent Auto-Dispatch (5 fields on `users` table). `autoDispatched: true` tag on events for traceability. "Auto" badge shown on auto-dispatched events in the UI.
+**Auto-Dispatch** — `queueAdvisorActionForUser(userId, action)` (`src/lib/agents/factory-queue.ts`, server-only) is the session-less factory queue function called from the digest cron after `generateAdvisor()` completes. `autoDispatchAdvisorActions()` filters through 4 gates: effort gate → security gate → accuracy gate → lifecycle guard. Users configure via Settings → Agent Auto-Dispatch (5 fields on `users` table). `autoDispatched: true` tag on events for traceability. "Auto" badge shown on auto-dispatched events in the UI.
 
 **Token Efficiency** — Two caches reduce redundant token spend as agent volume grows: (1) `repositories.cached_brief JSONB` — written by `get_coding_brief` on first call, served from cache within 6h, cleared on sync. (2) `digests.advisor_repo_snapshot JSONB` — the compiled repoLines prompt text, reused for 23h, invalidated on sync.
 
-**gstack Integration** — G1–G6 fully shipped. `skillName` in Nexus `contextNotes` selects the correct gstack script in the Nexus worker. `OPENCLAW_SESSION=true` enables real skill invocation. Learnings from `~/.gstack/projects/{slug}/learnings.jsonl` are injected before each run. Checkpoint mode (`continuous`) keeps WIP commits alive through crashes. `agent_skill_report` webhook event stores findings + `suggestedNextSkill`; `get_coding_brief` surfaces the last skill report findings. See `docs/gstack-findings.md` for the running log.
+**Agent HQ queue (Phase 81)** — `enqueueRequest` in `src/lib/agents/factory-queue.ts` checks the owner (`FACTORY_USER_ID`), the factory allowlist (`factory/factory.config.json`), the skill policy and the lifecycle guard, then writes the `agent_requests` row and its `agent_task_queued` event in one batch and adds a BullMQ job (`jobId` = request id, so re-adding is idempotent). A failed Redis add leaves the row `queued`; the worker's reconcile (on start and after each cycle) re-adds it. The worker (`factory/worker.ts`) runs one job at a time: requests (priority 1), then the scheduled `cycle` / `report` / `scout` jobs that replaced the launchd calendar. Gates before each job: the `PAUSE` file, AC power, the run lock, Docker. A request that hits an environment problem is deferred (`queued` with a reason), never failed.
 
-**CI Feedback Loop (Phase 55)** — `checkCIFailuresOnAgentPRs(userId)` runs before `checkMergedAgentPRs` in every 6h sync. It polls GitHub check-runs on open agent PRs. SHA deduplication prevents re-recording the same failure on every sync cycle — a new `agent_ci_failed` event is written only when the head SHA changes (i.e., a new fix commit was pushed). After MAX_CI_FIX_ATTEMPTS (3) failures it escalates to `agent_needs_human` and fires an in-app notification. The Nexus worker's `prepareRepositoryWorkspace` accepts `existingBranch` from `contextNotes` — if set, it checks out that branch instead of creating a new `nexus/auto-*` branch, so the fix commit lands on the same PR.
+**Tracing** — every factory job and every Vercel cron route (`withAutomationRun`; `ai-summary` only when it queued work) writes an `automation_runs` row; the factory child process writes `trace_events` (clone, install, checks, route, attempt, judge, adversary, PR or report) and mirrors them to BullMQ job progress. `agent_jobs.request_id` links each tier attempt to its request. The Agents page (`/agent-performance`) shows the worker heartbeat (from Redis), queue counts, schedules, recent runs, requests and each one's trace; owner-only controls live in `src/lib/actions/automation.ts`. Runs older than 90 days are pruned by the daily report job.
 
-**Webhook taskId correlation** — The agent-events webhook uses a PostgreSQL JSONB containment query (`metadata @> '{"taskId":"..."}'::jsonb`) to correlate Nexus task IDs to portfolio_events rows. This replaces the previous 50-event global scan, which could miss events in high-throughput scenarios.
+**gstack skills** — the launcher keeps gstack's skill names and phases; the factory maps each to a mode (`modeForSkill`): `/ship`, `/qa`, `/document-release` → fix (one judged draft PR); `/investigate`, `/review`, `/qa-only`, `/health`, `/retro` → report (read-only, findings in an `agent_skill_report` event); `/canary` is unavailable (no browser in the sandbox). G1–G6 ran in the retired Nexus worker. See `docs/gstack-findings.md` for the running log.
+
+**CI on agent PRs (Phase 55, reduced in Phase 81)** — `checkCIFailuresOnAgentPRs(userId)` runs before `checkMergedAgentPRs` in every 6h sync. It polls GitHub check-runs on open agent PRs, records `agent_ci_failed` once per head SHA, and escalates once to `agent_needs_human` with an in-app notification. There is no agent fix loop: the factory runs the repo's checks before it opens a PR, so a PR that still fails CI is the owner's call.
+
+**Request correlation** — every agent event carries `metadata.taskId` = the `agent_requests` id. Lifecycle reads the row for factory requests; older Nexus tasks are still projected from their events by matching `taskId`.
 
 **Pure function extraction** — All scoring, simulation, event derivation, and dep-analysis logic lives in plain `.ts` files with no DB imports. Server actions and sync code call these functions. This pattern makes everything testable without DB mocks and keeps server action files thin.
 
@@ -321,10 +330,10 @@ All agent tasks are classified by risk tier. Do not route to a higher tier until
 | Agent context loss | Coding brief capped at 6h TTL; one action per execution; snapshot memoization |
 | Security fix introduces new vulnerability | Security in Tier 3 only, after Tier 1-2 proven safe over 20+ executions |
 | Approval bottleneck | Auto-dispatch with effort gate + accuracy gate; never auto-queues without user consent |
-| Nexus API auth leak | Service token in RepoHQ env vars only, never stored in DB |
+| Queue credentials leak | `REDIS_URL` lives in Vercel env and the Mac keychain only; jobs carry ids, so Redis holds no repo content or tokens |
 | PR created without user knowledge | All PRs default `draft: true`; lifecycle guard prevents duplicate queuing |
 | Auto-queue causing unreviewed work | Auto-dispatch gated by effort/accuracy/security settings; master toggle defaults off |
-| Duplicate agent tasks | Server-side lifecycle guard in `queueAdvisorAction` and `queueGstackSkill` — both check `BLOCKING_STAGES` before posting to Nexus |
+| Duplicate agent tasks | Server-side lifecycle guard in `queueAdvisorAction` and `queueGstackSkill` — both check `BLOCKING_STAGES` and open requests before queueing |
 
 ## Agent Execution — Lanes & Model Tiers (shipped, Phases 60–80)
 
@@ -337,7 +346,7 @@ Execution moved from one paid lane (Render worker → Anthropic) to a **cost lad
 | MC Copilot | factory host only | GitHub Copilot CLI (prepaid seat); skipped while the sandbox is on | prepaid |
 | M2 Paid | factory sandbox | Claude Code → `cloud-smart` (Anthropic) | $ (budget-gated; never in scheduled cycles) |
 
-The router picks the cheapest tier with proven success per task difficulty (simple / medium / hard), subject to a data-classification gate (private repos skip M1 by default) and action-level approvals (L4 = merge/delete/force-push always need a human). A deterministic judge plus an advisory adversarial reviewer gate every PR, and merging is always human. Nexus's Render lane still runs paid gstack skills for RepoHQ-dispatched tasks. Full design: [autonomous-factory.md](autonomous-factory.md); operator guide: [factory/README.md](../factory/README.md).
+The router picks the cheapest tier with proven success per task difficulty (simple / medium / hard), subject to a data-classification gate (private repos skip M1 by default) and action-level approvals (L4 = merge/delete/force-push always need a human). A deterministic judge plus an advisory adversarial reviewer gate every PR, and merging is always human. Since Phase 81 the factory also runs every RepoHQ-dispatched request; the Nexus lane (Render worker → Anthropic) is retired. Full design: [autonomous-factory.md](autonomous-factory.md); operator guide: [factory/README.md](../factory/README.md).
 
 ## Agent Execution — Success Metrics
 
@@ -359,8 +368,7 @@ What makes this combination novel: portfolio-level prioritisation (not arbitrary
 | Tool | Portfolio Scoring | Agent Execution | Human Gate | Accuracy Loop |
 |------|-----------------|-----------------|------------|---------------|
 | RepoHQ alone | ✅ quantified | ❌ | — | — |
-| AI-Took-My-Job alone | ❌ | ✅ | ✅ | ❌ |
 | Devin | ❌ | ✅ | minimal | ❌ |
 | Copilot Workspace | ❌ | plan-only | ✅ | ❌ |
 | OpenHands | ❌ | ✅ | none | ❌ |
-| **RepoHQ + Nexus + gstack** | **✅ quantified** | **✅** | **✅** | **✅** |
+| **RepoHQ + the factory** | **✅ quantified** | **✅** | **✅** | **✅** |

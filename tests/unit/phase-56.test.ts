@@ -4,7 +4,7 @@
  * Tests for:
  * - Finding-specific objectives (getSuggestedActions includes top finding text)
  * - Passive-findings filter (PASSING_PREFIXES strips ✅/✓/passing lines)
- * - inferNextSkill logic parity with the server-side worker
+ * - The next-skill keyword heuristic
  * - suggestedNextSkill propagation through metadata shape
  * - SkillRunRecord structure
  */
@@ -103,85 +103,37 @@ describe('getSuggestedActions — passing-findings filter', () => {
   })
 })
 
-// ─── inferNextSkill parity (mirrors worker logic) ────────────────────────────
+// ─── Next-skill heuristic ────────────────────────────────────────────────────
 
-// This section documents the contract between the worker and the UI.
-// Both use the same keyword heuristic — if you change one, change the other.
-describe('inferNextSkill contract', () => {
-  function inferNextSkill(skillName: string, findings: string[]): string | null {
-    const text = findings.join(' ').toLowerCase()
-    if (['health', 'qa-only'].includes(skillName)) {
-      if (text.includes('typescript') || text.includes('type error') || text.includes('ts error')) return 'ship'
-      if (text.includes('dead code') || text.includes('never imported') || text.includes('unused export')) return 'ship'
-      if (text.includes('no test') || text.includes('missing test') || text.includes('coverage gap')) return 'ship'
-      if (text.includes('build fail') || text.includes('build error') || text.includes('module not found')) return 'investigate'
-    }
-    if (skillName === 'review') {
-      if (text.includes('security') || text.includes('vulnerability') || text.includes('injection')) return 'investigate'
-      if (text.includes('logic error') || text.includes('incorrect') || text.includes('bug')) return 'ship'
-    }
-    if (skillName === 'retro') {
-      if (text.includes('tech debt') || text.includes('test') || text.includes('quality')) return 'ship'
-    }
-    return null
-  }
+// The Nexus worker kept a copy of this keyword heuristic (inferNextSkill) for its skill
+// auto-chain. Both were retired in Phase 81: getSuggestedActions is the only one left, and it
+// only suggests; the owner decides what runs next.
+describe('next-skill heuristic', () => {
+  const next = (skill: string, findings: string[]) => getSuggestedActions(skill, findings, REPO)[0]?.skill ?? null
 
-  it('health + typescript → ship', () => {
-    expect(inferNextSkill('health', ['TypeScript: type errors in proxy.ts'])).toBe('ship')
+  it.each([
+    ['health', 'TypeScript: type errors in proxy.ts', 'ship'],
+    ['health', 'dead code: getEventsByType never imported', 'ship'],
+    ['health', 'Dead code: formatDate — never imported outside helpers/', 'ship'],
+    ['health', 'build fail: module not found', 'investigate'],
+    ['health', 'build fail: tsc exited with code 1', 'investigate'],
+    ['review', 'security: SSRF via webhook URL', 'investigate'],
+    ['review', 'logic error: incorrect pagination offset', 'ship'],
+    ['retro', 'tech debt remains high in auth module', 'ship'],
+  ])('%s + "%s" → %s', (skill, finding, expected) => {
+    expect(next(skill, [finding])).toBe(expected)
   })
 
-  it('health + dead code → ship', () => {
-    expect(inferNextSkill('health', ['dead code: getEventsByType never imported'])).toBe('ship')
-  })
-
-  it('health + build error → investigate', () => {
-    expect(inferNextSkill('health', ['build fail: module not found'])).toBe('investigate')
-  })
-
-  it('review + security → investigate', () => {
-    expect(inferNextSkill('review', ['security: SSRF via webhook URL'])).toBe('investigate')
-  })
-
-  it('review + logic → ship', () => {
-    expect(inferNextSkill('review', ['logic error: incorrect pagination offset'])).toBe('ship')
-  })
-
-  it('retro + tech debt → ship', () => {
-    expect(inferNextSkill('retro', ['tech debt remains high in auth module'])).toBe('ship')
-  })
-
-  it('canary → null (no inference rule)', () => {
-    expect(inferNextSkill('canary', ['console error: failed to load resource'])).toBeNull()
-  })
-
-  it('clean health report → null', () => {
-    expect(inferNextSkill('health', ['✅ all checks passing'])).toBeNull()
-  })
-
-  // Parity check: for every pattern getSuggestedActions suggests /ship,
-  // inferNextSkill should also return 'ship' (the worker and UI agree)
-  it('getSuggestedActions and inferNextSkill agree on ship for dead code', () => {
-    const findings = ['Dead code: formatDate — never imported outside helpers/']
-    const uiSuggestion = getSuggestedActions('health', findings, REPO)[0]?.skill
-    const workerSuggestion = inferNextSkill('health', findings)
-    expect(uiSuggestion).toBe('ship')
-    expect(workerSuggestion).toBe('ship')
-  })
-
-  it('getSuggestedActions and inferNextSkill agree on investigate for build errors', () => {
-    const findings = ['build fail: tsc exited with code 1']
-    const uiSuggestion = getSuggestedActions('health', findings, REPO)[0]?.skill
-    const workerSuggestion = inferNextSkill('health', findings)
-    expect(uiSuggestion).toBe('investigate')
-    expect(workerSuggestion).toBe('investigate')
+  it('clean health report → no suggestion', () => {
+    expect(next('health', ['✅ all checks passing'])).toBeNull()
   })
 })
 
 // ─── suggestedNextSkill metadata shape ───────────────────────────────────────
 
 describe('suggestedNextSkill metadata shape', () => {
-  it('webhook payload type accepts suggestedNextSkill string', () => {
-    // Type-level test: ensure the shape we send in the webhook is valid
+  it('agent_skill_report metadata accepts a suggestedNextSkill string', () => {
+    // Type-level test: the metadata shape agent_skill_report events carry
     const payload: {
       eventType: 'agent_skill_report'
       taskId: string

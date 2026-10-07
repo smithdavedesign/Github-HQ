@@ -6,9 +6,8 @@
  *   2. secretsEqual()    — constant-time secret comparison
  *   3. inferNextSkill()  — keyword-based next-skill suggestion
  *
- * inferNextSkill lives in AI-Took-My-Job; we test its logic here by importing
- * the equivalent RepoHQ suggest-actions.ts function which mirrors it exactly.
- * Any divergence between the two functions is a bug.
+ * inferNextSkill lived in the Nexus worker (AI-Took-My-Job), retired in Phase 81;
+ * suggest-actions.ts's getSuggestedActions is the only copy left, so it is what we test.
  */
 import { describe, it, expect } from 'vitest'
 import { isGstackSkill } from '../../src/lib/skills/skill-policy'

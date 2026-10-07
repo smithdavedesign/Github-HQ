@@ -2,6 +2,8 @@
 
 The local self-improvement loop from [docs/autonomous-factory.md](../docs/autonomous-factory.md). It runs on this Mac against the local AI stack (`~/ai-stack`: Ollama → LiteLLM), finds verifiable problems in allowlisted repos, fixes them with the cheapest model that has proven it can, and opens **draft** PRs. Merging is always yours, and each merge or close teaches the router.
 
+It is also RepoHQ's only agent executor (roadmap Phase 81, [PRD](../docs/agent-hq-migration-prd.md)): "Run agent", the skill launcher, Monday auto-dispatch and the MCP `queue_gstack_skill` tool all become requests the worker runs (see "Worker").
+
 ```
 Sense    every allowlisted repo: red CI on the base branch, Dependabot alerts, stale bot PRs (gh, host)
          → one ranked queue → clone (host) → install → the repo's own typecheck / lint / test + README (sandbox)
@@ -35,6 +37,8 @@ Report   06:45 email: one update per gstack role (PM → Architect plan, Builder
 npm run factory -- --dry-run            # one cycle, no push/PR
 npm run factory -- --repo=owner/name    # one repo (must be allowlisted)
 npm run factory                         # real cycle: may open one draft PR
+npm run factory -- --request=<id>       # run one Agent HQ request (what the worker does for a request job)
+npm run factory:worker                  # the BullMQ worker in the foreground (REDIS_URL + FACTORY_USER_ID set)
 npm run factory:report                  # per-tier attempts / verified / merged / cost
 npm run factory:scout                   # re-evaluate free models, update LiteLLM aliases
 npm run factory:e2e                     # end-to-end check against a local fixture repo (sandboxed)
@@ -46,7 +50,7 @@ npm run factory:migrate                 # apply factory/sql/*.sql to the RepoHQ 
 npm run factory:backfill-jobs           # copy ledger history into agent_jobs (needs ~/.repohq-factory/env sourced)
 npm run factory:morning -- --no-send   # build the morning report and print it
 bash factory/bin/setup-email.sh you@gmail.com   # one-time: Gmail app password → keychain, test email
-bash factory/bin/install-launchd.sh     # schedule: cycles hourly 20:00–06:00 + 12:00/16:00 (AC power only), report 06:45, scout Sun 17:10
+bash factory/bin/install-launchd.sh     # with REDIS_URL: the always-on worker; without: the calendar (cycles hourly 20:00–06:00 + 12:00/16:00 on AC, report 06:45, scout Sun 17:10)
 bash factory/bin/install-launchd.sh --uninstall
 touch ~/.repohq-factory/PAUSE           # kill switch (rm to resume)
 ```
@@ -57,8 +61,30 @@ touch ~/.repohq-factory/PAUSE           # kill switch (rm to resume)
 - `factory/factory.config.json`: `integrationBranch` (default `integration/agent`): used only by repos that still have that branch; everything else, including RepoHQ and Nexus since 2026-10, gets PRs against the default branch.
 - Ledger hygiene: if a verdict turns out to be a judge bug, set `"voided": "<why>"` on that attempt in `~/.repohq-factory/ledger.jsonl`. It stays for history but stops counting for routing, dead ends and stats.
 - `factory/factory.config.json`: the **allowlist** (`repos`). The factory never touches a repo that isn't listed. Also `allowFreeCloud` (private repos allowed on M1), `monthlyBudgetUsd` (M2; default 0, which means never pay) and `maxPrsPerCycle`.
-- `~/.repohq-factory/env`: runtime settings sourced by the launchd wrapper. `FACTORY_USER_ID` mirrors attempts into RepoHQ (`portfolio_events`). The DB URL is read from RepoHQ's own `.env.local` at runtime, not copied. Set `FACTORY_OP_ENV_FILE` to resolve secrets through 1Password (`op run`).
+- `factory/factory.config.json`: `schedules` (cron patterns for the worker's `cycle`, `report` and `scout` jobs, in this Mac's timezone; defaults match the old calendar). Remove a key to stop that job.
+- `~/.repohq-factory/env`: runtime settings sourced by the launchd wrapper. `FACTORY_USER_ID` mirrors attempts into RepoHQ (`portfolio_events`, `agent_jobs`) and is required for Agent HQ requests, runs and traces. The DB URL is read from RepoHQ's own `.env.local` at runtime, not copied. Set `FACTORY_OP_ENV_FILE` to resolve secrets through 1Password (`op run`).
 - State lives in `~/.repohq-factory/`: `ledger.jsonl` (source of truth), `logs/<run>/` (prompts + harness output per attempt), `scout-reports/`.
+
+## Worker
+
+Since Phase 81 the factory runs as one long-lived BullMQ worker (`factory/worker.ts`) instead of a launchd calendar. RepoHQ never runs agents: it writes an `agent_requests` row in Neon and adds a job to the `factory` queue on Redis (`render.yaml`, the `agent-hq-redis` Key Value). The worker takes one job at a time:
+
+| Job | From | Runs |
+|---|---|---|
+| `request` (priority 1) | RepoHQ "Run agent" / skill launcher / auto-dispatch / MCP | `run.ts --request=<id>`: that repo's owner task only. Fix skills (`/ship`, `/qa`, `/document-release`) go through the usual ladder and judge; report skills (`/investigate`, `/review`, `/qa-only`, `/health`, `/retro`) are a read-only investigation whose findings land in RepoHQ |
+| `cycle` | scheduler | `run.ts --scheduled`, as before |
+| `report` | scheduler | the morning report, then prunes runs older than 90 days |
+| `scout` | scheduler | the weekly model scout |
+
+Before each job it checks the gates: `PAUSE` file (wait 15 min), the run lock (wait 5 min), AC power and Docker (a cycle is skipped; a request waits 15 min). A request that hits an environment problem (LiteLLM down, PR cap reached) is **deferred**: back to `queued` with the reason, and retried later. Only its own failures count, and the third one fails it. Nothing is ever re-routed to a paid model.
+
+Every job runs in a fresh child process under `caffeinate -ims` (its log is `~/.repohq-factory/logs/<job>-<time>-<id>.log`). The child prints `::trace::` lines that become `trace_events` rows and live BullMQ progress, and one `::result::` line that decides the request's fate. Every job is an `automation_runs` row. RepoHQ's **Agents** page (`/agent-performance`) shows all of it: worker online/paused/AC/Docker (a heartbeat in Redis every 60 s), queue counts, schedules, recent runs, requests and each one's step trace, with owner-only Run now, Pause/Resume, Cancel and Retry.
+
+Neon is the source of truth and Redis only wakes the worker: on start and after every cycle it re-adds a job for any open request whose job is missing, so a lost Redis or a failed enqueue costs a delay, not a request. OpenClaw's `queue/owner-requests.jsonl` still works; those requests are mirrored into the same table.
+
+Setup (once): create the Key Value from `render.yaml` (Render → Blueprints), put its external URL in RepoHQ's `.env.local` as `REDIS_URL` (and in Vercel with `FACTORY_USER_ID`), run `npm run db:push` and `npm run factory:migrate`, then `bash factory/bin/install-launchd.sh`. It stores the URL in the login keychain (`repohq-factory-redis-url`) and installs `com.repohq.factory.worker` (KeepAlive) in place of the calendar. Local development: `docker compose up -d redis` and `REDIS_URL=redis://127.0.0.1:6379`.
+
+Promotion still applies: requests use the `owner-requested` (fix) and `owner-report` (report) capabilities. `owner-requested` starts at `report`, so a fix request ends `verified` (judged, held, no PR) until you promote it to `pr`.
 
 ## Sandbox
 
@@ -128,7 +154,7 @@ At the start of each cycle the factory senses every allowlisted repo with read-o
 
 ## KPIs and the job record
 
-Every attempt is a row in RepoHQ's `agent_jobs` table (parent job for escalations, requests, reviewer, isolation, outcome, the commits you added). `/agent-performance` and the morning report show the KPIs (`src/lib/agents/factory-kpis.ts`):
+Every attempt is a row in RepoHQ's `agent_jobs` table (parent job for escalations, the Agent HQ request it served, requests, reviewer, isolation, outcome, the commits you added). The Agents page (`/agent-performance`) and the morning report show the KPIs (`src/lib/agents/factory-kpis.ts`):
 
 | KPI | Definition |
 |---|---|
@@ -142,7 +168,7 @@ Routing learns per difficulty (simple: docs/lint-autofix/deps; medium: lint/type
 
 ## Night shift
 
-Scheduled cycles (launchd → `factory.sh` → `run.ts --scheduled`) run hourly 20:00–06:00 plus 12:00 and 16:00, and:
+Scheduled cycles (the worker's `cycle` scheduler, or the launchd calendar without a `REDIS_URL` → `run.ts --scheduled`) run hourly 20:00–06:00 plus 12:00 and 16:00, and:
 - are **skipped on battery** (`FACTORY_REQUIRE_AC=0` overrides): on battery the Mac sleeps mid-cycle;
 - **refuse to run with the sandbox off**;
 - **always run at $0**, even if `monthlyBudgetUsd` allows paid work for manual runs.
@@ -166,4 +192,4 @@ The first scheduled night showed the Mac on battery dropping into Deep Idle slee
 - System Settings → Battery → Options → turn on **"Prevent automatic sleeping on power adapter when the display is off"**;
 - optional, so the first cycle runs even if the Mac slept: `sudo pmset repeat wakeorpoweron MTWRFSU 19:58:00`.
 
-Since Phase 80, scheduled cycles check this themselves: on battery they log "skipped — on battery power" and exit. Missed launchd slots run once on wake (launchd coalesces them), pushes and PR creation retry on network errors, and the Ops section of the morning report shows how many cycles actually ran.
+Since Phase 80, scheduled cycles check this themselves: on battery they log "skipped — on battery power" and exit. Missed slots run once on wake (BullMQ keeps one pending job per scheduler, as launchd coalesced its slots), pushes and PR creation retry on network errors, and the Ops section of the morning report shows how many cycles actually ran.

@@ -143,7 +143,7 @@ export const repositories = pgTable('repositories', {
   // Phase 5: Deep Claude analysis
   claudeAnalysis: jsonb('claude_analysis'), // { architecture, security, quality, techDebt, recommendations, score }
   claudeAnalysisAt: timestamp('claude_analysis_at', { mode: 'date' }),
-  // Phase 54-T1: Cached coding brief — written after each sync, served to MCP + Nexus
+  // Phase 54-T1: Cached coding brief — written after each sync, served to MCP (get_coding_brief)
   cachedBrief: jsonb('cached_brief').$type<{ raw: string; generatedAt: string } | null>(),
   // Phase 54-T4: Weekly distillation of agent_attempt events, written by the Monday digest cron
   attemptSummary: jsonb('attempt_summary').$type<{

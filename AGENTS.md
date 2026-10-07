@@ -47,15 +47,21 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ### Server-only modules
 - `'use server'` only on files whose exports are browser-callable actions that derive the user from the session.
-- Functions that take a `userId` (cron, webhooks, internal helpers) live in modules starting with `import 'server-only'`, never in a `'use server'` file (e.g. `src/lib/agents/nexus-dispatch.ts`).
+- Functions that take a `userId` (cron, webhooks, internal helpers) live in modules starting with `import 'server-only'`, never in a `'use server'` file (e.g. `src/lib/agents/factory-queue.ts`).
+
+### Agent execution
+- The factory (`factory/`) is the only thing that writes code (roadmap Phase 81, `docs/agent-hq-migration-prd.md`). The app never runs agents: it inserts an `agent_requests` row and adds a BullMQ job (`src/lib/agents/factory-queue.ts`); the worker (`factory/worker.ts`, on the owner's Mac) runs it.
+- Neon is the source of truth, Redis only wakes the worker. A failed enqueue leaves the row `queued` and the worker reconciles it, so never treat Redis as the record.
+- Factory code imported by the app (`factory/lib/queue.ts`, `factory/factory.config.json`) must not import `server-only` or touch Redis at module load: `next build` runs without `REDIS_URL`.
 
 ### E2E tests
 - The suite runs against `.env.local`'s DATABASE_URL, which is production. Only seed rows you can identify and delete. Anything that overwrites or deletes shared rows must `test.skip(!DISPOSABLE_DB, …)` (`tests/e2e/helpers/disposable-db.ts`).
 
-## Worker bootstrap (Nexus / CI worktrees)
+## Worker bootstrap (agent / CI worktrees)
 
 **Before running any check or making any fix, the agent MUST install dependencies.**
-The Nexus worktree is a bare git clone — there are no `node_modules`.
+A fresh agent worktree is a bare git clone — there are no `node_modules`. (The factory
+sandbox installs them itself before its harness runs.)
 Skipping this step means `tsc`, `eslint`, `vitest`, and `next build` are all unavailable
 and any health or fix task will silently fail.
 

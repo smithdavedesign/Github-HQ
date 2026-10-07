@@ -1,6 +1,6 @@
 # Agent HQ — One Agent System (Nexus migration PRD)
 
-> **Status:** approved 2026-10-06, building on `claude/great-bardeen-n6sksa` (roadmap [Phase 81](roadmap.md#phase-81--one-agent-system-nexus-migration)).
+> **Status:** approved 2026-10-06; code complete 2026-10-07 on `claude/great-bardeen-n6sksa` (roadmap [Phase 81](roadmap.md#phase-81--one-agent-system-nexus-migration-code--cutover-pending)). The owner cutover (§11) is pending.
 > **Decision source:** [audit-2026-10.md §9.1](audit-2026-10.md#9-worth-discussing) ("one executor"), decided by the owner on 2026-10-06.
 > **Scope:** this repo only. `AI-Took-My-Job` (Nexus) gets no commits. It is archived after cutover (§11).
 
@@ -210,6 +210,7 @@ The factory controls show only for the owner (`session.user.id === FACTORY_USER_
 1. In Vercel, delete `NEXUS_API_URL`, `NEXUS_API_TOKEN` and `NEXUS_WEBHOOK_SECRET`.
 2. In Render, **suspend** `ai-devops-nexus-worker` and `ai-devops-nexus-web`.
 3. Tasks still in flight on Nexus at cutover are abandoned; nothing waits on them.
+4. Close the stale Nexus bot PRs (audit §8). Until they are reviewed or closed, the factory opens no new PRs on those repos (`blockOnStaleBotPrs`).
 
 **5. Verify**
 1. Run agent on an allowlisted repo, a `report` skill first: it goes queued → running → reported, with a full trace.
@@ -248,7 +249,12 @@ The factory controls show only for the owner (`session.user.id === FACTORY_USER_
 
 ## 14. What is removed from this repo
 
-- `src/lib/agents/nexus-dispatch.ts`, the Nexus parts of `src/lib/actions/nexus.ts` (becomes `agent-queue.ts`), and `src/app/api/webhooks/agent-events/route.ts`.
-- The Nexus polling in `src/app/api/agent-task-status/route.ts`, the "Open Nexus" links, and the `NEXUS_*` env vars in `.env.example`.
-- `queueSuggestedSkill` (auto-chain) and `queueCIFix`.
-- The "Nexus" lines in the dashboard agent cards and in the morning report. Historical Nexus events stay in `portfolio_events` and still count in accuracy history.
+As built (2026-10-07):
+
+- `src/lib/agents/nexus-dispatch.ts`, `src/lib/actions/nexus.ts` (now `src/lib/actions/agent-queue.ts`), and `src/app/api/webhooks/agent-events/route.ts`. The skill policy in `src/lib/actions/nexus-utils.ts` moved to `src/lib/skills/skill-policy.ts`.
+- The Nexus polling in `src/app/api/agent-task-status/route.ts`, the "Open Nexus" links, and the `NEXUS_*` env vars (and the Nexus-worker gstack settings) in `.env.example`.
+- `queueSuggestedSkill` (auto-chain) with `src/lib/skills/chain-continuity.ts`, and `queueCIFix`.
+- The Nexus-only tests (integration, output contract, automated flow, webhook auth, skill chain, CI feedback loop, and two e2e specs).
+- The "Nexus" lines in the dashboard agent cards and in the morning report (now Agent HQ request outcomes). Historical Nexus events stay in `portfolio_events` and still count in accuracy history; their lifecycle is still projected from events.
+
+Kept on purpose: `nexus/*` in the bot-branch patterns (the open Nexus PRs are still bot PRs), the `.nexus/` ignore, and the manual `tests/integration/gstack-*.sh` scripts (they call the Claude CLI directly and depend on nothing in Nexus).

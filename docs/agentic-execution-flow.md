@@ -1,5 +1,7 @@
 # Agentic Execution Flow — Quick Reference
 
+> **Superseded (2026-10, roadmap Phase 81).** This describes the Nexus-era pipeline (RepoHQ → AI-Took-My-Job). The factory is now the only executor: see [agent-hq-migration-prd.md](agent-hq-migration-prd.md) and [architecture.md](architecture.md). Kept for history.
+
 Quick reference for the execution pipeline. For full diagrams and sequences, see [agentic-full-flow.md](agentic-full-flow.md).
 
 ---
