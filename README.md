@@ -319,7 +319,7 @@ bash tests/integration/gstack-qa-only-check.sh     # /qa-only — bug hunt
 bash tests/integration/gstack-retro-check.sh       # /retro — weekly analysis
 ```
 
-See the [gstack Integration Roadmap](docs/roadmap.md#gstack-integration-roadmap) for the history.
+See the [gstack Integration Roadmap](docs/roadmap-history.md#gstack-integration-roadmap) for the history.
 
 ---
 

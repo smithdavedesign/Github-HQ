@@ -319,6 +319,8 @@ export const agentJobs = pgTable('agent_jobs', {
   adversaryVerdict: text('adversary_verdict'),
   outcome: text('outcome'),
   humanCommits: integer('human_commits'),
+  /** Owner's 0–5 rating from the PR's `value:N` label (src/lib/agents/pr-value.ts); null = unrated. */
+  value: integer('value'),
   startedAt: timestamp('started_at', { mode: 'date' }).notNull(),
   resolvedAt: timestamp('resolved_at', { mode: 'date' }),
   /** The agent_requests row this attempt served (Phase 81); null for sensed work. */

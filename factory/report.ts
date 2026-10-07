@@ -19,7 +19,9 @@ import { listAliases } from './lib/litellm-ops'
 import { run } from './lib/proc'
 import { freeQuota } from './lib/quota'
 import { buildMorningReport, cycleLogEntry, emailFailureReason, isCycleLog, toMime, type MorningReport, type RoleId, type RoleSection } from './lib/report'
-import { factoryActivityOf, latestHealthSnapshot, recordNotification, requestOutcomes } from './lib/sink'
+import { factoryActivityOf, latestHealthSnapshot, recordNotification, repoSignalsOf, requestOutcomes } from './lib/sink'
+import { parseGhSearchPrs, type OpenPr } from '../src/lib/agents/open-prs'
+import { nextActions } from '../src/lib/portfolio/next-actions'
 import { copilotQuota } from './lib/copilot-quota'
 import { inactivityDisabled, type SystemHealth } from './lib/system-health'
 
@@ -47,6 +49,9 @@ async function main() {
     monthlyBudgetUsd: cfg.monthlyBudgetUsd,
     cycles: recentCycles(cfg, now),
     systemHealth: await gatherSystemHealth(cfg, now),
+    openPrsAll: await openPrsAcross(cfg),
+    ownerLogin: await ownerLogin(),
+    nextActions: await repoSignalsOf(cfg, now).then(rows => (rows ? nextActions(rows) : null)),
   }
   let report = buildMorningReport(input)
   // Opt-in: the local 7B model mis-paraphrased numbers in testing ("4 of 8 reviews completed"
@@ -71,6 +76,28 @@ async function main() {
   if (!email.sent) {
     await recordNotification(cfg, report.subject, `Morning report saved to ${stem}.html (not emailed: ${email.reason}).`)
   }
+}
+
+/**
+ * Every open, non-archived PR in repos owned by the allowlist's owners (one `gh search prs` per
+ * owner), not just the factory's, so Dependabot and your own PRs don't get lost either.
+ * null when any search fails: a partial list would read as "nothing else is open".
+ */
+async function openPrsAcross(cfg: FactoryConfig): Promise<OpenPr[] | null> {
+  const owners = [...new Set(cfg.repos.map(r => r.split('/')[0]).filter(Boolean))]
+  const out: OpenPr[] = []
+  for (const owner of owners) {
+    const r = await run('gh', ['search', 'prs', '--owner', owner, '--state', 'open', '--archived=false', '--limit', '100',
+      '--json', 'repository,number,title,url,author,createdAt,isDraft,labels'], { timeoutMs: 60_000 })
+    if (r.code !== 0) return null
+    out.push(...parseGhSearchPrs(r.output))
+  }
+  return out
+}
+
+async function ownerLogin(): Promise<string | null> {
+  const r = await run('gh', ['api', 'user', '--jq', '.login'], { timeoutMs: 30_000 })
+  return r.code === 0 && r.output.trim() ? r.output.trim() : null
 }
 
 /** Never throws: every probe degrades to null/unknown. */

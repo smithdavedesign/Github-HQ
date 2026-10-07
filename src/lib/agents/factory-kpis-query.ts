@@ -11,7 +11,7 @@ export async function loadFactoryKpis(userId: string, now = new Date()): Promise
   const [jobs, approvals] = await Promise.all([
     db.query.agentJobs.findMany({
       where: and(eq(agentJobs.userId, userId), gte(agentJobs.startedAt, since)),
-      columns: { id: true, startedAt: true, tier: true, status: true, prUrl: true, outcome: true, resolvedAt: true, humanCommits: true, requests: true, adversaryModel: true },
+      columns: { id: true, startedAt: true, tier: true, status: true, prUrl: true, outcome: true, resolvedAt: true, humanCommits: true, requests: true, adversaryModel: true, value: true },
     }),
     // Approval requests the factory raised (free tiers failed, paid tier gated) count against autonomy.
     db.select({ n: sql<number>`count(*)::int` }).from(notifications).where(and(

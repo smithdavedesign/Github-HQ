@@ -3,6 +3,8 @@ import { drizzle } from 'drizzle-orm/neon-http'
 import { and, eq, gte, ilike, inArray, sql } from 'drizzle-orm'
 import * as schema from '../../src/lib/db/schema'
 import { factoryActivity } from '../../src/lib/agents/factory-activity'
+import { loadRepoSignals } from '../../src/lib/portfolio/repo-signals'
+import type { RepoSignals } from '../../src/lib/portfolio/next-actions'
 import type { FactoryActivity } from '../../src/lib/health/freshness'
 import type { FactoryConfig } from './config'
 import type { AttemptEntry } from './ledger'
@@ -245,6 +247,29 @@ export async function recordResolution(cfg: FactoryConfig, attemptId: string, re
       .set({ outcome: resolution, resolvedAt, humanCommits })
       .where(and(eq(schema.agentJobs.userId, cfg.repohq.userId!), eq(schema.agentJobs.id, attemptId)))
   })
+}
+
+/** Learn step mirror: the owner's `value:N` rating of a merged factory PR (30-day experiment). */
+export async function recordValue(cfg: FactoryConfig, attemptId: string, value: number): Promise<void> {
+  const d = db(cfg)
+  if (!d) return
+  await safely('recordValue', async () => {
+    await d.update(schema.agentJobs)
+      .set({ value })
+      .where(and(eq(schema.agentJobs.userId, cfg.repohq.userId!), eq(schema.agentJobs.id, attemptId)))
+  })
+}
+
+/** RepoHQ's per-repo signals for "what to do next" (morning report); null without the sink or on error. */
+export async function repoSignalsOf(cfg: FactoryConfig, now: Date): Promise<RepoSignals[] | null> {
+  const d = db(cfg)
+  if (!d) return null
+  try {
+    return await loadRepoSignals(d, cfg.repohq.userId!, now, cfg.repos)
+  } catch (err) {
+    console.warn('[factory sink] repoSignalsOf failed:', err instanceof Error ? err.message : err)
+    return null
+  }
 }
 
 /** Generic in-app notification (morning report fallback when email isn't configured). */

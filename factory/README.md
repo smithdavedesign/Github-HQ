@@ -192,6 +192,9 @@ Every attempt is a row in RepoHQ's `agent_jobs` table (parent job for escalation
 | Per 100 free requests | merged PRs per 100 free-cloud requests (M1 turns + `free-agent` reviews) |
 | Review time | median hours from PR to your decision; PRs you had to edit |
 | Autonomy | merged without your edits ÷ (every resolved PR + every approval request) |
+| PR value | average of your `value:0`…`value:5` labels on merged PRs; useful = value ≥ 2; useful PRs per night |
+
+**Rating a PR.** Merged isn't the same as useful, so when you merge a factory PR add one label: `value:0` noise · `1` maintenance · `2` useful · `3` meaningful · `4` strategic · `5` material (`src/lib/agents/pr-value.ts`). Reconcile creates the labels in a repo the first time it has an open factory PR (marker files in `~/.repohq-factory/value-labels/`), and keeps reading a merged PR's labels for 30 days, so you can rate later. The rating lands in the ledger (`value` entry) and `agent_jobs.value` (`npm run factory:migrate` adds the column).
 
 Routing learns per difficulty (simple: docs/lint-autofix/deps; medium: lint/types; hard: tests/red CI), so evidence accumulates three times faster than per task kind.
 
@@ -202,7 +205,13 @@ Scheduled cycles (the worker's `cycle` scheduler, or the launchd calendar withou
 - **refuse to run with the sandbox off**;
 - **always run at $0**, even if `monthlyBudgetUsd` allows paid work for manual runs.
 
-The Night Shift v2 gate is 7 consecutive nights with every attempt sandboxed; `npm run factory:report` and the morning report show the count. After that, success is the 30-night trend in yield and acceptance (shown in the report), not PR count.
+The Night Shift v2 gate has two halves, and `npm run factory:report` and the morning report show both:
+- **Sandbox:** 7 consecutive nights with every attempt sandboxed.
+- **Quality** (since 2026-10-07): over the last 30 days, ≥ 5 merged or closed PRs with ≥ 50% merged, and ≥ 3 rated PRs averaging value ≥ 2. Clean nights prove the sandbox, not that the PRs are worth having.
+
+After that, success is the 30-night trend in yield, acceptance and useful PRs per night, not PR count.
+
+The morning email opens with **your review queue** (every open PR across the allowlist owners' repos, oldest first, 7+ days flagged; Dependabot and your own PRs too, not just the factory's) and **what to do next** (RepoHQ's decision states, `src/lib/portfolio/next-actions.ts`). The second needs the RepoHQ sink (`FACTORY_USER_ID`), which the worker loads from `~/.repohq-factory/env`.
 
 ## Free-tier facts that shape the design
 

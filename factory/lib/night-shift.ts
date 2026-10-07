@@ -1,20 +1,40 @@
 import { computeFactoryKpis, factoryNight, type FactoryKpis, type JobRecord } from '../../src/lib/agents/factory-kpis'
 import type { FactoryConfig } from './config'
-import type { AttemptEntry, LedgerEntry } from './ledger'
+import { toJobRecords, type AttemptEntry, type LedgerEntry } from './ledger'
 
 /**
  * Night Shift v2 (roadmap Phase 80, docs/autonomous-factory.md §14). Scheduled cycles run
  * 20:00–06:00 on AC power, sandboxed, at $0, ≤ maxPrsPerDay, human merge, PAUSE-able. Before the
  * night shift counts as "on", the sandbox has to prove itself for 7 consecutive nights with no
  * host-side repo code; success is then a rising yield and acceptance, not PR count.
+ *
+ * 30-day experiment (2026-10-07): clean nights prove the sandbox, not that the PRs are worth
+ * having, so the gate also needs a quality bar over the last 30 days: enough resolved PRs, at
+ * least half accepted, and the rated ones useful on average (value labels, pr-value.ts).
  */
 
 export const CLEAN_NIGHTS_REQUIRED = 7
+export const QUALITY_GATE = { windowDays: 30, minResolved: 5, minAcceptance: 0.5, minRated: 3, minAvgValue: 2 } as const
+
+export interface QualityGate {
+  resolved: number
+  acceptance: number | null
+  rated: number
+  avgValue: number | null
+  met: boolean
+  /** What's still missing, in plain words; empty when met. */
+  missing: string[]
+}
 
 export interface Readiness {
   /** Consecutive most-recent nights where every attempt ran sandboxed. */
   cleanNights: number
   required: number
+  /** The sandbox half of the gate. */
+  sandboxReady: boolean
+  /** The quality half of the gate (30-day experiment). */
+  quality: QualityGate
+  /** Both halves. */
   ready: boolean
   /** Most recent night with a host-side attempt, if any. */
   lastHostNight: string | null
@@ -25,7 +45,7 @@ export interface Readiness {
  * attempt ran in the Docker sandbox. The first night with a host attempt ends the streak (attempts
  * from before isolation was recorded count as host).
  */
-export function nightShiftReadiness(entries: LedgerEntry[], dayStartHour = 7): Readiness {
+export function nightShiftReadiness(entries: LedgerEntry[], dayStartHour = 7, now = new Date()): Readiness {
   const byNight = new Map<string, AttemptEntry[]>()
   for (const a of entries.filter((e): e is AttemptEntry => e.type === 'attempt' && e.outcome !== 'rate_limited')) {
     const n = factoryNight(new Date(a.at), dayStartHour)
@@ -38,7 +58,21 @@ export function nightShiftReadiness(entries: LedgerEntry[], dayStartHour = 7): R
     lastHostNight = night
     break
   }
-  return { cleanNights, required: CLEAN_NIGHTS_REQUIRED, ready: cleanNights >= CLEAN_NIGHTS_REQUIRED, lastHostNight }
+  const sandboxReady = cleanNights >= CLEAN_NIGHTS_REQUIRED
+  const quality = qualityGate(entries, now, dayStartHour)
+  return { cleanNights, required: CLEAN_NIGHTS_REQUIRED, sandboxReady, quality, ready: sandboxReady && quality.met, lastHostNight }
+}
+
+export function qualityGate(entries: LedgerEntry[], now: Date, dayStartHour = 7): QualityGate {
+  const g = QUALITY_GATE
+  const k = computeFactoryKpis(toJobRecords(entries), now, { windowDays: g.windowDays, dayStartHour })
+  const resolved = k.merged + k.closed
+  const missing: string[] = []
+  if (resolved < g.minResolved) missing.push(`${g.minResolved - resolved} more merged or closed PR(s)`)
+  else if ((k.acceptance ?? 0) < g.minAcceptance) missing.push(`acceptance ${Math.round((k.acceptance ?? 0) * 100)}% < ${g.minAcceptance * 100}%`)
+  if (k.ratedPrs < g.minRated) missing.push(`${g.minRated - k.ratedPrs} more rated PR(s) (value:N label)`)
+  else if ((k.avgValue ?? 0) < g.minAvgValue) missing.push(`average value ${(k.avgValue ?? 0).toFixed(1)} < ${g.minAvgValue}`)
+  return { resolved, acceptance: k.acceptance, rated: k.ratedPrs, avgValue: k.avgValue, met: missing.length === 0, missing }
 }
 
 export interface ScheduledPolicy {
@@ -82,7 +116,12 @@ export function kpiTrend(jobs: JobRecord[], now: Date, half = 15): Trend {
 }
 
 export function readinessLine(r: Readiness): string {
+  const sandbox = `${r.cleanNights}/${r.required} consecutive nights fully sandboxed${!r.sandboxReady && r.lastHostNight ? ` (last host-side run: night of ${r.lastHostNight})` : ''}`
+  const q = r.quality
+  const quality = q.met
+    ? `quality met (${Math.round((q.acceptance ?? 0) * 100)}% accepted, value ${q.avgValue?.toFixed(1)}/5)`
+    : `quality: ${q.missing.join(', ')}`
   return r.ready
-    ? `Night shift v2: ready — ${r.cleanNights} consecutive sandboxed nights (gate: ${r.required}).`
-    : `Night shift v2 gate: ${r.cleanNights}/${r.required} consecutive nights fully sandboxed${r.lastHostNight ? ` (last host-side run: night of ${r.lastHostNight})` : ''}.`
+    ? `Night shift v2: ready — ${sandbox}; ${quality}.`
+    : `Night shift v2 gate: ${sandbox}; ${quality}.`
 }

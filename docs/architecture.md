@@ -303,7 +303,7 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 
 **CI on agent PRs (Phase 55, reduced in Phase 81)** — `checkCIFailuresOnAgentPRs(userId)` runs before `checkMergedAgentPRs` in every 6h sync. It polls GitHub check-runs on open agent PRs, records `agent_ci_failed` once per head SHA, and escalates once to `agent_needs_human` with an in-app notification. There is no agent fix loop: the factory runs the repo's checks before it opens a PR, so a PR that still fails CI is the owner's call. `needs_human` is a blocking stage: new requests on the repo wait until the PR is merged or closed (`prFollowUpStage`: a merge is final, otherwise the newest PR event wins).
 
-**Request correlation** — every agent event carries `metadata.taskId` = the `agent_requests` id. Lifecycle reads the row for factory requests; older Nexus tasks are still projected from their events by matching `taskId`.
+**Request correlation** — every agent event carries `metadata.taskId` = the `agent_requests` id. Lifecycle reads the row for factory requests; older Nexus tasks (pre-Phase 81) are still projected from their events by matching `taskId`; no new ones are created.
 
 **Pure function extraction** — All scoring, simulation, event derivation, and dep-analysis logic lives in plain `.ts` files with no DB imports. Server actions and sync code call these functions. This pattern makes everything testable without DB mocks and keeps server action files thin.
 
@@ -348,15 +348,47 @@ Execution moved from one paid lane (Render worker → Anthropic) to a **cost lad
 
 The router picks the cheapest tier with proven success per task difficulty (simple / medium / hard), subject to a data-classification gate (private repos skip M1 by default) and action-level approvals (L4 = merge/delete/force-push always need a human). A deterministic judge plus an advisory adversarial reviewer gate every PR, and merging is always human. Since Phase 81 the factory also runs every RepoHQ-dispatched request; the Nexus lane (Render worker → Anthropic) is retired. Full design: [autonomous-factory.md](autonomous-factory.md); operator guide: [factory/README.md](../factory/README.md).
 
+## Needs you: review queue, next actions, PR value (2026-10-07)
+
+The 30-day experiments ([roadmap](roadmap.md#next-30-days-four-experiments-2026-10-07--2026-11-06)) added three owner-facing pieces. Each has its pure logic in a module with relative imports only, so the dashboard and the factory's morning email share it:
+
+| Piece | Pure logic | App (dashboard "Needs you") | Morning email |
+|-------|------------|-----------------------------|---------------|
+| Open PRs waiting for you | `src/lib/agents/open-prs.ts` (source, age, sort) | `src/lib/github/open-prs-query.ts`: one GitHub search (`is:pr is:open archived:false user:<login>`), factory PRs recognised from `agent_jobs` | `gh search prs --owner <owner>` per allowlist owner; first section, oldest first, 7+ days flagged |
+| What to do next | `src/lib/portfolio/next-actions.ts` (decision state, reasons, one action, top 3) | `src/lib/portfolio/next-actions-query.ts` | `repoSignalsOf` in `factory/lib/sink.ts` |
+| PR value | `src/lib/agents/pr-value.ts` (`value:0`…`value:5` labels) | `agent_jobs.value` → KPIs (avg value, useful PRs/night) | Reconcile creates the labels once per repo, reads them for 30 days after a merge, writes a `value` ledger entry and `agent_jobs.value` |
+
+Both channels read the same per-repo signals (`src/lib/portfolio/repo-signals.ts`: lifecycle, focus, revenue, live deployments, CI, push age, open PRs, archive score, open critical/high findings, factory allowlist). Decision states are deterministic: blocked (something valuable is broken) → build (focus or in development) → explore (idea) → reconsider (sunsetting) → archive (no focus, revenue or live URL, and idle) → maintain.
+
+---
+
+## Retired: Nexus (AI-Took-My-Job)
+
+Until Phase 81 a second executor, the Nexus service (Fastify API, BullMQ worker, Postgres and MinIO on Render, 27.7k LOC), took advisor and skill tasks to PRs. It had a success rate under 1% (2 merged of 306 queued), cost an always-on Render stack, and duplicated what the factory does with a sandbox and a judge. It was removed from this repo on 2026-10-07:
+
+| Was | Now |
+|-----|-----|
+| `queueAdvisorAction` / `queueGstackSkill` POST to Nexus `/internal/agent-tasks` | Insert an `agent_requests` row and a BullMQ job (`factory-queue.ts`) |
+| Nexus webhook (`/api/webhooks/agent-events`) writes lifecycle events | The factory writes events and traces straight to Neon |
+| Nexus worker runs `gstack-*.sh` on Render | Factory worker on the owner's Mac, Docker sandbox, cost ladder, judge |
+| Auto-chain (`suggestedNextSkill`) and the CI-fix loop | Removed; failing CI on an agent PR escalates to `needs human` |
+| `gstack-self` Vercel cron | Removed; the factory senses RepoHQ like any other allowlisted repo |
+| Render Redis owned by Nexus | Render Key Value from this repo's `render.yaml` (queue `factory`) |
+
+The `AI-Took-My-Job` repo is archived after the trial week. Legacy Nexus events remain readable in `portfolio_events`.
+
+---
+
 ## Agent Execution — Success Metrics
 
 | Metric | Target | Gate |
 |--------|--------|------|
 | Queue click-through rate | > 30% of advisor actions shown | Phase A validation |
 | Advisor accuracy (predicted vs actual delta) | > 70% | Unlock Phase B (MCP context) |
-| Advisor accuracy | > 80% | Unlock Phase E (auto-queue) |
-| Agent execution success rate | > 80% | Ongoing from Phase A.5 |
+| Advisor accuracy | > 80% | Phase E (auto-queue) is deferred; this stays a quality target |
+| Agent execution success rate | > 80% | Ongoing; measured from `agent_jobs` (factory), not the retired Nexus counters |
 | PR merged rate | > 75% | Ongoing |
+| Factory PR value (owner's `value:N` label) | average ≥ 2/5 | Night-shift gate, quality half (Experiment C) |
 | Portfolio score gained from agents | Measurable upward trend | After 2 weeks |
 | Zero production incidents | 100% | Always — draft PRs enforce this |
 | Skill report closure rate (`log_attempt` called) | 100% | Always |
