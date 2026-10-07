@@ -1,0 +1,175 @@
+/**
+ * Agent HQ requests (roadmap Phase 81, docs/agent-hq-migration-prd.md §5–§8): the pure parts
+ * shared by RepoHQ, the MCP server and the factory worker, the factory's outcome records, and
+ * the trace protocol between the worker and the cycles it spawns.
+ */
+import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import {
+  OPEN_REQUEST_STATUSES, SKILL_MODES, findingsFromReport, isAllowlisted, isOpenRequestStatus, modeForSkill,
+  newRequestRow, queuedEventValues, requestStatusLabel, stageForRequest, MAX_OBJECTIVE_CHARS,
+} from '@/lib/agents/factory-request-utils'
+import { BLOCKING_STAGES, TERMINAL_STAGES } from '@/lib/agents/lifecycle-utils'
+import { requestOutcomeRecords, resolvedFromRow, toOwnerRequest } from '../../factory/lib/agent-requests'
+import { ownerOutcome } from '../../factory/lib/owner-requests'
+import { Tracer, formatProtocolLine, parseProtocolLine, RESULT_PREFIX, TRACE_PREFIX } from '../../factory/lib/trace'
+import { splitStatements } from '../../factory/bin/migrate'
+import type { AttemptEntry, LedgerEntry } from '../../factory/lib/ledger'
+
+const now = new Date('2026-10-07T10:00:00Z')
+
+describe('skills → request modes (PRD §8)', () => {
+  it('fix skills open PRs, report skills come back as findings, canary has no factory equivalent', () => {
+    expect(modeForSkill('ship')).toBe('fix')
+    expect(modeForSkill('qa')).toBe('fix')
+    expect(modeForSkill('document-release')).toBe('fix')
+    for (const s of ['review', 'qa-only', 'health', 'investigate', 'retro'] as const) expect(modeForSkill(s)).toBe('report')
+    expect(modeForSkill('canary')).toBeNull()
+    expect(Object.keys(SKILL_MODES)).toHaveLength(9)
+  })
+})
+
+describe('request status → lifecycle stage (PRD §7)', () => {
+  it('open requests block a new one on the repo; resolved ones do not', () => {
+    expect(BLOCKING_STAGES.has(stageForRequest('queued'))).toBe(true)
+    expect(BLOCKING_STAGES.has(stageForRequest('running'))).toBe(true)
+    expect(BLOCKING_STAGES.has(stageForRequest('pr'))).toBe(true) // pr_ready until merged/closed
+    for (const s of ['verified', 'reported', 'rejected', 'failed', 'cancelled']) {
+      expect(TERMINAL_STAGES.has(stageForRequest(s))).toBe(true)
+    }
+    expect(stageForRequest('verified')).toBe('verified')
+    expect(stageForRequest('reported')).toBe('report_ready')
+    expect(stageForRequest('rejected')).toBe('failed')
+    expect(stageForRequest('cancelled')).toBe('idle')
+    expect(stageForRequest('something-new')).toBe('idle')
+  })
+
+  it('open statuses and labels', () => {
+    expect(OPEN_REQUEST_STATUSES).toEqual(['queued', 'running'])
+    expect(isOpenRequestStatus('running')).toBe(true)
+    expect(isOpenRequestStatus('pr')).toBe(false)
+    expect(requestStatusLabel('verified')).toMatch(/held/)
+    expect(requestStatusLabel('mystery')).toBe('mystery')
+  })
+})
+
+describe('new request rows and their queued event', () => {
+  const base = { id: 'req-1', userId: 'u1', repoId: 7, repo: 'o/r', mode: 'fix' as const, skill: 'ship' as const, objective: '  add a dark mode toggle  ', source: 'ui-skill' as const, now }
+
+  it('starts queued, trims and caps the objective', () => {
+    const row = newRequestRow(base)
+    expect(row).toMatchObject({ id: 'req-1', status: 'queued', objective: 'add a dark mode toggle', skill: 'ship', createdAt: now })
+    expect(newRequestRow({ ...base, objective: 'x'.repeat(10_000) }).objective).toHaveLength(MAX_OBJECTIVE_CHARS)
+  })
+
+  it('the queued event carries the request id as taskId (what lifecycle, accuracy and PR detection key on)', () => {
+    const e = queuedEventValues(base, 'Queued: dark mode', { impactType: 'health', predictedDelta: '+5' })
+    expect(e.eventType).toBe('agent_task_queued')
+    expect(e.metadata).toMatchObject({ taskId: 'req-1', executor: 'factory', mode: 'fix', source: 'ui-skill', skillName: 'ship', impactType: 'health' })
+  })
+
+  it('allowlist matching is case-insensitive', () => {
+    expect(isAllowlisted('SmithDaveDesign/Github-HQ', ['smithdavedesign/github-hq'])).toBe(true)
+    expect(isAllowlisted('someone/else', ['smithdavedesign/github-hq'])).toBe(false)
+  })
+})
+
+describe('findingsFromReport', () => {
+  it('takes the bullets of the Findings section only', () => {
+    const report = [
+      '## Summary', 'Two problems.', '',
+      '## Findings', '- src/a.ts:12 — unchecked null', '* src/b.ts:3 — secret in code', '1. README: wrong command', '',
+      '## Suggested next step', '- queue /ship to fix a.ts',
+    ].join('\n')
+    expect(findingsFromReport(report)).toEqual(['src/a.ts:12 — unchecked null', 'src/b.ts:3 — secret in code', 'README: wrong command'])
+  })
+
+  it('is empty without a Findings section', () => {
+    expect(findingsFromReport(null)).toEqual([])
+    expect(findingsFromReport('## Root cause\nx')).toEqual([])
+  })
+})
+
+describe('factory side: rows → owner tasks → outcome records', () => {
+  const row = { id: 'req-9', repo: 'o/r', repoId: 3, objective: 'review auth', source: 'ui-skill', mode: 'report', skill: 'review', createdAt: now }
+
+  it('a stored request becomes an owner task with its mode and skill', () => {
+    expect(toOwnerRequest(row)).toEqual({ taskId: 'req-9', repo: 'o/r', task: 'review auth', source: 'ui-skill', requestedAt: now.toISOString(), mode: 'report', skill: 'review', stored: true })
+    expect(toOwnerRequest({ ...row, mode: 'weird', skill: null }).mode).toBe('fix')
+  })
+
+  const attempts = (...over: Partial<AttemptEntry>[]): LedgerEntry[] => over.map((o, i) => ({
+    type: 'attempt', id: `a${i}`, runId: 'r', at: 't', repo: 'o/r', kind: 'owner-report', taskTier: 2, tier: 'M1', model: 'm',
+    harness: 'claude-code', outcome: 'verified', reason: '', exploring: false, durationMs: 1, costUsd: 0, inputTokens: 0,
+    outputTokens: 0, ownerTaskId: 'req-9', ...o,
+  }) as AttemptEntry)
+
+  it("ownerOutcome: 'reported' carries the findings report", () => {
+    const o = ownerOutcome({ ownerTaskId: 'req-9', result: 'reported', ledger: attempts({ findings: '## Findings\n- a' , reason: 'investigated' }) })
+    expect(o).toEqual({ status: 'reported', findings: '## Findings\n- a', reason: 'investigated' })
+    expect(ownerOutcome({ ownerTaskId: 'req-9', result: 'deferred', ledger: [] })).toBeNull()
+  })
+
+  const req = resolvedFromRow(row)
+
+  it('pr → agent_pr_created (taskId = request id, prUrl) + a PR-ready notification', () => {
+    const r = requestOutcomeRecords('u1', { ...req, mode: 'fix', skill: 'ship' }, { status: 'pr', prUrl: 'https://github.com/o/r/pull/5' }, 'run-1')
+    expect(r.events).toHaveLength(1)
+    expect(r.events[0]).toMatchObject({ eventType: 'agent_pr_created', repoId: 3, metadata: { taskId: 'req-9', prUrl: 'https://github.com/o/r/pull/5', executor: 'factory' } })
+    expect(r.notifications[0]).toMatchObject({ eventType: 'agent_pr_ready' })
+  })
+
+  it('reported → agent_skill_report with the parsed findings list', () => {
+    const r = requestOutcomeRecords('u1', req, { status: 'reported', findings: '## Findings\n- src/x.ts:1 — bug\n## Suggested next step\n- ship' }, 'run-1')
+    expect(r.events[0]).toMatchObject({ eventType: 'agent_skill_report', metadata: { taskId: 'req-9', skillName: 'review', findings: ['src/x.ts:1 — bug'], outcome: 'no-changes' } })
+    expect(r.notifications).toEqual([])
+  })
+
+  it('rejected / failed → agent_execution_failed with the reason + a failure notification', () => {
+    const r = requestOutcomeRecords('u1', req, { status: 'rejected', reason: 'diff too large' }, 'run-1')
+    expect(r.events[0]).toMatchObject({ eventType: 'agent_execution_failed', description: 'diff too large', metadata: { requestStatus: 'rejected' } })
+    expect(r.notifications[0]).toMatchObject({ eventType: 'agent_failed' })
+  })
+
+  it('verified writes nothing extra (lifecycle reads the row)', () => {
+    expect(requestOutcomeRecords('u1', req, { status: 'verified', reason: 'held' }, 'run-1')).toEqual({ events: [], notifications: [] })
+  })
+})
+
+describe('trace protocol (worker ↔ cycle child process)', () => {
+  it('round-trips trace and result lines; ignores plain log text', () => {
+    const t = { at: now.toISOString(), step: 'clone', status: 'ok' as const, durationMs: 1200 }
+    expect(parseProtocolLine(formatProtocolLine(TRACE_PREFIX, t))).toEqual({ kind: 'trace', value: t })
+    expect(parseProtocolLine(formatProtocolLine(RESULT_PREFIX, { status: 'deferred', reason: 'quota' }))).toEqual({ kind: 'result', value: { status: 'deferred', reason: 'quota' } })
+    expect(parseProtocolLine('[factory 10:00:00] o/r: cloning')).toBeNull()
+    expect(parseProtocolLine('::trace::{not json')).toBeNull()
+    expect(parseProtocolLine('::result::{"nostatus":1}')).toBeNull()
+  })
+
+  it('Tracer prints steps (with the request id) and spans record duration and failures', async () => {
+    const lines: string[] = []
+    const tracer = new Tracer(null, null, 'req-1', l => lines.push(l))
+    tracer.step('claimed', 'info', 'x'.repeat(2_000))
+    await tracer.span('checks', async () => 3, n => ({ detail: `${n} checks`, data: { n } }))
+    await expect(tracer.span('clone', async () => { throw new Error('boom') })).rejects.toThrow('boom')
+    await tracer.flush()
+    const parsed = lines.map(l => parseProtocolLine(l)?.value as { step: string; status: string; detail?: string; requestId?: string; durationMs?: number })
+    expect(parsed.map(p => `${p.step}:${p.status}`)).toEqual(['claimed:info', 'checks:start', 'checks:ok', 'clone:start', 'clone:fail'])
+    expect(parsed[0].detail).toHaveLength(1_000)
+    expect(parsed[0].requestId).toBe('req-1')
+    expect(parsed[2].detail).toBe('3 checks')
+    expect(typeof parsed[2].durationMs).toBe('number')
+    expect(parsed[4].detail).toBe('boom')
+  })
+})
+
+describe('factory:migrate 0002 (Agent HQ queue)', () => {
+  it('is idempotent statement by statement', () => {
+    const stmts = splitStatements(readFileSync(path.resolve(__dirname, '../../factory/sql/0002_agent_hq_queue.sql'), 'utf8'))
+    expect(stmts).toHaveLength(15)
+    expect(stmts.filter(s => s.startsWith('CREATE TABLE IF NOT EXISTS'))).toHaveLength(3)
+    expect(stmts.filter(s => /^DO \$\$[\s\S]*END \$\$;$/.test(s))).toHaveLength(4)
+    expect(stmts.every(s => /IF NOT EXISTS/.test(s))).toBe(true)
+  })
+})

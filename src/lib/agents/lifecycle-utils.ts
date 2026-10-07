@@ -12,6 +12,7 @@ export type AgentLifecycleStage =
   | 'merged'
   | 'rejected'      // PR closed without merging — terminal, not actionable
   | 'report_ready'
+  | 'verified'      // factory request passed the judge but no PR: owner-requested is at stage `report`
   | 'failed'
   | 'timed_out'
 
@@ -22,7 +23,7 @@ export const BLOCKING_STAGES = new Set<AgentLifecycleStage>([
 
 /** Terminal stages — allow new queue or retry */
 export const TERMINAL_STAGES = new Set<AgentLifecycleStage>([
-  'idle', 'merged', 'rejected', 'report_ready', 'failed', 'timed_out', 'needs_human', 'awaiting_approval',
+  'idle', 'merged', 'rejected', 'report_ready', 'verified', 'failed', 'timed_out', 'needs_human', 'awaiting_approval',
 ])
 
 export const DEFAULT_MAX_AUTONOMOUS_RETRIES = 3

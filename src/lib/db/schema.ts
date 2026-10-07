@@ -321,9 +321,91 @@ export const agentJobs = pgTable('agent_jobs', {
   humanCommits: integer('human_commits'),
   startedAt: timestamp('started_at', { mode: 'date' }).notNull(),
   resolvedAt: timestamp('resolved_at', { mode: 'date' }),
+  /** The agent_requests row this attempt served (Phase 81); null for sensed work. */
+  requestId: text('request_id'),
 }, (table) => [
   index('agent_jobs_user_started_idx').on(table.userId, table.startedAt),
+  index('agent_jobs_request_idx').on(table.requestId),
 ])
+
+// ─── Agent HQ queue (Phase 81 — docs/agent-hq-migration-prd.md §5) ───────────
+// Mirrored for the factory's own migration runner in factory/sql/0002_agent_hq_queue.sql.
+
+/**
+ * One row per request to the factory, from any source (Run agent, gstack launcher, auto-dispatch,
+ * MCP, OpenClaw). The source of truth for what was asked and how it ended: the BullMQ job only
+ * carries this id (jobId = id), and every related portfolio_events row has metadata.taskId = id.
+ *   status: queued → running → pr | verified | reported | rejected | failed;  queued → cancelled;
+ *           running → queued when deferred (free quota out, on battery, daily PR cap)
+ */
+export const agentRequests = pgTable('agent_requests', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  repoId: integer('repo_id').references(() => repositories.id, { onDelete: 'set null' }),
+  repo: text('repo').notNull(),                 // owner/name — must be on the factory allowlist
+  mode: text('mode').notNull(),                 // fix | report
+  skill: text('skill'),                         // gstack skill it came from (UI label), if any
+  objective: text('objective').notNull(),
+  source: text('source').notNull(),             // ui-advisor | ui-skill | auto-dispatch | mcp | openclaw
+  status: text('status').notNull().default('queued'),
+  prUrl: text('pr_url'),
+  findings: text('findings'),                   // report mode: the structured report (markdown)
+  reason: text('reason'),                       // why it failed / was rejected / is waiting
+  runId: text('run_id'),                        // factory ledger run that served it
+  attempts: integer('attempts').notNull().default(0), // times the worker picked it up
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  claimedAt: timestamp('claimed_at', { mode: 'date' }),
+  resolvedAt: timestamp('resolved_at', { mode: 'date' }),
+  updatedAt: timestamp('updated_at', { mode: 'date' }).defaultNow().notNull(),
+}, (table) => [
+  index('agent_requests_user_status_idx').on(table.userId, table.status),
+  index('agent_requests_repo_created_idx').on(table.repoId, table.createdAt),
+])
+
+export type AgentRequest = typeof agentRequests.$inferSelect
+
+/**
+ * One row per automated run — factory jobs (cycle, request, report, scout) and the Vercel cron
+ * routes alike. The heartbeat behind the Agents page and the freshness check. System-wide cron
+ * runs have no user.
+ */
+export const automationRuns = pgTable('automation_runs', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),        // factory-cycle | factory-request | factory-report | factory-scout | cron:<route>
+  trigger: text('trigger').notNull(),  // schedule | manual | request
+  requestId: text('request_id'),
+  jobId: text('job_id'),               // BullMQ job id
+  status: text('status').notNull(),    // running | ok | skipped | failed
+  summary: jsonb('summary'),
+  error: text('error'),
+  startedAt: timestamp('started_at', { mode: 'date' }).defaultNow().notNull(),
+  finishedAt: timestamp('finished_at', { mode: 'date' }),
+}, (table) => [
+  index('automation_runs_started_idx').on(table.startedAt),
+  index('automation_runs_kind_started_idx').on(table.kind, table.startedAt),
+])
+
+export type AutomationRun = typeof automationRuns.$inferSelect
+
+/** Step timeline of a run (claimed → clone → checks → tier attempt → judge → PR …). Kept 90 days. */
+export const traceEvents = pgTable('trace_events', {
+  id: serial('id').primaryKey(),
+  runId: text('run_id').notNull().references(() => automationRuns.id, { onDelete: 'cascade' }),
+  requestId: text('request_id'),
+  jobId: text('job_id'),               // agent_jobs.id of the attempt this step belongs to
+  at: timestamp('at', { mode: 'date' }).defaultNow().notNull(),
+  step: text('step').notNull(),
+  status: text('status').notNull(),    // start | ok | fail | info
+  detail: text('detail'),
+  data: jsonb('data'),
+  durationMs: integer('duration_ms'),
+}, (table) => [
+  index('trace_events_run_at_idx').on(table.runId, table.at),
+  index('trace_events_request_idx').on(table.requestId),
+])
+
+export type TraceEvent = typeof traceEvents.$inferSelect
 
 export const healthScoreHistory = pgTable('health_score_history', {
   id: serial('id').primaryKey(),

@@ -25,7 +25,14 @@ function db(cfg: FactoryConfig): Db | null {
   return cached
 }
 
-async function repoIdFor(d: Db, userId: string, fullName: string): Promise<number | null> {
+/** The RepoHQ connection for factory modules that write Agent HQ state (requests, runs, traces). */
+export function sinkDb(cfg: FactoryConfig): Db | null {
+  return db(cfg)
+}
+
+export type SinkDb = Db
+
+export async function repoIdFor(d: Db, userId: string, fullName: string): Promise<number | null> {
   const repo = await d.query.repositories.findFirst({
     where: and(eq(schema.repositories.userId, userId), ilike(schema.repositories.fullName, fullName)),
     columns: { id: true },
@@ -33,7 +40,7 @@ async function repoIdFor(d: Db, userId: string, fullName: string): Promise<numbe
   return repo?.id ?? null
 }
 
-async function safely(label: string, fn: () => Promise<void>): Promise<void> {
+export async function safely(label: string, fn: () => Promise<void>): Promise<void> {
   try {
     await fn()
   } catch (err) {
@@ -160,6 +167,7 @@ export function agentJobValues(a: AttemptEntry, userId: string, repoId: number |
     reported: a.reported ?? false, prUrl: a.prUrl ?? null,
     adversaryModel: a.adversary?.model ?? null, adversaryVerdict: a.adversary?.verdict ?? null,
     startedAt: new Date(a.at),
+    requestId: a.ownerTaskId ?? null,
   }
 }
 

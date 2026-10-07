@@ -22,6 +22,12 @@ export interface OwnerRequest {
   source?: string
   thread?: string | null
   status?: string
+  /** Agent HQ requests (factory/lib/agent-requests.ts): `report` runs a read-only investigation. JSONL requests are `fix`. */
+  mode?: 'fix' | 'report'
+  /** The gstack skill an Agent HQ request came from (shapes the prompt). */
+  skill?: string
+  /** Already an agent_requests row (Agent HQ); JSONL requests are mirrored in when picked up. */
+  stored?: boolean
 }
 
 export function queuePath(home: string): string {
@@ -68,41 +74,68 @@ export function pendingOwnerRequests(home: string, ledger: LedgerEntry[]): Owner
 /** runLadder's verdict → the status OpenClaw reports back to the owner on WhatsApp. */
 export type LadderResult = 'pr' | 'verified' | 'reported' | 'deferred' | 'failed' | 'stop'
 
+/** Terminal outcome of one owner task, for the ledger (OpenClaw) and Agent HQ's agent_requests row. */
+export interface OwnerOutcome {
+  status: 'pr' | 'verified' | 'reported' | 'rejected' | 'failed'
+  prUrl?: string
+  reason?: string
+  /** report mode: the structured report the investigation produced. */
+  findings?: string
+}
+
 /**
- * Write the terminal `owner_result` the front door reports. `deferred` means free quota
- * ran out this cycle — leave the request pending so the next cycle retries it (returns false,
- * nothing written). Everything else is terminal. prUrl/reason are resolved from the attempt
- * entries this task already wrote to the ledger.
+ * runLadder's verdict → the owner task's terminal outcome; null for `deferred` (free quota ran
+ * out this cycle — the request stays pending and the next cycle retries it). prUrl, reason and
+ * findings are resolved from the attempt entries this task already wrote to the ledger.
  *
- *   result 'pr'                 → ownerStatus 'pr'       (draft PR opened; prUrl carried through)
- *   result 'verified'           → ownerStatus 'verified' (judge passed but held: stage `report` / dry run)
- *   result 'failed' | 'stop'    → ownerStatus 'failed'   (no tier could land it)
- *   anything else (no PR)        → ownerStatus 'rejected' (judge blocked it; reason = its verdict)
+ *   result 'pr'                 → 'pr'       (draft PR opened; prUrl carried through)
+ *   result 'verified'           → 'verified' (judge passed but held: stage `report` / dry run)
+ *   result 'reported'           → 'reported' (report mode: read-only investigation with findings)
+ *   result 'failed' | 'stop'    → 'failed'   (no tier could land it)
+ *   anything else (no PR)        → 'rejected' (judge blocked it; reason = its verdict)
  */
-export function recordOwnerResult(
-  home: string,
-  opts: { ownerTaskId: string; repo: string; runId: string; result: LadderResult; ledger: LedgerEntry[]; now: Date },
-): boolean {
-  if (opts.result === 'deferred') return false
+export function ownerOutcome(opts: { ownerTaskId: string; result: LadderResult; ledger: LedgerEntry[] }): OwnerOutcome | null {
+  if (opts.result === 'deferred') return null
   const mine = opts.ledger.filter(
     (e): e is AttemptEntry => e.type === 'attempt' && e.ownerTaskId === opts.ownerTaskId,
   )
   const withPr = mine.find(a => a.prUrl)
-  const lastReason = mine.length > 0 ? mine[mine.length - 1].reason : ''
-  const ownerStatus: OwnerResultEntry['ownerStatus'] =
+  const last = mine.length > 0 ? mine[mine.length - 1] : null
+  const lastReason = last?.reason ?? ''
+  if (opts.result === 'reported' && !withPr) {
+    const report = [...mine].reverse().find(a => a.findings)
+    return { status: 'reported', ...(report?.findings ? { findings: report.findings } : {}), reason: report?.reason ?? lastReason }
+  }
+  const status: OwnerOutcome['status'] =
     withPr ? 'pr'
       : opts.result === 'verified' ? 'verified'
       : opts.result === 'failed' || opts.result === 'stop' ? 'failed'
       : 'rejected'
   const reason =
-    ownerStatus === 'verified'
+    status === 'verified'
       ? "verified, held — owner-requested is at stage 'report' (or a dry run); promote it to 'pr' to open the PR"
       : lastReason || `${opts.result} (no verified change)`
+  return { status, ...(withPr?.prUrl ? { prUrl: withPr.prUrl } : {}), ...(status !== 'pr' ? { reason } : {}) }
+}
+
+/**
+ * Write the terminal `owner_result` the front door reports. `deferred` means free quota
+ * ran out this cycle — leave the request pending so the next cycle retries it (returns false,
+ * nothing written). Everything else is terminal (see ownerOutcome for the mapping; a report
+ * outcome is delivered as `verified`, the closest status OpenClaw knows).
+ */
+export function recordOwnerResult(
+  home: string,
+  opts: { ownerTaskId: string; repo: string; runId: string; result: LadderResult; ledger: LedgerEntry[]; now: Date },
+): boolean {
+  const outcome = ownerOutcome(opts)
+  if (!outcome) return false
+  const ownerStatus: OwnerResultEntry['ownerStatus'] = outcome.status === 'reported' ? 'verified' : outcome.status
   const entry: OwnerResultEntry = {
     type: 'owner_result', runId: opts.runId, at: opts.now.toISOString(),
     repo: opts.repo, ownerTaskId: opts.ownerTaskId, ownerStatus,
-    ...(withPr?.prUrl ? { prUrl: withPr.prUrl } : {}),
-    ...(ownerStatus !== 'pr' ? { reason } : {}),
+    ...(outcome.prUrl ? { prUrl: outcome.prUrl } : {}),
+    ...(outcome.reason && ownerStatus !== 'pr' ? { reason: outcome.reason } : {}),
   }
   appendEntry(home, entry)
   return true
