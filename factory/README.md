@@ -78,7 +78,18 @@ Since Phase 81 the factory runs as one long-lived BullMQ worker (`factory/worker
 
 Before each job it checks the gates: `PAUSE` file (wait 15 min), the run lock (wait 5 min), AC power and Docker (a cycle is skipped; a request waits 15 min). A request that hits an environment problem (LiteLLM down, PR cap reached) is **deferred**: back to `queued` with the reason, and retried later. Only its own failures count, and the third one fails it. Nothing is ever re-routed to a paid model.
 
-Every job runs in a fresh child process under `caffeinate -ims` (its log is `~/.repohq-factory/logs/<job>-<time>-<id>.log`). The child prints `::trace::` lines that become `trace_events` rows and live BullMQ progress, and one `::result::` line that decides the request's fate. Every job is an `automation_runs` row. RepoHQ's **Agents** page (`/agent-performance`) shows all of it: worker online/paused/AC/Docker (a heartbeat in Redis every 60 s), queue counts, schedules, recent runs, requests and each one's step trace, with owner-only Run now, Pause/Resume, Cancel and Retry.
+Every job runs in a fresh child process under `caffeinate -ims` (its log is `~/.repohq-factory/logs/<job>-<time>-<id>.log`). The child prints `::trace::` lines that become `trace_events` rows and live BullMQ progress, and one `::result::` line that decides the request's fate. Every job is an `automation_runs` row. RepoHQ's **Agents** page (`/agent-performance`) shows all of it: the worker's status, queue counts, schedules, recent runs, requests and each one's step trace, with owner-only Run now, Pause/Resume, Cancel and Retry.
+
+The worker refreshes a status record in Redis every 30 s (kept for a week, so the page knows when it was last seen). The page tells four cases apart (`factory/lib/worker-state.ts`):
+
+| Says | Means | Do |
+|---|---|---|
+| **online** | Running and able to work. PAUSE and battery show as flags | — |
+| **not working** — why | Running but blocked: Docker is down, requests can't run (FACTORY_USER_ID missing), or launchd keeps restarting it (3+ starts in 15 min) | Fix what it says; `~/.repohq-factory/logs/launchd-worker.err` |
+| **off** | Silent for 3+ min (the Mac is asleep, shut down or offline), or stopped cleanly (shutdown, reinstall) | Nothing: requests wait |
+| **not set up** | No status ever written | `bash factory/bin/install-launchd.sh` |
+
+It heals itself (`factory/lib/worker-health.ts`). Each status write has a 10 s timeout. A failed write reconnects. After five failures in a row, an idle worker exits for launchd to restart it. So does a worker whose queue has had jobs waiting for 10 minutes with nothing running. This is because Render's Key Value proxy has dropped a quiet connection without closing it: commands on it then waited forever, and the page called a working worker offline (2026-10-07).
 
 Neon is the source of truth and Redis only wakes the worker: on start and after every cycle it re-adds a job for any open request whose job is missing, so a lost Redis or a failed enqueue costs a delay, not a request. OpenClaw's `queue/owner-requests.jsonl` still works; those requests are mirrored into the same table.
 

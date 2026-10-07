@@ -51,8 +51,8 @@ beforeAll(async () => {
 afterAll(async () => {
   await queue?.close()
   // The connection the Agents page data keeps (factory/lib/queue.ts withSharedQueue).
-  const kept = (globalThis as { __agentHqSharedQueues?: Map<string, Queue> }).__agentHqSharedQueues
-  for (const q of kept?.values() ?? []) await q.close()
+  const kept = (globalThis as { __agentHqSharedQueues?: Map<string, { queue: Queue }> }).__agentHqSharedQueues
+  for (const { queue: q } of kept?.values() ?? []) await q.close()
   await closePools()
 })
 

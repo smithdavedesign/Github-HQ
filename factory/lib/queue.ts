@@ -14,9 +14,19 @@ import { Queue, type ConnectionOptions, type JobsOptions } from 'bullmq'
 export const QUEUE_NAME = 'factory'
 /** Redis key namespace (BullMQ's `prefix`), so the queue never collides with anything else. */
 export const QUEUE_PREFIX = 'agent-hq'
-/** Liveness record the worker refreshes; it expires on its own when the worker stops. */
+/**
+ * The status record the worker refreshes. It's kept for a week instead of expiring with the
+ * heartbeat, so the Agents page can say when the worker was last seen and whether it stopped on
+ * purpose, rather than just that it's gone.
+ */
 export const WORKER_STATUS_KEY = `${QUEUE_PREFIX}:factory-worker`
-export const WORKER_STATUS_TTL_SECONDS = 180
+export const WORKER_STATUS_KEEP_SECONDS = 7 * 86_400
+/**
+ * How often the worker refreshes it. Kept well under a minute: Render's Key Value proxy has been
+ * seen dropping a connection that went quiet for about a minute without telling the client, after
+ * which every command on it waits forever (2026-10-07).
+ */
+export const WORKER_HEARTBEAT_MS = 30_000
 
 export const JOB_NAMES = ['request', 'cycle', 'report', 'scout'] as const
 export type FactoryJobName = typeof JOB_NAMES[number]
@@ -84,9 +94,13 @@ export function producerConnection(url: string): ConnectionOptions {
   return { ...redisOptionsFromUrl(url), enableOfflineQueue: false, maxRetriesPerRequest: 1, connectTimeout: 5_000 }
 }
 
-/** Connection for the long-running worker: BullMQ requires maxRetriesPerRequest null for blocking calls. */
+/**
+ * Connection for the long-running worker: BullMQ requires maxRetriesPerRequest null for blocking
+ * calls. TCP keepalive notices a connection whose other end is gone; a proxy that keeps the TCP
+ * side open needs the worker's own timeouts (worker.ts heartbeat).
+ */
 export function workerConnection(url: string): ConnectionOptions {
-  return { ...redisOptionsFromUrl(url), maxRetriesPerRequest: null }
+  return { ...redisOptionsFromUrl(url), maxRetriesPerRequest: null, keepAlive: 30_000 }
 }
 
 function openQueue(url: string): Queue {
@@ -96,8 +110,8 @@ function openQueue(url: string): Queue {
   return queue
 }
 
-/** Rejects after `timeoutMs` so a slow Redis can't hold up a page or an action. */
-async function withinMs<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+/** Rejects after `timeoutMs` so a slow Redis can't hold up a page, an action or the worker. */
+export async function withinMs<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
@@ -124,58 +138,45 @@ export async function withQueue<T>(url: string, fn: (queue: Queue) => Promise<T>
 }
 
 /** One queue per Redis URL per process, on globalThis so Next.js dev reloads reuse it too. */
-function sharedQueues(): Map<string, Queue> {
-  const g = globalThis as { __agentHqSharedQueues?: Map<string, Queue> }
+function sharedQueues(): Map<string, { queue: Queue; usedAt: number }> {
+  const g = globalThis as { __agentHqSharedQueues?: Map<string, { queue: Queue; usedAt: number }> }
   g.__agentHqSharedQueues ??= new Map()
   return g.__agentHqSharedQueues
 }
+
+/** A shared connection quiet for longer than this is reopened rather than trusted (WORKER_HEARTBEAT_MS). */
+const SHARED_IDLE_MS = 45_000
 
 /**
  * Like `withQueue`, but on a connection the process keeps: for reads a page repeats, like the
  * Agents page's poll (every 15 s per open tab; a new connection would cost a TLS handshake to
  * Render on every poll). Opened on first use, never at import (`next build` has no Redis). A call
  * that fails or times out drops it, since it may be half-open after the function was frozen or
- * still waiting on a Redis that's down, and the next call connects afresh.
+ * still waiting on a Redis that's down, and the next call connects afresh. So does a connection
+ * that sat idle past SHARED_IDLE_MS (the tab was closed), which Render's proxy may have dropped.
  */
 export async function withSharedQueue<T>(url: string, fn: (queue: Queue) => Promise<T>, timeoutMs = 8_000): Promise<T> {
   const queues = sharedQueues()
-  let queue = queues.get(url)
-  if (!queue) {
-    queue = openQueue(url)
-    queues.set(url, queue)
+  let entry = queues.get(url)
+  if (entry && Date.now() - entry.usedAt > SHARED_IDLE_MS) {
+    queues.delete(url)
+    void entry.queue.close().catch(() => {})
+    entry = undefined
   }
+  if (!entry) {
+    entry = { queue: openQueue(url), usedAt: Date.now() }
+    queues.set(url, entry)
+  }
+  const { queue } = entry
   try {
-    return await withinMs(fn(queue), timeoutMs)
+    const result = await withinMs(fn(queue), timeoutMs)
+    entry.usedAt = Date.now()
+    return result
   } catch (err) {
-    if (queues.get(url) === queue) queues.delete(url)
+    if (queues.get(url)?.queue === queue) queues.delete(url)
     await queue.close().catch(() => {})
     throw err
   }
 }
 
-/** What the worker publishes about itself under WORKER_STATUS_KEY (read by the Agents page). */
-export interface WorkerStatus {
-  host: string
-  pid: number
-  startedAt: string
-  lastSeenAt: string
-  /** ~/.repohq-factory/PAUSE exists. */
-  pausedFile: boolean
-  /** null when unknown (not macOS). */
-  onAc: boolean | null
-  /** null when the sandbox is off (Docker isn't needed). */
-  dockerUp: boolean | null
-  /** Deployed commit of the worker (install-launchd.sh pins a checkout). */
-  version: string | null
-  activeJob: { id: string; name: string; since: string } | null
-}
-
-export function parseWorkerStatus(raw: string | null): WorkerStatus | null {
-  if (!raw) return null
-  try {
-    const s = JSON.parse(raw) as Partial<WorkerStatus>
-    return typeof s.host === 'string' && typeof s.lastSeenAt === 'string' ? (s as WorkerStatus) : null
-  } catch {
-    return null
-  }
-}
+export { parseWorkerStatus, type WorkerStatus } from './worker-state'

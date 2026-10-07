@@ -67,9 +67,21 @@ describe('AgentHqPanel', () => {
     expect(html.match(/Retry/g)?.length).toBe(1) // only the rejected one
   })
 
-  it('says the worker is offline when its status is stale or missing', () => {
-    expect(render({ ...base, worker: { ...base.worker!, lastSeenAt: '2026-10-07T11:50:00.000Z' } })).toContain('Worker offline')
-    expect(render({ ...base, worker: null })).toContain('Worker offline')
+  it('tells off (asleep or stopped: requests wait) apart from not working (needs fixing)', () => {
+    const asleep = render({ ...base, worker: { ...base.worker!, lastSeenAt: '2026-10-07T11:50:00.000Z', onAc: false } })
+    expect(asleep).toContain('Worker off</span> — last seen 10m ago: the Mac is asleep, shut down or offline.')
+    expect(asleep).not.toContain('not working')
+    expect(asleep).not.toContain('>on battery<') // a stale record's flags aren't shown as current
+
+    const stopped = render({ ...base, worker: { ...base.worker!, stoppedAt: '2026-10-07T11:55:00.000Z', stopReason: 'SIGTERM' } })
+    expect(stopped).toContain('Worker off</span> — stopped 5m ago: the Mac shut down or restarted, or the worker was reinstalled.')
+
+    const broken = render({ ...base, worker: { ...base.worker!, problem: 'requests can\'t run: FACTORY_USER_ID isn\'t set in ~/.repohq-factory/env — scheduled cycles still run' } })
+    expect(broken).toContain('Worker not working</span> — requests can&#x27;t run: FACTORY_USER_ID')
+    expect(broken).toContain('dave-mbp')
+
+    expect(render({ ...base, worker: { ...base.worker!, dockerUp: false } })).toMatch(/Worker not working<\/span> — Docker isn&#x27;t running/)
+    expect(render({ ...base, worker: null })).toContain('Worker not set up')
   })
 
   it('degrades to database-only views without Redis', () => {
@@ -97,11 +109,11 @@ describe('AgentHqPanel', () => {
     }
   })
 
-  it('shows flags for PAUSE, battery and Docker', () => {
+  it('shows flags for PAUSE and battery, and Docker down as not working', () => {
     const html = render({ ...base, worker: { ...base.worker!, pausedFile: true, onAc: false, dockerUp: false }, queue: { ...base.queue!, paused: true } })
     expect(html).toContain('PAUSE file')
-    expect(html).toContain('on battery')
-    expect(html).toContain('Docker down')
+    expect(html).toContain('>on battery<')
+    expect(html).toContain('Worker not working</span> — Docker isn&#x27;t running')
     expect(html).toContain('queue paused')
     expect(html).toMatch(/Resume queue/)
   })
