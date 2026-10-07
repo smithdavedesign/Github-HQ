@@ -263,6 +263,9 @@ export function filterTasks(tasks: FactoryTask[], repo: string, openKinds: Set<s
 }
 
 const RULES = [
+  // A free model read "use this URL for git clone" as an instruction, tried to clone, was refused
+  // by the sandbox and gave up asking for approval (2026-10-07).
+  'The repository is already checked out in your current working directory. Edit the files there; do not clone, fetch or download it.',
   'Make the smallest change that fixes the problem. Do not refactor unrelated code.',
   'Never silence checks: no @ts-ignore, @ts-nocheck, eslint-disable, `any` casts to dodge errors, or .skip/.only in tests.',
   'Do not edit lockfiles, CI workflows (.github/), environment files, or dependencies.',
@@ -275,7 +278,7 @@ export function buildPrompt(task: FactoryTask, tier: ModelTier, pkg: PackageJson
     return [
       task.objective,
       `Project: ${pkg?.name ?? 'unknown'}${pkg?.description ? ` — ${pkg.description}` : ''}.`,
-      ...(repo ? [`Repository: https://github.com/${repo} (use this exact URL for git clone).`] : []),
+      ...(repo ? [`Repository URL: https://github.com/${repo}. Use this exact URL in any \`git clone\` instruction you write. The repository is already checked out in your working directory: do not clone it.`] : []),
       'Never write placeholders such as "yourusername" or "<your-...>" — use real values or leave that detail out.',
       scripts.length > 0 ? `Available npm scripts (only document these, never invent commands): ${scripts.join(', ')}.` : 'There are no npm scripts — do not invent any.',
       'ADD the missing section(s). Do not delete, rename or rewrite any existing line — existing content must stay.',
@@ -287,7 +290,7 @@ export function buildPrompt(task: FactoryTask, tier: ModelTier, pkg: PackageJson
   if (task.kind === 'owner-requested') {
     const lines = [
       task.objective,
-      ...(repo ? ['', `Repository: https://github.com/${repo} (use this exact URL for git clone).`] : []),
+      ...(repo ? ['', `Repository: https://github.com/${repo}, already checked out in your current working directory.`] : []),
       '',
       ...RULES.map(r => `- ${r}`),
     ]
