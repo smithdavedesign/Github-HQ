@@ -56,6 +56,7 @@ let problem: string | null = null
 let heartbeatFailures = 0
 let beating = false
 let waitingSince: number | null = null
+let lastStatus: WorkerStatus | null = null
 
 async function main() {
   const url = process.env.REDIS_URL
@@ -73,7 +74,7 @@ async function main() {
   // restarting. A clean stop before this start (a reinstall, a reboot) isn't part of a loop.
   const previous = parseWorkerStatus(await withinMs(queue.client.then(c => c.get(WORKER_STATUS_KEY)), HEARTBEAT_TIMEOUT_MS).catch(() => null))
   starts = previous?.stoppedAt ? [startedAt] : recentStarts(previous?.starts, new Date(startedAt))
-  await withinMs(publishStatus(queue, cfg), HEARTBEAT_TIMEOUT_MS).catch(err => log(`status update failed: ${err instanceof Error ? err.message : err}`))
+  await publishStatus(queue, cfg).catch(err => log(`status update failed: ${err instanceof Error ? err.message : err}`))
   await syncSchedulers(queue, cfg)
   await reconcileRequests(queue, cfg)
 
@@ -98,7 +99,7 @@ async function main() {
     clearInterval(heartbeat)
     if (active?.child.pid) killGroup(active.child.pid, 'SIGTERM')
     await withinMs(worker.close(), 30_000).catch(() => {})
-    if (stoppedStatus) await withinMs(publishStatus(queue, cfg, stoppedStatus), 5_000).catch(() => {})
+    if (stoppedStatus) await publishStopped(queue, stoppedStatus).catch(() => {})
     await withinMs(queue.close(), 5_000).catch(() => {})
   }
   // A clean stop (launchd at shutdown or reinstall, Ctrl-C) is recorded, so the Agents page says
@@ -133,7 +134,7 @@ async function beat(queue: Queue, cfg: FactoryConfig, restart: (reason: string) 
   beating = true
   try {
     try {
-      await withinMs(publishStatus(queue, cfg), HEARTBEAT_TIMEOUT_MS)
+      await publishStatus(queue, cfg)
       if (heartbeatFailures > 0) log(`status updates recovered after ${heartbeatFailures} failure(s)`)
       heartbeatFailures = 0
     } catch (err) {
@@ -348,16 +349,31 @@ async function hostState(cfg: FactoryConfig, job: FactoryJobName): Promise<HostS
   }
 }
 
-/** The status record the Agents page reads (factory/lib/queue.ts `workerState`). Throws on failure. */
-async function publishStatus(queue: Queue, cfg: FactoryConfig, stopped?: { stoppedAt: string; stopReason: string }): Promise<void> {
+/**
+ * The status record the Agents page reads (factory/lib/worker-state.ts). Only the Redis write is
+ * timed: the local probes (pmset, docker info) can be slow on a busy Mac, and that isn't a Redis
+ * problem worth reconnecting over. Throws when the write fails or times out.
+ */
+async function publishStatus(queue: Queue, cfg: FactoryConfig): Promise<void> {
   const status: WorkerStatus = {
     host: hostname(), pid: process.pid, startedAt, lastSeenAt: new Date().toISOString(),
     pausedFile: existsSync(path.join(cfg.home, 'PAUSE')), onAc: await onAcPower(), dockerUp: await dockerUp(cfg),
     version, activeJob: active ? { id: active.job.id ?? '', name: active.job.name, since: active.since } : null,
-    problem, starts, stoppedAt: stopped?.stoppedAt ?? null, stopReason: stopped?.stopReason ?? null,
+    problem, starts, stoppedAt: null, stopReason: null,
   }
+  await writeStatus(queue, status, HEARTBEAT_TIMEOUT_MS)
+  lastStatus = status
+}
+
+/** A clean stop: the last status, marked stopped, without probing again (launchd gives ~20 s). */
+async function publishStopped(queue: Queue, stopped: { stoppedAt: string; stopReason: string }): Promise<void> {
+  if (!lastStatus) return
+  await writeStatus(queue, { ...lastStatus, lastSeenAt: stopped.stoppedAt, activeJob: null, ...stopped }, 5_000)
+}
+
+async function writeStatus(queue: Queue, status: WorkerStatus, timeoutMs: number): Promise<void> {
   const client = await queue.client
-  await client.set(WORKER_STATUS_KEY, JSON.stringify(status), { EX: WORKER_STATUS_KEEP_SECONDS })
+  await withinMs(client.set(WORKER_STATUS_KEY, JSON.stringify(status), { EX: WORKER_STATUS_KEEP_SECONDS }), timeoutMs)
 }
 
 main().catch(err => {
