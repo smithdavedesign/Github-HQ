@@ -195,6 +195,8 @@ describe('a fix request', () => {
   it('that opens a PR: agent_pr_created, a PR-ready notification, the attempt linked to the request', async () => {
     const id = await launch('ship', objective('Fix the flaky date test', 'pr'))
     expect(await waitForRequest(DB, id, ['pr'])).toMatchObject({ pr_url: FLOW_PR_URL, attempts: 1 })
+    // The row flips before its events are written: read them once the job is done.
+    await settled(id)
 
     const events = await eventsFor(id)
     expect(events.map(e => e.event_type)).toEqual(['agent_task_queued', 'agent_pr_created'])
@@ -227,6 +229,7 @@ describe('a fix request', () => {
   it('rejected by the judge: agent_execution_failed and a failure notification', async () => {
     const id = await launch('qa', objective('Fix the login bug', 'rejected'))
     expect(await waitForRequest(DB, id, ['rejected'])).toMatchObject({ reason: 'judge: a check regressed' })
+    await settled(id)
     const events = await eventsFor(id)
     expect(events.map(e => e.event_type)).toEqual(['agent_task_queued', 'agent_execution_failed'])
     expect(events[1].metadata).toMatchObject({ requestStatus: 'rejected', reason: 'judge: a check regressed' })
@@ -271,8 +274,8 @@ describe('when a run cannot finish', () => {
     const row = await waitForRequest(DB, id, ['failed'])
     expect(row.reason).toBe(`${FLOW_FAIL_REASON} (after 3 attempts)`)
     expect(row.attempts).toBe(3)
-    expect((await eventsFor(id)).map(e => e.event_type)).toEqual(['agent_task_queued', 'agent_execution_failed'])
     await settled(id)
+    expect((await eventsFor(id)).map(e => e.event_type)).toEqual(['agent_task_queued', 'agent_execution_failed'])
     expect((await runsFor(id)).map(r => r.status)).toEqual(['failed', 'failed', 'failed'])
   })
 
@@ -295,6 +298,7 @@ describe('the worker refuses or holds work it should not run now', () => {
       [id, FLOW.ownerId, s.outsideRepoId, FLOW.outsideRepo])
     await queue.add('request', { requestId: id }, requestJobOptions(id))
     expect(await waitForRequest(DB, id, ['rejected'])).toMatchObject({ reason: `${FLOW.outsideRepo} is not on the factory allowlist (factory/factory.config.json "repos")` })
+    await settled(id)
     expect(await runsFor(id)).toEqual([])
     expect((await eventsFor(id)).map(e => e.event_type)).toEqual(['agent_execution_failed'])
   })
