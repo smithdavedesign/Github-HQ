@@ -144,7 +144,7 @@ test.describe('/api/agent-task-status — ci_failing lifecycle', () => {
 test.describe('Agent Performance — CI failure visibility', () => {
   test('page loads correctly', async ({ page }) => {
     await page.goto('/agent-performance')
-    await expect(page.getByRole('heading', { name: 'Agent Performance' })).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible({ timeout: 8000 })
   })
 
   test('seeded agent_ci_failed event appears in activity log', async ({ page }) => {

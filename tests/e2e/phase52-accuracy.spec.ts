@@ -78,7 +78,7 @@ async function cleanupTestEvents(prefix: string) {
 test.describe('Agent Performance — Accuracy Table (Phase 52)', () => {
   test('page loads and shows Activity Log heading', async ({ page }) => {
     await page.goto('/agent-performance')
-    await expect(page.getByRole('heading', { name: 'Agent Performance' })).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible({ timeout: 8000 })
     await expect(page.getByText('Activity Log')).toBeVisible()
   })
 

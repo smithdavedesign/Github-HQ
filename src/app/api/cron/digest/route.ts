@@ -10,8 +10,12 @@ import { getAccuracyByImpactType } from '@/lib/actions/advisor-accuracy'
 import { distillAttempts } from '@/lib/agents/attempt-distiller'
 import { isNotNull, eq } from 'drizzle-orm'
 import { repositories } from '@/lib/db/schema'
+import { withAutomationRun } from '@/lib/monitoring/automation-runs'
 
-export async function GET(request: Request) {
+// Recorded on the Agents page's automation timeline (src/lib/monitoring/automation-runs.ts).
+export const GET = withAutomationRun('cron:digest', handle)
+
+async function handle(request: Request) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

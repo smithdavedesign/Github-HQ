@@ -30,3 +30,17 @@ export function staleDataMessage(f: Freshness): string | null {
   if (!f.stale) return null
   return `Scheduled data stopped ${f.ageDays} days ago (last health snapshot ${f.latest}). Health trends, security scans and uptime checks only update on schedule — check the cron workflows: GitHub disables scheduled workflows after 60 days without a commit.`
 }
+
+/**
+ * Agent HQ (roadmap Phase 81): the factory worker runs on the owner's Mac and finishes a cycle
+ * about 13 times a day, so a day and a half without a finished run means it's off — and every
+ * agent request is waiting. Null when it's fresh, or when it has never run (not set up yet).
+ */
+export const FACTORY_STALE_AFTER_HOURS = 36
+
+export function factoryStaleMessage(lastFinishedAt: Date | null, now: Date, staleAfterHours = FACTORY_STALE_AFTER_HOURS): string | null {
+  if (!lastFinishedAt) return null
+  const hours = Math.floor((now.getTime() - lastFinishedAt.getTime()) / 3_600_000)
+  if (hours < staleAfterHours) return null
+  return `The factory hasn't finished a run in ${hours} hours (last ${lastFinishedAt.toISOString().slice(0, 16).replace('T', ' ')} UTC), so agent requests are waiting. Check that the Mac is on and plugged in and that its worker runs (bash factory/bin/install-launchd.sh); the Agents page shows the queue.`
+}

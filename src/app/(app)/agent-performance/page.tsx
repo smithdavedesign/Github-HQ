@@ -7,20 +7,25 @@ import { eq, and, inArray, desc } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDistanceToNow } from '@/lib/utils'
-import { CheckCircle, XCircle, Clock, TrendingUp, Target, Cpu, ExternalLink, BarChart2, ShieldCheck } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, TrendingUp, Target, Cpu, ExternalLink, BarChart2, ShieldCheck, Workflow } from 'lucide-react'
 import Link from 'next/link'
 import { getAccuracyByImpactType, getDowngradedRepos } from '@/lib/actions/advisor-accuracy'
 import { AccuracyTable } from '@/components/dashboard/accuracy-table'
 import { summarizeFactoryEvents } from '@/lib/agents/factory-stats'
 import { KPI_WINDOW_DAYS, loadFactoryKpis } from '@/lib/agents/factory-kpis-query'
+import { factoryAccess } from '@/lib/agents/factory-queue'
+import { getAgentHqOverview } from '@/lib/agents/agent-hq-data'
+import { AgentHqPanel } from '@/components/agents/agent-hq-panel'
 
 export default async function AgentPerformancePage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
   const userId = session.user.id
+  // Agent HQ (roadmap Phase 81): the factory's queue, schedules, runs and traces — owner only.
+  const access = factoryAccess(userId)
 
-  const [events, accuracyStats, downgradedRepos, factoryEvents, kpis] = await Promise.all([
+  const [events, accuracyStats, downgradedRepos, factoryEvents, kpis, overview] = await Promise.all([
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.userId, userId),
@@ -39,6 +44,7 @@ export default async function AgentPerformancePage() {
     }),
     // Factory job record (Phase 79) for the KPIs.
     loadFactoryKpis(userId),
+    access.ok ? getAgentHqOverview(userId) : Promise.resolve(null),
   ])
   const factory = summarizeFactoryEvents(factoryEvents)
   const pctOf = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`)
@@ -70,39 +76,31 @@ export default async function AgentPerformancePage() {
     return sum + (meta?.costUsd ?? 0)
   }, 0)
 
-  const nexusUrl = process.env.NEXUS_API_URL
-  const tracedEvents = events.filter(event => {
-    const meta = event.metadata as Record<string, unknown> | null
-    return Boolean(meta?.correlationId || meta?.executionTimeline || meta?.modelTier || meta?.totalTokens || meta?.durationMs)
-  })
-
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Cpu className="w-6 h-6 text-indigo-500" />
-            Agent Performance
+            <Workflow className="w-6 h-6 text-indigo-500" />
+            Agents
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Track advisor accuracy and agent execution outcomes
+            The factory&apos;s queue, schedules and runs — every request traced step by step — plus advisor accuracy and factory KPIs
           </p>
         </div>
-        {nexusUrl && (
-          <a
-            href={`${nexusUrl}/learn/review-queue`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-          >
-            Open Nexus queue <ExternalLink className="w-3 h-3" />
-          </a>
-        )}
       </div>
 
-      {/* Stats — Nexus only; the factory's numbers are in "Factory KPIs" below */}
-      <h2 className="text-sm font-semibold" data-testid="nexus-stats-heading">
-        Nexus (remote executor) <span className="font-normal text-muted-foreground">· all time · factory results are under Factory KPIs</span>
+      {overview ? (
+        <AgentHqPanel initial={overview} />
+      ) : (
+        <div className="rounded-lg border border-border/40 bg-muted/10 px-4 py-3 text-xs text-muted-foreground" data-testid="agent-hq-unavailable">
+          {access.ok ? null : access.reason} The queue, schedules and traces are shown to the factory&apos;s owner.
+        </div>
+      )}
+
+      {/* Requests from RepoHQ, all time (Nexus-era tasks included); factory numbers are under Factory KPIs */}
+      <h2 className="text-sm font-semibold" data-testid="request-stats-heading">
+        Requests <span className="font-normal text-muted-foreground">· all time, Nexus-era tasks included · factory results are under Factory KPIs</span>
       </h2>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <StatCard label="Tasks queued"  value={queued}  icon={Clock}       color="text-indigo-500" />
@@ -226,45 +224,6 @@ export default async function AgentPerformancePage() {
             {factory.freeSharePct != null ? <>Free-tier share of verified fixes: <span className="font-medium text-foreground">{factory.freeSharePct}%</span> · </> : null}
             {factory.scout ? <>free-agent: <span className="font-mono">{factory.scout.primary ?? '—'}</span> (scouted {formatDistanceToNow(factory.scout.at)})</> : null}
           </p>
-        </div>
-      )}
-
-      {/* Execution trace */}
-      {tracedEvents.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="text-sm font-semibold">Execution Trace</h2>
-          <div className="space-y-3 rounded-lg border border-border/50 bg-muted/10 p-3 text-xs">
-            {tracedEvents.slice(0, 5).map(event => {
-              const meta = event.metadata as Record<string, unknown> | null
-              const timeline = Array.isArray(meta?.executionTimeline) ? meta.executionTimeline as Array<{ stage?: string; at?: string }> : []
-              const tier = meta?.modelTier ? String(meta.modelTier) : '—'
-              const tokens = typeof meta?.totalTokens === 'number' ? meta.totalTokens : '—'
-              const correlation = meta?.correlationId ? String(meta.correlationId) : '—'
-
-              return (
-                <div key={event.id} className="rounded border border-border/40 bg-background/80 p-2.5">
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <p className="font-medium truncate">{event.title}</p>
-                    <span className="text-[10px] text-muted-foreground">{correlation}</span>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
-                    <span>Tier: <span className="text-foreground font-medium">{tier}</span></span>
-                    <span>Tokens: <span className="text-foreground font-medium">{tokens}</span></span>
-                    <span>Cost: <span className="text-foreground font-medium">{meta?.costUsd ? `$${Number(meta.costUsd).toFixed(4)}` : '—'}</span></span>
-                  </div>
-                  {timeline.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {timeline.map((step, idx) => (
-                        <span key={`${event.id}-${idx}`} className="rounded-full border border-border/50 bg-muted/50 px-1.5 py-0.5 text-[9px] text-muted-foreground">
-                          {String(step.stage ?? 'stage')}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
         </div>
       )}
 
