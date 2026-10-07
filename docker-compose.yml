@@ -1,0 +1,25 @@
+# Local development infrastructure: the Redis that BullMQ uses (production: render.yaml).
+#
+#   docker compose up -d redis
+#   REDIS_URL=redis://127.0.0.1:6379 npm run factory:worker
+#
+# The port binds to 127.0.0.1 only: this Redis has no password and must not be reachable from
+# other machines on the network.
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: agent-hq-redis
+    # BullMQ needs noeviction (an evicted key is a lost job); AOF so queued jobs survive a restart.
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  redis_data:

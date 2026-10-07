@@ -101,6 +101,9 @@ variables are absent the build will fail with a database or auth error:
 | `ENCRYPTION_KEY` | AES-256 key (must be 64 hex chars) | `0000…0001` (64 chars) |
 | `NEXT_PUBLIC_APP_URL` | Redirect URLs | `http://localhost:3000` |
 
+`REDIS_URL` (the factory queue) is **not** needed to build: nothing connects to Redis at
+build time, and without it requests still queue in Neon.
+
 The GitHub Actions `build` job in `.github/workflows/ci.yml` already injects all
 of these as dummy values.  **Vercel preview deployments** must also have these set
 under _Project → Settings → Environment Variables_ (target: Preview + Production).
