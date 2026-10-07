@@ -3,8 +3,13 @@
 #   docker compose up -d redis
 #   REDIS_URL=redis://127.0.0.1:6379 npm run factory:worker
 #
-# The port binds to 127.0.0.1 only: this Redis has no password and must not be reachable from
-# other machines on the network.
+# The flow tests (tests/flow) get their own throwaway Postgres and Redis, which they wipe:
+#
+#   docker compose --profile flow up -d
+#   npm run test:flow && npm run test:flow:e2e
+#
+# Ports bind to 127.0.0.1 only: these services have no real passwords and must not be reachable
+# from other machines on the network.
 services:
   redis:
     image: redis:7-alpine
@@ -20,6 +25,35 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # ── Flow tests only (profile "flow"): no volumes, everything is recreated per run ──
+  flow-postgres:
+    profiles: [flow]
+    image: postgres:16-alpine
+    container_name: agent-hq-flow-postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+    command: ["postgres", "-c", "fsync=off", "-c", "max_connections=200"]
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  flow-redis:
+    profiles: [flow]
+    image: redis:7-alpine
+    container_name: agent-hq-flow-redis
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
 volumes:
   redis_data:

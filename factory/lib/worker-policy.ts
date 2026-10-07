@@ -80,15 +80,20 @@ export function runStatusFor(result: RunResult): 'ok' | 'skipped' | 'failed' {
   return result.status === 'deferred' ? 'skipped' : result.status
 }
 
-/** The command a job runs: the same entry points factory.sh used, under caffeinate on macOS. */
-export function childCommand(job: FactoryJobName, opts: { requestId?: string; platform: NodeJS.Platform }): { cmd: string; args: string[] } {
+/**
+ * The command a job runs: the same entry points factory.sh used, under caffeinate on macOS.
+ * `script` replaces the entry point (FACTORY_WORKER_CHILD; the flow tests' scripted stand-in for
+ * run.ts, whose real pipeline needs Docker, LiteLLM and GitHub) and gets the job name first.
+ */
+export function childCommand(job: FactoryJobName, opts: { requestId?: string; platform: NodeJS.Platform; script?: string }): { cmd: string; args: string[] } {
   const script: Record<FactoryJobName, string[]> = {
     cycle: ['factory/run.ts', '--scheduled'],
     request: ['factory/run.ts', '--scheduled', `--request=${opts.requestId ?? ''}`],
     report: ['factory/report.ts'],
     scout: ['factory/scout.ts'],
   }
-  const tsx = ['npx', '--no-install', 'tsx', ...script[job]]
+  const entry = opts.script ? [opts.script, job, ...script[job].slice(1)] : script[job]
+  const tsx = ['npx', '--no-install', 'tsx', ...entry]
   // -i idle sleep, -m disk sleep, -s system sleep (only honoured on AC power), for this job only.
   return opts.platform === 'darwin' ? { cmd: 'caffeinate', args: ['-ims', ...tsx] } : { cmd: tsx[0], args: tsx.slice(1) }
 }

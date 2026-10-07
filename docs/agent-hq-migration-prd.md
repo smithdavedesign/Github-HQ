@@ -213,6 +213,9 @@ The factory controls show only for the owner (`session.user.id === FACTORY_USER_
 4. Close the stale Nexus bot PRs (audit §8). Until they are reviewed or closed, the factory opens no new PRs on those repos (`blockOnStaleBotPrs`).
 
 **5. Verify**
+
+The flow tests already ran this whole path on a throwaway database before cutover (`npm run test:flow`, `npm run test:flow:e2e`; CI job `flow`; [tests/flow](../tests/flow/README.md)). What's left is the real machine: Redis on Render, the worker under launchd, a real repo.
+
 1. Run agent on an allowlisted repo, a `report` skill first: it goes queued → running → reported, with a full trace.
 2. Then a fix request: it goes running → verified (held at `report` stage).
 3. Promote `owner-requested` to `pr` when the verified results look right.

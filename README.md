@@ -326,11 +326,17 @@ See the [gstack Integration Roadmap](docs/roadmap.md#gstack-integration-roadmap)
 ## Testing
 
 ```bash
-npm test              # Vitest unit tests (1,000+ tests, 64 files)
+npm test              # Vitest unit tests (1,100+ tests, 68 files)
 npm run test:e2e      # Playwright e2e tests (requires dev server)
 npm run test:all      # both
 npm run typecheck     # TypeScript strict check
+
+docker compose --profile flow up -d   # throwaway Postgres + Redis for the flow tests
+npm run test:flow                     # the Agent HQ flow end to end: app → queue → real worker → Neon
+npm run test:flow:e2e                 # the same in the browser (next dev + the worker)
 ```
+
+The flow tests ([tests/flow](tests/flow/README.md)) validate the one-agent-system migration with nothing mocked but the session and the job itself: the factory migration lands on the `db:push` schema, Run agent writes the request and its BullMQ job, the real worker claims, gates, runs, defers, retries and resolves it, and the status API and the Agents page show the outcome and its trace. They run on a disposable database (never `.env.local`'s) and in CI on every pull request.
 
 Unit tests cover: health scoring, opportunity scoring, archive scoring, valuation, portfolio score, simulation engine, opportunity cost, event computation, NL query filters, LLM adapter, notifications, MCP tools, advisor accuracy, agent lifecycle, provider mapping, auto-dispatch filter logic, cache TTL, security fixes, gstack skill policy, skill report logic, factory queue access, the factory worker and its policies, the Agents page, and more.
 

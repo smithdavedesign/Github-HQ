@@ -86,6 +86,8 @@ Setup (once): create the Key Value from `render.yaml` (Render → Blueprints), p
 
 Promotion still applies: requests use the `owner-requested` (fix) and `owner-report` (report) capabilities. `owner-requested` starts at `report`, so a fix request ends `verified` (judged, held, no PR) until you promote it to `pr`.
 
+Tests: `npm run test:flow` runs this worker end to end against a throwaway Postgres + Redis (`docker compose --profile flow up -d`), with `FACTORY_WORKER_CHILD` pointing it at a scripted stand-in for run.ts; see [tests/flow](../tests/flow/README.md). Never set `FACTORY_WORKER_CHILD` on the real worker.
+
 ## Sandbox
 
 Since Phase 76 (docs/autonomous-factory.md §14), nothing from a target repo runs on this Mac. `npm ci`, the repo's checks and the model harness run in a throwaway Docker container per repo; the host only clones, judges, commits and pushes.

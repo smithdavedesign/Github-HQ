@@ -56,6 +56,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ### E2E tests
 - The suite runs against `.env.local`'s DATABASE_URL, which is production. Only seed rows you can identify and delete. Anything that overwrites or deletes shared rows must `test.skip(!DISPOSABLE_DB, …)` (`tests/e2e/helpers/disposable-db.ts`).
+- Never queue runnable work from it (a `queued` request, Run agent, a cron call that dispatches): the owner's real worker would run it. Seed finished requests only.
+
+### Flow tests (`tests/flow`, see its README)
+- The Agent HQ flow end to end on a throwaway local Postgres + Redis with the real worker: `docker compose --profile flow up -d`, then `npm run test:flow` and `npm run test:flow:e2e`. CI runs both. Run them after changing the queue, the worker, request outcomes, the status API or the Agents page.
+- They never read `.env.local`. `FACTORY_WORKER_CHILD` (the scripted stand-in for run.ts) exists for them only.
 
 ## Worker bootstrap (agent / CI worktrees)
 

@@ -206,7 +206,7 @@ async function processRequest(cfg: FactoryConfig, queue: Queue, job: Job, token?
 
 /** Run one job's entry point as a child process; its stdout protocol lines become job progress. */
 async function runChild(cfg: FactoryConfig, job: Job, name: FactoryJobName, runId: string, requestId?: string): Promise<RunResult> {
-  const { cmd, args } = childCommand(name, { requestId, platform: process.platform })
+  const { cmd, args } = childCommand(name, { requestId, platform: process.platform, script: process.env.FACTORY_WORKER_CHILD || undefined })
   const logFile = path.join(cfg.home, 'logs', `${name}-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}-${runId.slice(0, 8)}.log`)
   const out = createWriteStream(logFile, { flags: 'a' })
   out.write(`=== ${name} ${new Date().toISOString()} run ${runId}${requestId ? ` request ${requestId}` : ''} ===\n`)

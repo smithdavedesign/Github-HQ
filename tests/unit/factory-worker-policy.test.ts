@@ -74,6 +74,15 @@ describe('jobs → commands and records', () => {
     expect(childCommand('scout', { platform: 'linux' }).args).toContain('factory/scout.ts')
   })
 
+  it('FACTORY_WORKER_CHILD swaps the entry point (flow tests), keeping the arguments and caffeinate', () => {
+    expect(childCommand('request', { platform: 'linux', requestId: 'r1', script: 'tests/flow/fixtures/fake-run.ts' })).toEqual({
+      cmd: 'npx', args: ['--no-install', 'tsx', 'tests/flow/fixtures/fake-run.ts', 'request', '--scheduled', '--request=r1'],
+    })
+    expect(childCommand('report', { platform: 'darwin', script: 'fake.ts' })).toEqual({ cmd: 'caffeinate', args: ['-ims', 'npx', '--no-install', 'tsx', 'fake.ts', 'report'] })
+    // Unset (or empty, as the worker passes it): the real entry points.
+    expect(childCommand('cycle', { platform: 'linux', script: undefined }).args).toEqual(['--no-install', 'tsx', 'factory/run.ts', '--scheduled'])
+  })
+
   it('a deferral did no work: its run is "skipped"', () => {
     expect(runStatusFor({ status: 'deferred' })).toBe('skipped')
     expect(runStatusFor({ status: 'ok' })).toBe('ok')

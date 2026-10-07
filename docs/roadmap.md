@@ -932,6 +932,7 @@ The factory becomes the only executor, and Nexus's queue infrastructure (Redis/B
 - [x] RepoHQ enqueues into the factory (Run agent, gstack launcher in fix + report modes, Monday auto-dispatch and the weekly retro/health, MCP `queue_gstack_skill`); allowlist + owner gate (`FACTORY_USER_ID`); `/canary` unavailable; auto-chain and the CI-fix loop removed (CI failures on agent PRs escalate to `needs human`)
 - [x] Agents page (`/agent-performance`): automation panel (worker, queue counts, schedulers, recent runs, owner controls: run now, pause/resume), requests (cancel, retry), per-request and per-run trace timeline; crons recorded as runs (`withAutomationRun`); 36 h factory-freshness banner
 - [x] Nexus removed from this repo: dispatch, webhook, task polling, `NEXUS_*` env, the Nexus card halves and the morning report's Nexus line (now Agent HQ request outcomes); docs updated
+- [x] Validation: unit tests for the guards, routes, actions and lifecycle; flow tests (`tests/flow`) that run the migration, the app, the real worker and the browser UI end to end on a throwaway Postgres + Redis (`npm run test:flow`, `npm run test:flow:e2e`, CI job `flow`)
 - [ ] Owner cutover: Redis from the Blueprint, `REDIS_URL` + `FACTORY_USER_ID` in Vercel, `npm run db:push` + `npm run factory:migrate`, `install-launchd.sh`, suspend then retire Nexus on Render, archive `AI-Took-My-Job` (runbook: PRD §11)
 - [ ] Promote `owner-requested` to `pr` once fix requests verify reliably (until then they end `verified`, no PR)
 
