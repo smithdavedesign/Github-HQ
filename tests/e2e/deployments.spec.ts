@@ -16,8 +16,7 @@ test.describe('Deployments page', () => {
 
   test('shows table or empty state', async ({ page }) => {
     await page.goto('/deployments')
-    const hasTable = await page.locator('table').isVisible().catch(() => false)
-    const hasEmpty = await page.locator('text=No deployments configured').isVisible().catch(() => false)
-    expect(hasTable || hasEmpty).toBe(true)
+    // Auto-waiting: an immediate isVisible() ran before the page streamed in.
+    await expect(page.locator('table').or(page.getByText('No deployments configured')).first()).toBeVisible({ timeout: 8000 })
   })
 })

@@ -50,6 +50,21 @@ export function prFollowUpStage<E extends { eventType: string }>(eventsNewestFir
   return latest ? { stage: PR_EVENT_STAGES.get(latest.eventType)!, event: latest } : null
 }
 
+/**
+ * Task ids whose agent PR no longer holds its repo: merged, or closed without merging
+ * (agent_pr_rejected, written by the PR checker). Counting only merges left closed PRs badged
+ * "PR open" on the repos page (found 2026-10-07).
+ */
+export function closedPrTaskIds(events: { eventType: string; metadata: unknown }[]): Set<string> {
+  const ids = new Set<string>()
+  for (const e of events) {
+    if (e.eventType !== 'agent_pr_merged' && e.eventType !== 'agent_pr_rejected') continue
+    const taskId = (e.metadata as { taskId?: string } | null)?.taskId
+    if (taskId) ids.add(taskId)
+  }
+  return ids
+}
+
 export const DEFAULT_MAX_AUTONOMOUS_RETRIES = 3
 export const AUTONOMOUS_TERMINAL_REASONS = ['merged', 'failed', 'timed_out', 'needs_human', 'awaiting_approval', 'rejected'] as const
 export type AutonomousStopReason = typeof AUTONOMOUS_TERMINAL_REASONS[number]

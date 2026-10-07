@@ -12,8 +12,8 @@ const DB_URL = process.env.DATABASE_URL ?? ''
 test.describe('Agent History tab — attempt events (Phase 51)', () => {
   test('Agent tab is present on repo detail page', async ({ page }) => {
     await page.goto('/repos')
-    // Click first repo link
-    const firstRepo = page.getByRole('link', { name: /^[A-Za-z]/ }).first()
+    // Click the first repo in the table (the first link on the page is the sidebar's)
+    const firstRepo = page.locator('table a[href^="/repos/"]').first()
     if (!await firstRepo.isVisible()) return
     await firstRepo.click()
     await expect(page.getByRole('tab', { name: /Agent/i })).toBeVisible({ timeout: 8000 })
@@ -39,12 +39,14 @@ test.describe('Agent History tab — attempt events (Phase 51)', () => {
       )
     `
 
-    await page.goto(`/repos/${repo.id}`)
-    await page.getByRole('tab', { name: /Agent/i }).click()
-    await expect(page.getByText(/add unit tests/i)).toBeVisible({ timeout: 5000 })
-
-    // Cleanup
-    await sql`DELETE FROM portfolio_events WHERE title = ${attemptTitle}`
+    try {
+      await page.goto(`/repos/${repo.id}`)
+      await page.getByRole('tab', { name: /Agent/i }).click()
+      // The seeded attempt itself (the repo may have real "add unit tests" attempts too)
+      await expect(page.getByText(attemptTitle.slice(0, 40)).first()).toBeVisible({ timeout: 8000 })
+    } finally {
+      await sql`DELETE FROM portfolio_events WHERE title = ${attemptTitle}`
+    }
   })
 
   test('Agent tab shows empty state when no agent activity', async ({ page }) => {
@@ -79,7 +81,7 @@ test.describe('Phase 50 — active work signal in MCP (API-level)', () => {
 
   test('repos page loads without error', async ({ page }) => {
     await page.goto('/repos')
-    await expect(page.getByText('Repositories')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('heading', { name: 'Repositories' })).toBeVisible({ timeout: 8000 })
   })
 
   test('PR open badge appears when seeded', async ({ page }) => {
@@ -102,10 +104,14 @@ test.describe('Phase 50 — active work signal in MCP (API-level)', () => {
       )
     `
 
-    await page.goto('/repos')
-    await expect(page.getByText('PR open')).toBeVisible({ timeout: 8000 })
-
-    // Cleanup
-    await sql`DELETE FROM portfolio_events WHERE metadata->>'taskId' = ${taskId}`
+    try {
+      await page.goto('/repos')
+      // The seeded repo may be past the first page: filter to it. Then its own badge (other repos
+      // may have open agent PRs too).
+      await page.getByPlaceholder(/Search repositories/).fill(repo.name)
+      await expect(page.locator('a[href="https://github.com/test/repo/pull/99"]')).toBeVisible({ timeout: 8000 })
+    } finally {
+      await sql`DELETE FROM portfolio_events WHERE metadata->>'taskId' = ${taskId}`
+    }
   })
 })

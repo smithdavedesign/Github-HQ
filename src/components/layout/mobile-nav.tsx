@@ -7,7 +7,7 @@ import {
   LayoutDashboard, GitFork, Shield, Rocket,
   BarChart3, Activity, Settings, GitBranch, Skull, ListChecks, Workflow, Menu, X,
 } from 'lucide-react'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -64,6 +64,7 @@ export function MobileNav() {
               </div>
               <span className="font-semibold text-[13px] text-white tracking-tight">RepoHQ</span>
             </SheetTitle>
+            <SheetDescription className="sr-only">Navigate RepoHQ</SheetDescription>
           </SheetHeader>
 
           <nav className="flex-1 px-3 py-3 space-y-0.5">

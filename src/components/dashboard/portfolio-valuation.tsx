@@ -1,3 +1,9 @@
+'use client'
+
+// A client component because of the info tooltip: rendered from a server component, the
+// <button> it hands Radix's asChild slot reaches the server render as an unresolved element,
+// the slot drops it, and the browser's render then has a button the server HTML doesn't
+// (a hydration error on every dashboard load, 2026-10-07).
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TrendingUp, Info } from 'lucide-react'
 import { formatValuation } from '@/lib/health/valuation'

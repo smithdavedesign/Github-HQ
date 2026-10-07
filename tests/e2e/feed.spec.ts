@@ -64,12 +64,15 @@ test.describe('Feed page', () => {
       summary: 'Execution failed: Repository clone failed: the GitHub repo could not be accessed.',
     }, 'Execution failed: Repository clone failed: the GitHub repo could not be accessed.')
 
-    await page.goto('/feed')
-    await expect(page.getByText('/health report ready')).toBeVisible({ timeout: 8000 })
-    await expect(page.getByText('Agent execution failed', { exact: true }).first()).toBeVisible({ timeout: 8000 })
-    await expect(page.getByText(/Repository clone failed: the GitHub repo could not be accessed/i)).toBeVisible({ timeout: 8000 })
-
-    await cleanup(prefix)
+    // Cleanup in finally: a failed assertion used to leave these rows in the shared database.
+    try {
+      await page.goto('/feed')
+      await expect(page.getByText('/health report ready').first()).toBeVisible({ timeout: 8000 })
+      await expect(page.getByText('Agent execution failed', { exact: true }).first()).toBeVisible({ timeout: 8000 })
+      await expect(page.getByText(/Repository clone failed: the GitHub repo could not be accessed/i).first()).toBeVisible({ timeout: 8000 })
+    } finally {
+      await cleanup(prefix)
+    }
   })
 
   test('Milestones tab loads', async ({ page }) => {

@@ -237,10 +237,11 @@ function RecentRuns({ runs, snapshotAt }: { runs: RunRow[]; snapshotAt: number }
             <div key={r.id} className="text-xs">
               <button className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/20 disabled:cursor-default"
                 onClick={() => setOpen(isOpen ? null : r.id)} disabled={!traced} aria-expanded={isOpen}>
-                {traced ? (isOpen ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />) : <span className="w-3" />}
-                <span className="font-medium w-32 shrink-0 truncate">{runKindLabel(r.kind)}</span>
-                <span className={`w-16 shrink-0 ${RUN_STATUS_STYLE[r.status] ?? ''}`}>{r.status}</span>
-                <span className="text-muted-foreground w-16 shrink-0">{r.trigger}</span>
+                {/* The spacer keeps untraced rows (the crons) in line; empty, it shrank to nothing. */}
+                {traced ? (isOpen ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />) : <span className="w-3 shrink-0" aria-hidden />}
+                <span className="font-medium w-24 sm:w-32 shrink-0 truncate">{runKindLabel(r.kind)}</span>
+                <span className={`w-14 sm:w-16 shrink-0 ${RUN_STATUS_STYLE[r.status] ?? ''}`}>{r.status}</span>
+                <span className="text-muted-foreground w-16 shrink-0 hidden sm:inline">{r.trigger}</span>
                 <span className="flex-1 min-w-0 truncate text-muted-foreground">{reason ?? ''}</span>
                 <span className="tabular-nums text-muted-foreground shrink-0">{r.durationMs != null ? fmtDuration(r.durationMs) : r.status === 'running' ? '…' : ''}</span>
                 <span className="text-muted-foreground shrink-0 w-16 text-right">{formatDistanceToNow(r.startedAt, snapshotAt)}</span>

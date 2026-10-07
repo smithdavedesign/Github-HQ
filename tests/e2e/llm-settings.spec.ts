@@ -13,18 +13,19 @@ test.describe('Settings — AI Provider', () => {
     await expect(page.getByText('Gemini (Google)')).toBeVisible()
   })
 
+  // One of three key states is always shown; wait for it (an immediate isVisible() ran before
+  // the card rendered and read every state as absent).
+  const keyStatus = /Your key active|App key active|No key/
+
   test('shows key status badge', async ({ page }) => {
     await page.goto('/settings')
-    // One of these three states is always shown
-    const hasUserKey = await page.getByText('Your key active').isVisible().catch(() => false)
-    const hasEnvKey  = await page.getByText('App key active').isVisible().catch(() => false)
-    const noKey      = await page.getByText('No key').isVisible().catch(() => false)
-    expect(hasUserKey || hasEnvKey || noKey).toBe(true)
+    await expect(page.getByText(keyStatus).first()).toBeVisible({ timeout: 8000 })
   })
 
   test('shows key input form when no user key is configured', async ({ page }) => {
     await page.goto('/settings')
-    const hasUserKey = await page.getByText('Your key active').isVisible().catch(() => false)
+    await expect(page.getByText(keyStatus).first()).toBeVisible({ timeout: 8000 })
+    const hasUserKey = await page.getByText('Your key active').isVisible()
     if (!hasUserKey) {
       // Should show the key input and save button
       await expect(page.getByRole('button', { name: /Save & verify/i })).toBeVisible()
@@ -33,7 +34,8 @@ test.describe('Settings — AI Provider', () => {
 
   test('shows Save & verify button and key input', async ({ page }) => {
     await page.goto('/settings')
-    const hasUserKey = await page.getByText('Your key active').isVisible().catch(() => false)
+    await expect(page.getByText(keyStatus).first()).toBeVisible({ timeout: 8000 })
+    const hasUserKey = await page.getByText('Your key active').isVisible()
     if (!hasUserKey) {
       const input = page.locator('input[type="password"]').first()
       await expect(input).toBeVisible()

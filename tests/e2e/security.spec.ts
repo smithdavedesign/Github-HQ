@@ -16,8 +16,7 @@ test.describe('Security page', () => {
 
   test('shows table or empty state', async ({ page }) => {
     await page.goto('/security')
-    const hasTable = await page.locator('table').isVisible().catch(() => false)
-    const hasEmpty = await page.locator('text=No open security findings').isVisible().catch(() => false)
-    expect(hasTable || hasEmpty).toBe(true)
+    // Auto-waiting: an immediate isVisible() ran before the page streamed in and flaked.
+    await expect(page.locator('table').or(page.getByText('No open security findings')).first()).toBeVisible({ timeout: 8000 })
   })
 })

@@ -13,8 +13,21 @@
  * The launcher renders only for the factory owner on allowlisted repos (Agent HQ, Phase 81):
  * see tests/e2e/helpers/factory.ts.
  */
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { getFactoryRepo, getNonFactoryRepo, NOT_FACTORY_OWNER } from './helpers/factory'
+
+/** A skill's row in the launcher (its toggle button), not report text that mentions the skill. */
+const skillRow = (page: Page, skill: string) => page.getByRole('button', { name: new RegExp(`^(Expand|Collapse) /${skill}(\\s|$)`) })
+
+/** The launcher's Run button (comes first; a report's suggested next step can have another). */
+const runInvestigate = (page: Page) => page.getByRole('button', { name: /Run \/investigate/i }).first()
+
+/** Open a phase if it's closed: which phases start open depends on the repo and saved state. */
+async function openPhase(page: Page, phase: string) {
+  const expand = page.getByRole('button', { name: `Expand ${phase} skills` })
+  if (await expand.count() > 0) await expand.first().click()
+  await expect(page.getByRole('button', { name: `Collapse ${phase} skills` })).toBeVisible({ timeout: 5000 })
+}
 
 async function getFirstRepo() {
   return getFactoryRepo()
@@ -54,7 +67,7 @@ test.describe('GstackSkillLauncher — phase structure', () => {
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    await expect(page.getByText('/investigate')).toBeVisible({ timeout: 8000 })
+    await expect(skillRow(page, 'investigate')).toBeVisible({ timeout: 8000 })
   })
 
   test('clicking a closed phase header opens it', async ({ page }) => {
@@ -66,8 +79,8 @@ test.describe('GstackSkillLauncher — phase structure', () => {
 
     // Ship phase — might be closed by default (depends on localStorage state)
     // Click it and verify /ship becomes visible
-    await page.getByText('Ship', { exact: true }).first().click()
-    await expect(page.getByText('/ship')).toBeVisible({ timeout: 3000 })
+    await openPhase(page, 'Ship')
+    await expect(skillRow(page, 'ship')).toBeVisible({ timeout: 3000 })
   })
 
   test('clicking an open phase header closes it', async ({ page }) => {
@@ -78,8 +91,9 @@ test.describe('GstackSkillLauncher — phase structure', () => {
     await page.getByRole('tab', { name: /Agent/i }).click()
 
     // Understand is open by default — click to close
-    await page.getByText('Understand', { exact: true }).first().click()
-    await expect(page.getByText('/investigate')).not.toBeVisible({ timeout: 2000 })
+    await openPhase(page, 'Understand')
+    await page.getByRole('button', { name: 'Collapse Understand skills' }).click()
+    await expect(skillRow(page, 'investigate')).not.toBeVisible({ timeout: 2000 })
   })
 })
 
@@ -94,14 +108,14 @@ test.describe('GstackSkillLauncher — skill rows', () => {
     await page.getByRole('tab', { name: /Agent/i }).click()
 
     // Ensure Understand phase is open
-    const investigateRow = page.getByText('/investigate')
+    const investigateRow = skillRow(page, 'investigate')
     await expect(investigateRow).toBeVisible({ timeout: 8000 })
 
     await investigateRow.click()
 
     // Textarea and run button should appear
     await expect(page.getByRole('textbox').first()).toBeVisible({ timeout: 2000 })
-    await expect(page.getByRole('button', { name: /Run \/investigate/i })).toBeVisible()
+    await expect(runInvestigate(page)).toBeVisible()
   })
 
   test('skill row has aria-expanded attribute', async ({ page }) => {
@@ -112,7 +126,7 @@ test.describe('GstackSkillLauncher — skill rows', () => {
     await page.getByRole('tab', { name: /Agent/i }).click()
 
     // Click to expand /investigate
-    await page.getByText('/investigate').click({ timeout: 8000 })
+    await skillRow(page, 'investigate').click({ timeout: 8000 })
     const expandedBtn = page.getByRole('button', { name: /Collapse \/investigate/i })
     const hasExpanded = await expandedBtn.isVisible().catch(() => false)
     // Either explicit aria-expanded or expanded state is visible
@@ -128,7 +142,7 @@ test.describe('GstackSkillLauncher — skill rows', () => {
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
 
-    const investigateRow = page.getByText('/investigate')
+    const investigateRow = skillRow(page, 'investigate')
     await investigateRow.click({ timeout: 8000 })
     await expect(page.getByRole('textbox').first()).toBeVisible()
 
@@ -143,11 +157,11 @@ test.describe('GstackSkillLauncher — skill rows', () => {
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    await page.getByText('/investigate').click({ timeout: 8000 })
+    await skillRow(page, 'investigate').click({ timeout: 8000 })
 
     const textarea = page.getByRole('textbox').first()
     await textarea.fill('')
-    await expect(page.getByRole('button', { name: /Run \/investigate/i })).toBeDisabled()
+    await expect(runInvestigate(page)).toBeDisabled()
   })
 
   test('Run button is enabled when objective has content', async ({ page }) => {
@@ -156,11 +170,11 @@ test.describe('GstackSkillLauncher — skill rows', () => {
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    await page.getByText('/investigate').click({ timeout: 8000 })
+    await skillRow(page, 'investigate').click({ timeout: 8000 })
 
     const textarea = page.getByRole('textbox').first()
     await textarea.fill('Investigate why the auth flow is broken')
-    await expect(page.getByRole('button', { name: /Run \/investigate/i })).toBeEnabled()
+    await expect(runInvestigate(page)).toBeEnabled()
   })
 })
 
@@ -184,8 +198,8 @@ test.describe('GstackSkillLauncher — type badges', () => {
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    await page.getByText('Monitor', { exact: true }).first().click()
-    await expect(page.getByText('/health')).toBeVisible({ timeout: 3000 })
+    await openPhase(page, 'Monitor')
+    await expect(skillRow(page, 'health')).toBeVisible({ timeout: 3000 })
     await expect(page.getByText('Report only').first()).toBeVisible()
   })
 
@@ -195,9 +209,9 @@ test.describe('GstackSkillLauncher — type badges', () => {
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    await page.getByText('Ship', { exact: true }).first().click()
-    await expect(page.getByText('/ship')).toBeVisible({ timeout: 3000 })
-    await expect(page.getByText('Creates PR')).toBeVisible()
+    await openPhase(page, 'Ship')
+    await expect(skillRow(page, 'ship')).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText('Creates PR').first()).toBeVisible()
   })
 
   test('/review shows "Report only" badge', async ({ page }) => {
@@ -207,7 +221,7 @@ test.describe('GstackSkillLauncher — type badges', () => {
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
     // Understand phase is default-open
-    await expect(page.getByText('/review')).toBeVisible({ timeout: 8000 })
+    await expect(skillRow(page, 'review')).toBeVisible({ timeout: 8000 })
     // Multiple "Report only" badges possible — just check at least one is visible
     await expect(page.getByText('Report only').first()).toBeVisible()
   })
@@ -222,9 +236,9 @@ test.describe('GstackSkillLauncher — canary', () => {
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    await page.getByText('Monitor', { exact: true }).first().click()
+    await openPhase(page, 'Monitor')
 
-    await expect(page.getByText('/canary')).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText('/canary', { exact: true })).toBeVisible({ timeout: 3000 })
     await expect(page.getByText('Not available in the factory')).toBeVisible()
   })
 })
@@ -238,7 +252,7 @@ test.describe('GstackSkillLauncher — objective textarea', () => {
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    await page.getByText('/investigate').click({ timeout: 8000 })
+    await skillRow(page, 'investigate').click({ timeout: 8000 })
 
     const textarea = page.getByRole('textbox').first()
     const value = await textarea.inputValue()
@@ -251,7 +265,7 @@ test.describe('GstackSkillLauncher — objective textarea', () => {
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    await page.getByText('/investigate').click({ timeout: 8000 })
+    await skillRow(page, 'investigate').click({ timeout: 8000 })
 
     const textarea = page.getByRole('textbox').first()
     await textarea.fill('Custom test objective for playwright')
@@ -264,17 +278,18 @@ test.describe('GstackSkillLauncher — objective textarea', () => {
 
     await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    await page.getByText('/investigate').click({ timeout: 8000 })
+    await skillRow(page, 'investigate').click({ timeout: 8000 })
 
     const textarea = page.getByRole('textbox').first()
     await textarea.fill('My custom objective')
 
     // Collapse phase then re-expand
-    await page.getByText('Understand', { exact: true }).first().click()
-    await page.getByText('Understand', { exact: true }).first().click()
+    await page.getByRole('button', { name: 'Collapse Understand skills' }).click()
+    await openPhase(page, 'Understand')
 
-    // Re-expand the skill row
-    await page.getByText('/investigate').click()
+    // Re-expand the skill row (it may have stayed open through the phase toggle)
+    const expandRow = page.getByRole('button', { name: /^Expand \/investigate/ })
+    if (await expandRow.count() > 0) await expandRow.click()
     const restoredValue = await page.getByRole('textbox').first().inputValue()
 
     // Value may reset (no localStorage for objectives) — just verify field is present

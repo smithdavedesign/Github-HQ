@@ -13,6 +13,7 @@ import { computePortfolioEvents, computeInternalDeps, computeExternalDeps, shoul
 import type { RepoDepInfo } from '@/lib/health/events'
 import { eq, and, inArray } from 'drizzle-orm'
 import { decrypt } from '@/lib/crypto-utils'
+import { commitCounts } from './commit-stats'
 
 type ExistingRepoState = {
   id: number
@@ -214,19 +215,26 @@ export async function syncSingleRepo(
     octokit.rest.actions.listWorkflowRunsForRepo({ owner, repo: name, per_page: 1 }),
   ])
 
-  // Process commit data
-  let weeklyCommits = 0
-  let monthlyCommits = 0
-  let quarterlyCommits = 0
-  let weeklyCommitData: { week: number; total: number }[] = []
+  // Existing metrics: the security score (set by the security cron) and the previous commit counts.
+  // If we use the hardcoded 100 here, health scores ignore real Dependabot alerts.
+  const [repoRecord, existingMetrics] = await Promise.all([
+    db.query.repositories.findFirst({
+      where: eq(repositories.id, repoId),
+      with: { deployments: { columns: { status: true } } },
+      columns: { mrr: true, stars: true, isRevenueGenerating: true },
+    }),
+    db.query.repositoryMetrics.findFirst({
+      where: eq(repositoryMetrics.repoId, repoId),
+      columns: { securityScore: true, weeklyCommits: true, monthlyCommits: true, quarterlyCommits: true, weeklyCommitData: true },
+    }),
+  ])
 
-  if (commitActivity.status === 'fulfilled' && Array.isArray(commitActivity.value.data)) {
-    const weeks = commitActivity.value.data.slice(-13)
-    weeklyCommitData = weeks.map(w => ({ week: w.week ?? 0, total: w.total ?? 0 }))
-    quarterlyCommits = weeks.reduce((sum, w) => sum + (w.total ?? 0), 0)
-    monthlyCommits = weeks.slice(-4).reduce((sum, w) => sum + (w.total ?? 0), 0)
-    weeklyCommits = weeks[weeks.length - 1]?.total ?? 0
-  }
+  // Commit counts: GitHub answers 202 while it computes a repo's stats, so without fresh numbers
+  // the previous sync's are kept rather than read as zero commits (commit-stats.ts).
+  const { weeklyCommits, monthlyCommits, quarterlyCommits, weeklyCommitData } = commitCounts(
+    commitActivity.status === 'fulfilled' ? commitActivity.value.data : null,
+    existingMetrics,
+  )
 
   const issueCount = openIssues.status === 'fulfilled'
     ? parseInt(String(openIssues.value.headers['x-total-count'] ?? '0')) || 0
@@ -246,20 +254,6 @@ export async function syncSingleRepo(
   const activityScore = calculateActivityScore(monthlyCommits, quarterlyCommits, prCount, hasReleases)
 
   const stackData = await scanRepository(octokit, owner, name, repoId)
-
-  // Fetch existing security score (set by the security cron) before calculating health.
-  // If we use the hardcoded 100 here, health scores ignore real Dependabot alerts.
-  const [repoRecord, existingMetrics] = await Promise.all([
-    db.query.repositories.findFirst({
-      where: eq(repositories.id, repoId),
-      with: { deployments: { columns: { status: true } } },
-      columns: { mrr: true, stars: true, isRevenueGenerating: true },
-    }),
-    db.query.repositoryMetrics.findFirst({
-      where: eq(repositoryMetrics.repoId, repoId),
-      columns: { securityScore: true },
-    }),
-  ])
 
   const currentSecurityScore = existingMetrics?.securityScore ?? 100
 

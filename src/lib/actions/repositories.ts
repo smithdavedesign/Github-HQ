@@ -6,7 +6,8 @@ import { toNum } from '@/lib/utils'
 import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, techStack, deployments, securityFindings } from '@/lib/db/schema'
 import { eq, and, sql, inArray, desc } from 'drizzle-orm'
-import { portfolioEvents } from '@/lib/db/schema'
+import { agentRequests, portfolioEvents } from '@/lib/db/schema'
+import { closedPrTaskIds } from '@/lib/agents/lifecycle-utils'
 import { decrypt } from '@/lib/crypto-utils'
 
 /**
@@ -857,25 +858,18 @@ export async function getOpenAgentPRsByRepo(): Promise<Record<number, { prUrl: s
   const events = await db.query.portfolioEvents.findMany({
     where: and(
       eq(portfolioEvents.userId, session.user.id),
-      inArray(portfolioEvents.eventType, ['agent_pr_created', 'agent_pr_merged']),
+      inArray(portfolioEvents.eventType, ['agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected']),
     ),
     columns: { repoId: true, eventType: true, metadata: true },
     orderBy: [desc(portfolioEvents.occurredAt)],
   })
 
-  const mergedTaskIds = new Set<string>()
-  for (const e of events) {
-    if (e.eventType === 'agent_pr_merged') {
-      const meta = e.metadata as { taskId?: string } | null
-      if (meta?.taskId) mergedTaskIds.add(meta.taskId)
-    }
-  }
-
+  const closed = closedPrTaskIds(events)
   const result: Record<number, { prUrl: string; taskId: string }> = {}
   for (const e of events) {
     if (e.eventType === 'agent_pr_created' && e.repoId != null) {
       const meta = e.metadata as { taskId?: string; prUrl?: string } | null
-      if (meta?.taskId && !mergedTaskIds.has(meta.taskId) && !(e.repoId in result)) {
+      if (meta?.taskId && !closed.has(meta.taskId) && !(e.repoId in result)) {
         result[e.repoId] = { prUrl: meta.prUrl ?? '', taskId: meta.taskId }
       }
     }
@@ -920,18 +914,24 @@ export async function getAgentStats() {
 }
 
 /** Returns repos with active (non-terminal) agent tasks — used by the Active Agents dashboard card */
+/**
+ * Repos with agent work in flight (last 24 h) for the dashboard card. The newest task per repo
+ * decides. A factory request's row is the truth (a request that ended "verified" writes no
+ * closing event, so events alone left it "queued"); older Nexus tasks are projected from events.
+ */
 export async function getActiveAgentSummary() {
   const session = await auth()
   if (!session?.user?.id) return []
+  const userId = session.user.id
 
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
 
   try {
     const events = await db.query.portfolioEvents.findMany({
       where: and(
-        eq(portfolioEvents.userId, session.user.id),
+        eq(portfolioEvents.userId, userId),
         inArray(portfolioEvents.eventType, [
-          'agent_task_queued', 'agent_pr_created', 'agent_pr_merged',
+          'agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected',
           'agent_execution_failed', 'agent_skill_report',
         ]),
       ),
@@ -941,36 +941,44 @@ export async function getActiveAgentSummary() {
       limit: 100,
     })
 
-    // Build per-repo lifecycle: find repos with non-terminal tasks
-    const repoStates = new Map<number, { repoName: string; stage: string; taskId: string; prUrl?: string; occurredAt: Date }>()
-    const mergedTaskIds = new Set<string>()
+    const taskIdOf = (e: { metadata: unknown }) => (e.metadata as { taskId?: string } | null)?.taskId
+    const taskIds = [...new Set(events.map(taskIdOf).filter((t): t is string => !!t))]
+    const requests = taskIds.length === 0 ? [] : await db.select({ id: agentRequests.id, status: agentRequests.status, prUrl: agentRequests.prUrl })
+      .from(agentRequests)
+      .where(and(eq(agentRequests.userId, userId), inArray(agentRequests.id, taskIds)))
+    const requestById = new Map(requests.map(r => [r.id, r]))
+
+    const closed = closedPrTaskIds(events)
     const reportedTaskIds = new Set<string>()
     const failedTaskIds = new Set<string>()
-
     for (const e of events) {
-      const meta = e.metadata as { taskId?: string; prUrl?: string } | null
-      if (!meta?.taskId) continue
-      if (e.eventType === 'agent_pr_merged')    mergedTaskIds.add(meta.taskId)
-      if (e.eventType === 'agent_skill_report') reportedTaskIds.add(meta.taskId)
-      if (e.eventType === 'agent_execution_failed') failedTaskIds.add(meta.taskId)
+      const taskId = taskIdOf(e)
+      if (!taskId) continue
+      if (e.eventType === 'agent_skill_report') reportedTaskIds.add(taskId)
+      if (e.eventType === 'agent_execution_failed') failedTaskIds.add(taskId)
     }
 
+    const repoStates = new Map<number, { repoName: string; stage: string; taskId: string; prUrl?: string; occurredAt: Date }>()
+    const decided = new Set<number>()
     for (const e of events) {
       if (!e.repoId || !e.repository) continue
-      const meta = e.metadata as { taskId?: string; prUrl?: string } | null
-      if (!meta?.taskId) continue
-      if (repoStates.has(e.repoId)) continue // already have most recent
+      const taskId = taskIdOf(e)
+      if (!taskId || decided.has(e.repoId)) continue
+      decided.add(e.repoId) // the repo's newest task decides; older tasks don't come back
 
-      const taskId = meta.taskId
-      const isMerged   = mergedTaskIds.has(taskId)
-      const isReported = reportedTaskIds.has(taskId)
-      const isFailed   = failedTaskIds.has(taskId)
-
-      if (e.eventType === 'agent_task_queued' && !isMerged && !isReported && !isFailed) {
-        repoStates.set(e.repoId, { repoName: e.repository.name, stage: 'queued', taskId, occurredAt: e.occurredAt })
-      } else if (e.eventType === 'agent_pr_created' && !isMerged) {
-        repoStates.set(e.repoId, { repoName: e.repository.name, stage: 'pr_ready', taskId, prUrl: meta.prUrl, occurredAt: e.occurredAt })
+      const request = requestById.get(taskId)
+      const state = { repoName: e.repository.name, taskId, occurredAt: e.occurredAt }
+      if (request) {
+        if (request.status === 'queued' || request.status === 'running') repoStates.set(e.repoId, { ...state, stage: request.status })
+        else if (request.status === 'pr' && !closed.has(taskId)) repoStates.set(e.repoId, { ...state, stage: 'pr_ready', prUrl: request.prUrl ?? undefined })
+        continue
       }
+      // Older Nexus task: from its events.
+      const meta = e.metadata as { prUrl?: string } | null
+      const pr = events.find(x => x.eventType === 'agent_pr_created' && taskIdOf(x) === taskId)
+      if (closed.has(taskId) || reportedTaskIds.has(taskId) || failedTaskIds.has(taskId)) continue
+      if (pr) repoStates.set(e.repoId, { ...state, stage: 'pr_ready', prUrl: (pr.metadata as { prUrl?: string } | null)?.prUrl ?? meta?.prUrl })
+      else repoStates.set(e.repoId, { ...state, stage: 'queued' })
     }
 
     return [...repoStates.values()]

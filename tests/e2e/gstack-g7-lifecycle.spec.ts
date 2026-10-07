@@ -56,21 +56,16 @@ test.describe('GstackSkillLauncher — lifecycle sections', () => {
     return true
   }
 
-  test('Agent tab shows gstack skills section', async ({ page }) => {
+  test('Agent tab shows the skills launcher', async ({ page }) => {
     if (!await openFactoryRepoAgentTab(page)) { test.skip(true, NOT_FACTORY_OWNER); return }
-    await expect(page.getByText('GSTACK SKILLS')).toBeVisible({ timeout: 8000 })
+    // The "GSTACK SKILLS" heading is gone; the launcher's phase toggles are the section.
+    await expect(page.getByRole('button', { name: /^(Expand|Collapse) Understand skills/ })).toBeVisible({ timeout: 8000 })
   })
 
   test('Lifecycle phase labels are visible', async ({ page }) => {
     if (!await openFactoryRepoAgentTab(page)) { test.skip(true, NOT_FACTORY_OWNER); return }
     // At least some phase headers should be visible
-    const phaseTexts = ['Understand', 'Build Quality', 'Ship', 'Monitor', 'Reflect']
-    let foundPhase = false
-    for (const phase of phaseTexts) {
-      const visible = await page.getByText(phase, { exact: true }).isVisible().catch(() => false)
-      if (visible) { foundPhase = true; break }
-    }
-    expect(foundPhase).toBe(true)
+    await expect(page.getByRole('button', { name: /^(Expand|Collapse) (Understand|Build Quality|Ship|Monitor|Reflect) skills/ }).first()).toBeVisible({ timeout: 8000 })
   })
 
   test('/investigate skill is visible as a read-only report', async ({ page }) => {
@@ -82,8 +77,9 @@ test.describe('GstackSkillLauncher — lifecycle sections', () => {
 
   test('/health skill shows Report only badge', async ({ page }) => {
     if (!await openFactoryRepoAgentTab(page)) { test.skip(true, NOT_FACTORY_OWNER); return }
-    // Click Monitor phase to open it
-    await page.getByText('Monitor', { exact: true }).click()
+    // Open the Monitor phase (it may already be open: which phases start open depends on the repo)
+    const expandMonitor = page.getByRole('button', { name: 'Expand Monitor skills' })
+    if (await expandMonitor.count() > 0) await expandMonitor.click()
     await expect(page.getByText('/health', { exact: true }).first()).toBeVisible({ timeout: 3000 })
     await expect(page.getByText('Report only').first()).toBeVisible()
   })
@@ -115,10 +111,12 @@ test.describe('SkillReportFindings — full expansion', () => {
     await page.getByRole('tab', { name: /Agent/i }).click()
 
     // Should show "Show N more findings" toggle
-    await expect(page.getByText(/Show \d+ more finding/)).toBeVisible({ timeout: 8000 })
+    // The seeded report has 8 findings, so 4 more (other reports may show their own toggle).
+    const toggle = page.getByRole('button', { name: 'Show 4 more findings' }).first()
+    await expect(toggle).toBeVisible({ timeout: 8000 })
 
     // Click to expand
-    await page.getByText(/Show \d+ more finding/).click()
+    await toggle.click()
 
     // All 8 findings should now be visible
     for (let i = 5; i <= 8; i++) {
@@ -135,19 +133,26 @@ test.describe('SkillReportFindings — full expansion', () => {
     const ctx = await getContext()
     if (!ctx?.repoId) { test.skip(true, 'No repo'); return }
 
+    // The repo's real reports may have toggles of their own: count them before seeding.
+    const toggles = page.getByText(/Show \d+ more finding/)
+    await page.goto(`/repos/${ctx.repoId}`)
+    await page.getByRole('tab', { name: /Agent/i }).click()
+    await expect(page.getByRole('button', { name: /^(Expand|Collapse) Understand skills/ })).toBeVisible({ timeout: 8000 })
+    const before = await toggles.count()
+
     const taskId = `findings-short-${Date.now()}`
     const findings = ['Finding 1: TypeScript error', 'Finding 2: Dead code', 'Finding 3: Missing test']
     await seedSkillReport(ctx.userId, ctx.repoId, 'health', findings, taskId)
+    try {
+      await page.reload()
+      await page.getByRole('tab', { name: /Agent/i }).click()
+      await expect(page.getByText('Finding 1: TypeScript error').first()).toBeVisible({ timeout: 8000 })
 
-    await page.goto(`/repos/${ctx.repoId}`)
-    await page.getByRole('tab', { name: /Agent/i }).click()
-    await expect(page.getByText('Finding 1:').first()).toBeVisible({ timeout: 8000 })
-
-    // No expand toggle since 3 < 4 preview threshold
-    const hasToggle = await page.getByText(/Show \d+ more finding/).isVisible().catch(() => false)
-    expect(hasToggle).toBe(false)
-
-    await cleanup(ctx.repoId)
+      // No expand toggle for this report since 3 < 4 preview threshold
+      expect(await toggles.count()).toBe(before)
+    } finally {
+      await cleanup(ctx.repoId)
+    }
   })
 })
 
@@ -212,13 +217,15 @@ test.describe('ActiveAgentsCard on dashboard', () => {
         ${JSON.stringify({ taskId, skillName: 'health' })}::jsonb, NOW())
     `
 
-    await page.goto('/')
-    // Card appears when agents are running
-    // Auto-waiting: isVisible() ignores its timeout and returned before the card streamed in.
-    await expect(page.getByText(/agent.*running/i).or(page.getByText(ctx.repoName ?? '', { exact: true })).first()).toBeVisible({ timeout: 8000 })
-
-    // Cleanup
-    await sql`DELETE FROM portfolio_events WHERE metadata->>'taskId' = ${taskId}`
+    // Cleanup in finally: a failed assertion used to leave this row in the shared database.
+    try {
+      await page.goto('/')
+      // Card appears when agents are running
+      // Auto-waiting: isVisible() ignores its timeout and returned before the card streamed in.
+      await expect(page.getByText(/agent.*running/i).or(page.getByText(ctx.repoName ?? '', { exact: true })).first()).toBeVisible({ timeout: 8000 })
+    } finally {
+      await sql`DELETE FROM portfolio_events WHERE metadata->>'taskId' = ${taskId}`
+    }
   })
 
   test('card hidden when no agents in flight', async ({ page }) => {

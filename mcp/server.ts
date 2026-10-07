@@ -30,6 +30,7 @@ import { randomUUID } from 'node:crypto'
 import { OPEN_REQUEST_STATUSES, isAllowlisted, modeForSkill, newRequestRow, queuedEventValues } from '../src/lib/agents/factory-request-utils.js'
 import { requestJobOptions, withQueue } from '../factory/lib/queue.js'
 import { isGstackSkill, isSkillAllowedForRepo, parseEnvSkillAllowlistMap, parseRepoSkillAllowlist } from '../src/lib/skills/skill-policy.js'
+import { closedPrTaskIds } from '../src/lib/agents/lifecycle-utils.js'
 import factoryConfig from '../factory/factory.config.json'
 
 const DATABASE_URL = process.env.DATABASE_URL
@@ -1168,13 +1169,7 @@ async function getOpenAgentPRMap(): Promise<Map<number, { prUrl: string; taskId:
   })
 
   // Merged or closed without merging: either way the PR no longer holds the repo.
-  const mergedTaskIds = new Set<string>()
-  for (const e of events) {
-    if (e.eventType === 'agent_pr_merged' || e.eventType === 'agent_pr_rejected') {
-      const meta = e.metadata as { taskId?: string } | null
-      if (meta?.taskId) mergedTaskIds.add(meta.taskId)
-    }
-  }
+  const mergedTaskIds = closedPrTaskIds(events)
 
   const result = new Map<number, { prUrl: string; taskId: string; queuedAt: Date }>()
   for (const e of events) {
