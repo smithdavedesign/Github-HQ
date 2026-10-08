@@ -1,45 +1,39 @@
 import { auth, signOut } from '@/lib/auth'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { db } from '@/lib/db'
-import { users, scans } from '@/lib/db/schema'
-import { eq, desc } from 'drizzle-orm'
+import { users, repositories } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { formatDistanceToNow } from '@/lib/utils'
-import { Shield, Clock, GitFork, Cpu, Target, CreditCard, FileCode, Sparkles, Workflow, Bell, Bot } from 'lucide-react'
+import { GitFork, CreditCard, Sparkles, Bell, Bot, ChevronRight } from 'lucide-react'
 import { PublicProfileToggle } from '@/components/settings/public-profile-toggle'
-import { GoalManager } from '@/components/settings/goal-manager'
-import { HoursInput } from '@/components/settings/hours-input'
 import { StripeConnect } from '@/components/settings/stripe-connect'
 import { ProfileReadmeGenerator } from '@/components/settings/profile-readme-generator'
 import { LLMSettings } from '@/components/settings/llm-settings'
 import { NotificationSettings } from '@/components/settings/notification-settings'
 import { AutoDispatchSettings } from '@/components/settings/auto-dispatch-settings'
 import { getLLMSettings } from '@/lib/actions/llm'
-import { getGoals } from '@/lib/actions/goals'
 import { hasStripeKey, stripeKeySource } from '@/lib/actions/stripe'
 import { getNotificationSettings } from '@/lib/actions/notifications'
 import { getAutoDispatchSettings } from '@/lib/actions/auto-dispatch-settings'
-import { repositories } from '@/lib/db/schema'
 
+/**
+ * Only what you change lives here (2026-10-08 review). Status moved to where it's watched: sync
+ * history and the scheduled jobs to the Agents page, goals and weekly hours to the dashboard's
+ * "More insights" next to the cards that use them.
+ */
 export default async function SettingsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [user, recentScans, activeGoals, stripeConnected, stripeSource, repoList, llmSettings, notifSettings, autoDispatchSettingsData] = await Promise.all([
+  const [user, stripeConnected, stripeSource, repoList, llmSettings, notifSettings, autoDispatchSettingsData] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, session.user.id),
-      columns: { id: true, name: true, email: true, image: true, githubLogin: true, lastSyncedAt: true, createdAt: true, publicProfile: true, hoursPerWeek: true },
+      columns: { githubLogin: true, createdAt: true, publicProfile: true },
     }),
-    db.query.scans.findMany({
-      where: eq(scans.userId, session.user.id),
-      orderBy: [desc(scans.startedAt)],
-      limit: 5,
-    }),
-    getGoals(),
     hasStripeKey(),
     stripeKeySource(),
     db.query.repositories.findMany({
@@ -53,59 +47,59 @@ export default async function SettingsPage() {
   ])
 
   const initials = session.user.name?.split(' ').map((n) => n[0]).join('').toUpperCase() ?? '?'
+  const ownsFactory = process.env.FACTORY_USER_ID === session.user.id
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground text-sm mt-1">Account and sync configuration</p>
+        <p className="text-muted-foreground text-sm mt-1">AI provider, alerts, agents, revenue and your public profile</p>
       </div>
 
-      {/* AI Provider */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Sparkles className="w-4 h-4" />
-            AI Provider
-          </CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><Sparkles className="w-4 h-4" />AI provider</CardTitle>
         </CardHeader>
         <CardContent>
-          <LLMSettings
-            initialProvider={llmSettings.provider}
-            keySource={llmSettings.keySource}
-            savedProviders={llmSettings.savedProviders}
-          />
+          <LLMSettings initialProvider={llmSettings.provider} keySource={llmSettings.keySource} savedProviders={llmSettings.savedProviders} />
         </CardContent>
       </Card>
 
-      {/* Notifications */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Bell className="w-4 h-4" />
-            Notifications
-          </CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><Bell className="w-4 h-4" />Notifications</CardTitle>
         </CardHeader>
         <CardContent>
           <NotificationSettings
-            initialWebhookUrl={notifSettings?.webhookUrl ?? ''}
+            savedWebhookHint={notifSettings?.webhookHint ?? null}
             initialThreshold={notifSettings?.healthAlertThreshold ?? 55}
           />
         </CardContent>
       </Card>
 
-      {/* Auto-dispatch */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Bot className="w-4 h-4 text-indigo-500" />
-            Agent Auto-Dispatch
-          </CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><Bot className="w-4 h-4 text-indigo-500" />Agents</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Automatically queue advisor actions for the factory on Monday morning.
+            The factory on your Mac runs every agent request: sandboxed, on free models, as draft PRs you merge.
           </p>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+            <span className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${ownsFactory ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
+              {ownsFactory
+                ? `Factory: yours${process.env.REDIS_URL ? ', queue connected' : ', no REDIS_URL (requests wait for the next scheduled cycle)'}`
+                : process.env.FACTORY_USER_ID ? 'Factory: runs for another account' : 'Factory: not set up (FACTORY_USER_ID and REDIS_URL in Vercel)'}
+            </span>
+            <Link href="/agent-performance" className="flex items-center gap-0.5 text-muted-foreground hover:text-foreground">
+              Worker, queue, schedules and runs <ChevronRight className="w-3 h-3" />
+            </Link>
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Monday auto-dispatch</p>
+            <p className="text-xs text-muted-foreground">Queue the advisor&apos;s actions for the factory every Monday morning.</p>
+          </div>
           <AutoDispatchSettings
             initialEnabled={autoDispatchSettingsData?.autoDispatchEnabled ?? false}
             initialEffortGate={autoDispatchSettingsData?.autoDispatchEffortGate ?? 'quick_only'}
@@ -116,237 +110,52 @@ export default async function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Profile */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Profile</CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center gap-4">
-          <Avatar className="w-14 h-14">
-            <AvatarImage src={session.user.image ?? undefined} />
-            <AvatarFallback>{initials}</AvatarFallback>
-          </Avatar>
-          <div className="space-y-1">
-            <p className="font-medium">{session.user.name}</p>
-            <p className="text-sm text-muted-foreground">{session.user.email}</p>
-            {user?.githubLogin && (
-              <p className="text-xs text-muted-foreground">@{user.githubLogin}</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* GitHub Access */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Shield className="w-4 h-4" />
-            GitHub OAuth Scopes
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            RepoHQ was granted the following permissions when you signed in:
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {['repo', 'read:user', 'read:org', 'read:project', 'read:packages', 'security_events'].map((scope) => (
-              <Badge key={scope} variant="outline" className="font-mono text-xs">{scope}</Badge>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            The <code className="bg-muted px-1 rounded">repo</code> scope is required to access private repositories.
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Sync Status */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            Sync History
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {recentScans.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No syncs yet. Use the Sync button in the top bar.</p>
-          ) : (
-            <div className="space-y-2">
-              {recentScans.map((scan) => {
-                const statusColor = scan.status === 'complete' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                  : scan.status === 'running' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
-                  : scan.status === 'failed' ? 'bg-red-500/10 text-red-600 border-red-500/20'
-                  : 'bg-slate-500/10 text-slate-500 border-slate-500/20'
-
-                return (
-                  <div key={scan.id} className="flex items-center justify-between text-sm py-2 border-b last:border-0">
-                    <div className="flex items-center gap-3">
-                      <Badge variant="outline" className={`capitalize text-xs ${statusColor}`}>
-                        {scan.status}
-                      </Badge>
-                      <span className="text-muted-foreground capitalize">{scan.type}</span>
-                      {scan.totalRepos != null && scan.totalRepos > 0 && (
-                        <span className="text-muted-foreground text-xs">
-                          {scan.processedRepos}/{scan.totalRepos} repos
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(scan.startedAt)}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Cron Schedule */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Cpu className="w-4 h-4" />
-            Scheduled Jobs
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2 text-sm">
-            {/* Mirrors .github/workflows/cron-*.yml, the canonical triggers (AGENTS.md "Cron jobs"). */}
-            {[
-              { label: 'GitHub Sync', schedule: 'Every 6 hours', path: '/api/cron/sync' },
-              { label: 'Security Scan', schedule: 'Daily at 03:00 UTC', path: '/api/cron/security' },
-              { label: 'Deployment Checks', schedule: 'Every 12 hours', path: '/api/cron/deployments' },
-              { label: 'Weekly Digest', schedule: 'Mondays at 06:00 UTC', path: '/api/cron/digest' },
-              { label: 'AI Summaries', schedule: 'Sundays at 05:00 UTC', path: '/api/cron/ai-summary' },
-            ].map(({ label, schedule, path }) => (
-              <div key={path} className="flex items-center justify-between py-1.5 border-b last:border-0">
-                <div>
-                  <p className="font-medium">{label}</p>
-                  <p className="text-xs text-muted-foreground font-mono">{path}</p>
-                </div>
-                <span className="text-xs text-muted-foreground">{schedule}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground mt-3">
-            Triggered by GitHub Actions. GitHub pauses scheduled workflows after 60 days without a commit; a banner appears when scheduled data stops arriving. Each run shows on the Agents page.
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Stripe */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <CreditCard className="w-4 h-4" />
-            Revenue Integration
-          </CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><CreditCard className="w-4 h-4" />Revenue</CardTitle>
         </CardHeader>
         <CardContent>
           <StripeConnect connected={stripeConnected} keySource={stripeSource} repos={repoList} />
         </CardContent>
       </Card>
 
-      {/* Goals */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Target className="w-4 h-4" />
-            Goals
-          </CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><GitFork className="w-4 h-4" />Public profile</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <HoursInput initialHours={user?.hoursPerWeek ?? 10} />
-          <div className="h-px bg-border/40" />
-          <GoalManager initialGoals={activeGoals} />
+        <CardContent className="space-y-4">
+          <PublicProfileToggle enabled={user?.publicProfile ?? false} username={user?.githubLogin} />
+          {user?.publicProfile && user?.githubLogin && (
+            <details className="group rounded-lg border border-border/60">
+              <summary className="cursor-pointer select-none list-none px-3 py-2 text-sm font-medium flex items-center gap-1">
+                <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />
+                GitHub profile README
+                <span className="ml-1 text-xs font-normal text-muted-foreground">generated from your top repos</span>
+              </summary>
+              <div className="px-3 pb-3">
+                <ProfileReadmeGenerator username={user.githubLogin} previewMarkdown="" />
+              </div>
+            </details>
+          )}
         </CardContent>
       </Card>
 
-      {/* Public Portfolio */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <GitFork className="w-4 h-4" />
-            Portfolio
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <PublicProfileToggle
-            enabled={user?.publicProfile ?? false}
-            username={user?.githubLogin}
-          />
-        </CardContent>
-      </Card>
-
-      {/* GitHub Profile README — only shown when public profile is enabled */}
-      {user?.publicProfile && user?.githubLogin && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <FileCode className="w-4 h-4" />
-              GitHub Profile README
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ProfileReadmeGenerator
-              username={user.githubLogin}
-              previewMarkdown=""
-            />
-          </CardContent>
-        </Card>
-      )}
-
-      <Separator />
-
-      {/* Agent Execution — the factory (Agent HQ, roadmap Phase 81) */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Workflow className="w-4 h-4" />
-            Agent Execution
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Run agent, the gstack launcher and auto-dispatch queue requests for the factory: it runs them
-            sandboxed on free models, judges every change and opens draft PRs you merge. Queue, schedules and
-            traces are on the <a href="/agent-performance" className="underline hover:text-foreground">Agents page</a>.
-          </p>
-          <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-2 text-xs font-mono">
-            <p className="text-muted-foreground font-sans text-xs font-medium mb-2">Environment variables (Vercel):</p>
-            <p><span className="text-indigo-400">FACTORY_USER_ID</span>=your RepoHQ user id (the factory&apos;s owner)</p>
-            <p><span className="text-indigo-400">REDIS_URL</span>=rediss://… (agent-hq-redis from render.yaml)</p>
+      {/* Account: read-only, so one line instead of two cards. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-5">
+        <div className="flex items-center gap-3 min-w-0">
+          <Avatar className="w-9 h-9">
+            <AvatarImage src={session.user.image ?? undefined} />
+            <AvatarFallback>{initials}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="text-sm font-medium truncate">
+              {session.user.name}
+              {user?.githubLogin && <span className="font-normal text-muted-foreground"> · @{user.githubLogin}</span>}
+            </p>
+            <p className="text-xs text-muted-foreground" title="GitHub scopes: repo, read:user, read:org, read:project, read:packages, security_events">
+              Signed in with GitHub (private repos and security alerts) · joined {formatDistanceToNow(user?.createdAt ?? null)}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            {process.env.FACTORY_USER_ID === session.user.id ? (
-              <>
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-xs text-emerald-600 font-medium">
-                  You own the factory{process.env.REDIS_URL ? ' — queue connected' : ' — no REDIS_URL: requests wait for the next scheduled cycle'}
-                </span>
-              </>
-            ) : (
-              <>
-                <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />
-                <span className="text-xs text-muted-foreground">
-                  {process.env.FACTORY_USER_ID ? 'The factory runs for another account' : 'Not configured (FACTORY_USER_ID)'}
-                </span>
-              </>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Separator />
-
-      {/* Sign out */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium">Sign out</p>
-          <p className="text-xs text-muted-foreground">
-            Member since {formatDistanceToNow(user?.createdAt ?? null)}
-          </p>
         </div>
         <form action={async () => {
           'use server'

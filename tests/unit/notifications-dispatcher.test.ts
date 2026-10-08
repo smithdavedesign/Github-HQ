@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // We test the webhook send logic by mocking fetch
 
 // Import from the pure webhook module (no DB dependency)
-import { sendWebhook, webhookBody } from '../../src/lib/notifications/webhook'
+import { maskWebhookUrl, sendWebhook, webhookBody } from '../../src/lib/notifications/webhook'
 
 describe('sendWebhook', () => {
   beforeEach(() => {
@@ -97,5 +97,12 @@ describe('notification event types', () => {
       expect(typeof t).toBe('string')
       expect(t.length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('maskWebhookUrl', () => {
+  it('shows only the host and the last 4 characters', () => {
+    expect(maskWebhookUrl('https://hooks.slack.com/services/T0/B0/abcdWXYZ')).toBe('hooks.slack.com/…WXYZ')
+    expect(maskWebhookUrl('not a url')).toBe('webhook/… url')
   })
 })

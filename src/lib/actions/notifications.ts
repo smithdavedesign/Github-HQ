@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { notifications, users } from '@/lib/db/schema'
 import { eq, and, isNull, desc, isNotNull } from 'drizzle-orm'
-import { sendWebhook } from '@/lib/notifications/webhook'
+import { maskWebhookUrl, sendWebhook } from '@/lib/notifications/webhook'
 
 export async function getUnreadNotifications(limit = 20) {
   const session = await auth()
@@ -79,16 +79,25 @@ export async function getNotificationSettings() {
     columns: { notificationWebhookUrl: true, healthAlertThreshold: true },
   })
   return {
-    webhookUrl: user?.notificationWebhookUrl ?? '',
+    // Masked: the saved URL is a credential and is never sent back to the browser.
+    webhookHint: user?.notificationWebhookUrl ? maskWebhookUrl(user.notificationWebhookUrl) : null,
     healthAlertThreshold: user?.healthAlertThreshold ?? 55,
   }
 }
 
-/** Send a test event to a webhook URL from the server (the browser can't: CSP, and Slack has no CORS). */
-export async function testNotificationWebhook(webhookUrl: string): Promise<{ ok: true } | { ok: false; error: string }> {
+/**
+ * Send a test event from the server (the browser can't: CSP, and Slack has no CORS). An empty
+ * `webhookUrl` tests the saved one, which the browser never sees.
+ */
+export async function testNotificationWebhook(webhookUrl = ''): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = await auth()
   if (!session?.user?.id) return { ok: false, error: 'Unauthorized' }
-  const url = webhookUrl.trim()
+  let url = webhookUrl.trim()
+  if (!url) {
+    const saved = await db.query.users.findFirst({ where: eq(users.id, session.user.id), columns: { notificationWebhookUrl: true } })
+    url = saved?.notificationWebhookUrl ?? ''
+    if (!url) return { ok: false, error: 'Enter a webhook URL first' }
+  }
   try { new URL(url) } catch { return { ok: false, error: 'Webhook URL is not a valid URL' } }
   try {
     await sendWebhook(url, {
@@ -103,12 +112,13 @@ export async function testNotificationWebhook(webhookUrl: string): Promise<{ ok:
   }
 }
 
-export async function saveNotificationSettings(webhookUrl: string, healthAlertThreshold: number): Promise<void> {
+/** `webhookUrl`: null keeps the saved URL, '' removes it, anything else replaces it. */
+export async function saveNotificationSettings(webhookUrl: string | null, healthAlertThreshold: number): Promise<void> {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
   const threshold = Math.min(100, Math.max(0, Math.round(healthAlertThreshold)))
-  const url = webhookUrl.trim()
+  const url = webhookUrl?.trim() ?? null
   if (url) {
     try { new URL(url) } catch { throw new Error('Webhook URL is not a valid URL') }
   }
@@ -116,7 +126,7 @@ export async function saveNotificationSettings(webhookUrl: string, healthAlertTh
   await db
     .update(users)
     .set({
-      notificationWebhookUrl: url || null,
+      ...(url === null ? {} : { notificationWebhookUrl: url || null }),
       healthAlertThreshold: threshold,
     })
     .where(eq(users.id, session.user.id))

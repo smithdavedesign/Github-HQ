@@ -68,10 +68,12 @@ test.describe('Notification settings', () => {
     await expect(page.getByText('Notifications', { exact: true })).toBeVisible({ timeout: 8000 })
   })
 
-  test('webhook URL input is present', async ({ page }) => {
+  test('webhook: an input, or the saved URL masked (it works like a password)', async ({ page }) => {
     await page.goto('/settings')
     const input = page.getByPlaceholder(/hooks\.slack\.com/i)
-    await expect(input).toBeVisible()
+    const saved = page.getByTitle(/Saved webhook/)
+    await expect(input.or(saved)).toBeVisible()
+    if (await saved.isVisible()) await expect(saved).toHaveText(/^[\w.-]+\/….{4}$/)
   })
 
   test('health threshold input accepts numeric values', async ({ page }) => {
