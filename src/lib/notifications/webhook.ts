@@ -36,6 +36,17 @@ export function isBlockedUrl(rawUrl: string): boolean {
 }
 
 /**
+ * What the settings page shows for a saved webhook URL: the host and the last 4 characters. The
+ * full URL is a credential (anyone with a Slack incoming-webhook URL can post to the channel), so
+ * it never goes back to the browser once saved.
+ */
+export function maskWebhookUrl(url: string): string {
+  let host = 'webhook'
+  try { host = new URL(url).host } catch { /* keep the generic label */ }
+  return `${host}/…${url.slice(-4)}`
+}
+
+/**
  * The body a destination accepts. Slack incoming webhooks reject anything without `text`
  * (400 "no_text") and Discord needs `content`; everything else (Make, Zapier, a custom endpoint)
  * gets the full event plus a one-line `text` summary.

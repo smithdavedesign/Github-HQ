@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test'
 test.describe('Settings — AI Provider', () => {
   test('shows the AI Provider card', async ({ page }) => {
     await page.goto('/settings')
-    await expect(page.getByText('AI Provider')).toBeVisible()
+    await expect(page.getByText('AI provider', { exact: true })).toBeVisible()
   })
 
   test('shows all three provider options', async ({ page }) => {

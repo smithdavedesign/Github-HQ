@@ -26,6 +26,8 @@ import { getActiveAgentSummary } from '@/lib/actions/repositories'
 import { CollapsibleSection } from '@/components/dashboard/collapsible-section'
 import { OpenPrsCard } from '@/components/dashboard/open-prs-card'
 import { NextActionsCard } from '@/components/dashboard/next-actions-card'
+import { GoalManager } from '@/components/settings/goal-manager'
+import { HoursInput } from '@/components/settings/hours-input'
 import { loadOpenPrs, type OpenPrsResult } from '@/lib/github/open-prs-query'
 import { getNextActions } from '@/lib/portfolio/next-actions-query'
 import { getMyAccuracyStats } from '@/lib/actions/advisor-accuracy'
@@ -172,6 +174,17 @@ export default async function DashboardPage() {
         <PortfolioValuation totalValue={valuation.totalValue} valuedRepos={valuation.valuedRepos} revenueValue={valuation.revenueValue} totalRepos={stats.total} />
 
         <GoalsCard goals={activeGoals} />
+
+        {/* Edited here, next to the cards that use them (moved from Settings). */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold">Goals &amp; weekly hours</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <HoursInput initialHours={userRecord?.hoursPerWeek ?? 10} />
+            <GoalManager initialGoals={activeGoals} />
+          </CardContent>
+        </Card>
 
         <CeoReportCard report={ceoReport} />
 

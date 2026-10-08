@@ -4,7 +4,9 @@ test.describe('Settings page', () => {
   test('loads settings page', async ({ page }) => {
     await page.goto('/settings')
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
-    await expect(page.getByText('Account and sync configuration')).toBeVisible()
+    for (const section of ['AI provider', 'Notifications', 'Agents', 'Revenue', 'Public profile']) {
+      await expect(page.locator('main').getByText(section, { exact: true })).toBeVisible()
+    }
   })
 
   test('shows user profile card', async ({ page }) => {
@@ -14,25 +16,27 @@ test.describe('Settings page', () => {
     await expect(page.locator('img[alt]').first()).toBeVisible()
   })
 
-  test('shows GitHub OAuth scopes', async ({ page }) => {
+  test('account is one line: GitHub sign-in, no scope badges card', async ({ page }) => {
     await page.goto('/settings')
-    await expect(page.getByText('GitHub OAuth Scopes')).toBeVisible()
-    // Scope badges are inside Badge components — use exact match within code/badge context
-    await expect(page.getByText('security_events', { exact: true })).toBeVisible()
-    await expect(page.getByText('read:user', { exact: true })).toBeVisible()
+    await expect(page.getByText(/Signed in with GitHub/)).toBeVisible()
+    await expect(page.getByText('GitHub OAuth Scopes')).toHaveCount(0)
   })
 
-  test('shows sync history section', async ({ page }) => {
+  test('switches show their state (Radix data-state is bridged to the data-checked variant)', async ({ page }) => {
     await page.goto('/settings')
-    await expect(page.getByText('Sync History')).toBeVisible()
+    const sw = page.locator('[data-slot=switch]').first()
+    await expect(sw).toBeVisible()
+    const bg = await sw.evaluate(e => getComputedStyle(e).backgroundColor)
+    expect(bg).not.toBe('rgba(0, 0, 0, 0)')
   })
 
-  test('shows scheduled jobs section', async ({ page }) => {
+  test('sync history and scheduled jobs live on the Agents page now', async ({ page }) => {
     await page.goto('/settings')
-    await expect(page.getByText('Scheduled Jobs')).toBeVisible()
-    await expect(page.getByText('GitHub Sync')).toBeVisible()
-    await expect(page.getByText('Security Scan')).toBeVisible()
-    await expect(page.getByText('AI Summaries')).toBeVisible()
+    await expect(page.getByText('Sync History')).toHaveCount(0)
+    await page.goto('/agent-performance')
+    await expect(page.getByText('Data sync', { exact: true })).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText('GitHub sync', { exact: true })).toBeVisible()
+    await expect(page.getByText('Security scan', { exact: true })).toBeVisible()
   })
 
   test('has sign out button', async ({ page }) => {

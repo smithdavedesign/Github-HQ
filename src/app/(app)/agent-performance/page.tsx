@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth'
 import { collapseRepeats, repeatKey } from '@/lib/feed/collapse'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
-import { portfolioEvents } from '@/lib/db/schema'
+import { portfolioEvents, scans } from '@/lib/db/schema'
 import { eq, and, inArray, desc } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,6 +16,7 @@ import { KPI_WINDOW_DAYS, loadFactoryKpis } from '@/lib/agents/factory-kpis-quer
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { getAgentHqOverview } from '@/lib/agents/agent-hq-data'
 import { AgentHqPanel } from '@/components/agents/agent-hq-panel'
+import { DataSyncCard } from '@/components/agents/data-sync-card'
 
 export default async function AgentPerformancePage() {
   const session = await auth()
@@ -25,7 +26,7 @@ export default async function AgentPerformancePage() {
   // Agent HQ (roadmap Phase 81): the factory's queue, schedules, runs and traces — owner only.
   const access = factoryAccess(userId)
 
-  const [events, accuracyStats, downgradedRepos, factoryEvents, kpis, overview] = await Promise.all([
+  const [events, accuracyStats, downgradedRepos, factoryEvents, kpis, overview, recentScans] = await Promise.all([
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.userId, userId),
@@ -45,6 +46,12 @@ export default async function AgentPerformancePage() {
     // Factory job record (Phase 79) for the KPIs.
     loadFactoryKpis(userId),
     access.ok ? getAgentHqOverview(userId) : Promise.resolve(null),
+    db.query.scans.findMany({
+      where: eq(scans.userId, userId),
+      orderBy: [desc(scans.startedAt)],
+      columns: { id: true, status: true, type: true, totalRepos: true, processedRepos: true, startedAt: true },
+      limit: 5,
+    }),
   ])
   const factory = summarizeFactoryEvents(factoryEvents)
   const pctOf = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`)
@@ -233,6 +240,8 @@ export default async function AgentPerformancePage() {
           Total agent cost: <span className="font-medium text-foreground">${totalCostUsd.toFixed(2)}</span>
         </p>
       )}
+
+      <DataSyncCard scans={recentScans} />
 
       {/* Event log */}
       <div className="space-y-2">

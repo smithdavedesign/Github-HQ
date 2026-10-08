@@ -3,6 +3,26 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* The ui/ components use Base UI state variants (data-checked, data-open, data-active…) but are
+   built on Radix, which sets data-state="checked|open|active" instead. Without this bridge every
+   Switch rendered as off and invisible, tabs never showed the active tab, and dialogs, menus and
+   tooltips lost their open/close animations. Each variant matches both conventions. */
+@custom-variant data-open {
+  &:where([data-state="open"]), &:where([data-open]:not([data-open="false"])) { @slot; }
+}
+@custom-variant data-closed {
+  &:where([data-state="closed"]), &:where([data-closed]:not([data-closed="false"])) { @slot; }
+}
+@custom-variant data-checked {
+  &:where([data-state="checked"]), &:where([data-checked]:not([data-checked="false"])) { @slot; }
+}
+@custom-variant data-unchecked {
+  &:where([data-state="unchecked"]), &:where([data-unchecked]:not([data-unchecked="false"])) { @slot; }
+}
+@custom-variant data-active {
+  &:where([data-state="active"]), &:where([data-active]:not([data-active="false"])) { @slot; }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

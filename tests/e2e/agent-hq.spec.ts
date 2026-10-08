@@ -134,12 +134,11 @@ test.describe('Agent task status API (factory requests)', () => {
   })
 })
 
-test.describe('Settings — Agent Execution card', () => {
-  test('describes the factory, not Nexus', async ({ page }) => {
+test.describe('Settings — Agents section', () => {
+  test('shows the factory status and links to the Agents page, not Nexus', async ({ page }) => {
     await page.goto('/settings')
-    await expect(page.getByText('Agent Execution')).toBeVisible({ timeout: 8000 })
-    await expect(page.getByText('FACTORY_USER_ID').first()).toBeVisible()
-    await expect(page.getByText('REDIS_URL').first()).toBeVisible()
+    await expect(page.getByText(/^Factory: /)).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('link', { name: /Worker, queue, schedules and runs/ })).toHaveAttribute('href', '/agent-performance')
     await expect(page.getByText('NEXUS_API_URL')).toHaveCount(0)
   })
 })
