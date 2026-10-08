@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { notifications, users } from '@/lib/db/schema'
 import { eq, and, isNull, desc, isNotNull } from 'drizzle-orm'
+import { sendWebhook } from '@/lib/notifications/webhook'
 
 export async function getUnreadNotifications(limit = 20) {
   const session = await auth()
@@ -80,6 +81,25 @@ export async function getNotificationSettings() {
   return {
     webhookUrl: user?.notificationWebhookUrl ?? '',
     healthAlertThreshold: user?.healthAlertThreshold ?? 55,
+  }
+}
+
+/** Send a test event to a webhook URL from the server (the browser can't: CSP, and Slack has no CORS). */
+export async function testNotificationWebhook(webhookUrl: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await auth()
+  if (!session?.user?.id) return { ok: false, error: 'Unauthorized' }
+  const url = webhookUrl.trim()
+  try { new URL(url) } catch { return { ok: false, error: 'Webhook URL is not a valid URL' } }
+  try {
+    await sendWebhook(url, {
+      eventType: 'test',
+      title: 'RepoHQ webhook test',
+      body: 'If you see this, your webhook is working.',
+      timestamp: new Date().toISOString(),
+    })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Webhook failed' }
   }
 }
 

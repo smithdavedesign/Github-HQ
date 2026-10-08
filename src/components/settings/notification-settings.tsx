@@ -4,8 +4,7 @@ import { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { saveNotificationSettings } from '@/lib/actions/notifications'
-import { sendWebhook } from '@/lib/notifications/webhook'
+import { saveNotificationSettings, testNotificationWebhook } from '@/lib/actions/notifications'
 
 interface NotificationSettingsProps {
   initialWebhookUrl: string
@@ -34,13 +33,10 @@ export function NotificationSettings({ initialWebhookUrl, initialThreshold }: No
     if (!webhookUrl) { toast.error('Enter a webhook URL first'); return }
     setTesting(true)
     try {
-      await sendWebhook(webhookUrl, {
-        eventType: 'test',
-        title: 'RepoHQ webhook test',
-        body: 'If you see this, your webhook is working.',
-        timestamp: new Date().toISOString(),
-      })
-      toast.success('Test webhook sent')
+      // Sent by the server: the browser can't reach Slack (CSP, and Slack's webhooks have no CORS).
+      const r = await testNotificationWebhook(webhookUrl)
+      if (r.ok) toast.success('Test webhook sent')
+      else toast.error(r.error)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Webhook failed')
     } finally {
