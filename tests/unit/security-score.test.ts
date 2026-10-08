@@ -41,3 +41,12 @@ describe('unknown security', () => {
     expect(point).toMatchObject({ avgHealth: 70, avgSecurity: 50, avgActivity: 20 })
   })
 })
+
+describe('httpStatus', () => {
+  it('reads the status of an Octokit error, null otherwise', async () => {
+    const { httpStatus } = await import('../../src/lib/github/client')
+    expect(httpStatus({ status: 401, message: 'Bad credentials' })).toBe(401)
+    expect(httpStatus(new Error('network'))).toBeNull()
+    expect(httpStatus(null)).toBeNull()
+  })
+})

@@ -1,7 +1,7 @@
 import { db } from '@/lib/db'
 import { securityFindings, repositoryMetrics, repositories } from '@/lib/db/schema'
 import type { InsertSecurityFinding } from '@/lib/db/schema'
-import type { OctokitClient } from './client'
+import { httpStatus, type OctokitClient } from './client'
 import { eq, and, inArray } from 'drizzle-orm'
 import { calculateHealthScore, securityScoreFromAlerts, type AlertCounts } from '@/lib/health/scoring'
 
@@ -38,6 +38,13 @@ async function syncRepoSecurity(
       per_page: 100,
     }),
   ])
+
+  // A rejected token fails every repo the same way: stop the whole run (the cron logs it as failed)
+  // instead of marking all 64 repos unknown, which happened when the OAuth token was revoked on
+  // 2026-10-08. The owner reconnects by signing out and back in.
+  if (dependabotAlerts.status === 'rejected' && httpStatus(dependabotAlerts.reason) === 401) {
+    throw new Error('GitHub rejected the stored token (401): sign out of RepoHQ and sign back in to reconnect')
+  }
 
   // Replace a type of finding only when it was read: a failed or forbidden read (Dependabot
   // alerts off, a GitHub error) keeps what's stored instead of wiping it.
@@ -92,8 +99,11 @@ async function syncRepoSecurity(
     await db.insert(securityFindings).values(rows)
   }
 
-  // Unknown (null) unless Dependabot alerts were read: "couldn't check" must not look like 100.
-  // An open secret alert is a known problem even without Dependabot, so it still scores.
+  // Unknown (null) only when GitHub says the alerts aren't available (403/404: Dependabot alerts
+  // off, or an archived repo): "couldn't check" must not look like 100. Any other failure (an
+  // outage, a timeout) keeps the last known score. An open secret alert still scores.
+  const unavailable = dependabotAlerts.status === 'rejected' && [403, 404].includes(httpStatus(dependabotAlerts.reason) ?? 0)
+  if (dependabotAlerts.status === 'rejected' && !unavailable && counts.secrets === 0) return
   const securityScore = dependabotAlerts.status === 'fulfilled' || counts.secrets > 0 ? securityScoreFromAlerts(counts) : null
 
   // Update security score and recalculate health score

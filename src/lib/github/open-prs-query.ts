@@ -4,7 +4,7 @@ import { and, eq, isNotNull, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { agentJobs, users } from '@/lib/db/schema'
 import { decrypt } from '@/lib/crypto-utils'
-import { createOctokit } from '@/lib/github/client'
+import { createOctokit, httpStatus } from '@/lib/github/client'
 import { prSource, sortForReview, type OpenPr, type PrSource } from '@/lib/agents/open-prs'
 
 export interface OpenPrRow extends OpenPr {
@@ -42,6 +42,8 @@ export async function loadOpenPrs(userId: string, limit = 50): Promise<OpenPrsRe
       prs: sortForReview(prs).map(p => ({ ...p, source: prSource(p, { ownerLogin: user.githubLogin, factoryUrls }) })),
     }
   } catch (err) {
+    // 401: the stored OAuth token was revoked or expired; signing in again stores a new one.
+    if (httpStatus(err) === 401) return { ok: false, reason: 'your GitHub sign-in has expired. Sign out and sign back in to reconnect.' }
     return { ok: false, reason: err instanceof Error ? err.message : 'GitHub search failed' }
   }
 }
