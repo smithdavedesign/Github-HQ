@@ -242,7 +242,7 @@ export function deadEndKey(repo: string, kind: string, ownerTaskId?: string): st
  */
 export function deadEnds(entries: LedgerEntry[], now: Date, windowDays = 14): Set<string> {
   const since = now.getTime() - windowDays * 86_400_000
-  const fails = new Map<string, number>()
+  const failures = new Map<string, number[]>()
   const lastSuccess = new Map<string, number>()
   for (const a of attemptsOf(entries)) {
     const t = new Date(a.at).getTime()
@@ -250,9 +250,24 @@ export function deadEnds(entries: LedgerEntry[], now: Date, windowDays = 14): Se
     if (a.outcome === 'verified') lastSuccess.set(key, Math.max(lastSuccess.get(key) ?? 0, t))
     // M0 model failures escalate, so they don't count — but deterministic fixes (npm audit fix) never escalate.
     const countsAsDeadEnd = a.tier !== 'M0' || a.harness === 'npm-audit-fix' || a.harness === 'lint-autofix'
-    if (a.outcome === 'failed' && countsAsDeadEnd && t >= since) fails.set(key, (fails.get(key) ?? 0) + 1)
+    if (a.outcome === 'failed' && countsAsDeadEnd && t >= since) failures.set(key, [...(failures.get(key) ?? []), t])
   }
-  return new Set([...fails.entries()].filter(([k, n]) => n >= 2 && (lastSuccess.get(k) ?? 0) < since).map(([k]) => k))
+  // Only failures after the last success count. Before 2026-10-08 any success in the window
+  // cleared the key, so a lint fixer that worked once then had nothing left to fix retried every
+  // cycle (37 "no changes made" in two days on one repo).
+  return new Set([...failures.entries()]
+    .filter(([k, ts]) => ts.filter(t => t > (lastSuccess.get(k) ?? 0)).length >= 2)
+    .map(([k]) => k))
+}
+
+/**
+ * A red-CI failure already investigated: a reported (verified) red-ci investigation of the same
+ * workflow on the repo, made after that failing run. At stage `report` a second investigation of
+ * an unchanged failure adds nothing; a new failing run (new commit) is investigated again.
+ */
+export function redCiInvestigated(entries: LedgerEntry[], repo: string, run: { workflow: string; at: string }): boolean {
+  return attemptsOf(entries).some(a => a.kind === 'red-ci' && a.repo === repo && a.ciWorkflow === run.workflow
+    && a.outcome === 'verified' && !!a.findings && a.at >= run.at)
 }
 
 /** Repo scanned least recently first (never-scanned repos first, in allowlist order). */

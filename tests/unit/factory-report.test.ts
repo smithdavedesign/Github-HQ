@@ -63,7 +63,7 @@ describe('buildMorningReport', () => {
     expect(r.subject).toMatch(/2 PRs to review/)
   })
   it('PM hands the backlog to the Architect, flags below-target', () => {
-    expect(section('pm').lines[0]).toBe('2 PRs waiting for your review (target 3–8) — below target.')
+    expect(section('pm').lines[0]).toBe('2 factory PRs open (overnight target 3–8) — below target.')
     expect(section('pm').lines.join('\n')).toContain('app — fill README gaps')
     expect(section('pm').lines.join('\n')).not.toContain('fix lint errors') // open PR already
   })

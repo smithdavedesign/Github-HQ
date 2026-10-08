@@ -111,7 +111,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   const todo = backlog(entries, input.repos)
   const signals = new Map<string, SignalsEntry>()
   for (const e of entries) if (e.type === 'signals' && input.repos.includes(e.repo) && (!signals.get(e.repo) || e.at > signals.get(e.repo)!.at)) signals.set(e.repo, e)
-  const ranked = signals.size ? rankOpportunities(input.repos, entries, [...signals.values()], now, { blockOnStalePrs: true }) : []
+  const ranked = signals.size ? rankOpportunities(input.repos, entries, [...signals.values()], now, { blockOnStalePrs: true, redCiReportOnly: input.capabilities?.['red-ci'] === 'report' }) : []
   const stale = [...signals.values()].filter(s => s.botPrs?.stale.length)
 
   const sections: RoleSection[] = []
@@ -131,7 +131,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   sections.push({
     id: 'pm', role: 'Product Manager', skill: '/office-hours · /plan-ceo-review', title: 'Plan handed to the Architect',
     lines: [
-      `${plural(openPrs.length, 'PR')} waiting for your review (target ${input.prTarget.min}–${input.prTarget.max})${inTarget ? '' : ' — below target'}.`,
+      `${plural(openPrs.length, 'factory PR')} open (overnight target ${input.prTarget.min}–${input.prTarget.max})${inTarget ? '' : ' — below target'}.`,
       todo.length === 0
         ? 'Backlog is empty: every scanned repo is green or already has a PR open. Next lever: add repos to the allowlist.'
         : `Next up (${plural(todo.length, 'task')}, highest value first):`,
@@ -250,7 +250,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
         : []),
       `Paid spend this month: $${input.monthToDateUsd.toFixed(2)} of $${input.monthlyBudgetUsd} budget (scheduled cycles always run at $0).`,
       readinessLine(nightShiftReadiness(entries)),
-      red.length ? `Red CI on ${plural(red.length, 'base branch')}:` : 'CI is green on every sensed base branch.',
+      red.length ? `Red CI on ${red.length === 1 ? '1 base branch' : `${red.length} base branches`}:` : 'CI is green on every sensed base branch.',
       ...red.map(s => {
         const inv = investigations.get(s.repo)
         const cause = inv?.findings?.split('\n').slice(1).find(l => l.trim() && !l.startsWith('#'))?.trim()
