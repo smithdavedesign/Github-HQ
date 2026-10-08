@@ -14,13 +14,16 @@ import { toJobRecords, type AttemptEntry, type LedgerEntry } from './ledger'
  */
 
 export const CLEAN_NIGHTS_REQUIRED = 7
-export const QUALITY_GATE = { windowDays: 30, minResolved: 5, minAcceptance: 0.5, minRated: 3, minAvgValue: 2 } as const
+/** Useful = value ≥ 2 (pr-value.ts), scored from outcomes automatically or from your label. */
+export const QUALITY_GATE = { windowDays: 30, minResolved: 5, minAcceptance: 0.5, minRated: 3, minUsefulShare: 0.5 } as const
 
 export interface QualityGate {
   resolved: number
   acceptance: number | null
   rated: number
   avgValue: number | null
+  /** Share of scored merged PRs that were useful (value ≥ 2). */
+  usefulShare: number | null
   met: boolean
   /** What's still missing, in plain words; empty when met. */
   missing: string[]
@@ -70,9 +73,10 @@ export function qualityGate(entries: LedgerEntry[], now: Date, dayStartHour = 7)
   const missing: string[] = []
   if (resolved < g.minResolved) missing.push(`${g.minResolved - resolved} more merged or closed PR(s)`)
   else if ((k.acceptance ?? 0) < g.minAcceptance) missing.push(`acceptance ${Math.round((k.acceptance ?? 0) * 100)}% < ${g.minAcceptance * 100}%`)
-  if (k.ratedPrs < g.minRated) missing.push(`${g.minRated - k.ratedPrs} more rated PR(s) (value:N label)`)
-  else if ((k.avgValue ?? 0) < g.minAvgValue) missing.push(`average value ${(k.avgValue ?? 0).toFixed(1)} < ${g.minAvgValue}`)
-  return { resolved, acceptance: k.acceptance, rated: k.ratedPrs, avgValue: k.avgValue, met: missing.length === 0, missing }
+  const usefulShare = k.ratedPrs ? k.usefulPrs / k.ratedPrs : 0
+  if (k.ratedPrs < g.minRated) missing.push(`${g.minRated - k.ratedPrs} more scored PR(s) (outcomes are scored a day after merging)`)
+  else if (usefulShare < g.minUsefulShare) missing.push(`useful share ${Math.round(usefulShare * 100)}% < ${g.minUsefulShare * 100}%`)
+  return { resolved, acceptance: k.acceptance, rated: k.ratedPrs, avgValue: k.avgValue, usefulShare: k.ratedPrs ? usefulShare : null, met: missing.length === 0, missing }
 }
 
 export interface ScheduledPolicy {
@@ -119,7 +123,7 @@ export function readinessLine(r: Readiness): string {
   const sandbox = `${r.cleanNights}/${r.required} consecutive nights fully sandboxed${!r.sandboxReady && r.lastHostNight ? ` (last host-side run: night of ${r.lastHostNight})` : ''}`
   const q = r.quality
   const quality = q.met
-    ? `quality met (${Math.round((q.acceptance ?? 0) * 100)}% accepted, value ${q.avgValue?.toFixed(1)}/5)`
+    ? `quality met (${Math.round((q.acceptance ?? 0) * 100)}% accepted, ${Math.round((q.usefulShare ?? 0) * 100)}% useful)`
     : `quality: ${q.missing.join(', ')}`
   return r.ready
     ? `Night shift v2: ready — ${sandbox}; ${quality}.`

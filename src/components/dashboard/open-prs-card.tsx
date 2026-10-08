@@ -39,7 +39,7 @@ export function OpenPrsCard({ result, now }: { result: OpenPrsResult; now: Date 
           )}
         </CardTitle>
         {prs.some(p => p.source === 'factory') && (
-          <p className="text-xs text-muted-foreground">Rate factory PRs when you merge them: add a <code>value:0</code>–<code>value:5</code> label.</p>
+          <p className="text-xs text-muted-foreground">Merged factory PRs are scored from their outcome automatically; a <code>value:0</code>–<code>value:5</code> label overrides it.</p>
         )}
       </CardHeader>
       {prs.length > 0 && (

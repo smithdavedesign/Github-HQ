@@ -9,12 +9,12 @@ The roadmap stopped being a list of phases. For the next 30 days everything serv
 | | Experiment | Pass mark (by 2026-11-06) | How it's measured | Built for it |
 |---|---|---|---|---|
 | **A** | Can RepoHQ identify valuable work? | Each week it surfaces 1–3 things you'd actually do | "What to do next" in the morning email and on the dashboard; you act on it or you don't | Decision states with reasons (`src/lib/portfolio/next-actions.ts`) ✅ |
-| **B** | Can the factory execute that work well? | ≥ 50% of resolved factory PRs merged, and rated PRs average ≥ 2/5 | `value:0`–`value:5` label on merge → ledger + `agent_jobs.value`; acceptance and value in the report | PR value rating (`src/lib/agents/pr-value.ts`, reconcile) ✅ |
+| **B** | Can the factory execute that work well? | ≥ 50% of resolved factory PRs merged, and ≥ 50% of merged PRs useful (value ≥ 2) | Each merged PR scored 0–5 from its outcome on main a day later (advisories dropped, workflow green, check passing); a `value:N` label overrides | Outcome scoring (`factory/lib/outcomes.ts`, reconcile) ✅ |
 | **C** | Can it run unattended? | Night-shift gate passes: 7 consecutive sandboxed nights **and** the quality half (≥ 5 resolved PRs, ≥ 50% accepted, ≥ 3 rated, average value ≥ 2) | `nightShiftReadiness` in `npm run factory:report` and the morning report | Stricter gate (`factory/lib/night-shift.ts`) ✅ |
 | **D** | Does it produce leverage? | Useful PRs per night trend up, at ≤ $25/month and a review load you don't resent | Useful PRs/night, median hours to your decision, PRs you had to edit | KPIs (`factory-kpis.ts`); open-PR queue so nothing gets lost ✅ |
 
 **Your part (the experiment can't run without it):**
-- Rate every factory PR you merge with one label, `value:0` (noise) … `value:5` (material). The PR body and the morning email remind you.
+- Nothing to rate: merged PRs are scored from their outcome automatically. Add a `value:N` label only if you disagree with a score.
 - Merge or close what's in "Your review queue" (top of the morning email, and **Needs you** on the dashboard). Aging PRs (7+ days) are flagged.
 - Leave the Mac on AC power overnight; finish the Phase 81 cutover and the trial week.
 - Run `bash factory/bin/setup-email.sh <gmail>` once if the morning report isn't reaching your inbox.
@@ -247,7 +247,7 @@ Sensors in `factory/lib/sensors.ts` (read-only `gh` on the host).
 `factory/lib/night-shift.ts`.
 - [-] Gate, sandbox half: Phases 75–77 done ✅; 7 consecutive nights with every attempt sandboxed — tracked by `nightShiftReadiness` in `npm run factory:report` and the morning report (0/7 on 2026-10-06 (the night before ran on the host), 2/7 on 2026-10-07)
 - [x] Scheduled cycles 20:00–06:00 (plus 12:00, 16:00): skipped on battery (`factory.sh`; `FACTORY_REQUIRE_AC=0` overrides), refused if the sandbox is off, always $0 whatever the manual budget, ≤ 8 PRs, human merge, `PAUSE`
-- [x] Gate, quality half (added 2026-10-07, Experiment C): over the last 30 days ≥ 5 resolved factory PRs, ≥ 50% merged, ≥ 3 rated with a `value:N` label, average value ≥ 2. `ready` needs both halves (`qualityGate` in `factory/lib/night-shift.ts`)
+- [x] Gate, quality half (added 2026-10-07, Experiment C): over the last 30 days ≥ 5 resolved factory PRs, ≥ 50% merged, ≥ 3 scored merged PRs with ≥ 50% useful (value ≥ 2, scored from outcomes since 2026-10-08). `ready` needs both halves (`qualityGate` in `factory/lib/night-shift.ts`)
 - [x] Success measure: 30-night yield and acceptance trend (last 15 nights vs the 15 before) in the morning report; useful PRs per night once PRs are rated
 - [ ] Only then: concurrency 2
 

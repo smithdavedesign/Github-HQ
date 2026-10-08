@@ -22,7 +22,11 @@ describe('CI sensor', () => {
       runEntry('Lint', 'timed_out', '2026-10-19T02:00:00Z'), runEntry('Lint', null, '2026-10-20T00:00:00Z', 'in_progress'),
       runEntry('Docs', 'cancelled', '2026-10-19T00:00:00Z'),
     ]
-    expect(failingRuns(runs).map(r => `${r.workflow}:${r.conclusion}`)).toEqual(['Deploy:failure', 'Lint:timed_out'])
+    expect(failingRuns(runs, new Date('2026-10-20T12:00:00Z')).map(r => `${r.workflow}:${r.conclusion}`)).toEqual(['Deploy:failure', 'Lint:timed_out'])
+  })
+  it('a failure older than 30 days with no newer run is history, not red CI', () => {
+    const runs = [runEntry('Pages', 'failure', '2026-06-02T17:00:00Z'), runEntry('CI', 'failure', '2026-10-01T00:00:00Z')]
+    expect(failingRuns(runs, new Date('2026-10-08T12:00:00Z')).map(r => r.workflow)).toEqual(['CI'])
   })
 })
 

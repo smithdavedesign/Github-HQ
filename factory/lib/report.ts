@@ -276,8 +276,8 @@ export function buildMorningReport(input: ReportInput): MorningReport {
         return t.direction ? [`Trend (last 15 nights vs the 15 before): ${t.direction} — yield ${t.previous.overnightYield?.toFixed(1)} → ${t.recent.overnightYield?.toFixed(1)}/night.`] : []
       })(),
       kpis.ratedPrs > 0
-        ? `PR value: ${kpis.avgValue!.toFixed(1)}/5 over ${plural(kpis.ratedPrs, 'rated PR')}; ${kpis.usefulPrs} useful (value ≥ 2)${kpis.usefulPerNight !== null ? `, ${kpis.usefulPerNight.toFixed(2)} useful PRs/night` : ''}.`
-        : 'PR value: none rated yet — add a value:0…value:5 label when you merge a factory PR.',
+        ? `PR value (scored from outcomes on main): ${kpis.avgValue!.toFixed(1)}/5 over ${plural(kpis.ratedPrs, 'merged PR')}; ${kpis.usefulPrs} useful (value ≥ 2)${kpis.usefulPerNight !== null ? `, ${kpis.usefulPerNight.toFixed(2)} useful PRs/night` : ''}.`
+        : 'PR value: none scored yet — merged PRs are scored from their outcome on main a day after merging (a value:N label overrides).',
       ...(kpis.reviewHoursMedian !== null ? [`Review load: median ${kpis.reviewHoursMedian.toFixed(1)}h from PR to your decision; ${kpis.humanEditedPrs} merged PR(s) needed your edits.`] : []),
       `${plural(counted.length, 'attempt')}, ${verified.length} verified, ${merged.length} merged, ${rejected.length} closed without merging.`,
       verified.length ? `${Math.round(((verified.length - paid) / verified.length) * 100)}% of verified fixes cost $0 at the margin.` : 'No verified fixes yet this week.',
@@ -336,7 +336,7 @@ export function inboxLines(
     return `${age >= AGING_PR_DAYS ? '⚠ ' : ''}${short(p.repo)}#${p.number} · ${age}d · ${PR_SOURCE_LABEL[src]} · ${what}${notes.length ? ` [${notes.join(', ')}]` : ''} — ${p.url}`
   })
   return [
-    `${plural(prs.length, 'open PR')}${aging ? `, ${aging} open ${AGING_PR_DAYS}+ days (⚠)` : ''}. Merge or close each; rate factory PRs with a value:N label when you merge.`,
+    `${plural(prs.length, 'open PR')}${aging ? `, ${aging} open ${AGING_PR_DAYS}+ days (⚠)` : ''}. Merge or close each.`,
     ...lines,
     ...(prs.length > 25 ? [`…and ${prs.length - 25} more.`] : []),
   ]

@@ -36,6 +36,7 @@ import { run, type Runner } from './lib/proc'
 import { Sandbox, dockerAvailable, ensureSandboxImages, sandboxModels, sweepSandboxes } from './lib/sandbox'
 import { healthScores, recordApprovalNeeded, recordAttempt, recordResolution, recordValue } from './lib/sink'
 import { prValueFromLabels } from '../src/lib/agents/pr-value'
+import { pendingOutcomes, scoreOutcome } from './lib/outcomes'
 import { failedLog, rankOpportunities, senseRepo } from './lib/sensors'
 import { acquireLock } from './lib/lock'
 import { nightShiftReadiness, readinessLine, scheduledPolicy } from './lib/night-shift'
@@ -338,9 +339,17 @@ async function reconcile(cfg: FactoryConfig) {
     const labels = await prLabels(a.prUrl!)
     const value = labels ? prValueFromLabels(labels) : null
     if (value === null) continue
-    appendEntry(cfg.home, { type: 'value', attemptId: a.id, at: new Date().toISOString(), value })
+    appendEntry(cfg.home, { type: 'value', attemptId: a.id, at: new Date().toISOString(), value, source: 'label' })
     await recordValue(cfg, a.id, value)
-    log(`rated ${a.prUrl}: value ${value}/5`)
+    log(`rated ${a.prUrl}: value ${value}/5 (your label)`)
+  }
+  // No label: score the merged PR from its outcome on main (outcomes.ts), once there's evidence.
+  for (const { attempt: a, mergedAt } of pendingOutcomes(readLedger(cfg.home))) {
+    const outcome = scoreOutcome(a, mergedAt, readLedger(cfg.home), new Date())
+    if (!outcome) continue
+    appendEntry(cfg.home, { type: 'value', attemptId: a.id, at: new Date().toISOString(), value: outcome.value, source: 'outcome', evidence: outcome.evidence })
+    await recordValue(cfg, a.id, outcome.value)
+    log(`scored ${a.prUrl}: value ${outcome.value}/5 — ${outcome.evidence}`)
   }
   // red-ci oracle: the workflow that was failing on the base branch must pass on the PR.
   for (const a of pendingCiOracles(readLedger(cfg.home))) {

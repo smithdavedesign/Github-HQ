@@ -1,14 +1,15 @@
 {
   "repos": [
     "smithdavedesign/Github-HQ",
-    "smithdavedesign/AI-Took-My-Job",
     "smithdavedesign/Open-Travel",
     "smithdavedesign/family-tree",
     "smithdavedesign/AI-Trend-Tracker",
     "smithdavedesign/go-adventure",
-    "smithdavedesign/AI-CLI-Social-Autoposter",
-    "smithdavedesign/Figma-Jira-Ticket-Automation-Tool",
-    "smithdavedesign/ai-brand-context"
+    "smithdavedesign/ai-brand-context",
+    "smithdavedesign/algorithms-docs",
+    "smithdavedesign/gitHub-cron-job-app",
+    "smithdavedesign/love-letter-ai-stalker",
+    "smithdavedesign/smithdavedesign"
   ],
   "allowFreeCloud": [],
   "monthlyBudgetUsd": 0,
