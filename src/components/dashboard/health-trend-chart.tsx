@@ -16,7 +16,8 @@ interface ChartDataPoint {
   name: string
   health: number
   activity: number
-  security: number
+  /** null = unknown (Dependabot alerts off): no bar. */
+  security: number | null
 }
 
 export function HealthTrendChart({ data }: { data: ChartDataPoint[] }) {
@@ -50,7 +51,7 @@ export function HealthTrendChart({ data }: { data: ChartDataPoint[] }) {
               tickFormatter={(name: string) => (name.length > 22 ? `${name.slice(0, 21)}…` : name)}
             />
             <Tooltip
-              formatter={(value) => [`${value}`, '']}
+              formatter={(value, name) => [value == null && name === 'Security' ? 'no data (Dependabot alerts off)' : `${value}`, '']}
               contentStyle={{ fontSize: 12 }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -59,6 +60,11 @@ export function HealthTrendChart({ data }: { data: ChartDataPoint[] }) {
             <Bar dataKey="activity" name="Activity" fill="#f59e0b" radius={[0, 2, 2, 0]} barSize={8} />
           </BarChart>
         </ResponsiveContainer>
+        {data.some(d => d.security == null) && (
+          <p className="text-xs text-muted-foreground mt-2">
+            No blue bar: Dependabot alerts are off for that repo, so its security is unknown and left out of its health score.
+          </p>
+        )}
       </CardContent>
     </Card>
   )

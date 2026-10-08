@@ -34,26 +34,30 @@ export default async function AnalyticsPage() {
       name: r.name,
       health: Math.round(r.metrics!.healthScore!),
       activity: Math.round(r.metrics!.activityScore ?? 0),
-      security: Math.round(r.metrics!.securityScore ?? 100),
+      // null = unknown (Dependabot alerts off): drawn as "no data", never as a perfect 100.
+      security: r.metrics!.securityScore == null ? null : Math.round(r.metrics!.securityScore),
     }))
 
   const livePortfolioHealth = reposWithMetrics.filter((r) => r.metrics?.healthScore != null)
   const livePortfolioAverage = livePortfolioHealth.length > 0
     ? livePortfolioHealth.reduce((sum, repo) => {
         const metrics = repo.metrics!
+        const knownSecurity = metrics.securityScore != null
         return {
           health: sum.health + (metrics.healthScore ?? 0),
-          security: sum.security + (metrics.securityScore ?? 0),
+          // Average security over repos where it's known only.
+          security: sum.security + (knownSecurity ? metrics.securityScore! : 0),
+          securityCount: sum.securityCount + (knownSecurity ? 1 : 0),
           activity: sum.activity + (metrics.activityScore ?? 0),
         }
-      }, { health: 0, security: 0, activity: 0 })
+      }, { health: 0, security: 0, securityCount: 0, activity: 0 })
     : null
 
   const liveTrendFallback = livePortfolioAverage
     ? [{
         date: new Date().toISOString().slice(0, 10),
         avgHealth: Math.round(livePortfolioAverage.health / livePortfolioHealth.length),
-        avgSecurity: Math.round(livePortfolioAverage.security / livePortfolioHealth.length),
+        avgSecurity: livePortfolioAverage.securityCount ? Math.round(livePortfolioAverage.security / livePortfolioAverage.securityCount) : 0,
         avgActivity: Math.round(livePortfolioAverage.activity / livePortfolioHealth.length),
       }]
     : []

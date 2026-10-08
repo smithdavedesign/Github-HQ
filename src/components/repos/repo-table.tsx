@@ -128,7 +128,7 @@ function applyNLFilters(rows: RepoRow[], filters: NLQueryFilters): RepoRow[] {
       switch (filters.sortBy) {
         case 'health': return ((b.metrics?.healthScore ?? 0) - (a.metrics?.healthScore ?? 0)) * dir
         case 'activity': return ((b.metrics?.activityScore ?? 0) - (a.metrics?.activityScore ?? 0)) * dir
-        case 'security': return ((b.metrics?.securityScore ?? 0) - (a.metrics?.securityScore ?? 0)) * dir
+        case 'security': return ((b.metrics?.securityScore ?? -1) - (a.metrics?.securityScore ?? -1)) * dir
         case 'lastPush': {
           const aT = a.metrics?.lastPush ? new Date(a.metrics.lastPush).getTime() : 0
           const bT = b.metrics?.lastPush ? new Date(b.metrics.lastPush).getTime() : 0
@@ -266,9 +266,14 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
     },
     {
       id: 'securityScore',
-      accessorFn: (row) => row.metrics?.securityScore ?? 100,
+      accessorFn: (row) => row.metrics?.securityScore ?? null,
       header: 'Security',
-      cell: ({ getValue }) => <HealthBadge score={getValue<number>()} showScore />,
+      cell: ({ getValue }) => {
+        const score = getValue<number | null>()
+        return score == null
+          ? <span className="text-muted-foreground text-xs" title="Dependabot alerts are off for this repo, so its security is unknown">—</span>
+          : <HealthBadge score={score} showScore />
+      },
     },
     {
       id: 'buildStatus',

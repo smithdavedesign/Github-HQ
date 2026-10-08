@@ -122,7 +122,7 @@ Activity:
 Health Scores:
 - Health: ${metrics?.healthScore ?? 0}/100
 - Activity: ${metrics?.activityScore ?? 0}/100
-- Security: ${metrics?.securityScore ?? 100}/100
+- Security: ${metrics?.securityScore != null ? `${metrics.securityScore}/100` : 'unknown (Dependabot alerts off)'}
 - Documentation: ${metrics?.documentationScore ?? 0}/100
 - Testing: ${metrics?.testingScore ?? 0}/100
 

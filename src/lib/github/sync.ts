@@ -255,12 +255,13 @@ export async function syncSingleRepo(
 
   const stackData = await scanRepository(octokit, owner, name, repoId)
 
-  const currentSecurityScore = existingMetrics?.securityScore ?? 100
+  // Owned by the security cron; null (unknown) until it has read the repo's alerts.
+  const currentSecurityScore = existingMetrics ? existingMetrics.securityScore : null
 
   const metrics: InsertRepositoryMetrics = {
     repoId,
     activityScore,
-    securityScore: 100,   // preserved from security cron via onConflictDoUpdate (not in set)
+    securityScore: null,   // unknown until the security cron runs; preserved via onConflictDoUpdate (not in set)
     documentationScore: stackData.documentationScore,
     testingScore: stackData.testingScore,
     dependencyScore: calculateDependencyScore(lastPush),

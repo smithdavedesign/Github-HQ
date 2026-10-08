@@ -89,9 +89,9 @@ describe('calculateHealthScore', () => {
       dependencyScore: null,
       qualityScore: null,
     })
-    // activity=0*0.20=0, security=100*0.20=20, deployment=50*0.15=7.5,
-    // docs=0*0.15=0, testing=0*0.10=0, dependency=50*0.10=5, quality=70*0.10=7 → 39.5 → 40
-    expect(score).toBe(40)
+    // Unknown security is left out, not counted as 100: activity 0, deployment 50*0.15=7.5,
+    // docs 0, testing 0, dependency 50*0.10=5, quality 70*0.10=7 → 19.5 of the remaining 80% → 24.4 → 24
+    expect(score).toBe(24)
   })
 
   it('rounds to nearest integer', () => {
