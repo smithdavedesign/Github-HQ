@@ -33,9 +33,9 @@ describe('night shift readiness gate', () => {
     const entries: LedgerEntry[] = [1, 2, 3, 4, 5, 6, 7].map(d => att(d, 'docker'))
     const r = nightShiftReadiness(entries, 7, NOW)
     expect(r).toMatchObject({ sandboxReady: true, ready: false, quality: { met: false } })
-    expect(readinessLine(r)).toMatch(/5 more merged or closed PR\(s\).*3 more rated PR\(s\)/)
+    expect(readinessLine(r)).toMatch(/5 more merged or closed PR\(s\).*3 more scored PR\(s\)/)
   })
-  it('is ready with 7 clean nights, ≥ 50% acceptance over ≥ 5 resolved PRs and rated value ≥ 2', () => {
+  it('is ready with 7 clean nights, ≥ 50% acceptance over ≥ 5 resolved PRs and ≥ 50% of scored PRs useful', () => {
     const prs = [1, 2, 3, 4, 5, 6, 7].map(d => att(d, 'docker', { prUrl: `https://github.com/o/app/pull/${d}` }))
     const res = (a: AttemptEntry, outcome: 'merged' | 'rejected'): LedgerEntry => ({ type: 'resolution', attemptId: a.id, at: NOW.toISOString(), outcome })
     const val = (a: AttemptEntry, value: number): LedgerEntry => ({ type: 'value', attemptId: a.id, at: NOW.toISOString(), value })
@@ -46,16 +46,16 @@ describe('night shift readiness gate', () => {
     const r = nightShiftReadiness(entries, 7, NOW)
     expect(r.quality).toMatchObject({ resolved: 5, rated: 3, met: true })
     expect(r.ready).toBe(true)
-    expect(readinessLine(r)).toMatch(/ready.*60% accepted, value 2\.0\/5/)
+    expect(readinessLine(r)).toMatch(/ready.*60% accepted, 67% useful/)
   })
-  it('low acceptance or low value keeps the gate shut', () => {
+  it('low acceptance or too few useful PRs keeps the gate shut', () => {
     const prs = [1, 2, 3, 4, 5].map(d => att(d, 'docker', { prUrl: `https://github.com/o/app/pull/${d}` }))
     const entries: LedgerEntry[] = [
       ...prs,
       ...prs.map((a, i): LedgerEntry => ({ type: 'resolution', attemptId: a.id, at: NOW.toISOString(), outcome: i < 2 ? 'merged' : 'rejected' })),
       { type: 'value', attemptId: prs[0].id, at: NOW.toISOString(), value: 1 },
     ]
-    expect(nightShiftReadiness(entries, 7, NOW).quality.missing).toEqual(['acceptance 40% < 50%', '2 more rated PR(s) (value:N label)'])
+    expect(nightShiftReadiness(entries, 7, NOW).quality.missing).toEqual(['acceptance 40% < 50%', '2 more scored PR(s) (outcomes are scored a day after merging)'])
   })
 })
 

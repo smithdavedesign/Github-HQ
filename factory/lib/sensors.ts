@@ -14,23 +14,30 @@ export interface FailingRun { workflow: string; runId: number; url: string; head
 
 const FAILED = new Set(['failure', 'timed_out', 'startup_failure'])
 
-/** Latest completed run per workflow; the ones that failed. */
-export function failingRuns(runs: { databaseId: number; workflowName: string; conclusion: string | null; status: string; createdAt: string; url: string; headSha: string }[]): FailingRun[] {
+/**
+ * A failure older than this with no newer run is history, not red CI: a workflow that hasn't run
+ * since (disabled, or nothing pushed) can't be fixed by a PR, and kept a repo "red" forever
+ * (ai-brand-context's GitHub Pages deploys from June, 2026-10-08).
+ */
+export const STALE_CI_DAYS = 30
+
+/** Latest completed run per workflow; the ones that failed within the last STALE_CI_DAYS. */
+export function failingRuns(runs: { databaseId: number; workflowName: string; conclusion: string | null; status: string; createdAt: string; url: string; headSha: string }[], now = new Date()): FailingRun[] {
   const latest = new Map<string, (typeof runs)[number]>()
   for (const r of runs.filter(x => x.status === 'completed')) {
     const prev = latest.get(r.workflowName)
     if (!prev || r.createdAt > prev.createdAt) latest.set(r.workflowName, r)
   }
   return [...latest.values()]
-    .filter(r => FAILED.has(r.conclusion ?? ''))
+    .filter(r => FAILED.has(r.conclusion ?? '') && now.getTime() - Date.parse(r.createdAt) <= STALE_CI_DAYS * 86_400_000)
     .map(r => ({ workflow: r.workflowName, runId: r.databaseId, url: r.url, headSha: r.headSha, at: r.createdAt, conclusion: r.conclusion! }))
     .sort((a, b) => a.workflow.localeCompare(b.workflow))
 }
 
-export async function ciFailures(repo: string, branch: string): Promise<FailingRun[] | null> {
+export async function ciFailures(repo: string, branch: string, now = new Date()): Promise<FailingRun[] | null> {
   const r = await run('gh', ['run', 'list', '--repo', repo, '--branch', branch, '--limit', '30', '--json', 'databaseId,workflowName,conclusion,status,createdAt,url,headSha'], { timeoutMs: 60_000, maxOutput: 2_000_000 })
   if (r.code !== 0) return null
-  try { return failingRuns(JSON.parse(r.output)) } catch { return null }
+  try { return failingRuns(JSON.parse(r.output), now) } catch { return null }
 }
 
 /** The failing steps' log, trimmed to what a model needs. */
@@ -114,7 +121,7 @@ export async function baseBranch(repo: string, integrationBranch: string): Promi
 
 export async function senseRepo(repo: string, integrationBranch: string, runId: string, now: Date): Promise<SignalsEntry> {
   const base = await baseBranch(repo, integrationBranch)
-  const [ci, alerts, prs] = await Promise.all([base ? ciFailures(repo, base) : Promise.resolve(null), dependabotAlerts(repo), botPrs(repo, now)])
+  const [ci, alerts, prs] = await Promise.all([base ? ciFailures(repo, base, now) : Promise.resolve(null), dependabotAlerts(repo), botPrs(repo, now)])
   return {
     type: 'signals', runId, at: now.toISOString(), repo, base,
     redCi: ci, alerts, botPrs: prs,

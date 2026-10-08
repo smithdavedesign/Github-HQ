@@ -60,6 +60,6 @@ export function prBody(input: {
     `- ${Math.round(input.durationMs / 1000)}s · $${input.costUsd.toFixed(2)}`,
     '',
     '_Draft opened by the RepoHQ autonomous factory (docs/autonomous-factory.md). Merging is always a human decision; merge or close to teach the router._',
-    '_When you merge, add one label to rate it: `value:0` noise · `value:1` maintenance · `value:2` useful · `value:3` meaningful · `value:4` strategic · `value:5` material._',
+    '_After it merges, the factory scores its value from the outcome on main. To override, add a `value:0`–`value:5` label._',
   ].join('\n')
 }

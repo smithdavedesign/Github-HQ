@@ -196,9 +196,18 @@ Every attempt is a row in RepoHQ's `agent_jobs` table (parent job for escalation
 | Per 100 free requests | merged PRs per 100 free-cloud requests (M1 turns + `free-agent` reviews) |
 | Review time | median hours from PR to your decision; PRs you had to edit |
 | Autonomy | merged without your edits ÷ (every resolved PR + every approval request) |
-| PR value | average of your `value:0`…`value:5` labels on merged PRs; useful = value ≥ 2; useful PRs per night |
+| PR value | 0–5 per merged PR, scored from its outcome on main (a `value:N` label overrides); useful = value ≥ 2; useful PRs per night |
 
-**Rating a PR.** Merged isn't the same as useful, so when you merge a factory PR add one label: `value:0` noise · `1` maintenance · `2` useful · `3` meaningful · `4` strategic · `5` material (`src/lib/agents/pr-value.ts`). Reconcile creates the labels in a repo the first time it has an open factory PR (marker files in `~/.repohq-factory/value-labels/`), and keeps reading a merged PR's labels for 30 days, so you can rate later. The rating lands in the ledger (`value` entry) and `agent_jobs.value` (`npm run factory:migrate` adds the column).
+**PR value, scored from outcomes** (`factory/lib/outcomes.ts`, since 2026-10-08). Merged isn't the same as useful, and nobody rates PRs by hand, so a day after a factory PR merges, reconcile scores it from what changed on `main`, using only what the factory already records:
+
+| Score | Evidence |
+|---|---|
+| 3 | critical npm advisories dropped (`deps-audit`), or the red workflow is green on main (`red-ci`) |
+| 2 | high advisories dropped; the check it fixed passes on main (`fix-tests`, `fix-types`, `fix-lint`); an owner request merged |
+| 1 | upkeep (`docs-readme`, `lint-autofix`), or no evidence after 14 days |
+| 0 | the check still fails on main, or the advisories didn't drop |
+
+The score lands in the ledger (`value` entry, `source: "outcome"`, with the evidence) and `agent_jobs.value`. A `value:0`–`value:5` label on the PR overrides it at any time within 30 days of the merge; reconcile creates the labels in each repo (marker files in `~/.repohq-factory/value-labels/`).
 
 Routing learns per difficulty (simple: docs/lint-autofix/deps; medium: lint/types; hard: tests/red CI), so evidence accumulates three times faster than per task kind.
 
@@ -211,7 +220,7 @@ Scheduled cycles (the worker's `cycle` scheduler, or the launchd calendar withou
 
 The Night Shift v2 gate has two halves, and `npm run factory:report` and the morning report show both:
 - **Sandbox:** 7 consecutive nights with every attempt sandboxed.
-- **Quality** (since 2026-10-07): over the last 30 days, ≥ 5 merged or closed PRs with ≥ 50% merged, and ≥ 3 rated PRs averaging value ≥ 2. Clean nights prove the sandbox, not that the PRs are worth having.
+- **Quality** (since 2026-10-07): over the last 30 days, ≥ 5 merged or closed PRs with ≥ 50% merged, and ≥ 3 scored PRs of which ≥ 50% were useful (value ≥ 2). Clean nights prove the sandbox, not that the PRs are worth having.
 
 After that, success is the 30-night trend in yield, acceptance and useful PRs per night, not PR count.
 

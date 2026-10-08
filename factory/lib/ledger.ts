@@ -123,14 +123,18 @@ export interface SignalsEntry {
 
 /** red-ci PRs: did the workflow that was failing pass on the PR? (the red-ci oracle) */
 /**
- * The owner's 0–5 rating of a merged factory PR, read from its `value:N` label (30-day
- * experiment, src/lib/agents/pr-value.ts). The latest entry per attempt wins.
+ * A merged factory PR's 0–5 value (30-day experiment, src/lib/agents/pr-value.ts). Scored
+ * automatically from its outcome on main (`outcome`, factory/lib/outcomes.ts); a `value:N` label
+ * the owner adds (`label`, older entries have no source) overrides it. The latest entry wins.
  */
 export interface ValueEntry {
   type: 'value'
   attemptId: string
   at: string
   value: number
+  source?: 'label' | 'outcome'
+  /** What the outcome score is based on, e.g. "critical advisories 3 → 0". */
+  evidence?: string
 }
 
 export interface CiOracleEntry {
@@ -354,11 +358,11 @@ export function pendingCiOracles(entries: LedgerEntry[]): AttemptEntry[] {
 }
 
 /**
- * Merged PRs resolved in the last `windowDays` that have no rating yet: reconcile keeps
- * checking their labels, since the owner may add `value:N` after merging.
+ * Merged PRs resolved in the last `windowDays` without a label rating: reconcile keeps checking
+ * their labels, since a `value:N` label overrides the automatic outcome score at any time.
  */
 export function pendingValues(entries: LedgerEntry[], now: Date, windowDays = 30): AttemptEntry[] {
-  const rated = new Set(entries.filter((e): e is ValueEntry => e.type === 'value').map(v => v.attemptId))
+  const rated = new Set(entries.filter((e): e is ValueEntry => e.type === 'value' && e.source !== 'outcome').map(v => v.attemptId))
   const merged = new Map(entries.filter((e): e is ResolutionEntry => e.type === 'resolution' && e.outcome === 'merged').map(r => [r.attemptId, r]))
   return attemptsOf(entries).filter(a => {
     const r = merged.get(a.id)
