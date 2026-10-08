@@ -10,6 +10,8 @@ import { factoryStaleMessage, snapshotFreshness, staleDataMessage } from '@/lib/
 import { StaleDataBanner } from '@/components/layout/stale-data-banner'
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { factoryActivity } from '@/lib/agents/factory-activity'
+import { factoryStatus } from '@/lib/health/factory-status'
+import type { SidebarStatus } from '@/components/layout/nav-items'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -19,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const [user, latestSnapshot, factory] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, session.user.id),
-      columns: { lastSyncedAt: true },
+      columns: { lastSyncedAt: true, publicProfile: true, githubLogin: true },
     }),
     latestSnapshotDate(session.user.id).catch(() => null),
     isFactoryOwner ? factoryActivity(db, session.user.id).catch(() => null) : Promise.resolve(null),
@@ -28,10 +30,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const now = new Date()
   const staleMessage = staleDataMessage(snapshotFreshness(latestSnapshot, now))
   const factoryMessage = factoryStaleMessage(factory, now)
+  const sidebarStatus: SidebarStatus = {
+    factory: factory ? factoryStatus(factory, now) : null,
+    version: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'dev',
+    publicProfile: user?.publicProfile && user.githubLogin ? `/u/${user.githubLogin}` : null,
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar />
+      <Sidebar status={sidebarStatus} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Topbar
           user={{
