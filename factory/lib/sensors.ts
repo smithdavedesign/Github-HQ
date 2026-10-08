@@ -1,5 +1,5 @@
 import { errorExcerpt } from './checks'
-import type { LedgerEntry, ScanEntry, SignalsEntry } from './ledger'
+import { redCiInvestigated, type LedgerEntry, type ScanEntry, type SignalsEntry } from './ledger'
 import { run } from './proc'
 
 /**
@@ -58,7 +58,9 @@ const NONE: Omit<AlertCounts, 'status'> = { critical: 0, high: 0, medium: 0, low
 export function parseDependabotAlerts(code: number | null, output: string): AlertCounts {
   if (code !== 0) return { status: /disabled/i.test(output) ? 'disabled' : 'unavailable', ...NONE }
   try {
-    const alerts = JSON.parse(output) as { security_advisory?: { severity?: string }; security_vulnerability?: { severity?: string; first_patched_version?: { identifier?: string } | null; package?: { ecosystem?: string } } }[]
+    const parsed = JSON.parse(output) as unknown[]
+    // `gh api --paginate --slurp` wraps the pages in an outer array; a single page is the alerts array.
+    const alerts = (parsed.length > 0 && Array.isArray(parsed[0]) ? parsed.flat() : parsed) as { security_advisory?: { severity?: string }; security_vulnerability?: { severity?: string; first_patched_version?: { identifier?: string } | null; package?: { ecosystem?: string } } }[]
     const c: AlertCounts = { status: 'ok', ...NONE }
     for (const a of alerts) {
       const sev = (a.security_vulnerability?.severity ?? a.security_advisory?.severity ?? 'low').toLowerCase()
@@ -72,7 +74,8 @@ export function parseDependabotAlerts(code: number | null, output: string): Aler
 }
 
 export async function dependabotAlerts(repo: string): Promise<AlertCounts> {
-  const r = await run('gh', ['api', `repos/${repo}/dependabot/alerts?state=open&per_page=100`], { timeoutMs: 60_000, maxOutput: 5_000_000 })
+  // Every page: one page of 100 undercounted repos with more alerts (family-tree: 59 vs RepoHQ's 77).
+  const r = await run('gh', ['api', '--paginate', '--slurp', `repos/${repo}/dependabot/alerts?state=open&per_page=100`], { timeoutMs: 120_000, maxOutput: 20_000_000 })
   return parseDependabotAlerts(r.code, r.output)
 }
 
@@ -135,7 +138,11 @@ export interface Opportunity { repo: string; score: number; reasons: string[]; b
  */
 export function rankOpportunities(
   repos: string[], entries: LedgerEntry[], signals: SignalsEntry[], now: Date,
-  opts: { health?: Map<string, number>; blockOnStalePrs?: boolean } = {},
+  opts: {
+    health?: Map<string, number>; blockOnStalePrs?: boolean; redCiReportOnly?: boolean
+    /** Why red CI can't be worked on this cycle (at stage report it needs the free pool); null/absent = it can. */
+    redCiParked?: string | null
+  } = {},
 ): Opportunity[] {
   const lastScan = new Map<string, ScanEntry>()
   for (const e of entries) if (e.type === 'scan' && (!lastScan.get(e.repo) || e.at > lastScan.get(e.repo)!.at)) lastScan.set(e.repo, e)
@@ -145,7 +152,11 @@ export function rankOpportunities(
     const reasons: string[] = []
     let score = 0
     const bump = (w: number, why: string) => { reasons.push(why); score = Math.max(score, w) }
-    if (s?.redCi?.length) bump(WEIGHTS.redCi, `red CI: ${s.redCi.map(r => r.workflow).join(', ')}`)
+    // At stage `report` a red CI that's already been investigated has nothing left for the factory
+    // to do until it changes, so it no longer outranks work that can still produce a PR.
+    // Likewise while it can't be investigated at all (free pool exhausted): it would only be deferred.
+    const redCi = opts.redCiParked ? [] : (s?.redCi ?? []).filter(r => !(opts.redCiReportOnly && redCiInvestigated(entries, repo, r)))
+    if (redCi.length) bump(WEIGHTS.redCi, `red CI: ${redCi.map(r => r.workflow).join(', ')}`)
     if (s?.alerts && s.alerts.critical + s.alerts.high > 0) bump(WEIGHTS.security, `${s.alerts.critical + s.alerts.high} high/critical alerts`)
     if (scan?.tasks.includes('deps-audit')) bump(WEIGHTS.deps, 'npm audit high/critical')
     const failing = scan?.tasks.filter(t => CHECK_KINDS.has(t)) ?? []

@@ -28,7 +28,7 @@ import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { commentOnPr, loadGstackChecklist, localReviewComment, runLocalReview, type LocalReview } from './lib/local-review'
 import { copilotHasQuota, copilotQuota } from './lib/copilot-quota'
 import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
-import { appendEntry, deadEnds, latestSignals, monthToDateUsd, openPrAttempts, pendingCiOracles, pendingReviews, pendingValues, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry, type SignalsEntry } from './lib/ledger'
+import { appendEntry, deadEnds, latestSignals, monthToDateUsd, openPrAttempts, pendingCiOracles, pendingReviews, pendingValues, redCiInvestigated, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry, type SignalsEntry } from './lib/ledger'
 import { listAliases } from './lib/litellm-ops'
 import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
 
@@ -193,8 +193,14 @@ async function main(): Promise<RunResult> {
       sensed.push(sig)
     }
   }, () => ({ detail: `${sensed.length} repo(s)`, data: { redCi: sensed.filter(x => x.redCi?.length).map(x => x.repo) } }))
+  // At stage report, red CI is a free-pool investigation: with the pool exhausted it would only be
+  // deferred, and ranking it first starved repos with work that needs no model (2026-10-07: 49
+  // deferred investigations in a day while family-tree's npm audit fixes never got a turn).
+  const redCiReportOnly = cfg.capabilities['red-ci'] === 'report'
+  const redCiParked = redCiReportOnly ? await freePoolDeferred(cfg) : null
+  if (redCiParked) log(`red CI investigations parked this cycle: ${redCiParked}`)
   const ranked = rankOpportunities(args.repo ? [args.repo] : cfg.repos, readLedger(cfg.home), sensed, new Date(), {
-    health: await healthScores(cfg), blockOnStalePrs: cfg.blockOnStaleBotPrs,
+    health: await healthScores(cfg), blockOnStalePrs: cfg.blockOnStaleBotPrs, redCiReportOnly, redCiParked,
   })
   for (const o of ranked.filter(x => x.blocked)) log(`${o.repo}: no new PRs — ${o.blocked} (review or close them)`)
   log(`queue: ${ranked.filter(x => !x.blocked).slice(0, 5).map(o => `${o.repo.split('/')[1]}(${o.score}${o.reasons.length ? `: ${o.reasons[0]}` : ''})`).join(' · ')}`)
@@ -423,7 +429,10 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     // Root for relativising paths in check output (absolute /workspace/… paths inside the sandbox).
     const allTasks = tasksFromScan(baseline, specs, readmeIssue(basics.readme), ws.dir, audit, { lintAutofixes: lintScriptAutofixes(basics.pkg) })
     // Red CI on the base branch comes first (highest value); its log is read on the host via gh.
-    const red = signals?.base === base ? signals.redCi?.[0] : undefined
+    // At stage `report`, a failure that's already been investigated is skipped until a new run fails.
+    const reportOnly = cfg.capabilities['red-ci'] === 'report'
+    const red = signals?.base === base ? signals.redCi?.find(r => !(reportOnly && redCiInvestigated(ledger, repo, r))) : undefined
+    if (!red && signals?.redCi?.length) log(`${repo}: red CI already investigated (${signals.redCi.map(r => r.workflow).join(', ')}) — see the morning report; not re-investigating`)
     if (red && cfg.capabilities['red-ci'] !== 'observe') allTasks.unshift(redCiTask(red, base, await failedLog(repo, red.runId)))
     else if (red) allTasks.unshift(redCiTask(red, base, ''))
     // Owner request goes to the very front — explicit human intent outranks sensed work.
@@ -528,6 +537,13 @@ interface TaskContext {
   audit: AuditCounts | null
 }
 
+/** Why the free pool (M1) can't take work right now, or null when it can. */
+async function freePoolDeferred(cfg: FactoryConfig): Promise<string | null> {
+  if (!existsSync(cfg.litellm.configPath)) return null
+  const pool = Object.entries(readManagedModels(readFileSync(cfg.litellm.configPath, 'utf8'))).filter(([alias]) => alias.startsWith('free-agent')).map(([, id]) => id)
+  return m1Deferred(pool, await freeQuota(cfg))
+}
+
 /**
  * Route one task and climb the ladder on failure.
  *   pr / verified → done with this repo
@@ -549,8 +565,7 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
       log(`${repo}: ${task.kind} investigation needs the free pool (M1), not allowed for this private repo — skipped`)
       return 'failed'
     }
-    const pool = Object.entries(readManagedModels(readFileSync(cfg.litellm.configPath, 'utf8'))).filter(([alias]) => alias.startsWith('free-agent')).map(([, id]) => id)
-    const deferred = m1Deferred(pool, await freeQuota(cfg))
+    const deferred = await freePoolDeferred(cfg)
     if (deferred) {
       skipReason = deferred
       log(`${repo}: ${deferred} — deferring ${task.kind} investigation`)
