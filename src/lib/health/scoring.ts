@@ -4,6 +4,9 @@ import type { RepositoryMetrics } from '@/lib/db/schema'
  * PRD formula:
  *   20% activity · 20% security · 15% deployment · 15% documentation
  *   10% testing · 10% dependency · 10% quality
+ *
+ * A null security score means unknown (Dependabot alerts are off or couldn't be read): security
+ * is left out and the other weights are scaled up to 100%, instead of counting it as perfect.
  */
 export function calculateHealthScore(
   metrics: Pick<
@@ -17,14 +20,38 @@ export function calculateHealthScore(
   > & { deploymentScore?: number },
 ): number {
   const activity = (metrics.activityScore ?? 0) * 0.20
-  const security = (metrics.securityScore ?? 100) * 0.20
+  const knownSecurity = metrics.securityScore != null
+  const security = knownSecurity ? metrics.securityScore! * 0.20 : 0
   const deployment = (metrics.deploymentScore ?? 50) * 0.15
   const documentation = (metrics.documentationScore ?? 0) * 0.15
   const testing = (metrics.testingScore ?? 0) * 0.10
   const dependency = (metrics.dependencyScore ?? 50) * 0.10
   const quality = (metrics.qualityScore ?? 70) * 0.10
 
-  return Math.round(activity + security + deployment + documentation + testing + dependency + quality)
+  const total = activity + security + deployment + documentation + testing + dependency + quality
+  return Math.round(knownSecurity ? total : total / 0.80)
+}
+
+export interface AlertCounts {
+  critical: number
+  high: number
+  medium: number
+  low: number
+  /** Open secret-scanning alerts (weighted like a high). */
+  secrets: number
+}
+
+/**
+ * Security score from open alerts: 100 with none, falling smoothly as the weighted count grows
+ * (critical 25, high 15, medium 5, low 2, secret 15). It never reaches 0, so 7 alerts and 77
+ * read differently and fixing half of them shows as progress; the old `100 - penalty` floored
+ * at 0 after about one critical and five highs. Examples: one medium ≈ 89, one critical ≈ 73,
+ * 3 critical + 11 high ≈ 35, 2 critical + 75 high ≈ 15.
+ */
+export function securityScoreFromAlerts(c: AlertCounts): number {
+  const penalty = c.critical * 25 + c.high * 15 + c.medium * 5 + c.low * 2 + c.secrets * 15
+  if (penalty === 0) return 100
+  return Math.round(100 / (1 + (penalty / 100) ** 0.7))
 }
 
 export const HEALTH_THRESHOLD_HEALTHY = 75

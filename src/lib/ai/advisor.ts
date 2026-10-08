@@ -130,7 +130,7 @@ export async function generateAdvisor(userId: string): Promise<AdvisorContent> {
         lifecycle: r.lifecycleStatus,
         healthScore: Math.round(m.healthScore ?? 0),
         activityScore: Math.round(m.activityScore ?? 0),
-        securityScore: Math.round(m.securityScore ?? 100),
+        securityScore: m.securityScore == null ? null : Math.round(m.securityScore),
         opportunityScore: Math.round(m.opportunityScore ?? 0),
         estimatedValue: m.estimatedValue ?? 0,
         hasLiveDeploy,
@@ -169,7 +169,7 @@ export async function generateAdvisor(userId: string): Promise<AdvisorContent> {
         if (r.deltas.withRevenue !== null && r.deltas.withRevenue > 0) deltaLines.push(`+${r.deltas.withRevenue}pts if $100 MRR`)
 
         return [
-          `[${r.id}] ${r.name} (opp=${r.opportunityScore} health=${r.healthScore} act=${r.activityScore} sec=${r.securityScore})`,
+          `[${r.id}] ${r.name} (opp=${r.opportunityScore} health=${r.healthScore} act=${r.activityScore} sec=${r.securityScore ?? 'unknown'})`,
           `  mrr=$${r.mrr} stars=${r.stars} lifecycle=${r.lifecycle} build=${r.buildStatus ?? 'none'}`,
           `  ${r.openCritical} critical/high security alerts  deployed=${r.hasLiveDeploy}`,
           deltaLines.length ? `  GAINS: ${deltaLines.join(', ')}` : '  no easy gains detected',

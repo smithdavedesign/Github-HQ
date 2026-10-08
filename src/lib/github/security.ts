@@ -2,15 +2,8 @@ import { db } from '@/lib/db'
 import { securityFindings, repositoryMetrics, repositories } from '@/lib/db/schema'
 import type { InsertSecurityFinding } from '@/lib/db/schema'
 import type { OctokitClient } from './client'
-import { eq, and } from 'drizzle-orm'
-import { calculateHealthScore } from '@/lib/health/scoring'
-
-const SEVERITY_PENALTY: Record<string, number> = {
-  critical: 25,
-  high: 15,
-  medium: 5,
-  low: 2,
-}
+import { eq, and, inArray } from 'drizzle-orm'
+import { calculateHealthScore, securityScoreFromAlerts, type AlertCounts } from '@/lib/health/scoring'
 
 export async function syncSecurityForUser(userId: string, token: string): Promise<void> {
   const octokit: OctokitClient = new (await import('@octokit/rest')).Octokit({ auth: token })
@@ -46,18 +39,26 @@ async function syncRepoSecurity(
     }),
   ])
 
-  // Clear and re-insert findings for this repo
-  await db.delete(securityFindings).where(
-    and(eq(securityFindings.repoId, repoId), eq(securityFindings.state, 'open'))
-  )
+  // Replace a type of finding only when it was read: a failed or forbidden read (Dependabot
+  // alerts off, a GitHub error) keeps what's stored instead of wiping it.
+  const readTypes = [
+    ...(dependabotAlerts.status === 'fulfilled' ? ['dependabot'] : []),
+    ...(secretAlerts.status === 'fulfilled' ? ['secret'] : []),
+  ]
+  if (readTypes.length > 0) {
+    await db.delete(securityFindings).where(
+      and(eq(securityFindings.repoId, repoId), eq(securityFindings.state, 'open'), inArray(securityFindings.type, readTypes))
+    )
+  }
 
-  let penaltyTotal = 0
+  const counts: AlertCounts = { critical: 0, high: 0, medium: 0, low: 0, secrets: 0 }
   const rows: InsertSecurityFinding[] = []
 
   if (dependabotAlerts.status === 'fulfilled') {
     for (const alert of dependabotAlerts.value) {
       const severity = (alert.security_advisory?.severity ?? 'medium').toLowerCase()
-      penaltyTotal += SEVERITY_PENALTY[severity] ?? 2
+      if (severity === 'critical' || severity === 'high' || severity === 'medium' || severity === 'low') counts[severity]++
+      else counts.low++
       rows.push({
         repoId,
         githubAlertId: alert.number,
@@ -74,7 +75,7 @@ async function syncRepoSecurity(
 
   if (secretAlerts.status === 'fulfilled') {
     for (const alert of secretAlerts.value) {
-      penaltyTotal += SEVERITY_PENALTY['high']
+      counts.secrets++
       rows.push({
         repoId,
         githubAlertId: alert.number,
@@ -91,7 +92,9 @@ async function syncRepoSecurity(
     await db.insert(securityFindings).values(rows)
   }
 
-  const securityScore = Math.max(0, 100 - penaltyTotal)
+  // Unknown (null) unless Dependabot alerts were read: "couldn't check" must not look like 100.
+  // An open secret alert is a known problem even without Dependabot, so it still scores.
+  const securityScore = dependabotAlerts.status === 'fulfilled' || counts.secrets > 0 ? securityScoreFromAlerts(counts) : null
 
   // Update security score and recalculate health score
   const existing = await db.query.repositoryMetrics.findFirst({

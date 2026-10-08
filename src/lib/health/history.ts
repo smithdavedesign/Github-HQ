@@ -30,20 +30,21 @@ export function buildHealthTrendSeries(
   start.setUTCHours(0, 0, 0, 0)
   const startMs = start.getTime() - (days - 1) * 86_400_000
 
-  const byDate = new Map<string, { health: number; security: number; activity: number; count: number }>()
+  const byDate = new Map<string, { health: number; security: number; securityCount: number; activity: number; count: number }>()
   for (const row of rows) {
     const date = row.date?.slice(0, 10)
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
     const dateMs = new Date(`${date}T12:00:00Z`).getTime()
     if (dateMs < startMs || dateMs > start.getTime() + 86_400_000) continue
 
-    const current = byDate.get(date) ?? { health: 0, security: 0, activity: 0, count: 0 }
+    const current = byDate.get(date) ?? { health: 0, security: 0, securityCount: 0, activity: 0, count: 0 }
     const health = Number(row.healthScore)
-    const security = Number(row.securityScore)
+    // null = unknown (Dependabot alerts off); Number(null) would count it as 0.
+    const security = row.securityScore == null ? NaN : Number(row.securityScore)
     const activity = Number(row.activityScore)
 
     if (Number.isFinite(health)) current.health += health
-    if (Number.isFinite(security)) current.security += security
+    if (Number.isFinite(security)) { current.security += security; current.securityCount += 1 }
     if (Number.isFinite(activity)) current.activity += activity
     current.count += 1
     byDate.set(date, current)
@@ -62,7 +63,7 @@ export function buildHealthTrendSeries(
     series.push({
       date: dateKey,
       avgHealth: Number((bucket.health / bucket.count).toFixed(1)),
-      avgSecurity: Number((bucket.security / bucket.count).toFixed(1)),
+      avgSecurity: bucket.securityCount ? Number((bucket.security / bucket.securityCount).toFixed(1)) : 0,
       avgActivity: Number((bucket.activity / bucket.count).toFixed(1)),
     })
   }
