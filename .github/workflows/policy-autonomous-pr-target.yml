@@ -1,0 +1,33 @@
+# Every change lands with one PR to main that a human merges (2026-10: the integration/agent
+# hop and its release-label gate were removed). The one rule left for autonomous branches:
+# they may not touch the factory's own judge, loop or router.
+name: Autonomous PR Policy
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  enforce-autonomous-pr-target:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block autonomous edits to the factory itself
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          case "$HEAD_REF" in feature/bot/*|nexus/*|factory/*) ;; *) echo "Not an autonomous branch."; exit 0 ;; esac
+          touched=$(gh api --paginate "repos/${{ github.repository }}/pulls/$PR_NUMBER/files" --jq '.[].filename' \
+            | grep -E '^(factory/|src/lib/agents/model-router\.ts$)' || true)
+          if [[ -n "$touched" ]]; then
+            echo "Autonomous PR policy violation: factory-owned paths are human-only."
+            echo "$touched"
+            exit 1
+          fi
+          echo "No factory-owned paths touched."

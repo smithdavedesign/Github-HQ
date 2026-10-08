@@ -3,7 +3,6 @@ import { db } from '@/lib/db'
 import { users, repositories, repositoryMetrics } from '@/lib/db/schema'
 import { eq, and, avg, count } from 'drizzle-orm'
 
-export const runtime = 'edge'
 export const alt = 'RepoHQ Portfolio'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
@@ -67,7 +66,9 @@ export default async function OGImage({ params }: { params: Promise<{ username: 
 
       {/* Name */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flex: 1 }}>
-        <div style={{ flex: 1 }}>
+        {/* Satori (ImageResponse) needs display: flex on any element with more than one child node;
+            without it the image rendered empty (a 0-byte PNG in production until 2026-10-07). */}
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
           <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 20, margin: '0 0 8px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
             GitHub Portfolio
           </p>
@@ -75,7 +76,7 @@ export default async function OGImage({ params }: { params: Promise<{ username: 
             {displayName}
           </h1>
           <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 24, margin: 0 }}>
-            @{username}
+            {`@${username}`}
           </p>
         </div>
       </div>

@@ -1,0 +1,45 @@
+{
+  "name": "v2-removed-export",
+  "source": "Phase 77 rule: type errors 'fixed' by deleting the code that has them",
+  "expect": "reject",
+  "reason": "removes exported legacyTotal",
+  "task": {
+    "kind": "fix-types",
+    "taskTier": 2,
+    "scoped": true,
+    "files": [
+      "src/price.ts"
+    ],
+    "title": "fix-types",
+    "objective": "fix-types",
+    "evidence": "",
+    "verify": [
+      "typecheck"
+    ]
+  },
+  "baseline": [
+    {
+      "name": "typecheck",
+      "ok": false,
+      "output": ""
+    },
+    {
+      "name": "test",
+      "ok": true,
+      "output": ""
+    }
+  ],
+  "after": [
+    {
+      "name": "typecheck",
+      "ok": true,
+      "output": ""
+    },
+    {
+      "name": "test",
+      "ok": true,
+      "output": ""
+    }
+  ],
+  "patch": "diff --git a/src/price.ts b/src/price.ts\n--- a/src/price.ts\n+++ b/src/price.ts\n@@ -1 +1 @@\n-export function legacyTotal(p: number[]): string {\n-  return p.reduce((a, b) => a + b, 0)\n-}"
+}

@@ -41,13 +41,14 @@ interface AdvisorCardProps {
   advisor: AdvisorContent | null
   timeAllocation?: TimeAllocationItem[]
   hoursPerWeek?: number
-  nexusEnabled?: boolean
+  /** Repos the factory takes requests for (owner + allowlist); Run Agent shows only on these. */
+  factoryRepoIds?: number[]
   accuracyStats?: AccuracyStats[]
 }
 
 const DEFAULT_VISIBLE = 3
 
-/** Mirrors buildAcceptanceCriteria in nexus.ts — shown in expanded card preview */
+/** Mirrors buildAcceptanceCriteria in src/lib/agents/factory-queue.ts — shown in expanded card preview */
 function getAcceptanceCriteria(action: AdvisorAction): string[] {
   const criteria: string[] = []
   if (action.impactType === 'security')    criteria.push('No new security alerts introduced')
@@ -74,7 +75,7 @@ function ConfidenceBadge({ impactType, accuracyStats }: { impactType: string; ac
   return <span className="text-[10px] ml-1" title={`${stat.successRate}% success rate (${stat.dataPoints} runs) — low confidence`}>🔴</span>
 }
 
-export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10, nexusEnabled = false, accuracyStats }: AdvisorCardProps) {
+export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10, factoryRepoIds = [], accuracyStats }: AdvisorCardProps) {
   const [advisor, setAdvisor] = useState(initialAdvisor)
   const [generating, setGenerating] = useState(false)
   const [showAll, setShowAll] = useState(false)
@@ -103,17 +104,17 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
   if (!advisor) {
     return (
       <Card className="card-elevated border-border/60">
-        <CardContent className="py-8 text-center space-y-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center mx-auto">
-            <Sparkles className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+        <CardContent className="py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center shrink-0">
+            <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">AI Portfolio Advisor</p>
-            <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Get a prioritised action plan with quantified opportunity score gains, generated from your actual portfolio data
             </p>
           </div>
-          <Button size="sm" onClick={handleGenerate} disabled={generating} className="gap-1.5">
+          <Button size="sm" onClick={handleGenerate} disabled={generating} className="gap-1.5 shrink-0">
             {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
             {generating ? 'Generating…' : 'Generate Advisor'}
           </Button>
@@ -236,7 +237,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
                   </div>
 
                   {/* Run Agent button in expanded view */}
-                  {nexusEnabled && (
+                  {factoryRepoIds.includes(action.repoId) && (
                     <div className="flex items-center gap-2 pt-1">
                       <QueueButton action={action} />
                       <Link
@@ -247,7 +248,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
                       </Link>
                     </div>
                   )}
-                  {!nexusEnabled && (
+                  {!factoryRepoIds.includes(action.repoId) && (
                     <Link
                       href={`/repos/${action.repoId}`}
                       className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
@@ -261,7 +262,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
               {/* Collapsed: Run Agent lives in the header row */}
               {!isExpanded && (
                 <div className="flex items-center gap-1.5 px-3 pb-3 -mt-1 ml-0 sm:ml-10 flex-wrap">
-                  {nexusEnabled && <QueueButton action={action} />}
+                  {factoryRepoIds.includes(action.repoId) && <QueueButton action={action} />}
                   <Link
                     href={`/repos/${action.repoId}`}
                     className="text-muted-foreground hover:text-foreground"

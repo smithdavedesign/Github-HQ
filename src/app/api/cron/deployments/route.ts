@@ -4,8 +4,12 @@ import { deployments } from '@/lib/db/schema'
 import { checkAllDeployments } from '@/lib/monitoring/uptime'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { eq } from 'drizzle-orm'
+import { withAutomationRun } from '@/lib/monitoring/automation-runs'
 
-export async function GET(request: Request) {
+// Recorded on the Agents page's automation timeline (src/lib/monitoring/automation-runs.ts).
+export const GET = withAutomationRun('cron:deployments', handle)
+
+async function handle(request: Request) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

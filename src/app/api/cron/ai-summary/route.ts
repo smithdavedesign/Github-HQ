@@ -5,8 +5,16 @@ import { generateSummariesForUser, generateRepoSummary } from '@/lib/ai/summary'
 import { getLLMAdapter } from '@/lib/ai/adapter'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { isNotNull, eq, and, inArray, asc } from 'drizzle-orm'
+import { withAutomationRun } from '@/lib/monitoring/automation-runs'
 
-export async function GET(request: Request) {
+// Recorded on the Agents page's automation timeline (src/lib/monitoring/automation-runs.ts): only
+// the calls that start a run (enqueue). The workflow then calls ?process=1 once per job, up to 500 times.
+export const GET = withAutomationRun('cron:ai-summary', handle, request => {
+  const p = new URL(request.url).searchParams
+  return p.has('enqueueRepos') || p.has('enqueue')
+})
+
+async function handle(request: Request) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

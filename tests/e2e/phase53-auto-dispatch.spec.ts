@@ -22,7 +22,7 @@ test.describe('Auto-Dispatch settings card', () => {
 
   test('shows the main enable toggle', async ({ page }) => {
     await page.goto('/settings')
-    await expect(page.getByText('Enable automatic task dispatch on Monday')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText('Enable auto-dispatch', { exact: true })).toBeVisible({ timeout: 8000 })
   })
 
   test('expanded controls hidden when toggle is off', async ({ page }) => {
@@ -88,7 +88,7 @@ test.describe('Auto-dispatch user settings in DB', () => {
         auto_dispatch_max_per_run,
         auto_dispatch_skip_security,
         auto_dispatch_accuracy_threshold
-      FROM users LIMIT 1
+      FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1
     `
     // Defaults may vary if user changed them — just verify the columns exist
     expect('auto_dispatch_enabled' in user).toBe(true)
@@ -98,7 +98,7 @@ test.describe('Auto-dispatch user settings in DB', () => {
 
   test('can update and restore auto_dispatch_enabled', async () => {
     const sql = neon(DB_URL)
-    const [before] = await sql`SELECT id, auto_dispatch_enabled FROM users LIMIT 1`
+    const [before] = await sql`SELECT id, auto_dispatch_enabled FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     if (!before) return
 
     const originalValue = before.auto_dispatch_enabled
@@ -119,7 +119,7 @@ test.describe('Agent performance — auto-dispatched task visibility', () => {
 
   test('auto-dispatched tasks appear in activity log', async ({ page }) => {
     const sql = neon(DB_URL)
-    const [user] = await sql`SELECT id FROM users LIMIT 1`
+    const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     if (!user) { test.skip(true, 'No user'); return }
 
     const [repo] = await sql`SELECT id FROM repositories WHERE user_id = ${user.id} LIMIT 1`

@@ -22,6 +22,12 @@ export default defineConfig({
       testDir: './tests/setup',
       testMatch: 'auth.setup.ts',
       // No storageState — this project creates the file
+      teardown: 'teardown',
+    },
+    {
+      name: 'teardown',
+      testDir: './tests/setup',
+      testMatch: 'auth.teardown.ts',
     },
     {
       name: 'chromium',

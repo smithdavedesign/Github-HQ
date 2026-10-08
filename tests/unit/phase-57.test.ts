@@ -6,12 +6,11 @@
  *   2. secretsEqual()    — constant-time secret comparison
  *   3. inferNextSkill()  — keyword-based next-skill suggestion
  *
- * inferNextSkill lives in AI-Took-My-Job; we test its logic here by importing
- * the equivalent RepoHQ suggest-actions.ts function which mirrors it exactly.
- * Any divergence between the two functions is a bug.
+ * inferNextSkill lived in the Nexus worker (AI-Took-My-Job), retired in Phase 81;
+ * suggest-actions.ts's getSuggestedActions is the only copy left, so it is what we test.
  */
 import { describe, it, expect } from 'vitest'
-import { isGstackSkill } from '../../src/lib/actions/nexus-utils'
+import { isGstackSkill } from '../../src/lib/skills/skill-policy'
 import { secretsEqual } from '../../src/lib/crypto-utils'
 import { getSuggestedActions } from '../../src/lib/skills/suggest-actions'
 
@@ -61,7 +60,7 @@ describe('isGstackSkill', () => {
     const raw: unknown = 'ship'
     if (isGstackSkill(raw)) {
       // TypeScript would error here if raw weren't narrowed to GstackSkill
-      const skill: import('../../src/lib/actions/nexus-utils').GstackSkill = raw
+      const skill: import('../../src/lib/skills/skill-policy').GstackSkill = raw
       expect(skill).toBe('ship')
     } else {
       expect.fail('should have been a valid skill')

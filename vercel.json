@@ -1,5 +1,3 @@
 {
-  "crons": [
-    { "path": "/api/cron/gstack-self", "schedule": "0 7 * * *" }
-  ]
+  "crons": []
 }

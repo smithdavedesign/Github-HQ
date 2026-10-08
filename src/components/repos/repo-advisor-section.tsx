@@ -34,12 +34,14 @@ function getAcceptanceCriteria(action: AdvisorAction): string[] {
 
 interface RepoAdvisorSectionProps {
   actions: AdvisorAction[]
-  nexusEnabled: boolean
+  /** The factory takes requests for this repo (owner + allowlist); otherwise why not. */
+  factoryEnabled: boolean
+  factoryReason?: string | null
   generatedAt?: string
   accuracyStats?: AccuracyStats[]
 }
 
-export function RepoAdvisorSection({ actions, nexusEnabled, generatedAt, accuracyStats }: RepoAdvisorSectionProps) {
+export function RepoAdvisorSection({ actions, factoryEnabled, factoryReason, generatedAt, accuracyStats }: RepoAdvisorSectionProps) {
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set())
 
   function toggleCard(i: number) {
@@ -146,10 +148,10 @@ export function RepoAdvisorSection({ actions, nexusEnabled, generatedAt, accurac
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">
-                  {nexusEnabled && <QueueButton action={action} />}
-                  {!nexusEnabled && (
+                  {factoryEnabled && <QueueButton action={action} />}
+                  {!factoryEnabled && (
                     <p className="text-[10px] text-muted-foreground">
-                      Connect Nexus in Settings to run this automatically
+                      {factoryReason ?? 'The factory does not take requests for this repo.'}
                     </p>
                   )}
                 </div>
@@ -159,11 +161,11 @@ export function RepoAdvisorSection({ actions, nexusEnabled, generatedAt, accurac
             {/* Collapsed: action buttons */}
             {!isExpanded && (
               <div className="flex items-center gap-2 px-3 pb-3 -mt-1 ml-9">
-                {nexusEnabled && <QueueButton action={action} />}
-                {!nexusEnabled && (
-                  <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                {factoryEnabled && <QueueButton action={action} />}
+                {!factoryEnabled && (
+                  <span className="text-[10px] text-muted-foreground flex items-center gap-1" title={factoryReason ?? undefined}>
                     <Clock className="w-2.5 h-2.5" />
-                    Nexus not configured
+                    Not on the factory allowlist
                   </span>
                 )}
               </div>

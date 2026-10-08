@@ -1,0 +1,42 @@
+{
+  "name": "v2-missing-relative-import",
+  "source": "Phase 77 rule: import of a file that doesn't exist",
+  "expect": "reject",
+  "reason": "doesn't exist: './math'",
+  "task": {
+    "kind": "fix-types",
+    "taskTier": 2,
+    "scoped": true,
+    "files": [
+      "src/price.ts"
+    ],
+    "title": "fix-types",
+    "objective": "fix-types",
+    "evidence": "",
+    "verify": [
+      "typecheck"
+    ]
+  },
+  "baseline": [
+    {
+      "name": "typecheck",
+      "ok": false,
+      "output": ""
+    }
+  ],
+  "after": [
+    {
+      "name": "typecheck",
+      "ok": true,
+      "output": ""
+    }
+  ],
+  "patch": "diff --git a/src/price.ts b/src/price.ts\n--- a/src/price.ts\n+++ b/src/price.ts\n@@ -1 +1 @@\n-const sum: string = 0\n+import { add } from './math'\n+const sum: number = add(0, 0)",
+  "deps": [
+    "typescript"
+  ],
+  "repoFiles": [
+    "src/price.ts",
+    "package.json"
+  ]
+}

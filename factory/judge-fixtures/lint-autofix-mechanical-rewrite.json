@@ -1,0 +1,44 @@
+{
+  "name": "lint-autofix-mechanical-rewrite",
+  "source": "Figma-Jira: the repo's own eslint --fix rewrite, landed as a mechanical PR",
+  "expect": "accept",
+  "task": {
+    "kind": "lint-autofix",
+    "taskTier": 1,
+    "scoped": false,
+    "files": [],
+    "title": "lint-autofix",
+    "objective": "lint-autofix",
+    "evidence": "",
+    "verify": []
+  },
+  "baseline": [
+    {
+      "name": "lint",
+      "ok": false,
+      "output": "\u2716 12 problems (12 errors, 0 warnings)"
+    },
+    {
+      "name": "test",
+      "ok": true,
+      "output": ""
+    }
+  ],
+  "after": [
+    {
+      "name": "lint",
+      "ok": false,
+      "output": "\u2716 12 problems (12 errors, 0 warnings)"
+    },
+    {
+      "name": "test",
+      "ok": true,
+      "output": ""
+    }
+  ],
+  "patch": "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-import x from \"y\"\n+import x from 'y'",
+  "lintProblems": {
+    "before": 12,
+    "after": 12
+  }
+}

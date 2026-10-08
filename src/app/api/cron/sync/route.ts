@@ -4,15 +4,19 @@ import { users } from '@/lib/db/schema'
 import { syncAllRepos } from '@/lib/github/sync'
 import { snapshotHealthScores } from '@/lib/health/history'
 import { snapshotPortfolioScore } from '@/lib/health/portfolio-snapshot'
-import { refreshGoalProgress } from '@/lib/actions/goals'
+import { refreshGoalProgress } from '@/lib/goals-progress'
 import { syncStripeMrr } from '@/lib/actions/stripe'
 import { checkMergedAgentPRs, resolveActualDeltas } from '@/lib/agents/pr-merge-checker'
 import { checkCIFailuresOnAgentPRs } from '@/lib/agents/ci-checker'
 import { checkHealthThresholdAlerts } from '@/lib/notifications/dispatcher'
 import { verifyCronSecret } from '@/lib/cron-auth'
+import { withAutomationRun } from '@/lib/monitoring/automation-runs'
 import { isNotNull } from 'drizzle-orm'
 
-export async function GET(request: Request) {
+// Recorded on the Agents page's automation timeline (src/lib/monitoring/automation-runs.ts).
+export const GET = withAutomationRun('cron:sync', handle)
+
+async function handle(request: Request) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

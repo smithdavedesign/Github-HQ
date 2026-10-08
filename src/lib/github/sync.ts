@@ -1,4 +1,4 @@
-'use server'
+import 'server-only'
 
 import { db } from '@/lib/db'
 import { toNum } from '@/lib/utils'
@@ -6,12 +6,14 @@ import { repositories, repositoryMetrics, scans, users, portfolioEvents, digests
 import type { InsertRepository, InsertRepositoryMetrics } from '@/lib/db/schema'
 import { createOctokit } from './client'
 import { scanRepository } from './scanner'
+import { planPrune } from './prune'
 import { calculateHealthScore, calculateOpportunityScore, calculateArchiveScore } from '@/lib/health/scoring'
 import { calculateValuation } from '@/lib/health/valuation'
 import { computePortfolioEvents, computeInternalDeps, computeExternalDeps, shouldInvalidateCachedBrief } from '@/lib/health/events'
 import type { RepoDepInfo } from '@/lib/health/events'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import { decrypt } from '@/lib/crypto-utils'
+import { commitCounts } from './commit-stats'
 
 type ExistingRepoState = {
   id: number
@@ -103,6 +105,15 @@ export async function syncAllRepos(userId: string): Promise<void> {
       } catch (err) {
         console.error(`[sync] failed ${repo.full_name}:`, err instanceof Error ? err.message : err)
       }
+    }
+
+    // Repos deleted on GitHub (or transferred away) would otherwise stay tracked forever and keep
+    // showing up in counts, the public profile and agent targets.
+    const prune = planPrune(existingRepos, new Set(repos.map(r => r.id)))
+    if (prune.skipped) console.warn(`[sync] ${prune.skipped}`)
+    if (prune.ids.length) {
+      await db.delete(repositories).where(and(eq(repositories.userId, userId), inArray(repositories.id, prune.ids)))
+      console.log(`[sync] pruned ${prune.ids.length} repo(s) no longer on GitHub`)
     }
 
     // Phase 29: cross-reference internal deps using pure function
@@ -204,19 +215,26 @@ export async function syncSingleRepo(
     octokit.rest.actions.listWorkflowRunsForRepo({ owner, repo: name, per_page: 1 }),
   ])
 
-  // Process commit data
-  let weeklyCommits = 0
-  let monthlyCommits = 0
-  let quarterlyCommits = 0
-  let weeklyCommitData: { week: number; total: number }[] = []
+  // Existing metrics: the security score (set by the security cron) and the previous commit counts.
+  // If we use the hardcoded 100 here, health scores ignore real Dependabot alerts.
+  const [repoRecord, existingMetrics] = await Promise.all([
+    db.query.repositories.findFirst({
+      where: eq(repositories.id, repoId),
+      with: { deployments: { columns: { status: true } } },
+      columns: { mrr: true, stars: true, isRevenueGenerating: true },
+    }),
+    db.query.repositoryMetrics.findFirst({
+      where: eq(repositoryMetrics.repoId, repoId),
+      columns: { securityScore: true, weeklyCommits: true, monthlyCommits: true, quarterlyCommits: true, weeklyCommitData: true },
+    }),
+  ])
 
-  if (commitActivity.status === 'fulfilled' && Array.isArray(commitActivity.value.data)) {
-    const weeks = commitActivity.value.data.slice(-13)
-    weeklyCommitData = weeks.map(w => ({ week: w.week ?? 0, total: w.total ?? 0 }))
-    quarterlyCommits = weeks.reduce((sum, w) => sum + (w.total ?? 0), 0)
-    monthlyCommits = weeks.slice(-4).reduce((sum, w) => sum + (w.total ?? 0), 0)
-    weeklyCommits = weeks[weeks.length - 1]?.total ?? 0
-  }
+  // Commit counts: GitHub answers 202 while it computes a repo's stats, so without fresh numbers
+  // the previous sync's are kept rather than read as zero commits (commit-stats.ts).
+  const { weeklyCommits, monthlyCommits, quarterlyCommits, weeklyCommitData } = commitCounts(
+    commitActivity.status === 'fulfilled' ? commitActivity.value.data : null,
+    existingMetrics,
+  )
 
   const issueCount = openIssues.status === 'fulfilled'
     ? parseInt(String(openIssues.value.headers['x-total-count'] ?? '0')) || 0
@@ -236,20 +254,6 @@ export async function syncSingleRepo(
   const activityScore = calculateActivityScore(monthlyCommits, quarterlyCommits, prCount, hasReleases)
 
   const stackData = await scanRepository(octokit, owner, name, repoId)
-
-  // Fetch existing security score (set by the security cron) before calculating health.
-  // If we use the hardcoded 100 here, health scores ignore real Dependabot alerts.
-  const [repoRecord, existingMetrics] = await Promise.all([
-    db.query.repositories.findFirst({
-      where: eq(repositories.id, repoId),
-      with: { deployments: { columns: { status: true } } },
-      columns: { mrr: true, stars: true, isRevenueGenerating: true },
-    }),
-    db.query.repositoryMetrics.findFirst({
-      where: eq(repositoryMetrics.repoId, repoId),
-      columns: { securityScore: true },
-    }),
-  ])
 
   const currentSecurityScore = existingMetrics?.securityScore ?? 100
 

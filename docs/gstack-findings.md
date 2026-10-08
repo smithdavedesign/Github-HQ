@@ -2,6 +2,8 @@
 
 Running record of findings from gstack integration tests and slash commands against the RepoHQ codebase.
 
+> G1–G6 below ran in the Nexus worker, retired in roadmap Phase 81 ([PRD](agent-hq-migration-prd.md)). Skills now run in the factory as fix or report requests; the log is kept as history.
+
 **gstack G1–G6 fully shipped:**
 - G1: Real skill invocation via `OPENCLAW_SESSION=true` + Claude Code CLI (`/investigate`, `/ship`, `/health`, `/review`, `/qa-only`, `/qa`, `/document-release`, `/canary`, `/retro`)
 - G2: UI skill launcher on repo Agent tab (9 skills, 5 phases) + `queue_gstack_skill` MCP tool

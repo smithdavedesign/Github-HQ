@@ -1,726 +1,294 @@
 # RepoHQ — Roadmap
 
-## Shipped
-
-### Phase 1 — Core Dashboard
-- [x] GitHub OAuth with `repo`, `read:user`, `read:org`, `security_events` scopes
-- [x] Full repo sync (public + private) with pagination via Octokit
-- [x] Health score engine — 7-factor weighted formula
-- [x] Repository intelligence scanner — detects framework, language, DB, hosting, CI/CD, AI tools
-- [x] TanStack Table — sorting, filtering, column visibility, CSV export
-- [x] Security dashboard — Dependabot alerts and secret scanning by severity
-- [x] Production URL monitoring — uptime, response time, SSL
-- [x] AI repo summaries — Claude: what it does, maturity, risk, next actions
-- [x] Neon PostgreSQL + Drizzle ORM
-- [x] Vercel Cron for automated daily updates
-- [x] Dark mode
-- [x] Settings page
-- [x] 142 unit tests (Vitest) · 38 e2e tests (Playwright)
-
-### Phase 2 — Deeper Insights
-- [x] Real-time sync progress bar (TanStack Query polls `/api/sync-status` every 3s)
-- [x] Per-repo manual re-sync button
-- [x] Rate limit guard — backs off at `X-RateLimit-Remaining` < 300
-- [x] GitHub Actions build status fetched during sync
-- [x] 13-week commit activity chart (Recharts) on repo detail
-- [x] Tags editor — inline chip input, persists to DB
-- [x] Saved views — save/load/delete column + sort presets (localStorage)
-- [x] Revenue flag toggle in the table row
-- [x] MRR and Build Status columns
-
-### Phase 3 — Revenue & Cost Tracking
-- [x] MRR, ARR, monthly cost fields per repo (Revenue tab)
-- [x] Live profit and margin preview
-- [x] Portfolio P&L summary on dashboard (hidden until data exists)
-- [x] MRR column in repos table (sortable)
-
-### Phase 4 — Opportunity Scoring
-- [x] 4-factor weighted formula: Revenue Potential × 30%, Activity × 25%, Health × 25%, Stars × 20%
-- [x] "Needs Attention" + "Dormant but Promising" cards on dashboard
-- [x] Opportunity column in repos table
-- [x] 24 unit tests
-
-### Phase 5 — Claude Code Integration
-- [x] Per-repo deep analysis: architecture, security, code quality, tech debt
-- [x] Prioritised action plan (High/Medium/Low)
-- [x] Overall Claude score 0–100, stored in DB, Analysis tab on detail page
-
-### Phase 6 — Extended Deployment Support
-- [x] Auto-discover from GitHub Environments + GitHub Pages
-- [x] Provider auto-detection (Vercel, Netlify, Render, Railway, Fly, Pages, AWS, Azure)
-- [x] Deployment manager on repo detail — add, remove, check, auto-discover
-
-### Phase 7 — Shareable Portfolio View
-- [x] Public route `/u/[githubLogin]` — no auth, ISR 1h
-- [x] Opt-in toggle in Settings
-- [x] Profile card, health badges, tech stack, AI summary, deployment dots
-
-### Phase 8 — Automated Triage Digest
-- [x] `digests` table — weekly Claude briefing per user
-- [x] Top 3 priorities with urgency, reason, action, repo link
-- [x] Monday 06:00 UTC cron
-- [x] "Weekly AI Briefing" card on dashboard (< 8 days old)
-
-### Phase 9 — Health Score History
-- [x] `health_score_history` table — unique on `(repo_id, recorded_date)`
-- [x] Daily snapshot after sync (idempotent)
-- [x] `getHealthTrend()` compares current to oldest snapshot
-- [x] HealthBadge ↑/↓ arrow after 7+ days of data
-- [ ] 30-day trend line on Analytics page — waiting for data (~30 syncs)
-
-### Phase 10 — Natural Language Query
-- [x] Sparkle input above repos table — plain English filters
-- [x] `/api/nl-query` — claude-haiku returns structured `NLQueryFilters` (no raw SQL)
-- [x] 14-field vocabulary: health, activity, last push, visibility, language, framework, DB, revenue, security, stars, MRR, sort
-- [x] 28 unit tests
-
-### Phase 11 — Repository Lifecycle Status
-- [x] 8-stage enum: Idea → Building → Beta → Production → Growing → Maintaining → Sunsetting → Archived
-- [x] Lifecycle selector on repo detail Overview tab
-- [x] Lifecycle badge column in repos table
-- [x] Dashboard distribution card
-
-### Phase 12 — Portfolio Health Feed
-- [x] `/feed` page — health drops, deployments, security alerts, dormant repos, failing builds
-- [x] Sorted by severity (critical → warning → info → positive)
-
-### Phase 13 — Technical Debt Visibility
-- [x] Tech Debt column in repos table (reads from `claude_analysis.techDebt.level`)
-- [x] Low / Medium / High badge, custom sort order
-
-### Phase 14 — AI Portfolio Advisor
-- [x] Pre-computes opportunity score deltas per repo before calling Claude
-- [x] Top 5 actions: repo, verb phrase, effort, exact delta, reasoning
-- [x] AdvisorCard on dashboard with Generate / Regenerate button
-- [x] Runs alongside digest cron every Monday
-
-### Phase 15 — Repository Valuation Engine
-- [x] SaaS multiple: MRR × 36–60× (adjusted for health + activity)
-- [x] Signal-based: stars × $20 + deployment bonus (adjusted for activity/health floor)
-- [x] Confidence tiers: none / very\_low / low / medium
-- [x] Portfolio net worth card on dashboard
-- [x] Valuation column in repos table
-- [x] 30 unit tests
-
-### Phase 16 — Portfolio Analytics Trends
-- [ ] Line chart on Analytics page: avg health over time — waiting for 30+ days of snapshots
-
-### Phase 17 — Goal Tracking
-- [x] `goals` table: type (mrr / health\_avg / repos\_live / revenue\_repos / custom), target, deadline
-- [x] Auto-progress computed from live data on every sync
-- [x] GoalsCard on dashboard — progress bars, deadline countdown, On Track / Behind
-- [x] GoalManager in Settings
-
-### Phase 18 — Portfolio Resume & Shareable Reports
-- [x] `/u/[username]/resume` — print-friendly portfolio
-- [x] Dynamic OG image for `/u/[username]`
-- [x] `/u/[username]/report/[YYYY-q#]` — quarterly report with AI commentary
-
-### Phase 21 — Purpose Field & Focus Projects
-- [x] `purpose` enum: Revenue / Learning / Consulting / Experiment / Open Source / Client Work / Portfolio / Infrastructure
-- [x] Purpose selector on repo detail Overview tab
-- [x] `is_focused` boolean — focus toggle on repo detail
-- [x] Purpose, Focus, Archive Score columns in repos table (hidden by default, toggle via Columns menu)
-
-### Phase 22 — Archive Candidates
-- [x] `archive_score` (0–100) — inactivity, zero revenue, no deployment, low health, low opportunity
-- [x] Archive Candidates card on dashboard — one-click lifecycle transition to Sunsetting
-
-
-### Phase 23 — Itemized Cost Tracking
-- [x] `cost_items` jsonb on repositories — `[{ label, amount }]` line items
-- [x] Cost line-item editor on Revenue tab — add/remove/edit, total auto-summed
-- [x] Per-repo P&L summary on Revenue tab: revenue, itemized costs, monthly + annual profit, margin
-- [x] Portfolio cost breakdown on dashboard (by label)
-
-### Phase 24 — Weekly CEO Report
-- [x] `ceo_report` jsonb on `digests` table
-- [x] Sections: Portfolio Summary, Biggest Wins, Biggest Risks, Recommended Focus
-- [x] Generated alongside digest + advisor every Monday (claude-haiku, cached prompt)
-- [x] Collapsible CEO Report card on dashboard with regenerate button
-
-### Phase 25 — Time Allocation Recommendations
-- [x] Ranks repos by projected value delta — health gap × opportunity gap, revenue + focus multipliers
-- [x] "Best Use of Your Time" card on dashboard — top 3 repos with impact estimate
-- [x] Strong archive candidates (score ≥ 70) excluded from ranking
-- [x] Hours-available input in Settings (Goals section) — configures time allocation
-
-### Phase 26 — Opportunity vs Effort Matrix
-- [x] `estimated_effort` enum on repositories: low / medium / high
-- [x] Effort selector on repo detail Overview tab
-- [x] 2×2 quadrant view on Analytics page: Quick Win / Invest / Fill-In / Deprioritize
-- [x] Repos listed by opportunity score within each quadrant
-
-### Phase 27 — Idea Graveyard
-- [x] `abandonment_reason` text field on repositories
-- [x] Prompt shown automatically when lifecycle → Sunsetting or Archived
-- [x] `/repos/graveyard` page in sidebar — archived repos with reason badges
-- [x] Advisor prompt includes graveyard context — warns when new action resembles abandoned idea
-
-### Phase 28 — Personal Changelog
-- [x] `portfolio_events` table — repo created, archived, MRR changed, health milestone, first revenue
-- [x] Events auto-captured during sync: new repos, archives, MRR changes ≥$10, health milestones (70/80/90)
-- [x] Manual milestone entries (free-text) via `/feed` Milestones tab
-- [x] `/feed` Milestones tab with timeline view, month grouping, delete for manual entries
-- [x] Annual markdown export — `/api/changelog/export?year=YYYY`
-
-### Phase 29 — Portfolio Dependency Map
-- [x] Scanner returns `packageName` + all dep names from `package.json`
-- [x] `internal_deps` jsonb on `repository_metrics` — synced after full portfolio scan
-- [x] Force-directed SVG graph on Analytics page — hover to highlight connections
-- [x] Cascade risk alert in Feed: warns when a depended-upon repo has health < 60
-
-### Phase 30 — Portfolio Score
-- [x] `portfolio_score_history` table — daily snapshot, idempotent via unique `(userId, recordedDate)`
-- [x] `calculatePortfolioScore()` — 4-component formula: Health 40%, Activity 25%, Revenue 25%, Diversity 10%
-- [x] Snapshotted after every sync alongside `health_score_history`
-- [x] `PortfolioScoreCard` on dashboard — circular ring gauge, grade (A–F), component bars, weekly delta badge
-
-### Phase 31 — Weekly Diff Card
-- [x] `getWeeklyDiff()` server action — computes from `health_score_history`, `portfolio_events`, `security_findings`
-- [x] Top health improver and top decliner (min ±3pt delta to avoid noise)
-- [x] New repos, archived repos, MRR changes, new critical/high security alerts
-- [x] `WeeklyDiffCard` on dashboard — hidden when nothing happened this week
-
-### Phase 43 — Ruthless Polish
-
-#### 43a — AI Card Consolidation
-- [x] Removed `WeeklyBriefingCard` from dashboard — superseded by CEO Report
-- [x] Merged `TimeAllocationCard` into `AdvisorCard` as "Best use of your time" sub-section
-- [x] Moved `OpportunityCostCard` off dashboard → Feed page (weekly retrospective, not persistent signal)
-- [x] Net: 5 AI cards → 2 core cards (Advisor + CEO Report) + standalone Simulation
-
-#### 43b — Phase 16: Portfolio Health Trend Line Chart
-- [x] `getPortfolioHealthTrend(userId)` in `history.ts` — groups health_score_history by date, avg across all user repos
-- [x] `HealthTrendLineChart` Recharts line chart — 3 lines (health/security/activity), 30-day window
-- [x] Added to Analytics page above existing snapshot bar chart
-- [x] Graceful empty state when < 3 data points ("Collecting data...")
-
-#### 43c — Ship It Nudge (Phase 32)
-- [x] `getShipItWarnings()` — focused repos with weeklyCommits = 0 and lastPush > 7 days
-- [x] `ShipItCard` in Status zone — shows repo, days since commit, opp score, "Ship it →" link
-- [x] Snooze stored in localStorage, expires after 3 days; max 3 warnings shown
-
-#### 43d — GitHub Profile README Generator
-- [x] `/api/profile-readme/[username]` — returns raw markdown using showcase scoring + portfolio stats
-- [x] `ProfileReadmeGenerator` in Settings (visible when public profile enabled)
-- [x] Live preview (fetched client-side on mount), copy button, refresh, GitHub link
-
-#### 43e — Dashboard Hierarchy
-- [x] Three visual zones with `SectionLabel` dividers: STATUS / INTELLIGENCE / PLANNING
-- [x] Ship It Nudge in Status zone; Simulation + Opportunity + Archive in Planning zone
-- [x] CEO Report full-width in Intelligence zone (was crammed into 2-col grid)
-
-### Phase 32 — Ship It Nudge
-- [x] Shipped in Phase 43c
-
-### Phase 33 — Dependency Graph: Shared External Deps
-- [x] Extend dep graph to show repos that share prominent external packages (drizzle-orm, openai, etc.)
-- [x] Shared deps shown as edge labels; more immediately useful than internal deps
-
-### Phase 34 — Portfolio Concentration Risk
-- [x] Revenue concentration: % of total MRR tied to top repo, risk level (low/medium/high)
-- [x] Stack concentration: dominant frontend framework across active repos
-- [x] `ConcentrationRiskCard` on dashboard — bar chart, color-coded risk, single-failure warning
-- [x] Pure computation from existing data — no new DB queries
-
-### Phase 35 — One-Click Archive Pipeline
-- [x] "Archive on GitHub" button on graveyard page for repos not yet archived on GitHub
-- [x] `archiveRepoOnGitHub()` calls `PATCH /repos/{owner}/{repo}` via Octokit, sets read-only
-- [x] Updates `isArchived` + `lifecycleStatus = 'archived'` in DB, writes `portfolio_events` entry
-- [x] Shows "✓ On GitHub" badge for repos already archived; button collapses to confirmation on success
-
-### Phase 36 — Portfolio Simulation Engine
-- [x] "Plan My Week" card on dashboard — given N hours + goal type, models optimal allocation
-- [x] Goal types: max opportunity, max revenue, max health
-- [x] Uses pre-computed opportunity score deltas (same as Advisor) + effort estimates as inputs
-- [x] Output: ranked allocation table with estimated hours, opportunity delta, projected MRR
-- [x] Greedy algorithm: highest ROI-per-hour, one action per repo, fits within budget
-- [x] Portfolio score projection: estimated new score if all actions completed
-
-### Phase 37 — Stripe / Revenue API Integration
-- [x] Stripe restricted API key stored on user record in Settings → Revenue Integration
-- [x] Fetches all active subscriptions, calculates MRR per product (handles yearly → monthly normalisation)
-- [x] Product → repo mapping UI in Settings
-- [x] "Sync MRR" button + runs automatically on every daily cron sync
-- [x] No SDK dependency — plain fetch against Stripe REST API with pagination
-
-### Phase 38 — MCP Server (IDE Context Integration)
-- [x] `mcp/server.ts` — stdio MCP server, runs locally via `npx tsx`
-- [x] Tools: `get_portfolio_summary`, `get_repo_context`, `get_portfolio_warnings`, `get_top_opportunities`, `get_active_goals`
-- [x] Queries Neon DB directly with `DATABASE_URL` + `MCP_USER_ID` env vars
-- [x] `~/.claude/claude.json` configured and ready — restart Claude Code to activate
-- [x] `mcp/README.md` with setup instructions and usage examples
-
-### Phase 41 — GitHub Profile Optimizer
-- [x] `calculateShowcaseScore()` — health (40%), stars (20%), focus (15%), deployment (15%), purpose (10%)
-- [x] "GitHub Profile" card on dashboard — top 6 repos to pin, ranked by showcase score
-- [x] Skips private/archived/sunsetting repos; purpose bonus for Portfolio/Open Source/Revenue
-- [x] Links to each repo + direct link to GitHub profile
-
-### Phase 42 — Bulk Triage Mode
-- [x] `/repos/triage` in sidebar — work through all active repos systematically
-- [x] Repos ordered by archive score DESC (most archive-worthy first)
-- [x] Per-repo card: name, health badge, description, last push, archive risk level
-- [x] One-click actions: Keep / Sunset / Archive / Skip with immediate DB save
-- [x] Keyboard shortcuts: K = Keep, S = Sunset, A = Archive, Space = Skip, ← = Previous
-- [x] Progress bar + "X remaining" counter
-- [x] End screen: summary of kept / sunsetted / archived / skipped counts
-
-### Phase 44 — Bring Your Own LLM Key
-- [x] `llmProvider` + `llmApiKey` columns on users table
-- [x] `LLMAdapter` interface with `generate({ system, user, fast, maxTokens, cacheSystem })`
-- [x] Anthropic adapter (preserves prompt caching) + OpenAI adapter (gpt-4o-mini / gpt-4o)
-- [x] `getLLMAdapter(userId)` factory — user key → app env var fallback → error if neither
-- [x] All 5 AI modules (digest, advisor, ceo-report, analysis, summary) + NL query updated
-- [x] Settings → AI Provider: Claude/OpenAI selector, key input, test-on-save, remove button
-- [x] Prompts unchanged — transfer cleanly between providers
-
-### Phase 39 — Opportunity Cost Tracker
-- [x] `computeOpportunityCost()` — compares repos with weeklyCommits > 0 vs highest-value untouched repos
-- [x] `OpportunityCostCard` on dashboard — shows what you worked on, what you missed, score delta
-- [x] Only surfaces when delta ≥ 10 pts (suppressed when the gap is noise)
-- [x] Infers time investment from `weeklyCommits` field synced from GitHub
-
-### Phase 45 — Agentic Coding Context (MCP Expansion)
-- [x] `get_coding_brief(repo_name)` — health, lifecycle, tech stack, advisor actions, tech debt, security, recent session history; ready to paste at session start so agent never starts cold
-- [x] `get_next_action()` — single highest-ROI task from advisor + opportunity scores; skips Reference/Infrastructure/sunsetting repos; falls back to highest-opp repo if no advisor data
-- [x] `log_session_complete(repo_name, summary, agent_name)` — writes `session_complete` portfolio_events entry with agent metadata; future coding briefs include session history for agent continuity
-- [x] `mcp/brief.ts` — pure formatting helpers extracted for testability
-- [x] 22 unit tests covering health formatting, last-push display, actionable-repo filtering, action picking
-
-### Phase 46 — RepoHQ × AI-DevOps Nexus Integration (Personal First)
-- [x] Phase A: "Queue" button on advisor actions → POST to Nexus `/internal/agent-tasks`; stage-based UI (queued → preparing → running → PR ready → merged/failed/timed_out); 15-min timeout; substantial effort security gate
-- [x] Phase A.5: Agent ROI & Accuracy Tracking — predictedDelta vs actualDelta, `/agent-performance` page, accuracy notice for <5 merges
-- [x] Phase B: Nexus agent reads `get_coding_brief` via RepoHQ MCP before execution (brief-fetcher queries Neon directly)
-- [x] Phase C: gstack skills as `AGENT_EXECUTION_COMMAND` per risk tier — `scripts/gstack-ship.sh` (Tier 2), `scripts/gstack-investigate.sh` (Tier 3)
-- [x] Phase D-infra: Webhook loop — `agent_pr_created`, `agent_pr_merged`, `agent_execution_failed` events; auto-resync on merge via `after()`; status polling API
-- [x] Phase D: Full agent observability — PR status badges on repo list, agent events in Portfolio Feed, Agent History tab on repo detail, AgentStatsBlock on Analytics, AgentImpactCard on Dashboard
-- [ ] Phase E: Auto-queue + batch approval (unlock after 6 months + 80% accuracy)
-
-### Phase 47 — Agent Observability & PR Tracking ✅
-- [x] Repo list: "PR open →" badge on repos with an active agent PR (prevents double-queueing)
-- [x] Repo detail: "Agent" tab — all tasks queued, PR status + links, predicted vs actual delta per run
-- [x] Portfolio Feed: agent events appear inline (PR opened, PR merged with actual delta, execution failed)
-- [x] Analytics: AgentStatsBlock — tasks queued, PRs created/merged/failed, success rate, total score gained
-- [x] Dashboard: AgentImpactCard — pts gained from agent PRs this month (appears once ≥1 PR merged)
-
-### Phase 48 — PR Merge Detection via Cron Poll
-- [x] `checkMergedAgentPRs(userId)` — polls GitHub API for open agent PRs, detects merges, writes `agent_pr_merged` event with `healthBefore`
-- [x] `resolveActualDeltas(userId)` — after sync, computes `actualDelta = healthAfter - healthBefore` and updates event metadata
-- [x] Wired into `/api/cron/sync` — runs before full sync (detect + record healthBefore), resolves deltas after sync completes
-- [ ] Phase E: Upgrade to GitHub App real-time webhooks (see Distribution Roadmap below)
-
-See [docs/architecture.md](architecture.md) for risk tiers, safety gates, success metrics, and competitive context. See [docs/agentic-full-flow.md](agentic-full-flow.md) for mermaid architecture and sequence diagrams.
-
----
-
-## Intelligence & Agent Quality Roadmap
-
-The next layer of value: making the system smarter for both humans and agents the longer it runs.
-
-### Phase 49 — Push Notifications ✅
-- [x] In-app notification bell in topbar: unread badge, Sheet panel, mark-read, 2-minute polling
-- [x] `notifications` table + `notificationWebhookUrl` + `healthAlertThreshold` on users schema
-- [x] `dispatcher.ts`: `createNotification()`, `checkHealthThresholdAlerts()` — no-spam (7-day window per repo)
-- [x] `webhook.ts`: pure `sendWebhook()` (extracted for testability; works with Slack, Make, Zapier, any HTTP endpoint)
-- [x] Notification settings card in /settings: webhook URL + test button + health threshold config
-- [x] Cron sync calls `checkHealthThresholdAlerts()` after health snapshot
-- [x] Webhook handler dispatches `agent_pr_ready` and `agent_failed` notifications via `after()`
-- [ ] Email digest on critical events (future — needs email provider)
-- [ ] Weekly briefing email (future — extend existing digest cron)
-
-### Phase 50 — Active Work Signal in MCP ✅
-- [x] `get_active_work(repo_name?)` MCP tool — returns open agent PRs + safe-to-start flag, portfolio-wide or per-repo
-- [x] `getOpenAgentPRMap()` shared helper — used by `get_active_work`, `get_next_action`, `get_coding_brief`
-- [x] `get_next_action()` skips repos with open agent PRs (collision prevention at the MCP level)
-- [x] `get_coding_brief()` gains "In Flight" section showing active PR URL + task ID if present
-
-### Phase 51 — Attempt Log & Failure Feedback ✅
-- [x] `log_attempt(repo_name, action, outcome, reason)` MCP tool — writes `agent_attempt` to `portfolio_events`
-- [x] `getDeadEndActions()` helper — identifies (repo, action) combos with 2+ failures
-- [x] `get_next_action()` skips dead-end actions (advisor stops recommending known-failed approaches)
-- [x] `get_coding_brief()` gains "Recent Attempt History" section: outcome emoji, reason, failure warning at 2+ failures (superseded by the distilled 7-day summary from Phase 54-T4)
-- [x] Agent History tab on repo detail now includes `agent_attempt` events with colour-coded outcome badges
-- [x] Closed/rejected PR detection — `checkMergedAgentPRs()` cron poll inserts `agent_pr_rejected` when a PR is closed without merging; new `rejected` lifecycle stage (terminal) surfaced in `queue-button.tsx`, `agent-task-status`, and Agent History timelines
-
-### Phase 52 — Advisor Learning Loop ✅
-The longer the system runs, the better its recommendations get. Every merged agent PR is a data point; the advisor now reads its own track record before generating recommendations.
-
-- [x] **52-A: Data fixes** — `impactType` now stored in `agent_execution_failed` events; `deltaConfidence: 'high'|'low'` flag on resolved deltas (|Δ| > 20 pts = low confidence, likely other factors)
-- [x] **52-B: Accuracy computation** — `src/lib/actions/advisor-accuracy.ts`: `getAccuracyByImpactType()`, `getRepoAccuracy()`, `getDowngradedRepos()` — computed from `portfolio_events`, no new table; time-decay (last 30d × 2); risk-adjusted suppress thresholds per impactType; `src/lib/actions/advisor-accuracy-utils.ts` — pure functions safe for unit tests
-- [x] **52-C: Advisor prompt injection** — accuracy summary table injected into user message (preserves system prompt cache); new rule: Claude adds confidence caveat to reasoning on <50% success rate actions; downgraded repos listed
-- [x] **52-D: UI** — `AccuracyTable` component on `/agent-performance` replacing "X of 5 needed" placeholder; per-row signal labels (Strong/Mixed/Weak/Building); trend arrows (↑↓) from time-decayed rate; confidence emoji badges (🟢🟡🔴⚪) on each AdvisorCard action
-- [x] **52-E: MCP + digest** — `get_accuracy_report()` MCP tool with full calibration table + downgraded repos; `get_next_action()` now includes confidence line per impactType; monthly digest (first Monday) auto-includes accuracy summary in stored content
-
-### Phase 53 — Auto-Dispatch (Agentic Workforce) ✅
-Wake up Monday morning with PRs ready to review — no clicking required.
-
-- [x] Schema: `autoDispatchEnabled`, `autoDispatchEffortGate`, `autoDispatchMaxPerRun`, `autoDispatchSkipSecurity`, `autoDispatchAccuracyThreshold` on `users`
-- [x] `queueAdvisorActionForUser(userId, action)` — session-less queue function safe for cron context
-- [x] `autoDispatchAdvisorActions(userId, advisor, settings, accuracyStats)` — filter pipeline: effort gate → security gate → accuracy gate → lifecycle guard → queue up to max
-- [x] Digest cron hook: after `generateAdvisor()`, auto-dispatches eligible actions if `autoDispatchEnabled`
-- [x] Settings UI card: toggle, effort gate (quick / quick+medium / all), max per week, skip security, accuracy threshold
-- [x] `autoDispatchAccuracyThreshold`: only dispatches action types with ≥N% success rate (0 = always dispatch); skips if insufficient data (not enough signal yet)
-- [x] 14 unit tests for filter logic covering effort/security/accuracy/maxPerRun rules
-
-### Phase 54 — Token Efficiency ✅
-Prevents redundant DB queries and token spend as agent volume grows.
-
-- [x] **T1: `cachedBrief`** — `repositories.cached_brief JSONB`; written by `get_coding_brief` after generation; subsequent calls within 6h served from cache with 0 DB queries (saves ~25K tokens at 100 agents). Invalidation refined by T3.
-- [x] **T2: `advisorRepoSnapshot`** — `digests.advisor_repo_snapshot JSONB`; stores the compiled repo lines sent to Claude; reused for 23h then recomputed; invalidated on sync (saves ~2,500 tokens per advisor run)
-- [x] **T3: Brief freshness signal** — `shouldInvalidateCachedBrief()` (`src/lib/health/events.ts`) only nulls `cachedBrief` when a sync produces a high-signal event (`health_milestone`, `first_revenue`); routine syncs keep the cache. `get_coding_brief` counts events recorded since `cachedBrief.generatedAt` and appends a "⚠ N events recorded since this brief was generated" note on cache hits.
-- [x] **T4: Attempt distillation** — `distillAttempts()` (`src/lib/agents/attempt-distiller.ts`) groups the last 7 days of `agent_attempt` events per repo by action into `repositories.attempt_summary JSONB` (success rate, common failure reason); runs from the existing Monday digest cron (no new schedule). `get_coding_brief` renders the distilled "Recent Attempt History (7d)" section from this summary.
-- [ ] **T5: pgvector** (semantic repo matching, outcome clustering) — future when 50+ repos with history
-
-### Phase 55 — CI Feedback Loop (Self-Correcting Agents)
-
-The last-mile gap: once an agent opens a PR, CI can still fail — and today the system has no awareness of it. A human has to intervene. This phase closes the loop so the agent can detect CI failures, understand the error, and push a fix commit to the same branch automatically.
-
-**The flow:**
-```
-PR created → CI runs →
-  success → merge (existing loop) ✓
-  failure → detect → fetch error output → re-queue on same branch → fix commit → CI re-runs
-            (after 3 failures → escalate to human)
-```
-
-- [x] `checkCIFailuresOnAgentPRs(userId)` — polls GitHub API (`/commits/{sha}/check-runs`) for failed CI on open agent PRs; runs in the 6h sync cron alongside `checkMergedAgentPRs()`
-- [x] `agent_ci_failed` event type — stores: `{ prUrl, branchName, checkName, errorSummary, attempt, sha }` in `portfolio_events`; new lifecycle stage `ci_failing`
-- [x] Auto-requeue with error context — creates a new Nexus task: objective = "Fix CI failure on PR #{N}: {errorSummary}", `contextNotes.existingBranch` = PR head branch, `contextNotes.prNumber`, `contextNotes.ciError` = truncated error output
-- [x] Nexus: resume-on-branch mode — agent-runner checks `contextNotes.existingBranch`; if set, fetches and checks out that branch instead of creating a new `nexus/auto-*` branch
-- [x] Retry guard — max 3 CI fix attempts per PR; on 4th failure writes `agent_needs_human` event and dispatches notification: "Agent PR #{N} has failing CI after 3 fix attempts — human review needed"
-- [x] QueueButton: `ci_failing` stage shown in the lifecycle UI (yellow, links to the failed check)
-- [x] Agent History tab: `agent_ci_failed` events shown inline with error summary and attempt count
-
-### Phase 40 — Open-Source Template / Deploy-to-Vercel
-- [x] README rewritten — Deploy to Vercel button, full setup guide (8 steps), all services documented
-- [x] Local dev OAuth app separation documented (production vs localhost)
-- [x] MCP server setup instructions in mcp/README.md
-- [x] Stripe restricted key setup guide included
-- [x] `.env.example` complete with all required variables (including `ENCRYPTION_KEY` added in Phase 58-A)
-
----
-
-## gstack Integration Roadmap
-
-[gstack](https://garryslist.org) is a Claude Code skill framework that provides specialised agent workflows (`/ship`, `/investigate`, `/qa`, etc.) with multi-turn planning, checkpoint mode, and a learnings system that persists institutional knowledge across sessions.
-
-### Current State — "gstack-inspired" wrappers ✅
-
-The agentic execution pipeline uses two shell scripts in the AI-Took-My-Job repo (`scripts/gstack-ship.sh`, `scripts/gstack-investigate.sh`) as the `AGENT_EXECUTION_COMMAND`. These:
-
-- Call **Claude Code CLI directly** (`npx claude --dangerously-skip-permissions --print`) — not gstack skills
-- Are named after gstack's `/ship` and `/investigate` skill concepts
-- Inject RepoHQ context (health, lifecycle, advisor brief) from `.nexus/context.json` into the agent prompt
-- Write `.nexus/output.json` in the format Nexus expects to promote the PR
-- Run in **non-interactive `--print` mode** — one-shot execution, no multi-turn planning
-
-The scripts are a functional bridge that proved the end-to-end flow works. True gstack integration replaces these with the full skill workflows.
-
-### G1 — True gstack Skill Invocation
-
-Replace the bare `claude --print` calls with actual gstack skill entry points:
-
-- `scripts/gstack-ship.sh` → invoke `/ship` skill with the RepoHQ brief pre-loaded as session context
-- `scripts/gstack-investigate.sh` → invoke `/investigate` skill with the RepoHQ brief + security findings
-- Switch from `--print` (non-interactive one-shot) to full interactive gstack session mode
-- gstack's multi-turn planning phase means the agent plans before executing — higher success rate on complex tasks
-
-### G2 — Task-Type Routing by impactType
-
-Currently `AGENT_EXECUTION_COMMAND` is a single env var — one script for all tasks. Route by `impactType` from the advisor action:
-
-| impactType | Script | gstack Skill |
-|------------|--------|-------------|
-| `security` | `gstack-investigate.sh` | `/investigate` |
-| `health` / `opportunity` | `gstack-ship.sh` | `/ship` |
-| `revenue` | `gstack-ship.sh` | `/ship` |
-
-The Nexus worker already passes `impactType` in `contextNotes` — routing just needs to read it before spawning the command.
-
-### G1 — Real gstack Skill Invocation ✅
-- `gstack-investigate.sh`: now invokes `claude /investigate` with `OPENCLAW_SESSION=true` + `SPAWNED_SESSION=true` — real multi-turn skill, not bare `claude --print`
-- `gstack-ship.sh`: same upgrade to `claude /ship`
-- `skillName` added to contextNotes in all task queuing so Nexus can route to the correct script
-- Both scripts merge RepoHQ brief into the task prompt before invoking the skill
-
-### G2 — UI Skill Launcher + MCP Tool ✅
-- `GstackSkillLauncher` component on repo Agent tab — three cards: `/investigate`, `/health`, `/ship`
-- Smart objective pre-fill from repo state (failing build → investigate build, security alerts → investigate CVE, advisor action → ship it)
-- `queueGstackSkill(repoId, skill, objective)` server action — same lifecycle guard as advisor queueing
-- `queue_gstack_skill(repo_name, skill, objective?)` MCP tool — AI agents can trigger skills from Claude Code context; tracked by `get_active_work()` naturally
-- `agent_skill_report` event type — investigation findings stored in `portfolio_events` and displayed inline in Agent History with bullet list
-
-### G3 — gstack Learnings Persistence ✅
-- Both scripts call `gstack-learnings-search --limit 5` before the skill runs and append results to the task prompt — agents start each session knowing what already failed
-- `/investigate` calls `gstack-learnings-log` after completion to persist key findings for future runs
-- Slug computed per-repo via `gstack-slug`; learnings stored in `~/.gstack/projects/{slug}/learnings.jsonl`
-
-### G4 — Checkpoint Mode Integration ✅
-- Both scripts call `gstack-config set checkpoint_mode continuous` before invoking the skill
-- WIP commits auto-created at each step; if Nexus times out, a re-run resumes from last WIP commit
-- Reduces "timed out after 15 min" events significantly for large tasks
-
-### G5 — MCP + gstack Session Synergy ✅
-- All scripts write the RepoHQ brief (from `context.json`) directly into `CLAUDE.md` in the worktree between sentinel comments (`<!-- repohq-brief-start -->` / `<!-- repohq-brief-end -->`)
-- gstack reads `CLAUDE.md` natively as project context — brief appears automatically in every tool call, no manual prompt injection needed
-- Prior RepoHQ sections stripped and re-injected on each run so it stays fresh
-
-### G6 — Dynamic Skill Routing in Nexus Worker ✅
-- `resolveSkillCommand(skillName, fallback)` in `agent-runner.ts` reads `contextNotes.skillName` and maps to the correct script: `investigate→gstack-investigate.sh`, `ship→gstack-ship.sh`, `health→gstack-health.sh`
-- `GSTACK_SCRIPTS_DIR` env var overrides the script directory (defaults to dirname of `AGENT_EXECUTION_COMMAND`)
-- `skillName` now included in all task queuing: advisor actions, auto-dispatch, gstack UI launcher, MCP tool
-- `gstack-health.sh` added as a new script — wraps `/health` skill, produces Nexus output.json contract
-
-### G7 — Full Lifecycle Skill Integration ✅
-All 9 portfolio-relevant gstack skills wired end-to-end.
-
-- [x] 6 new Nexus scripts: `gstack-review.sh`, `gstack-qa.sh`, `gstack-qa-only.sh`, `gstack-retro.sh`, `gstack-canary.sh`, `gstack-document-release.sh` — same G1-G5 pattern (OPENCLAW_SESSION, learnings, CLAUDE.md brief, checkpoint mode)
-- [x] `GstackSkill` type + `SKILL_META` extracted to `nexus-utils.ts` (no auth/DB imports — unit-test safe); `nexus.ts` re-exports
-- [x] `SKILL_DEFAULTS` extended for all 9 skills; `queueGstackSkill()` works generically
-- [x] Repo Agent tab: lifecycle-phased skill menu (5 sections: Understand / Build Quality / Ship / Monitor / Reflect), 9 skills with type badges (Analyze+Fix / Report only / Creates PR), collapsible sections with `localStorage` persistence
-- [x] `/canary` hidden when repo has no `homepage` — shows "Needs deployment URL" notice instead
-- [x] `SkillReportFindings` component: full expandable findings (no truncation), "Show N more" toggle, `getSuggestedActions()` infers `/ship` or `/investigate` from finding text, one-click queue buttons per suggestion
-- [x] `agent_skill_report` event: Nexus worker fires webhook on `outcome: no-changes` + `skillName`; `report_ready` terminal stage stops UI polling
-- [x] Dashboard: `ActiveAgentsCard` in Status section — shows in-flight agent tasks, hidden when nothing running
-- [x] `get_skill_history(repo_name, skill?)` MCP tool — returns recent skill runs with findings
-- [x] `queue_gstack_skill` MCP tool extended to all 9 skills with per-skill default objectives
-- [x] Schema: `autoRunHealthWeekly`, `autoRunRetroWeekly`, `autoRunCanaryOnDeploy` on users
-- [x] Digest cron: auto-queues `/retro` Monday + `/health` Sunday on focused repos when toggles enabled
-- [x] Settings: "Scheduled Skills" section in Auto-Dispatch card with three toggles
-- [x] 30 new unit tests (SKILL_META completeness, getSuggestedActions inference, canary visibility, active agent derivation)
-- [x] Playwright tests: phase labels, type badges, findings expansion, actionable items, Active Agents card
-- [x] Integration test scripts: `gstack-review-check.sh`, `gstack-qa-only-check.sh`, `gstack-retro-check.sh`
-
-### Phase 57 — Gstack Self-Improvement Loop ✅
-RepoHQ now monitors and improves itself without any human intervention, scoped to the RepoHQ repo.
-
-**The loop:**
-```
-Daily 07:00 UTC cron
-  → /api/cron/gstack-self finds "RepoHQ" in tracked repos
-  → queues /health + /qa-only scans to Nexus (parallel)
-  → Nexus runs gstack skills on RepoHQ codebase/site
-  → /api/webhooks/agent-events receives agent_skill_report
-  → findings parsed → up to 3 fix tasks auto-queued back to Nexus
-  → fix PRs created → merged → resync → health score improves
-  → next daily cycle starts with a higher baseline
-```
-
-- [x] `queueGstackSelfScan(userId, repoId, repoFullName, skill)` — in `nexus.ts`; queues `health`/`qa-only` directly to Nexus with `executionMode: 'investigate'`, bypassing the advisor flow; lifecycle-guarded
-- [x] `/api/cron/gstack-self` — new cron route; finds tracked repo matching `GSTACK_SELF_REPO_NAME` env (default `"RepoHQ"`); queues both skills in parallel per user
-- [x] Agent events webhook self-improvement branch — when `agent_skill_report` arrives with `source === 'gstack-self-scan'` and findings exist, converts up to 3 findings into `AdvisorAction`s and queues fix tasks via `after()` (non-blocking); security/health/opportunity classified by finding text
-- [x] Loop prevention — fix tasks dispatched from scan reports do not re-trigger further scans; max 3 fix tasks per cycle; lifecycle guard prevents parallel duplicates
-- [x] `vercel.json` — `0 7 * * *` schedule added (daily at 07:00 UTC)
-
-### G8 — Agent Coordination: 2-Hop Skill Chaining
-
-Phase 57-C/D already delivered the two big pieces of "agentic orchestration" without any external dependency:
-
-- **Parallel execution** — BullMQ `concurrency: 3` in Nexus `src/worker.ts` runs up to 3 tasks at once, each in its own isolated git worktree (`var/agent-workspaces/runs/{taskId}-{executionId}`), combined with `autoDispatchAdvisorActions()` queueing up to `autoDispatchMaxPerRun` tasks per Monday run.
-- **1-hop skill chaining** — `queueSuggestedSkill()` (`src/lib/actions/nexus.ts`) tags `contextNotes.{source:'skill-chain', chainDepth:1}`; the `agent-events` webhook `after()` block (`src/app/api/webhooks/agent-events/route.ts`) fires it when `suggestedNextSkill` is present, the task wasn't itself a chained task, `autoDispatchEnabled` is on, and the skill passes `isGstackSkill()`.
-
-The "OpenClaw" framing from the original roadmap is retired — OpenClaw was removed in Phase 58-G (not publicly available, required a local-only worker). BullMQ + the existing webhook handler are the coordination primitives going forward.
-
-**Planned:**
-- [ ] **2-hop chaining** — increment `chainDepth` on the second hop; the webhook handler refuses to chain when `chainDepth >= 2` (a real cap, not just the current one-shot `source !== 'skill-chain'` check). Enables sequences like `/health` → `/ship` → `/document-release`. Touches: `queueSuggestedSkill()` (`src/lib/actions/nexus.ts`, ~lines 401-472) to accept/propagate `parentChainDepth`, and the `after()` block in `src/app/api/webhooks/agent-events/route.ts` (~lines 238-281) to check `chainDepth >= 2` instead of the current boolean.
-
-**Deferred — no infrastructure exists yet, revisit if agent volume grows beyond concurrency:3:**
-- Cross-repo context sharing (inject Agent A's findings into Agent B's CLAUDE.md brief via `internal_deps`)
-- Live "Orchestrator running" status in the Active Agents card
-- Human approval gate before auto-chaining (toast + auto-approve timer)
-- Cross-agent session history surfaced in CLAUDE.md briefs
-- Termination conditions beyond existing lifecycle guards (consecutive-failure stop, security-finding stop, manual stop)
-
-### Phase 56 — G7 UX & Agent Experience Improvements
-
-Following the architecture review of G7, three categories of improvements across user control, agent intelligence, and code quality.
-
-#### 56-A User Control
-- [x] **Auto tag in Agent History** — `source` field already stored per queued event (`repohq-advisor`, `repohq-gstack-ui`, `repohq-auto-dispatch`). Now surfaced as a small "Auto" badge on auto-dispatched events so users know what the system did vs. what they triggered.
-- [x] **Skill history on idle rows** — `getSkillRunHistory(repoId)` queries `portfolio_events` for the most recent `agent_skill_report` per skill; each idle skill row now shows "X days ago · N findings" so users know whether a skill has run before and what it found.
-- [x] **Inline report preview** — when a skill transitions to "Report ready ↓", the first 2 findings appear inline in the skill row (fetched from `agent-task-status` endpoint). No scroll to Agent History required to see what ran. Clicking the badge anchors to `#agent-history` for the full report.
-
-#### 56-B Agent Intelligence
-- [x] **`get_skill_findings` MCP tool** — returns raw findings array + summary from the most recent skill run for a repo. Separate from `get_skill_history` (prose-formatted) — this returns structured JSON for agents to act on programmatically. Agents preparing a `/ship` objective can read exactly what `/health` found.
-- [x] **Findings in `get_coding_brief`** — "Last /health Report" (or whatever skill ran most recently) section added to the coding brief. Agents start every session knowing the current diagnosis, not just health scores.
-- [x] **`suggestedNextSkill` in webhook metadata** — Nexus worker computes the suggested follow-up skill from findings using the same inference logic as the UI. Stored in `agent_skill_report` event metadata. G8 orchestrator can pick this up without re-running inference.
-- [x] **Finding-specific objectives** — suggested action objectives now include the most relevant finding text (e.g., "Fix TypeScript error: proxy.ts exports a config object but will never run as middleware" instead of the generic "Fix TypeScript errors in repo-name").
-
-#### 56-C Architecture Cleanup
-- [x] **Per-taskId polling** — `GstackSkillLauncher` now stores the `taskId` returned by `queueGstackSkill` per skill and polls by `?taskId=...` instead of `?repoId=...`. Eliminates status misattribution when multiple skills run; readies the component for G8 parallel skill execution.
-- [x] **`getSuggestedActions` extracted** — moved from `skill-report-findings.tsx` to `src/lib/skills/suggest-actions.ts`. Tests now import the real function; `gstack-g7.test.ts` was testing a mirrored copy that could silently diverge.
-- [x] **`SKILLS_BY_PHASE` to nexus-utils** — icon (string name), color, description, and phase grouping data now live on `SKILL_META` in `nexus-utils.ts`; `gstack-skill-launcher.tsx` builds `SKILLS_BY_PHASE` by grouping `SKILL_META` entries via a local `ICON_MAP`, importable in tests and reducing launcher file size.
-
----
-
-### Phase 57 — OpenClaw Integration + Fully Agentic Loop
-
-**Goal:** Replace the bare `claude /skill` spawn with OpenClaw's richer agent runtime, and close the feedback loop so skills auto-chain without human intervention.
-
-#### Why OpenClaw over bare claude
-
-OpenClaw is an open-source local agent platform (local Gateway on port 7070) that natively runs Claude Code + gstack skills with memory persistence and a background heartbeat. The existing Nexus worker already sets `OPENCLAW_SESSION=true` — OpenClaw was the implied execution target all along.
-
-#### Topology
-
-```
-RepoHQ (Vercel) → POST /internal/agent-tasks
-Nexus API (Render) → BullMQ (Render Redis) → Nexus Worker (LOCAL, co-located with OpenClaw)
-  gstack-{skill}.sh → OPENCLAW_GATEWAY_URL set → POST localhost:7070/run
-  OpenClaw Gateway → gstack-openclaw-{skill} → output.json (nexus-agent-output-v1)
-  webhook: agent_skill_report → RepoHQ → auto-queues suggestedNextSkill (1 hop)
-```
-
-Nexus API stays on Render (cloud-accessible). Worker runs locally where OpenClaw lives, consuming Render's Redis queue. Backwards-compatible: all scripts fall back to bare claude CLI when `OPENCLAW_GATEWAY_URL` is unset.
-
-#### 57-A — Agent Skill Routing (Nexus)
-
-- [x] G6 dynamic skill routing: `skillName` in `contextNotes` selects the correct gstack script
-- [x] All 9 gstack-*.sh scripts invoke `claude /skill --print --dangerously-skip-permissions`
-- [x] OpenClaw routing removed — see Phase 58-G notes
-
-#### 57-B — Extended inferNextSkill (Nexus)
-
-- [x] `inferNextSkill()` extracted from `src/worker.ts` to `src/lib/infer-next-skill.ts` — now exported and independently testable
-- [x] Extended from 4 → 9 skill coverage: `investigate`, `canary`, `qa`, `ship`, `document-release` all infer meaningful next skills from findings text
-- [x] Added `stripPassingFindings()` filter (mirrors RepoHQ's `suggest-actions.ts`) — prevents `"0 failed checks"` from triggering `investigate` via false keyword match
-
-#### 57-C — Skill Chain Auto-Queue (RepoHQ)
-
-- [x] `queueSuggestedSkill()` added to `src/lib/actions/nexus.ts` — session-less, tags `contextNotes` with `source:'skill-chain'`, `chainDepth:1`, `parentSkill` to prevent infinite loops
-- [x] Auto-chain `after()` block added to `src/app/api/webhooks/agent-events/route.ts` — fires `queueSuggestedSkill` on `agent_skill_report` when `suggestedNextSkill` is present, `autoDispatchEnabled` is true, and the originating task was not itself a chain
-- [x] `SKILLS_BY_PHASE` events with `source:'skill-chain'` get "Chain" badge in Agent History (UI work tracked under G8)
-
-#### 57-D — Skill Chain Auto-Queue (RepoHQ)
-
-- [x] `queueSuggestedSkill()` in `nexus.ts` — queues suggested follow-up skill to Nexus with `source:'skill-chain'` and `chainDepth:1`
-- [x] Auto-chain `after()` block in `agent-events/route.ts` — fires when `suggestedNextSkill` present, `autoDispatchEnabled` true, and originating task was not itself a chain
-- [x] `chain-skill` heartbeat endpoint removed — see Phase 58-G
-
-#### The Closed Loop
-
-```
-[Analyze]   Monday cron → generateAdvisor() → top 5 quantified actions
-[Advise]    autoDispatchAdvisorActions() — OR — get_next_action() MCP
-[Execute]   Nexus BullMQ (concurrency 3) → worker (Render) → gstack-{skill}.sh → claude /skill
-[Report]    output.json → Nexus → notifyRepoHQ() with suggestedNextSkill
-[Measure]   agent_pr_merged → syncSingleRepo() → actualDelta → accuracy calibration
-[Chain]     suggestedNextSkill + autoDispatchEnabled + !isChained → queueSuggestedSkill() (1 hop)
-[Re-analyze] Next Monday: advisor reads updated health + calibrated accuracy → new top 5
-```
-
-#### Post-ship Self-Improvement Loop (iters 1–11)
-
-A 10-hour automated improvement loop ran over Phase 57 and found/fixed:
-
-| Iter | Category | Finding | Fix |
-|------|----------|---------|-----|
-| 1 | Validation | TypeScript clean, bash syntax clean | n/a |
-| 2 | **CRITICAL** | OpenClaw gateway is WebSocket, not HTTP REST — all 9 scripts had `curl POST` to non-existent endpoint | Replaced with `openclaw agent --local` |
-| 2 | Config | OPENCLAW_GATEWAY_URL (wrong concept) → OPENCLAW_LOCAL (bool flag) | Nexus config.ts rewritten |
-| 3 | Security | Timing attacks in 2 webhook secret comparisons | `crypto.timingSafeEqual` via shared `crypto-utils.ts` |
-| 3 | Security | No runtime skill name validation — unknown string → crash in `SKILL_DEFAULTS[skill]` | `isGstackSkill()` type guard added to `nexus-utils.ts` |
-| 4 | **CRITICAL** | `getSuggestedActions` (RepoHQ UI) and `inferNextSkill` (Nexus) diverged — 5 skill branches missing in UI | Added all 5 branches to `suggest-actions.ts`; 52 new tests |
-| 4 | Refactor | `inferNextSkill` not exported — untestable | Extracted to `src/lib/infer-next-skill.ts` |
-| 5 | Production | render.yaml worker missing 8 env vars (REPOHQ_* + OPENCLAW_*) | Added all to worker service |
-| 5 | Production | TypeScript regression: `handleQueueAction` too narrow after SuggestableSkill extension | Fixed to `GstackSkill` |
-| 6 | Feature | `gstack-openclaw-health` skill not yet written | Written with nexus-agent-output-v1 contract support |
-| 8 | OpenClaw | Auth model: `openclaw --local` uses claude-cli provider (same binary) — no extra auth needed | Documented; added `_OPENCLAW_READY` pre-flight guard to all 9 scripts |
-| 9 | YAML | `OPENCLAW_LOCAL: false` unquoted YAML boolean in render.yaml | `value: 'false'` (quoted string) |
-| 10 | Testing | No test for `_OPENCLAW_READY` routing logic | 23-test bash integration suite |
-| 11 | Logic | `infer-next-skill.ts` lacked `stripPassingFindings()` — "0 failed" would trigger `investigate` | Added positivity filter mirroring `suggest-actions.ts` |
-
-### Phase 58 — Security Hardening & Code Quality
-
-Security audit findings addressed after external review.
-
-#### 58-A — Encryption at Rest
-- [x] AES-256-GCM `encrypt()` / `decrypt()` added to `src/lib/crypto-utils.ts`
-- [x] `github_token` encrypted on every OAuth sign-in (`auth.ts`) and decrypted at all 6 Octokit read sites
-- [x] `llm_keys` (per-provider API keys) encrypted on save in `actions/llm.ts`, decrypted in `ai/adapter.ts`
-- [x] `decrypt()` is backwards-compatible: values without `enc:` prefix pass through unchanged (zero-downtime migration)
-- [x] `ENCRYPTION_KEY` env var documented in `.env.example` and `AGENTS.md`
-
-#### 58-B — CI Build Gate
-- [x] Second `build` job added to `.github/workflows/ci.yml` — runs `npm run build` with stub env vars on every push
-- [x] Catches import errors and `'use server'` constraint violations that `tsc --noEmit` misses (CSS imports, shadcn path errors, etc.)
-
-#### 58-C — Uptime Check Fix
-- [x] Deployment uptime checker now treats `response.status < 400` as healthy (was `response.ok`, which incorrectly marked 3xx redirects as "down")
-- [x] Fixes false "Deployment down" badge on repos with www-redirect or Vercel cold-start responses
-
-#### 58-D — Type Safety
-- [x] `githubRepo: any` in `sync.ts` replaced with typed `GithubRepoInput` interface covering all fields accessed
-- [x] Compatible with both the Octokit `paginate` response and the hand-crafted stubs in agent-events and on-demand sync paths
-
-#### 58-E — Agent/Developer Experience
-- [x] `AGENTS.md` populated with encryption rules, `'use server'` constraints, cron conventions, and hard rules that caused prior production breaks
-- [x] Vercel cron (`vercel.json`) reduced to `gstack-self` only — removed 5 entries duplicated by GitHub Actions
-
-#### 58-G — OpenClaw Removal + BullMQ Hardening
-
-OpenClaw is not publicly available and required running the Nexus worker locally (killing the "wake up to merged PRs" promise). Removed entirely; BullMQ now provides parallel execution natively.
-
-**Removed:**
-- [x] `OPENCLAW_LOCAL` + `OPENCLAW_GATEWAY_TOKEN` from Nexus `config.ts` and `agent-runner.ts`
-- [x] OpenClaw routing block (`_OPENCLAW_READY` pre-flight + `openclaw agent --local` branch) from all 9 gstack scripts — bare `claude /skill` is now the only execution path
-- [x] `render.yaml` OpenClaw env var entries
-- [x] `/api/agent/chain-skill` heartbeat endpoint (RepoHQ)
-- [x] `OPENCLAW_CHAIN_SECRET` from RepoHQ `.env.example`
-
-**BullMQ hardening (Nexus `src/worker.ts`):**
-- [x] `concurrency: 3` — 3 agent tasks run in parallel; each spawns an independent subprocess, no shared state risk
-- [x] `lockDuration: 60_000` — 60 s lock, auto-renewed every 30 s; prevents false stall detection on long agent runs
-- [x] `stalledInterval: 30_000` — check for stalled jobs every 30 s
-- [x] `maxStalledCount: 1` — fail immediately on stall; `failed` handler fires and notifies RepoHQ to clear the lifecycle guard
-- [x] `worker.on('error', ...)` — logs Redis/connection errors without crashing the process
-- [x] `worker.on('stalled', ...)` — logs stall events for observability
-- [x] Graceful shutdown: 30 s grace period via `setTimeout` + `worker.close(true)` force-close fallback; SIGINT/SIGTERM both handled
-
-#### 58-H — Security, Reliability & Production Hardening
-
-Findings from a full security + production flow audit.
-
-**CI Checker hardening:**
-- [x] Guard against null `repoId` on `agent_pr_created` events — skip PRs with no repo handle
-- [x] SHA dedup: don't re-record `agent_ci_failed` for the same commit SHA across sync cycles; write a new event only after a fix commit changes the head SHA
-- [x] Check `queueCIFix()` return value — log a warning if Nexus is unreachable instead of silently dropping the error; lifecycle correctly shows `ci_failing` until next cycle retries
-- [x] Rate limit: call `respectRateLimit()` before each GitHub PR + check-runs API call in the loop (exported from `src/lib/github/sync.ts`)
-
-**Cron observability:**
-- [x] `cron/sync`, `cron/security`, `cron/ai-summary`: all now return `{ ok, processed, failed, total }` and log per-user errors with `console.error` — previously swallowed all failures silently
-
-**Webhook reliability:**
-- [x] `agent-events`: replace 50-event global scan for taskId correlation with PostgreSQL JSONB containment query (`metadata @> '{"taskId":"..."}'::jsonb`) — works regardless of event volume
-- [x] `agent-events`: cap `findings` array to 50 items before processing to prevent memory exhaustion on malformed payloads
-
-**Workflow reliability:**
-- [x] `cron-ai-summary.yml`: increase `timeout-minutes` 15 → 55; cap process loop at 500 iterations (~12 min of work) to leave headroom before the timeout
-
-**UI accuracy:**
-- [x] Public portfolio: hide "Avg health" badge when `sorted.length === 0` (all repos archived) — previously showed a misleading 0/100 score
-
-#### 58-F — AI Summary Per-Repo Queue
-- [x] `?enqueueRepos=1` endpoint creates one `ai_summary_jobs` row per repo across all users
-- [x] GitHub Actions cron now enqueues all repos then polls `?process=1` in a loop until the queue drains
-- [x] Each `process` call handles a single repo job end-to-end via `generateRepoSummary()` with the user's configured LLM adapter
-- [x] Cleaner than the previous per-user chunked approach; jobs are individually retryable and observable via the `ai_summary_jobs` table
-
-### Phase 59 — Skill Report Quality & Auto-Chain Safety ✅
-
-Triggered by a real no-op PR (`smithdavedesign/family-tree` PR #3): a `/health` run on a plain-JS repo produced one informational finding ("TypeScript: N/A — project is plain JavaScript..."), which the 1-hop skill-chain auto-queued as a "fix" objective — the chained agent found nothing to fix and opened a dead PR.
-
-- [x] **`getActionableFindings()`** (`src/lib/skills/suggest-actions.ts`) — new shared filter strips both passing findings (✅/✓/"0 errors") and informational/N-A findings (`TypeScript: N/A — ...`, `not configured`, `not applicable`, `(skipped)`, `Skipped: ...`). Wired into `getSuggestedActions()` and `getDefaultActions()` so informational findings never surface a misleading "Fix TypeScript & lint errors" suggestion.
-- [x] **Don't chain for no reason** — the 1-hop skill-chain auto-queue (`agent-events/route.ts`) and the gstack-self-scan "Fix: ..." loop both now require `getActionableFindings(findings).length > 0` before acting. A report with zero actionable findings never auto-chains or queues fix tasks.
-- [x] **"Ran, nothing found" UI signal** — `SkillReportFindings` now always renders for `agent_skill_report` events. Zero findings → "✅ Check completed — no issues found." Findings present but none actionable → "✅ No action needed — nothing actionable found." instead of a silently empty section.
-- [x] **Tech-stack-aware `/health` objective** — the default `/health` objective (`repos/[id]/page.tsx`) no longer hardcodes "TypeScript errors"; it's now generic ("type checking, tests, lint, and dead code, covering whichever apply to this project's stack") and appends `(${stack.language})` when known.
-- [x] 17 new unit tests (`skill-report-logic.test.ts`, `skill-chain-gate.test.ts`) covering the informational-finding filter and the auto-chain/self-improve gates.
+> **Updated 2026-10-07.** RepoHQ is a personal tool (audit §9.2), and the factory is its only executor (Phase 81: Nexus, the `AI-Took-My-Job` repo, is retired). Shipped Phases 1–59 and G1–G8 are in [roadmap-history.md](roadmap-history.md). The current design is in [architecture.md](architecture.md).
+
+## Next 30 days: four experiments (2026-10-07 → 2026-11-06)
+
+The roadmap stopped being a list of phases. For the next 30 days everything serves one proof: **RepoHQ finds work you actually care about, and the factory turns that work into changes you're glad it made.** Each experiment has a pass mark, and failing one is a useful answer too: it says where the leverage isn't.
+
+| | Experiment | Pass mark (by 2026-11-06) | How it's measured | Built for it |
+|---|---|---|---|---|
+| **A** | Can RepoHQ identify valuable work? | Each week it surfaces 1–3 things you'd actually do | "What to do next" in the morning email and on the dashboard; you act on it or you don't | Decision states with reasons (`src/lib/portfolio/next-actions.ts`) ✅ |
+| **B** | Can the factory execute that work well? | ≥ 50% of resolved factory PRs merged, and rated PRs average ≥ 2/5 | `value:0`–`value:5` label on merge → ledger + `agent_jobs.value`; acceptance and value in the report | PR value rating (`src/lib/agents/pr-value.ts`, reconcile) ✅ |
+| **C** | Can it run unattended? | Night-shift gate passes: 7 consecutive sandboxed nights **and** the quality half (≥ 5 resolved PRs, ≥ 50% accepted, ≥ 3 rated, average value ≥ 2) | `nightShiftReadiness` in `npm run factory:report` and the morning report | Stricter gate (`factory/lib/night-shift.ts`) ✅ |
+| **D** | Does it produce leverage? | Useful PRs per night trend up, at ≤ $25/month and a review load you don't resent | Useful PRs/night, median hours to your decision, PRs you had to edit | KPIs (`factory-kpis.ts`); open-PR queue so nothing gets lost ✅ |
+
+**Your part (the experiment can't run without it):**
+- Rate every factory PR you merge with one label, `value:0` (noise) … `value:5` (material). The PR body and the morning email remind you.
+- Merge or close what's in "Your review queue" (top of the morning email, and **Needs you** on the dashboard). Aging PRs (7+ days) are flagged.
+- Leave the Mac on AC power overnight; finish the Phase 81 cutover and the trial week.
+- Run `bash factory/bin/setup-email.sh <gmail>` once if the morning report isn't reaching your inbox.
+
+**Frozen for the 30 days:** billing and multi-tenancy (Distribution D1–D5), valuation, simulation, goals and CEO-report work (collapsed under "More insights" on the dashboard), new agent frameworks or executors, always-on infrastructure, auto-merge (trust ladder levels 3+), and new roadmap phases.
+
+**The one infrastructure change allowed during the window: a RepoHQ GitHub App for factory PRs** (Phase 66, shipped 2026-10-07). Factory PRs are opened with your own `gh` login, and GitHub never lets a PR's author approve it. So "require a review before merging" on `main` (Phase 65's L4 backstop) would block every factory PR or force an admin bypass. The opt-in fine-grained token doesn't help, since it's still you. A bot identity:
+- lets you approve factory PRs, so branch protection can be switched on;
+- separates bot work from yours in the history;
+- has GitHub enforce that the factory never approves its own work.
+
+It's small, doesn't touch the experiments, and unblocks the branch-protection item below.
+
+**After the window, in this order:** opt-in paid escalation for owner requests, then per-service worker health probes (both Phase 81), then let the 30 days of data decide between dropping Redis and an always-on host.
+
+**Next candidate once A–D have data:** a deterministic cross-repo duplicate scan (shared dependencies, near-identical modules, repeated auth/GitHub-client code across the 66 repos). Embeddings stay deferred until the cheap version shows the signal exists.
+
+### Carried over from the history
+
+Still-open items from Phases 1–59, with where they stand:
+
+| Item | Status |
+|---|---|
+| Phases 9 / 16: 30-day health trend lines on Analytics | Bug, not "waiting": snapshots stopped while the crons were disabled (Aug 14 – Oct 6). Data accumulating again; usable early November |
+| Phase 46-E: auto-queue + batch approval | Deferred: its gate (6 months at 80% accuracy) was set for Nexus |
+| Phase 48-E: real-time merge detection via GitHub App webhooks | Deferred with Distribution D1 |
+| Phase 49: email digest on critical events, weekly briefing email | Partly covered: the factory's morning email now leads with your review queue and next actions |
+| Phase 54 T5: pgvector semantic repo matching | Deferred: revisit after the deterministic cross-repo scan |
+| G8: 2-hop skill chaining | Cut (auto-chain removed in Phase 81) |
+
+## Autonomous Factory Roadmap
+
+Turns the closed loop into a cost-aware autonomous factory: a local lane on the Mac running against the local AI stack (`~/ai-stack`), a local → free cloud → paid model ladder, learned routing, and the PRD's trust/identity/budget guardrails. Design: [autonomous-factory.md](autonomous-factory.md). Operator guide: [factory/README.md](../factory/README.md).
+
+**Shipped approach (2026-10-05):** rather than first splitting Nexus into queue lanes, the local lane shipped as a standalone runner (`factory/`) that reuses RepoHQ's pure routing code and mirrors its activity into `portfolio_events`. The Nexus lane split (61-B) is deferred until the local runner proves its merge rate.
+
+**Status (2026-10-07):** Factory v2 (Phases 75–80) shipped in #13 and #15: the sandboxed worker, Judge v2 with an adversarial reviewer, the promotion ladder, sensors and a ranked queue, the `agent_jobs` record with KPIs, and the night-shift policy. Next is the night shift's gate (7 consecutive nights with every attempt sandboxed; 2/7 on 2026-10-07), then concurrency 2. Plan of record: [autonomous-factory.md §14](autonomous-factory.md#14-factory-v2-one-good-pr-while-the-owner-sleeps-2026-10-06).
+
+**Audit (2026-10-06, updated 2026-10-07):** [audit-2026-10.md](audit-2026-10.md) found the scheduled crons disabled since Aug 14, `gstack-self` failing daily on a deleted repo, and critical framework advisories in production. The whole fix-now list shipped the same day (Github-HQ #20, AI-Took-My-Job #28; status table at the top of the audit). Open: the §9 decisions (one executor, personal tool vs product) and the owner actions below.
+
+**Owner actions that unblock the most:**
+- ~~Close the pre-fix Nexus no-op PRs (Phase 69b).~~ Done 2026-10-06: 11 closed.
+- Leave the Mac on AC power overnight; scheduled cycles skip on battery (Phase 80).
+- ~~Set the Anthropic console spend cap (Phase 60).~~ Done 2026-10-06: $25/month.
+- Run `bash factory/bin/setup-email.sh <gmail>` so the morning report is emailed (Phase 69).
+- Optional: branch protection on `main` (Phase 65), and decide on Nexus's auto-chain (Phase 78). Dependabot alerts were enabled on all 9 repos on 2026-10-06.
+
+**Gate to start Horizon 3 (Phase 67):** ≥ 80% of merged agent PRs produced at $0 over 30 days, and zero unapproved L4 actions.
+
+### Phase 60 — Foundation Fixes
+- [x] **Nexus: gstack scripts never invoked `claude` when it was installed.** Commit `1e9210e` left the `--print` call inside the `else` branch of all 9 `scripts/gstack-*.sh`. Fixed with regression test `tests/integration/gstack-claude-invocation-check.sh` (0/9 on old code → 9/9); merged in AI-Took-My-Job #19 and released to `main` in #23.
+- [x] Removed the stale `tests/integration/gstack-openclaw-routing-check.sh`
+- [x] Anthropic console monthly spend limit: $25 (set 2026-10-06; was the $200,000 default, about 5× the last 30 days' $5.23)
+- [x] LiteLLM: factory aliases `free-agent`, `free-agent-b`, `local-agent` live in a managed block with **free-only** fallbacks (`free-agent → free-agent-b`); the hand-maintained `local-coder → cloud-or → cloud-smart` ladder stays for interactive use only
+
+### Phase 61 — Free Model Lane (local runner)
+- [x] `free-agent` / `free-agent-b` selected by eval (Phase 64), not by hand
+- [x] Local runner `factory/run.ts`: sense (repo's own typecheck/lint/test + README) → task → route → execute → verify → draft PR → learn; allowlist, kill switch (`~/.repohq-factory/PAUSE`), one PR per cycle, process lock shared with the scout
+- [x] Harness (`factory/lib/harness.ts`): M0 → Aider (`--edit-format diff`) on `local-agent`; M1/M2 → Claude Code `--bare --strict-mcp-config` through LiteLLM with tool allow/deny lists (no commit/push/rm/web)
+- [x] Cost + model telemetry per attempt (`tier, harness, model, tokens, costUsd, durationMs, exploring`) in the ledger and RepoHQ `agent_attempt` metadata
+- [x] Free-tier 429 / quota exhaustion → defer to the next cycle; **never** escalates to paid. Quota is read from OpenRouter's `/api/v1/key` before every M1 task
+- [x] launchd schedules (`factory/bin/install-launchd.sh`; first schedule 18:00 + 03:00, superseded by Phases 69 and 80), `caffeinate -i` per run, standard priority; deployed to `~/.repohq-factory/app` because launchd can't read `~/Documents`
+- [x] First live draft PR from the scheduled loop: [AI-Took-My-Job#10](https://github.com/smithdavedesign/AI-Took-My-Job/pull/10) (M0, $0)
+- [-] ~~61-B: Nexus BullMQ lanes `agent-local` / `agent-cloud`~~ Cut 2026-10-07: the factory is the only executor (Phase 81)
+- [ ] Dedicated `ai-agent` macOS user for the runner (needs sudo; runs as the owner today, confined to `~/.repohq-factory/work`)
+
+### Phase 62 — Free Intelligence Layer (RepoHQ on Vercel)
+- [x] `openrouter` provider (`src/lib/ai/providers.ts`, `adapter.ts`, Settings → AI Provider). OpenAI-compatible; `OPENROUTER_BASE_URL` / `OPENROUTER_MODEL_FAST` / `OPENROUTER_MODEL_CAPABLE` overrides (point at LiteLLM in dev)
+- [x] Gemini free tier noted in the provider hint (zero-code free option)
+- [x] Structured-output guard `src/lib/ai/structured.ts`: extract (fences, `<think>`, prose) → validate → one repair retry → `claude-haiku-4-5` fallback via the server key. Wired into advisor, digest, CEO report, analysis and summary
+
+### Phase 63 — Learned Routing + Escalation Ladder
+- [x] `src/lib/agents/model-router.ts` (pure, 22 tests): `classifyRepoData`, `allowedTiers`, time-decayed `computeTierStats`, `chooseTier` (cheapest proven ≥ 80% over ≥ 10, cold start cheapest, ~10% exploration one tier down), `nextTier`, `canUsePaidTier`
+- [x] Escalation M0 → M1 → M2 within a cycle; M2 blocked unless `monthlyBudgetUsd > 0` (default 0) → `approval_needed` + RepoHQ notification
+- [x] Data-classification gate: private repos skip M1 unless `allowFreeCloud`; `Client Work` / `sensitive` never use M1; unknown visibility treated as private
+- [x] Dead-end detection: ≥ 2 M1+ failures per repo+kind in 14 days (M0 failures don't count; they escalate)
+- [x] Verification judge (`factory/lib/verify.ts`): target check passes, no regressions, no `@ts-ignore`/`eslint-disable`/`.skip`/`.only`, no lockfile/CI/env edits, ≤ 400 lines; README edits must be additive with only real scripts/tools and no placeholders
+- [x] `/agent-performance`: "Autonomous Factory by Model Tier" table (attempts / verified / merged / closed / cost), free-tier share, current `free-agent` (`src/lib/agents/factory-stats.ts`); merge/close outcomes are stamped onto the RepoHQ event during reconcile
+- [ ] Feed factory tier stats into the RepoHQ advisor accuracy table
+
+### Phase 64 — Model Scout + Eval Harness
+- [x] `factory/scout.ts`: OpenRouter free + `tools` models → preflight → eval suite (seeded bug, multi-file fix, read-only report) → rank with 21-day history → update `free-agent` / `free-agent-b` → commit `~/ai-stack` → `model_scout_report` event
+- [x] Quota-aware: evaluates only as many models as today's free requests allow; rotates untested models in; falls back to history when quota is exhausted; keeps (or demotes) incumbents rather than leaving no alias
+- [x] `factory/eval/e2e.sh`: full cycle against a local fixture repo (M0 fixes a seeded type error → judge → squashed commit)
+
+### Phase 65 — Trust, Approvals & Budget
+- [x] Budget ledger: monthly paid cap (default $0) enforced before every M2 attempt; M2 cost computed from token usage
+- [x] Human boundary: `approval_needed` ledger entry + RepoHQ in-app notification (fans out via the existing outbound webhook)
+- [x] Draft-only PRs; the factory never merges, force-pushes or deletes branches
+- [x] `awaiting_approval` lifecycle stage in RepoHQ
+- [ ] Signed, single-use approval links. A first `/approve/[token]` page was removed in the 2026-10 audit: nothing issued tokens, approving changed nothing downstream, single-use lived in per-instance memory, and the secret fell back to a hard-coded string. Rebuild when the factory actually pauses for approval: a dedicated required secret, DB-backed single use, and the approval recorded where the factory reads it
+- [ ] OpenClaw → WhatsApp relay for approvals (needs owner sign-off before any outbound WhatsApp)
+- [ ] Branch protection on `main` for every allowlisted repo (L4 backstop). Owner action via GitHub settings. **Unblocked 2026-10-07** by the Phase 66 GitHub App: once factory PRs are authored by `repohq-factory[bot]` you can approve them, so require 1 approving review
+
+### Phase 66 — Agent Identity & Secrets
+- [x] Secrets read at runtime only: the OpenRouter key from `~/ai-stack/litellm/.env` (into an HTTP header), the RepoHQ DB URL from `.env.local`; never written to prompts, logs or new files
+- [x] `op run` support in the launchd wrapper (`FACTORY_OP_ENV_FILE`)
+- [ ] 1Password `AI-Agent` vault + service account (owner action), then move both secrets into it
+- [x] **Done 2026-10-07:** the `repohq-factory` GitHub App (App ID 5227130) authors factory branches, commits, PRs and labels (`factory/lib/github-app.ts`; operator notes in factory/README.md). Owner action left: narrow the installation to the allowlisted repos. Original item: factory PRs authored by a dedicated RepoHQ GitHub App instead of the owner's `gh` login. Contents/PR/label write on the allowlisted repos only; installation token minted per run on the Mac; Copilot calls keep your login. Unblocks Phase 65 branch protection (an author can't approve their own PR), separates bot work from yours, and lets GitHub enforce "the factory never approves its own work". Supersedes the opt-in fine-grained token, which is still your identity. The Nexus App retires with Nexus (create a new one rather than repurposing it)
+
+### Phase 68 — Redundant Free Model Pool ✅
+OpenRouter's 50 free requests/day can't be the single brain. M1 became a LiteLLM pool across independent free providers (design: [autonomous-factory.md §3.1](autonomous-factory.md#31-the-free-model-pool-no-single-quota-is-a-point-of-failure)).
+- [x] Managed LiteLLM members for **Gemini** (AI Studio free tier), **Ollama Cloud** (free plan, OpenAI-compatible endpoint) and **OpenRouter**, alongside local Ollama (`factory/lib/litellm-config.ts`, pool ids like `ollama-cloud:nemotron-3-super`)
+- [x] Scout discovers and probes candidates on all three providers, evaluates them, and writes a **provider-diverse** chain `free-agent → free-agent-b → free-agent-c` (`pickPool`); skips models tested in the last 3 days
+- [x] Explicit fallback ladders (LiteLLM doesn't chain fallbacks recursively): `free-agent` → rest of pool; `cloud-or` → pool; `local-coder` → pool → `cloud-smart` (paid last). Verified live: an exhausted OpenRouter request was served by Ollama Cloud in the same call
+- [x] Factory defers M1 only when no pool member has capacity (`m1Deferred`)
+- [x] OpenClaw default agent: `local-coder → free-agent → cloud-smart` (was `→ cloud-or →`), via OpenClaw's validated config CLI
+- [x] Route Claude Code's small-model role to local Ollama: `local-small` alias (same resident Qwen as `local-agent`, falls back to the pool), wired via `ANTHROPIC_DEFAULT_HAIKU_MODEL` / `ANTHROPIC_SMALL_FAST_MODEL` for M1. **Measured saving: zero.** In headless `--bare` runs Claude Code makes *no* small-model calls (a bogus alias there never reached LiteLLM). Free requests are spent one per agent turn (11–19 per task), so the levers are fewer turns and more providers, not offloading background calls. Kept as insurance.
+- [ ] Optional: one-time $10 OpenRouter credit (1,000 free requests/day) to deepen the OpenRouter member. Owner decision
+- [ ] Later: move the worker stack into an AI dev VM with the Mac as control plane (§8). Needs more RAM or a second machine
+
+### Phase 69 — Copilot, Reviewer, Morning Report, Agent Lockdown ✅
+Toward the Architect / Builder / Reviewer / Operator team (docs/autonomous-factory.md §13), starting with the roles that are measurable today.
+- [x] **OpenClaw agent lockdown** (before adding any agents): `tools.agentToAgent = {enabled: false, allow: []}`, `tools.sessions.visibility = "tree"`, `session.agentToAgent.maxPingPongTurns = 1`, each agent may spawn only its own sub-agents. Applied via the validated config CLI; `openclaw doctor`: 0 errors
+- [x] **MC tier = GitHub Copilot CLI** (prepaid seat) between free cloud and paid: locked down (`--disable-builtin-mcps`, no git writes, deny beats allow), ≤ 6 tasks/day; passed 2/2 fix evals with `gpt-5-mini`
+- [x] **Reviewer = GitHub Copilot code review**, requested on every factory PR (works on drafts), ≤ 8/day; results recorded in the ledger during reconcile
+- [x] **deps-audit**: every npm scan runs `npm audit`; high/critical → deterministic `npm audit fix` (no model, never `--force`), judged on package files only, advisories must drop, no regressions
+- [x] **Morning report**: one update per gstack role (PM → Architect plan, Builder, QA, Reviewer, Security, Ops, Retro) from the ledger, with local-model headlines; saved to `~/.repohq-factory/reports/` and emailed via himalaya + Gmail app password in the keychain
+- [x] Schedule: cycles hourly 20:00–05:00 plus 12:00/16:00, ≤ 1 PR per cycle, ≤ 8 per factory day (07:00–07:00); report 06:45 (extended to 06:00 and AC-only in Phase 80)
+- [ ] Owner: run `bash factory/bin/setup-email.sh <gmail>` once (needs a Gmail app password)
+- [ ] Builder ← Reviewer loop: turn Copilot's line comments into a follow-up commit on the same branch
+- [ ] Copilot coding agent (assign an issue to `@copilot`) for tasks every local tier failed
+
+### Phase 69b — First-Night Hardening ✅
+Fixes from the first scheduled night (details: [autonomous-factory.md §12](autonomous-factory.md#12-what-building-it-changed-2026-10-05)).
+- [x] Nexus gstack scripts strip the injected RepoHQ brief before anything is committed (AI-Took-My-Job #19, merged); `CLAUDE.md` back to `@AGENTS.md` (Github-HQ #12, merged)
+- [x] Factory: `lint-autofix` deterministic task for repos whose lint script runs a fixer; deps PRs discard check side effects
+- [x] Factory: README judge/prompt read sub-package `package.json` files; `voided` attempts for verdicts later shown to be judge bugs
+- [x] Factory: quota-aware Copilot (builder and reviews pause at 0% premium requests); "no quota" = rate-limited, not a failure
+- [x] Factory: push / `gh pr create` retry on network errors; `caffeinate -ims`; README "Overnight runs need power"
+- [x] QA: environment-dependent test failures (missing secrets / network) are reported, not tasked; the judge rejects early returns in test files
+- [x] Close the 11 pre-fix Nexus agent PRs whose only change is the injected brief (closed 2026-10-06)
+
+### Phase 70 — Shared Branch Governance (Integration First) — superseded 2026-10-06
+> Replaced by a single PR to `main` per change. Squash-merged releases meant every `integration/agent → main` PR conflicted with the last one, and each change needed two PRs. `integration/agent` and the Main Release Gate are gone from Github-HQ and AI-Took-My-Job; agents open draft PRs against the default branch, the owner merges, and the factory-path guard for autonomous branches stays.
+
+- [x] Standard branch policy across all repos: autonomous work branches use `feature/bot/{taskId}-{slug}`
+- [x] Add an integration landing branch standard: `integration/agent` (alias allowed: `feature/bot` only if the repo already uses it as integration)
+- [x] All autonomous PRs target `integration/agent`; no autonomous PR may target `main`
+- [x] Human gate remains only for `integration/agent -> main` promotion PRs: the Main Release Gate workflow requires the `human-reviewed-release` label, which exists in Github-HQ and AI-Took-My-Job and was first used to release AI-Took-My-Job #23
+- [-] Add branch cleanup policy: TTL, max concurrent bot branches, and stale-branch sweeper (scaffold preview endpoint shipped in Nexus)
+- [x] Add CI/promotion guard that rejects autonomous PRs to `main` with a clear policy message
+- [x] Policy also recognises Nexus's real branch names (`nexus/agent-task-*` via `nexus/*`) and `factory/*`; the factory now names branches `feature/bot/factory-…` and targets `integration/agent` when a repo has it
+
+### Phase 71 — Agent Visibility v2 (Full Behind-the-Scenes Telemetry)
+> Reduced 2026-10-07: Phase 81's Agents page shipped the per-request and per-run trace timelines and automation panel. Only the items below still apply, and Nexus execution IDs and chain depth no longer exist.
+
+- [ ] Expand Agent History with full execution timeline: queued, preparing, running, report-ready, pr-ready, merged, failed, timed-out, needs-human
+- [ ] Persist and surface per-run telemetry: model tier, tokens, cost USD, duration, retries, escalation reason, chain depth
+- [ ] Add a factory trace panel on `/agent-performance` with per-stage timings and retry chains
+- [ ] One-click traceability from an Agent History event to its request, run and trace (`metadata.taskId` is already the `agent_requests` id; Nexus execution IDs no longer exist)
+- [ ] Add operator filters for source (`repohq-advisor`, `repohq-auto-dispatch`, `skill-chain`, `self-scan`, `mcp`)
+
+### Phase 72 — Run-Until-Complete Autonomous Loops
+- [x] Add bounded retry orchestration for recoverable failures (lint/test/network/transient CI) with default max attempts = 3
+- [x] Add terminal-state policy with explicit stop reasons (`merged`, `failed`, `timed_out`, `needs_human`, `rejected`)
+- [x] Add auto-repair chaining policy that continues execution until objective complete or retry budget exhausted
+- [x] Add loop kill-switch and per-repo retry budget controls in Settings
+- [x] Add anti-loop safeguards: chain-depth cap, duplicate-objective suppression, and cooldown windows
+
+### Phase 73 — gstack as Default Orchestrator
+- [x] Make gstack the default autonomous execution path for advisor-dispatched tasks, with per-skill allowlist by repo (`resolveAdvisorSkill` + repo tag policy `gstack-allow:*` + env override map)
+- [x] Add policy tiers for auto-run skills (`report-only`, `analyze+fix`, `high-risk`) and enforce by repo lifecycle + confidence (auto-dispatch now gates by tier + lifecycle + impact accuracy band)
+- [x] Add progressive autonomy controls: low-risk skills auto-run by default, high-risk skills require explicit per-repo opt-in (`gstack-optin:high-risk` tag or `REPO_GSTACK_HIGH_RISK_OPT_IN_JSON` override)
+- [x] Add cross-skill objective continuity so downstream skills inherit prior findings and unresolved blockers (auto-chain now carries inherited findings + blocker context into objective and contextNotes)
+
+### Phase 74 — Notion Execution Ledger (System of Record)
+> **Cut 2026-10-07** (audit §8): `agent_jobs` plus `ledger.jsonl` are already the system of record, and a third copy adds sync bugs. Revisit only if the owner wants Notion as a read-only view.
+
+- [ ] Introduce a Notion execution database as source of truth for autonomous runs across repos
+- [ ] Auto-sync one canonical record per run with required fields: taskId, trigger, repo, skill, branch, PR links, timeline, retries, terminal state, outcome delta
+- [ ] Enforce writing standards on summaries: objective, acceptance criteria, confidence, rollback notes, final outcome
+- [ ] Add bidirectional links from RepoHQ Agent History to Notion records for auditability
+- [ ] Add weekly governance report: autonomy throughput, merge-to-main approvals, regression rate, and documentation completeness
+
+### Factory v2 — One Good PR Overnight (Phases 75–80)
+Plan of record from the 2026-10-06 architecture review: harden and measure the existing loop instead of adding agent roles. Order: sandbox → verification → fixed pipelines → economics → learning → night shift. Design and rationale: [autonomous-factory.md §14](autonomous-factory.md#14-factory-v2-one-good-pr-while-the-owner-sleeps-2026-10-06).
+
+**Standing limits for every phase below:** spawning depth 1 (Director → worker), fixed pipelines only, $0 budget, ≤ 8 PRs per factory day, merge is always human, `PAUSE` kill switch, the factory never edits its own judge/loop/router.
+
+### Phase 75 — Self-Protection & Promotion Ladder ✅
+- [x] Judge rejects factory diffs to `factory/**` and `src/lib/agents/model-router.ts` in the factory's home repo (Github-HQ is on its own allowlist); test in `tests/unit/factory.test.ts`
+- [x] CI backstop: the Autonomous PR policy fails `feature/bot/*`, `nexus/*`, `factory/*` PRs that touch those paths
+- [x] Per-capability stage in `factory.config.json` → `capabilities` (`observe` / `report` / `pr`), enforced by the Director: `observe` = sensed and logged, `report` = runs and is judged but opens no PR (held results in the morning report), `pr` = draft PRs. Proven task kinds start at `pr`; `red-ci`, `security-alerts`, `adversarial-veto` start at `report`
+- [x] Morning report "Director" section: each capability's stage, its 30-day evidence, and promote/demote advice (`factory/lib/ladder.ts`). The factory never changes a stage itself
+
+### Phase 76 — Sandboxed Worker (Docker) ✅
+Repo code no longer runs on the owner's Mac. Operator guide: [factory/README.md "Sandbox"](../factory/README.md#sandbox); design: [autonomous-factory.md §14.3](autonomous-factory.md#143-the-sandbox-as-built-phase-76).
+- [x] Job image `factory/docker/worker.Dockerfile`: Node 22 + git + Aider 0.86.2 + Claude Code 2.1.291 + pnpm, non-root `worker` user; tag = hash of the Dockerfile (edits rebuild automatically, superseded tags pruned); prebuilt by `install-launchd.sh` / `npm run factory:sandbox:build`. Node only for now (Python/Go later)
+- [x] Repo streamed in with `tar` (never bind-mounted); no `~/.ssh`, `~/.aws`, `~/.config/gh`, keychain or Docker socket; the worker gets only the per-command env overrides, never the host environment (`proc.ts` `env` is now overrides-only, `Runner` abstraction)
+- [x] **No GitHub credential in the container**: the host keeps clone / commit / push / `gh pr create`; the sandbox's result comes back as a binary-safe patch applied to the host clone (`applyPatchAndCommit`, file contents only) and is judged there
+- [x] Network: worker on an `--internal` network; egress container (`egress.Dockerfile`) proxies only `sandbox.allowHosts` (npm + yarn registries) and relays LiteLLM **for an allowlist of model aliases** (free tiers; the paid alias only with a budget). Found while building: the LiteLLM key is a guessable constant, so without the model filter any repo script could spend on `cloud-smart`
+- [x] Install, baseline checks, the harness (Aider / Claude Code), post-fix checks, lint autofix and `npm audit fix` all run inside; `confirmFailures`, `runAudit`, working-tree git ops take the sandbox `Runner`
+- [x] Limits: `--cpus 4`, `--memory 4g` (no extra swap), `--pids-limit 1024`, `--cap-drop ALL`, `no-new-privileges`, in-container `timeout` per command, PID 1 = 90-min `sleep`; containers + network removed after every repo, crash leftovers swept at cycle start
+- [ ] Per-container disk quota: not available on Docker Desktop's overlay2 (`--storage-opt size`); bounded by the Docker VM disk, writable layer deleted after each repo
+- [x] Concurrency 1 (serial cycle); revisit after a clean week
+- [x] Docker down → cycle skipped and logged; never falls back to the host. `FACTORY_SANDBOX=off` exists for trusted fixtures only
+- [x] Copilot builder (MC) excluded while sandboxed (it needs the owner's GitHub login); Copilot PR review unaffected
+- [x] Ledger / RepoHQ events record `isolation: docker | host`; `/agent-performance` shows where the latest run executed and how many attempts were sandboxed
+- [x] Tests: unit (`tests/unit/factory-sandbox.test.ts`: container args, no-env-leak, timeouts, lifecycle, runner injection, config), live isolation check (`npm run factory:sandbox:check`, 13 properties), sandboxed end-to-end cycle (`npm run factory:e2e`: M0 fixes a seeded type error inside the container, host judges and commits, no `node_modules` on the host), Playwright (`tests/e2e/phase76-sandbox.spec.ts`)
+
+### Phase 77 — Judge v2 (deterministic first, adversarial last) ✅
+Rules in `factory/lib/judge-rules.ts`; reviewer in `factory/lib/adversary.ts`.
+- [x] Test integrity: no snapshot rewrites; a touched test file may not lose assertions; no mocks of the project's own modules
+- [x] Type escapes: no new `as any` / `: any` in source files for type and lint fixes (found by the live adversary test: the seeded e2e error "fixed" with `as any` passed every older rule)
+- [x] Diff sanity: no deleted source files, no removed exports, unscoped fixes stay within 3 files of the ones their errors named, no mass reformatting by the model (the repo's own fixer output stays allowed)
+- [x] Dependency validation: new bare imports must be declared dependencies (or `@types/…`, or Node builtins); new relative imports must resolve to a tracked file (TS/ESM `.js`→`.ts`, `index.*`)
+- [x] Coverage may not drop more than 0.5 points where the test script already prints an Istanbul summary
+- [x] Advisory adversarial pass after the rules pass: a different model family from the builder (M0 → `free-agent`; M1/MC/M2 → `local-qwen3`) answers a 10-question "prove this should NOT merge" checklist; every issue must quote the diff or it's dropped; PASS → nothing, UNCERTAIN/FAIL → `needs-careful-review` label, FAIL rejects only once `adversarial-veto` is promoted to `pr`. Never approves; any error = no signal. Live: both reviewers passed an honest fix and failed an `as any` cheat with quoted evidence
+- [x] Judge regression suite: `factory/judge-fixtures/` (every past incident from §12 plus one case per rule, 18 fixtures) replayed by `tests/unit/judge-regression.test.ts`; every attempt saves its judge inputs and `npm run factory:judge-fixture -- <attemptId> --expect=…` turns a wrong verdict into a fixture
+
+### Phase 78 — Fixed Pipelines & New Sensors ✅
+Sensors in `factory/lib/sensors.ts` (read-only `gh` on the host).
+- [x] Fixed pipelines: every task kind is sense → one worker step → verify → PR (`PIPELINES` in `factory/lib/tasks.ts`); the Director picks, a worker never chooses what runs next
+- [x] Sensor: red CI on the base branch (latest completed run per workflow) → `red-ci`. At stage `report`: a sandboxed root-cause investigation on the free pool (structured report; file changes from reproducing it are discarded). At stage `pr`: a fix whose oracle is the failing workflow passing on the PR (recorded by reconcile as `ci_oracle`). First live run: a correct root cause for Figma-Jira's CI with file:line evidence
+- [x] Sensor: Dependabot alerts → morning report Security section; "disabled" is reported, not hidden (all 9 repos today: owner action). Fixes go through `deps-audit`, so `security-alerts` only reports
+- [x] Sensor: stale bot PRs (autonomous branch, open 7+ days, no review) → reported, and that repo gets no new factory PRs until they're handled (`blockOnStaleBotPrs`, default on). First live run: 5 of 9 repos blocked by the old Nexus PRs
+- [x] Cross-repo opportunity queue (`rankOpportunities`): red CI > security > deps > failing checks > never scanned > docs, × RepoHQ health (lower health → higher), plus an age bonus that stays below the gap between categories
+- [ ] Deferred: feature pipeline (`/plan-eng-review`, report-only until an oracle exists) and performance pipeline (`/benchmark`, needs baselines)
+- [x] Decision for the owner: Nexus's `suggestedNextSkill` auto-chain was dynamic chaining. Removed with Nexus in Phase 81 (2026-10-07): skill reports only suggest a next skill, the owner decides
+
+### Phase 79 — Factory Economics & the Job Record ✅
+- [x] `agent_jobs` table (`src/lib/db/schema.ts`; idempotent migration `factory/sql/0001_agent_jobs.sql`, generated by drizzle-kit, applied with `npm run factory:migrate`): one row per attempt with parent job (escalation chain), pipeline, tier, model, isolation, requests, tokens, cost, verdict, PR, reviewer, outcome, human commits, timings. `npm run factory:backfill-jobs` copied the ledger's 22 attempts. `ledger.jsonl` stays the source of truth
+- [x] Request count per attempt: Claude Code `num_turns`, Aider round trips, one per Copilot prompt, zero for deterministic fixes
+- [x] KPIs (`src/lib/agents/factory-kpis.ts`): overnight yield, acceptance, merged per 100 free requests, median review hours, PRs that needed your edits, autonomy. On `/agent-performance` (cards) and as the morning report's Retro headline
+- [x] Coarse routing key: difficulty (simple / medium / hard) × tier (`difficultyOf` in `model-router.ts`); deterministic fixes and investigations no longer count as model skill
+- [x] Overlaps Phase 71 (telemetry) for factory runs; 71 keeps the Nexus side (retired in Phase 81)
+
+### Phase 80 — Night Shift v2 (gate in progress)
+`factory/lib/night-shift.ts`.
+- [-] Gate, sandbox half: Phases 75–77 done ✅; 7 consecutive nights with every attempt sandboxed — tracked by `nightShiftReadiness` in `npm run factory:report` and the morning report (0/7 on 2026-10-06 (the night before ran on the host), 2/7 on 2026-10-07)
+- [x] Scheduled cycles 20:00–06:00 (plus 12:00, 16:00): skipped on battery (`factory.sh`; `FACTORY_REQUIRE_AC=0` overrides), refused if the sandbox is off, always $0 whatever the manual budget, ≤ 8 PRs, human merge, `PAUSE`
+- [x] Gate, quality half (added 2026-10-07, Experiment C): over the last 30 days ≥ 5 resolved factory PRs, ≥ 50% merged, ≥ 3 rated with a `value:N` label, average value ≥ 2. `ready` needs both halves (`qualityGate` in `factory/lib/night-shift.ts`)
+- [x] Success measure: 30-night yield and acceptance trend (last 15 nights vs the 15 before) in the morning report; useful PRs per night once PRs are rated
+- [ ] Only then: concurrency 2
+
+### Phase 81 — One Agent System (Nexus migration) (code ✅, cutover pending)
+The factory becomes the only executor, and Nexus's queue infrastructure (Redis/BullMQ, worker) moves into this repo. Audit §9.1, decided 2026-10-06. PRD: [agent-hq-migration-prd.md](agent-hq-migration-prd.md).
+- [x] Infra in this repo: `render.yaml` (Redis Key Value, `noeviction`, auth + TLS), `docker-compose.yml` (dev Redis on 127.0.0.1), shared queue contract `factory/lib/queue.ts` (id-only jobs, no `server-only`, no connection at import)
+- [x] `agent_requests`, `automation_runs`, `trace_events`, `agent_jobs.request_id` (`factory/sql/0002_agent_hq_queue.sql`, idempotent, matches drizzle's DDL)
+- [x] `factory/worker.ts`: BullMQ worker (request / cycle / report / scout), job schedulers from `schedules` replace the launchd calendar, PAUSE/AC/lock/Docker gates, environment problems defer instead of failing, Neon reconcile on start and after each cycle, 60 s heartbeat; `install-launchd.sh` installs it (KeepAlive) when a `REDIS_URL` exists
+- [x] Request mode in `run.ts` (`--request=<id>`): the owner task only; fix skills through the ladder and judge, report skills (`owner-report`) as a read-only investigation; step traces (`::trace::`) and a `::result::` line
+- [x] RepoHQ enqueues into the factory (Run agent, gstack launcher in fix + report modes, Monday auto-dispatch and the weekly retro/health, MCP `queue_gstack_skill`); allowlist + owner gate (`FACTORY_USER_ID`); `/canary` unavailable; auto-chain and the CI-fix loop removed (CI failures on agent PRs escalate to `needs human`)
+- [x] Agents page (`/agent-performance`): automation panel (worker, queue counts, schedulers, recent runs, owner controls: run now, pause/resume), requests (cancel, retry), per-request and per-run trace timeline; crons recorded as runs (`withAutomationRun`); 36 h factory-freshness banner
+- [x] Nexus removed from this repo: dispatch, webhook, task polling, `NEXUS_*` env, the Nexus card halves and the morning report's Nexus line (now Agent HQ request outcomes); docs updated
+- [x] Validation: unit tests for the guards, routes, actions and lifecycle; flow tests (`tests/flow`) that run the migration, the app, the real worker and the browser UI end to end on a throwaway Postgres + Redis (`npm run test:flow`, `npm run test:flow:e2e`, CI job `flow`)
+- [x] Review fixes (2026-10-07):
+  - Dead ends count per request, so two failed requests no longer block the next one on the repo for 14 days.
+  - The 36 h banner counts finished cycles and requests only, so Docker being down no longer silences it; the morning report raises it too.
+  - An agent PR failing CI (`needs_human`) blocks its repo until it's merged or closed.
+  - The weekly `/retro` and `/health` pick allowlisted repos (focused first), not the first rows.
+  - Requests honour `blockOnStaleBotPrs` when they would open a PR.
+  - The Agents page poll keeps one Redis connection per server instance.
+- [ ] Owner cutover (2026-10-07: Redis is up and the worker is installed under launchd, KeepAlive, connected to the Render Redis with 9 repos; Nexus `/health` returns 503, likely suspended. Still to confirm: `REDIS_URL` + `FACTORY_USER_ID` in Vercel, Nexus retired, `AI-Took-My-Job` archived. **Nexus teardown checklist:** remove `NEXUS_*` and the webhook secret from Vercel; delete the Render web, worker, Postgres and MinIO services once the trial week is judged (keep the Key Value); revoke or repurpose the Nexus GitHub App and its tokens; archive `AI-Took-My-Job` after closing its open PRs; drop the `nexus/*` branch handling from the autonomous-PR policy only after no `nexus/*` branches remain): Redis from the Blueprint, `REDIS_URL` + `FACTORY_USER_ID` in Vercel, `npm run db:push` + `npm run factory:migrate`, `install-launchd.sh`, suspend then retire Nexus on Render, archive `AI-Took-My-Job` (runbook: PRD §11)
+- [ ] Promote `owner-requested` to `pr` once fix requests verify reliably (until then they end `verified`, no PR)
+- [ ] Trial week: keep Nexus suspended and fill in the scorecard ([trade-offs](agent-hq-tradeoffs.md#judging-the-trial-week)), then decide the next step from it
+- [ ] Opt-in paid escalation for requests the owner starts (every source but `auto-dispatch`): local → free → paid only on failure, a per-request ceiling inside a monthly cap; the night shift stays $0 ([trade-offs](agent-hq-tradeoffs.md) recommendation 2)
+- [ ] Worker health: LiteLLM, Ollama, Neon and GitHub probes in the heartbeat and on the Agents page, self-restarts for LiteLLM and Docker, reconcile on wake (recommendation 3)
+- [ ] Later, if needed: an always-on worker host; a cycle that yields to a waiting request; Redis replaced by a Neon poll (recommendations 6–8). Not during the 30-day window.
+  - **Redis → Neon poll:** the case for dropping Redis is a monthly bill and a failure mode: Render's Key Value proxy silently dropping the connection is what hung the heartbeat on 2026-10-07.
+  - **Caveat:** Neon suspends idle compute, and a worker polling every 30–60 s keeps it awake around the clock and spends compute hours. Poll slowly (minutes) outside the hours a person is likely to queue work, or wake the worker on enqueue some other way, and check the Neon plan's compute allowance first.
+
+### Phase 67+ — Horizon 3: Infrastructure Agent
+- [ ] `agent_resources` ledger table (owner, provider, kind, environment, est. cost, `ephemeral`, `ttlAt`, destroy procedure, lifecycle state) + `.infrastructure/resources.json` mirror
+- [ ] Dev-only provisioning in order: GitHub repo → Vercel preview → Neon/Supabase dev branch → Cloudflare preview DNS → AWS/GCP
+- [ ] IaC-first (Terraform / provider-native), plan → review → apply-to-dev → commit
+- [ ] Disposable environments with "destroy what you created" exception; TTL sweeper proposes teardown of everything else
+- [ ] Mission mode (PRD §21.19): starts in `awaiting_approval` with cost estimate; unlocked only after Tier 1–3 accuracy gates
 
 ---
 
 ## Distribution Roadmap
+
+> **Deferred (2026-10-07).** RepoHQ is a personal tool for now (audit §9.2): sign-in is limited to the owner, and the pricing page and subscription webhook are removed. These phases stay here for if it becomes a product.
 
 Features required to open RepoHQ to other users. Tracked separately because they each touch auth, data isolation, billing, or GitHub platform constraints.
 
@@ -748,8 +316,8 @@ Features required to open RepoHQ to other users. Tracked separately because they
 - Usage metering for agent execution costs
 
 ### D5 — BYOK for agent execution
-- Allow users to connect their own Nexus instance (or a hosted Nexus endpoint)
-- Currently hard-coded to owner's Render deployment; needs per-user `NEXUS_API_URL` + `NEXUS_API_TOKEN` in settings
+- Let each user run the factory worker on their own machine against their own requests
+- Today the factory serves one owner (`FACTORY_USER_ID`) and one queue; needs per-user queues (or a `userId` filter in the worker) and per-user allowlists in settings
 
 ---
 
@@ -785,10 +353,8 @@ Features required to open RepoHQ to other users. Tracked separately because they
 | cron-ai-summary | 05:00 Sunday | `/api/cron/ai-summary` (enqueue per-repo jobs then process loop) |
 | cron-digest | 06:00 Monday | `/api/cron/digest` |
 
-**Vercel cron (daily — gstack-self only):**
+GitHub disables these after 60 days without a commit (it happened Aug 14 – Oct 6, 2026). The app shows a stale-data banner and the morning report flags disabled workflows; re-enable with `gh workflow enable <file> --repo smithdavedesign/Github-HQ`.
 
-| Endpoint | Time (UTC) | What it does |
-|----------|-----------|-------------|
-| `/api/cron/gstack-self` | 07:00 daily | Self-scan RepoHQ with /health + /qa-only → auto-queue fix tasks |
+**Vercel cron:** none. `gstack-self` (daily /health + /qa-only self-scan via Nexus) was removed in the 2026-10 audit: it had targeted a deleted repo and failed every day since June; the factory covers RepoHQ itself.
 
-All routes require `Authorization: Bearer $CRON_SECRET`. Vercel cron is used only for `gstack-self` because it must run daily regardless of git activity; all other jobs are driven by GitHub Actions, which provides logs, retry, and manual dispatch.
+All routes require `Authorization: Bearer $CRON_SECRET`.

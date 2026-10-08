@@ -5,15 +5,29 @@ import { Topbar } from '@/components/layout/topbar'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import { latestSnapshotDate } from '@/lib/health/history'
+import { factoryStaleMessage, snapshotFreshness, staleDataMessage } from '@/lib/health/freshness'
+import { StaleDataBanner } from '@/components/layout/stale-data-banner'
+import { factoryAccess } from '@/lib/agents/factory-queue'
+import { factoryActivity } from '@/lib/agents/factory-activity'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, session.user.id),
-    columns: { lastSyncedAt: true },
-  })
+  const isFactoryOwner = factoryAccess(session.user.id).ok
+  const [user, latestSnapshot, factory] = await Promise.all([
+    db.query.users.findFirst({
+      where: eq(users.id, session.user.id),
+      columns: { lastSyncedAt: true },
+    }),
+    latestSnapshotDate(session.user.id).catch(() => null),
+    isFactoryOwner ? factoryActivity(db, session.user.id).catch(() => null) : Promise.resolve(null),
+  ])
+  // Request time is the point: the banner says how old the data is right now.
+  const now = new Date()
+  const staleMessage = staleDataMessage(snapshotFreshness(latestSnapshot, now))
+  const factoryMessage = factoryStaleMessage(factory, now)
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -26,7 +40,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             image: session.user.image,
           }}
           lastSyncedAt={user?.lastSyncedAt}
+          renderedAt={now.getTime()}
         />
+        {staleMessage && <StaleDataBanner message={staleMessage} />}
+        {factoryMessage && <StaleDataBanner message={factoryMessage} />}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 page-content">{children}</main>
       </div>
     </div>

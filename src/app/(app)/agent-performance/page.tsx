@@ -1,4 +1,5 @@
 import { auth } from '@/lib/auth'
+import { collapseRepeats, repeatKey } from '@/lib/feed/collapse'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { portfolioEvents } from '@/lib/db/schema'
@@ -6,18 +7,25 @@ import { eq, and, inArray, desc } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDistanceToNow } from '@/lib/utils'
-import { CheckCircle, XCircle, Clock, TrendingUp, Target, Cpu, ExternalLink, BarChart2 } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, TrendingUp, Target, Cpu, ExternalLink, BarChart2, ShieldCheck, Workflow } from 'lucide-react'
 import Link from 'next/link'
 import { getAccuracyByImpactType, getDowngradedRepos } from '@/lib/actions/advisor-accuracy'
 import { AccuracyTable } from '@/components/dashboard/accuracy-table'
+import { summarizeFactoryEvents } from '@/lib/agents/factory-stats'
+import { KPI_WINDOW_DAYS, loadFactoryKpis } from '@/lib/agents/factory-kpis-query'
+import { factoryAccess } from '@/lib/agents/factory-queue'
+import { getAgentHqOverview } from '@/lib/agents/agent-hq-data'
+import { AgentHqPanel } from '@/components/agents/agent-hq-panel'
 
 export default async function AgentPerformancePage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
   const userId = session.user.id
+  // Agent HQ (roadmap Phase 81): the factory's queue, schedules, runs and traces — owner only.
+  const access = factoryAccess(userId)
 
-  const [events, accuracyStats, downgradedRepos] = await Promise.all([
+  const [events, accuracyStats, downgradedRepos, factoryEvents, kpis, overview] = await Promise.all([
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.userId, userId),
@@ -28,7 +36,18 @@ export default async function AgentPerformancePage() {
     }),
     getAccuracyByImpactType(userId),
     getDowngradedRepos(userId),
+    db.query.portfolioEvents.findMany({
+      where: and(eq(portfolioEvents.userId, userId), inArray(portfolioEvents.eventType, ['agent_attempt', 'model_scout_report'])),
+      columns: { eventType: true, occurredAt: true, metadata: true },
+      orderBy: [desc(portfolioEvents.occurredAt)],
+      limit: 500,
+    }),
+    // Factory job record (Phase 79) for the KPIs.
+    loadFactoryKpis(userId),
+    access.ok ? getAgentHqOverview(userId) : Promise.resolve(null),
   ])
+  const factory = summarizeFactoryEvents(factoryEvents)
+  const pctOf = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`)
 
   // Compute stats
   const queued  = events.filter(e => e.eventType === 'agent_task_queued').length
@@ -57,33 +76,32 @@ export default async function AgentPerformancePage() {
     return sum + (meta?.costUsd ?? 0)
   }, 0)
 
-  const nexusUrl = process.env.NEXUS_API_URL
-
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Cpu className="w-6 h-6 text-indigo-500" />
-            Agent Performance
+            <Workflow className="w-6 h-6 text-indigo-500" />
+            Agents
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Track advisor accuracy and agent execution outcomes
+            The factory&apos;s queue, schedules and runs — every request traced step by step — plus advisor accuracy and factory KPIs
           </p>
         </div>
-        {nexusUrl && (
-          <a
-            href={`${nexusUrl}/learn/review-queue`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-          >
-            Open Nexus queue <ExternalLink className="w-3 h-3" />
-          </a>
-        )}
       </div>
 
-      {/* Stats */}
+      {overview ? (
+        <AgentHqPanel initial={overview} />
+      ) : (
+        <div className="rounded-lg border border-border/40 bg-muted/10 px-4 py-3 text-xs text-muted-foreground" data-testid="agent-hq-unavailable">
+          {access.ok ? null : access.reason} The queue, schedules and traces are shown to the factory&apos;s owner.
+        </div>
+      )}
+
+      {/* Requests from RepoHQ, all time (Nexus-era tasks included); factory numbers are under Factory KPIs */}
+      <h2 className="text-sm font-semibold" data-testid="request-stats-heading">
+        Requests <span className="font-normal text-muted-foreground">· all time, Nexus-era tasks included · factory results are under Factory KPIs</span>
+      </h2>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <StatCard label="Tasks queued"  value={queued}  icon={Clock}       color="text-indigo-500" />
         <StatCard label="PRs merged"    value={merged}  icon={CheckCircle} color="text-emerald-500" />
@@ -126,6 +144,89 @@ export default async function AgentPerformancePage() {
         </div>
       ) : null}
 
+      {/* Factory KPIs (Phase 79 — docs/autonomous-factory.md §14.2) */}
+      {kpis && (
+        <div className="space-y-2" data-testid="factory-kpis">
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+              Factory KPIs (last {KPI_WINDOW_DAYS} days)
+            </h2>
+            <p className="text-[10px] text-muted-foreground max-w-xs text-right">
+              The target: more human-approved PRs per night, at a rising acceptance rate.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {[
+              { label: 'Overnight yield', value: kpis.overnightYield === null ? '—' : kpis.overnightYield.toFixed(1), hint: `approved PRs/night · ${kpis.nights} night(s)` },
+              { label: 'Acceptance', value: pctOf(kpis.acceptance), hint: `${kpis.merged} merged · ${kpis.closed} closed` },
+              { label: 'Per 100 free requests', value: kpis.acceptedPer100FreeRequests === null ? '—' : kpis.acceptedPer100FreeRequests.toFixed(1), hint: `merged PRs · ${kpis.freeRequests} requests` },
+              { label: 'Review time', value: kpis.reviewHoursMedian === null ? '—' : `${kpis.reviewHoursMedian.toFixed(1)}h`, hint: `median · ${kpis.humanEditedPrs} needed edits` },
+              { label: 'Autonomy', value: pctOf(kpis.autonomy), hint: 'merged untouched ÷ all decisions' },
+            ].map(k => (
+              <div key={k.label} className="rounded-lg border border-border/50 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{k.label}</div>
+                <div className="text-lg font-semibold tabular-nums">{k.value}</div>
+                <div className="text-[10px] text-muted-foreground">{k.hint}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Autonomous factory (local free-model lane — docs/autonomous-factory.md) */}
+      {(factory.totalAttempts > 0 || factory.scout) && (
+        <div className="space-y-2">
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <Cpu className="w-3.5 h-3.5 text-emerald-500" />
+              Autonomous Factory by Model Tier
+            </h2>
+            <p className="text-[10px] text-muted-foreground max-w-xs text-right">
+              M0 local · M1 free cloud · M2 paid. Verified = passed the repo&apos;s own checks and opened a draft PR.
+            </p>
+          </div>
+          <div className="rounded-lg border border-border/50 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/30 text-muted-foreground">
+                <tr>
+                  {['Tier', 'Attempts', 'Verified', 'Merged', 'Closed', 'Cost'].map(h => (
+                    <th key={h} className="text-left font-medium px-3 py-2">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {factory.rows.map(r => (
+                  <tr key={r.tier} className="border-t border-border/40">
+                    <td className="px-3 py-2 font-medium">{r.tier}</td>
+                    <td className="px-3 py-2 tabular-nums">{r.attempts}</td>
+                    <td className="px-3 py-2 tabular-nums">{r.verified}</td>
+                    <td className="px-3 py-2 tabular-nums">{r.merged}</td>
+                    <td className="px-3 py-2 tabular-nums">{r.rejected}</td>
+                    <td className="px-3 py-2 tabular-nums">${r.costUsd.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {factory.totalAttempts > 0 && (
+            <p className="text-xs text-muted-foreground" data-testid="factory-isolation">
+              <ShieldCheck className="inline w-3 h-3 mr-1 -mt-0.5 text-emerald-500" />
+              Isolation: latest run{' '}
+              <span className="font-medium text-foreground">
+                {factory.isolation.lastIsolation === 'docker' ? 'sandboxed (Docker)' : 'on the host'}
+              </span>
+              {' · '}
+              {factory.isolation.sandboxed} of {factory.totalAttempts} attempts ran repo code in the sandbox (no credentials, allowlisted egress)
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {factory.freeSharePct != null ? <>Free-tier share of verified fixes: <span className="font-medium text-foreground">{factory.freeSharePct}%</span> · </> : null}
+            {factory.scout ? <>free-agent: <span className="font-mono">{factory.scout.primary ?? '—'}</span> (scouted {formatDistanceToNow(factory.scout.at)})</> : null}
+          </p>
+        </div>
+      )}
+
       {/* Cost */}
       {totalCostUsd > 0 && (
         <p className="text-xs text-muted-foreground">
@@ -144,7 +245,7 @@ export default async function AgentPerformancePage() {
             <Link href="/" className="underline text-xs mt-3 inline-block hover:text-foreground">← Back to dashboard</Link>
           </div>
         ) : (
-          events.slice(0, 50).map(event => {
+          collapseRepeats(events, e => repeatKey(e.eventType, e.repoId, e.title, e.description)).slice(0, 50).map(({ item: event, count }) => {
             const meta = event.metadata as Record<string, unknown> | null
             const repoName = event.repository?.name ?? (meta?.repoHQRepoName as string) ?? '—'
 
@@ -167,7 +268,7 @@ export default async function AgentPerformancePage() {
             return (
               <div key={event.id} className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-muted/10 text-sm">
                 <Badge variant="outline" className={`text-[10px] px-1.5 shrink-0 mt-0.5 ${statusColor}`}>
-                  {label}
+                  {label}{count > 1 ? ` ×${count}` : ''}
                 </Badge>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{event.title}</p>

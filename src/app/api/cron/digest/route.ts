@@ -6,13 +6,17 @@ import { generateAdvisor, getLatestAdvisor } from '@/lib/ai/advisor'
 import { generateCeoReport } from '@/lib/ai/ceo-report'
 import { generateNotionSummary } from '@/lib/ai/notion-summary'
 import { verifyCronSecret } from '@/lib/cron-auth'
-import { autoDispatchAdvisorActions, queueAdvisorActionForUser } from '@/lib/actions/nexus'
+import { autoDispatchAdvisorActions, queueSkillForUser, weeklySkillReposFor } from '@/lib/agents/factory-queue'
 import { getAccuracyByImpactType } from '@/lib/actions/advisor-accuracy'
 import { distillAttempts } from '@/lib/agents/attempt-distiller'
-import { isNotNull, eq } from 'drizzle-orm'
-import { repositories } from '@/lib/db/schema'
+import { isNotNull } from 'drizzle-orm'
+import type { GstackSkill } from '@/lib/skills/skill-policy'
+import { withAutomationRun } from '@/lib/monitoring/automation-runs'
 
-export async function GET(request: Request) {
+// Recorded on the Agents page's automation timeline (src/lib/monitoring/automation-runs.ts).
+export const GET = withAutomationRun('cron:digest', handle)
+
+async function handle(request: Request) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -34,6 +38,7 @@ export async function GET(request: Request) {
   let processed = 0
   const errors: string[] = []
   let totalAutoQueued = 0
+  let weeklySkillsQueued = 0
 
   for (const user of allUsers) {
     try {
@@ -85,43 +90,19 @@ export async function GET(request: Request) {
         }
       }
 
-      // G7: Scheduled skill runs on focused repos
+      // G7: Scheduled skill runs on the factory's repos, focused ones first (weeklySkillReposFor)
       const now = new Date()
       const isMonday = now.getDay() === 1
       const isSunday = now.getDay() === 0
 
       if (user.autoRunRetroWeekly && isMonday) {
-        try {
-          const focusedRepos = await db.query.repositories.findMany({
-            where: eq(repositories.userId, user.id),
-            columns: { id: true, name: true },
-          }).then(r => r.filter((_, i) => i < 3)) // max 3 focused retros
-          for (const repo of focusedRepos) {
-            await queueAdvisorActionForUser(user.id, {
-              repoId: repo.id, repoName: repo.name,
-              action: `Run weekly retro on ${repo.name}`,
-              impactType: 'health', effort: 'quick', estimatedImpact: 'Weekly insight',
-              reasoning: 'Auto-scheduled weekly retro',
-            } as never).catch(() => null) // non-fatal
-          }
-        } catch { /* non-fatal */ }
+        // A report request (/retro): the factory reads the week's commits, opens no PR.
+        weeklySkillsQueued += await queueWeekly(user.id, 'retro', 3, name => `Weekly retro for ${name}: what shipped, what's risky, what's unfinished.`)
       }
 
       if (user.autoRunHealthWeekly && isSunday) {
-        try {
-          const focusedRepos = await db.query.repositories.findMany({
-            where: eq(repositories.userId, user.id),
-            columns: { id: true, name: true },
-          }).then(r => r.filter((_, i) => i < 5)) // max 5 health checks
-          for (const repo of focusedRepos) {
-            await queueAdvisorActionForUser(user.id, {
-              repoId: repo.id, repoName: repo.name,
-              action: `Run weekly health check on ${repo.name}`,
-              impactType: 'health', effort: 'quick', estimatedImpact: 'Health score',
-              reasoning: 'Auto-scheduled weekly health check',
-            } as never).catch(() => null) // non-fatal
-          }
-        } catch { /* non-fatal */ }
+        // A report request (/health): findings and a 0–10 score, no PR.
+        weeklySkillsQueued += await queueWeekly(user.id, 'health', 5, name => `Weekly health check for ${name}.`)
       }
 
       processed++
@@ -130,5 +111,22 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, processed, errors, autoQueued: totalAutoQueued })
+  return NextResponse.json({ ok: true, processed, errors, autoQueued: totalAutoQueued, weeklySkillsQueued })
+}
+
+/** Queue a weekly report skill on up to `limit` of the user's factory repos. Never throws; returns how many were queued. */
+async function queueWeekly(userId: string, skill: GstackSkill, limit: number, objective: (repoName: string) => string): Promise<number> {
+  let queued = 0
+  try {
+    for (const repo of await weeklySkillReposFor(userId, limit)) {
+      const r = await queueSkillForUser(userId, repo.id, skill, objective(repo.name), 'auto-dispatch')
+        .catch((err: unknown) => ({ ok: false as const, reason: err instanceof Error ? err.message : String(err) }))
+      if (r.ok) queued++
+      // Usually an open request or agent PR on the repo; next week's run tries again.
+      else console.warn(`[digest-cron] weekly /${skill} not queued for ${repo.name}: ${r.reason}`)
+    }
+  } catch (err) {
+    console.warn(`[digest-cron] weekly /${skill} failed:`, err instanceof Error ? err.message : err)
+  }
+  return queued
 }

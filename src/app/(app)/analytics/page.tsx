@@ -20,7 +20,7 @@ export default async function AnalyticsPage() {
     db.query.repositories.findMany({
       where: eq(repositories.userId, session.user.id),
       with: { metrics: true },
-      columns: { id: true, name: true, estimatedEffort: true },
+      columns: { id: true, name: true, estimatedEffort: true, isArchived: true, lifecycleStatus: true },
     }),
     getPortfolioHealthTrend(session.user.id),
     getAgentStats(),
@@ -37,8 +37,29 @@ export default async function AnalyticsPage() {
       security: Math.round(r.metrics!.securityScore ?? 100),
     }))
 
+  const livePortfolioHealth = reposWithMetrics.filter((r) => r.metrics?.healthScore != null)
+  const livePortfolioAverage = livePortfolioHealth.length > 0
+    ? livePortfolioHealth.reduce((sum, repo) => {
+        const metrics = repo.metrics!
+        return {
+          health: sum.health + (metrics.healthScore ?? 0),
+          security: sum.security + (metrics.securityScore ?? 0),
+          activity: sum.activity + (metrics.activityScore ?? 0),
+        }
+      }, { health: 0, security: 0, activity: 0 })
+    : null
+
+  const liveTrendFallback = livePortfolioAverage
+    ? [{
+        date: new Date().toISOString().slice(0, 10),
+        avgHealth: Math.round(livePortfolioAverage.health / livePortfolioHealth.length),
+        avgSecurity: Math.round(livePortfolioAverage.security / livePortfolioHealth.length),
+        avgActivity: Math.round(livePortfolioAverage.activity / livePortfolioHealth.length),
+      }]
+    : []
+
   const matrixRepos = reposWithMetrics
-    .filter(r => r.metrics?.opportunityScore != null)
+    .filter(r => r.metrics?.opportunityScore != null && !r.isArchived && r.lifecycleStatus !== 'archived')
     .map(r => ({
       id: r.id,
       name: r.name,
@@ -97,7 +118,7 @@ export default async function AnalyticsPage() {
         </p>
       </div>
 
-      <HealthTrendLineChart data={healthTrend} />
+      <HealthTrendLineChart data={healthTrend.snapshotDays >= 3 ? healthTrend.series : liveTrendFallback} hasLiveFallback={healthTrend.snapshotDays < 3 && liveTrendFallback.length > 0} />
       <HealthTrendChart data={chartData} />
       <EffortMatrix repos={matrixRepos} />
       {agentStats && <AgentStatsBlock stats={agentStats} />}

@@ -3,7 +3,7 @@
 #
 # Usage: bash bootstrap.sh
 #
-# Run this FIRST in any Nexus / CI worktree before executing gstack skills or
+# Run this FIRST in any agent / CI worktree before executing gstack skills or
 # running checks.  It detects the package manager and tech stack, installs
 # dependencies, and verifies the toolchain is usable.
 #

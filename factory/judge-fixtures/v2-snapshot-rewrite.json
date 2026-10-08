@@ -1,0 +1,33 @@
+{
+  "name": "v2-snapshot-rewrite",
+  "source": "Phase 77 rule: snapshot updated to match broken output",
+  "expect": "reject",
+  "reason": "rewrites snapshot",
+  "task": {
+    "kind": "fix-tests",
+    "taskTier": 2,
+    "scoped": false,
+    "files": [],
+    "title": "fix-tests",
+    "objective": "fix-tests",
+    "evidence": "",
+    "verify": [
+      "test"
+    ]
+  },
+  "baseline": [
+    {
+      "name": "test",
+      "ok": false,
+      "output": ""
+    }
+  ],
+  "after": [
+    {
+      "name": "test",
+      "ok": true,
+      "output": ""
+    }
+  ],
+  "patch": "diff --git a/src/__snapshots__/card.test.tsx.snap b/src/__snapshots__/card.test.tsx.snap\n--- a/src/__snapshots__/card.test.tsx.snap\n+++ b/src/__snapshots__/card.test.tsx.snap\n@@ -1 +1 @@\n-<h1>Total: 3</h1>\n+<h1>Total: NaN</h1>"
+}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle } from 'lucide-react'
 
@@ -12,8 +12,6 @@ export default function RootError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
-  const router = useRouter()
-
   useEffect(() => {
     console.error('[root-error]', error)
   }, [error])
@@ -31,8 +29,8 @@ export default function RootError({
         <Button size="sm" variant="outline" onClick={reset}>
           Try again
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => router.push('/')}>
-          Go home
+        <Button asChild size="sm" variant="ghost">
+          <Link href="/">Go home</Link>
         </Button>
       </div>
     </div>

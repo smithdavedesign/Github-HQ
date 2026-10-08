@@ -35,6 +35,65 @@ jobs:
       - name: Dead code check
         run: npm run dead-code
 
+      # Runtime dependencies only (dev tooling never ships). Critical advisories sat in production
+      # unnoticed until the 2026-10 audit; Dependabot alerts cover everything below critical.
+      - name: Dependency audit (production, critical)
+        run: npm audit --omit=dev --audit-level=critical
+
+  # The Agent HQ flow (roadmap Phase 81) end to end on a throwaway Postgres + Redis: migrations,
+  # the app enqueueing, the real factory worker running jobs, the status API and the Agents UI.
+  # tests/flow/harness/flow.ts — it never sees a real database or queue.
+  flow:
+    name: Agent HQ flow (queue → worker → UI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ['6380:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 5s --health-retries 30
+
+    env:
+      FLOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+      FLOW_REDIS_URL: redis://localhost:6380/5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Flow tests (migrations, enqueue, worker, morning report)
+        run: npm run test:flow
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser flow tests (next dev + the worker)
+        run: npm run test:flow:e2e
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-e2e-results
+          path: test-results/
+          retention-days: 7
+
   build:
     name: Build
     runs-on: ubuntu-latest

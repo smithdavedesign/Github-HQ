@@ -31,10 +31,8 @@ test.describe('Notification bell', () => {
   test('empty state shows "All caught up"', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('button', { name: /notification/i }).click()
-    // Either empty state or list — both are valid
-    const hasEmpty = await page.getByText('All caught up').isVisible().catch(() => false)
-    const hasList = await page.locator('[data-radix-scroll-area-viewport]').isVisible().catch(() => false)
-    expect(hasEmpty || hasList).toBe(true)
+    // Either empty state or list — both are valid (a list has "Mark all read")
+    await expect(page.getByText('All caught up').or(page.getByRole('button', { name: /Mark all read/ })).first()).toBeVisible({ timeout: 5000 })
   })
 })
 
@@ -67,7 +65,7 @@ test.describe('Notifications API', () => {
 test.describe('Notification settings', () => {
   test('notifications section is visible in settings page', async ({ page }) => {
     await page.goto('/settings')
-    await expect(page.getByText('Notifications')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText('Notifications', { exact: true })).toBeVisible({ timeout: 8000 })
   })
 
   test('webhook URL input is present', async ({ page }) => {
@@ -89,7 +87,7 @@ test.describe('Notification settings', () => {
     test.skip(!DB_URL, 'DATABASE_URL not set')
 
     const sql = neon(DB_URL)
-    const [user] = await sql`SELECT id FROM users LIMIT 1`
+    const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
     if (!user) test.skip(true, 'No user in DB')
 
     const notifTitle = `Playwright health alert test ${Date.now()}`

@@ -10,6 +10,7 @@ import { TrendingUp } from 'lucide-react'
 
 interface Props {
   data: HealthTrendPoint[]
+  hasLiveFallback?: boolean
 }
 
 function formatDate(dateStr: string) {
@@ -17,13 +18,13 @@ function formatDate(dateStr: string) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-export function HealthTrendLineChart({ data }: Props) {
+export function HealthTrendLineChart({ data, hasLiveFallback = false }: Props) {
   return (
     <Card className="card-elevated">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-muted-foreground" />
-          <CardTitle className="text-sm font-semibold">Portfolio Health Trend</CardTitle>
+          <CardTitle className="text-sm font-semibold">Portfolio health trend</CardTitle>
         </div>
         <p className="text-xs text-muted-foreground">
           Daily average across all active repos — last 30 days
@@ -31,11 +32,15 @@ export function HealthTrendLineChart({ data }: Props) {
       </CardHeader>
       <CardContent className="pt-0">
         {data.length < 3 ? (
-          <div className="flex items-center justify-center h-48 text-center">
+          <div className="flex items-center justify-center h-48 text-center" aria-live="polite">
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Collecting data</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                {hasLiveFallback ? 'Showing live snapshot' : 'No data yet'}
+              </p>
               <p className="text-xs text-muted-foreground mt-1">
-                {data.length} of 3+ snapshots needed — check back after a few more syncs
+                {hasLiveFallback
+                  ? 'History snapshots are still warming up — daily syncs will fill in the trend.'
+                  : `${data.length} of 3+ snapshots needed — check back after a few more syncs`}
               </p>
             </div>
           </div>

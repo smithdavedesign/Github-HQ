@@ -1,0 +1,17 @@
+{
+  "repos": [
+    "smithdavedesign/Github-HQ",
+    "smithdavedesign/AI-Took-My-Job",
+    "smithdavedesign/Open-Travel",
+    "smithdavedesign/family-tree",
+    "smithdavedesign/AI-Trend-Tracker",
+    "smithdavedesign/go-adventure",
+    "smithdavedesign/AI-CLI-Social-Autoposter",
+    "smithdavedesign/Figma-Jira-Ticket-Automation-Tool",
+    "smithdavedesign/ai-brand-context"
+  ],
+  "allowFreeCloud": [],
+  "monthlyBudgetUsd": 0,
+  "maxPrsPerCycle": 1,
+  "_comment": "Allowlist of repos the factory may open draft PRs on. gitHub-cron-job-app is excluded: its README is a cron heartbeat file."
+}

@@ -1,4 +1,6 @@
 import { toNum } from '@/lib/utils'
+import { loadFactoryKpis } from '@/lib/agents/factory-kpis-query'
+import { factoryRepoIdsFor } from '@/lib/agents/factory-queue'
 import { getDashboardStats, getRepositories, getRepositoriesSlim, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk, getProfileRecommendations, getShipItWarnings, getAgentStats, getPortfolioCostBreakdown } from '@/lib/actions/repositories'
 import { getPortfolioScoreTrend } from '@/lib/health/portfolio-snapshot'
 import { getWeeklyDiff } from '@/lib/actions/weekly-diff'
@@ -22,6 +24,10 @@ import { ActiveAgentsCard } from '@/components/dashboard/active-agents-card'
 import { PortfolioCostCard } from '@/components/dashboard/portfolio-cost-card'
 import { getActiveAgentSummary } from '@/lib/actions/repositories'
 import { CollapsibleSection } from '@/components/dashboard/collapsible-section'
+import { OpenPrsCard } from '@/components/dashboard/open-prs-card'
+import { NextActionsCard } from '@/components/dashboard/next-actions-card'
+import { loadOpenPrs, type OpenPrsResult } from '@/lib/github/open-prs-query'
+import { getNextActions } from '@/lib/portfolio/next-actions-query'
 import { getMyAccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { getGoals } from '@/lib/actions/goals'
 import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
@@ -48,7 +54,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats, activeAgents, costBreakdown] = await Promise.all([
+  const [stats, repos, opportunity, lifecycleDistribution, valuation, advisor, activeGoals, archiveCandidates, timeAllocation, ceoReport, scoreTrend, weeklyDiff, concentrationRisk, profileRecommendations, userRecord, shipItWarnings, agentStats, accuracyStats, activeAgents, costBreakdown, factoryKpis, factoryRepoIds, openPrs, next] = await Promise.all([
     getDashboardStats(),
     getRepositoriesSlim(),
     getOpportunityData(),
@@ -69,7 +75,12 @@ export default async function DashboardPage() {
     getMyAccuracyStats(),
     getActiveAgentSummary(),
     getPortfolioCostBreakdown(),
+    loadFactoryKpis(session.user.id).catch(() => null),
+    factoryRepoIdsFor(session.user.id).catch((): number[] => []),
+    loadOpenPrs(session.user.id).catch((): OpenPrsResult => ({ ok: false, reason: 'GitHub search failed' })),
+    getNextActions(session.user.id).catch(() => null),
   ])
+  const now = new Date()
 
   const topRepos = repos
     .filter((r) => r.metrics?.healthScore != null)
@@ -87,22 +98,31 @@ export default async function DashboardPage() {
         </p>
       </div>
 
+      {/* ── NEEDS YOU ─────────────────────────────────────────────── */}
+      <SectionLabel label="Needs you" />
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+        {next && <NextActionsCard next={next} />}
+        <OpenPrsCard result={openPrs} now={now} />
+      </div>
+
       {/* ── STATUS ────────────────────────────────────────────────── */}
       <SectionLabel label="Status" />
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4">
-        <MetricCard title="Total Repos" value={stats.total} icon={GitFork} />
+      <div className="grid grid-cols-2 sm:grid-cols-4 2xl:grid-cols-8 gap-3 sm:gap-4">
+        <MetricCard title="Total Repos" value={stats.total} icon={GitFork} description={stats.archived ? `${stats.total - stats.archived} active · ${stats.archived} archived` : undefined} />
         <MetricCard title="Private" value={stats.private} icon={Lock} />
         <MetricCard title="Public" value={stats.public} icon={Globe} />
-        <MetricCard title="Healthy" value={stats.healthy} icon={Smile} variant="success" description="Score ≥ 75" />
-        <MetricCard title="At Risk" value={stats.atRisk} icon={AlertTriangle} variant="warning" description="Score 55–74" />
-        <MetricCard title="Dead" value={stats.dead} icon={Skull} variant="danger" description="Score < 55" />
+        <MetricCard title="Healthy" value={stats.healthy} icon={Smile} variant="success" description="Active, score ≥ 75" />
+        <MetricCard title="At Risk" value={stats.atRisk} icon={AlertTriangle} variant="warning" description="Active, score 55–74" />
+        <MetricCard title="Dead" value={stats.dead} icon={Skull} variant="danger" description="Active, score < 55" />
         <MetricCard title="Security Issues" value={stats.securityIssues} icon={Shield} variant={stats.securityIssues > 0 ? 'danger' : 'default'} description="Critical + High" />
         <MetricCard
           title="Avg Health"
           value={stats.avgHealth ? `${Math.round(stats.avgHealth)}` : '—'}
           icon={Rocket}
           variant={stats.avgHealth >= 75 ? 'success' : stats.avgHealth >= 55 ? 'warning' : 'danger'}
+          description="Active repos"
         />
       </div>
 
@@ -136,34 +156,34 @@ export default async function DashboardPage() {
         <ConcentrationRiskCard risk={concentrationRisk} />
       </div>
 
-      {agentStats && agentStats.merged > 0 && (
+      {((agentStats && agentStats.merged > 0) || (factoryKpis && factoryKpis.prsOpened > 0)) && (
         <AgentImpactCard
-          merged={agentStats.merged}
-          totalScoreGained={agentStats.totalScoreGained}
-          recentMergeCount={agentStats.recentMergeCount}
-          successRate={agentStats.successRate}
+          requests={agentStats}
+          factory={factoryKpis ? { merged: factoryKpis.merged, closed: factoryKpis.closed, prsOpened: factoryKpis.prsOpened, acceptance: factoryKpis.acceptance } : null}
         />
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <LifecycleDistribution distribution={lifecycleDistribution} />
+
+      <AdvisorCard advisor={advisor} timeAllocation={timeAllocation} hoursPerWeek={userRecord?.hoursPerWeek ?? 10} factoryRepoIds={factoryRepoIds} accuracyStats={accuracyStats} />
+
+      {/* ── MORE INSIGHTS (unused so far: collapsed until they earn a place, audit §9.3) ── */}
+      <CollapsibleSection label="More insights" storageKey="dashboard-more-insights-open" defaultOpen={false}>
         <PortfolioValuation totalValue={valuation.totalValue} valuedRepos={valuation.valuedRepos} revenueValue={valuation.revenueValue} totalRepos={stats.total} />
-        <LifecycleDistribution distribution={lifecycleDistribution} />
-      </div>
 
-      <AdvisorCard advisor={advisor} timeAllocation={timeAllocation} hoursPerWeek={userRecord?.hoursPerWeek ?? 10} nexusEnabled={!!process.env.NEXUS_API_URL && !!process.env.NEXUS_API_TOKEN} accuracyStats={accuracyStats} />
+        <GoalsCard goals={activeGoals} />
 
-      <GoalsCard goals={activeGoals} />
+        <CeoReportCard report={ceoReport} />
 
-      <CeoReportCard report={ceoReport} />
+        {profileRecommendations.length > 0 && (
+          <ProfileOptimizerCard repos={profileRecommendations} githubLogin={userRecord?.githubLogin} />
+        )}
 
-      {profileRecommendations.length > 0 && (
-        <ProfileOptimizerCard repos={profileRecommendations} githubLogin={userRecord?.githubLogin} />
-      )}
+        <SimulationCard defaultHours={userRecord?.hoursPerWeek ?? 10} />
+      </CollapsibleSection>
 
       {/* ── PLANNING (collapsible — collapsed by default) ─────────── */}
       <CollapsibleSection label="Planning" storageKey="dashboard-planning-open" defaultOpen={true}>
-        <SimulationCard defaultHours={userRecord?.hoursPerWeek ?? 10} />
-
         <OpportunityPanel needsAttention={opportunity.needsAttention} highPotentialDormant={opportunity.highPotentialDormant} />
 
         {archiveCandidates.length > 0 && (

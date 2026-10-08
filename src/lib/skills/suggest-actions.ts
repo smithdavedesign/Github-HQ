@@ -116,7 +116,7 @@ const MATCH_RULES: MatchRule[] = [
     action: { skill: 'ship', label: 'Address technical debt' },
     objectiveTpl: 'Address the technical debt patterns identified in this week\'s retro for {repo}.',
   },
-  // ── Phase 57: 5 new skill branches mirroring inferNextSkill in Nexus worker ──
+  // ── Phase 57: 5 more skill branches (once mirrored by the retired Nexus worker) ──
   {
     skills: ['investigate'],
     keywords: ['fix', 'patch', 'should be changed', 'should update', 'race condition', 'memory leak', 'infinite loop'],

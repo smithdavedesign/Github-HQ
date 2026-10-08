@@ -23,7 +23,7 @@ export function AgentStatsBlock({ stats }: { stats: AgentStats }) {
         <CardTitle className="text-sm font-semibold flex items-center justify-between">
           <span className="flex items-center gap-2">
             <Bot className="w-4 h-4 text-indigo-500" />
-            Agent Activity
+            Agent Activity <span className="font-normal text-muted-foreground">· requests from RepoHQ, all time (factory KPIs are on Agents)</span>
           </span>
           <Link href="/agent-performance" className="text-xs font-normal text-muted-foreground hover:text-foreground">
             Full report →

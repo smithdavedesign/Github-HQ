@@ -4,10 +4,10 @@ import { useState, useEffect, useRef } from 'react'
 import { Search, Heart, GitPullRequest, FileText, ChevronDown, ChevronUp, ChevronRight, Eye, Tv, RotateCcw, BookOpen } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { queueGstackSkill } from '@/lib/actions/nexus'
-import { SKILL_META } from '@/lib/actions/nexus-utils'
+import { queueGstackSkill } from '@/lib/actions/agent-queue'
+import { SKILL_META, type GstackSkill } from '@/lib/skills/skill-policy'
+import { modeForSkill } from '@/lib/agents/factory-request-utils'
 import { toast } from 'sonner'
-import type { GstackSkill } from '@/lib/actions/nexus'
 import type { SkillRunRecord } from '@/lib/actions/repositories'
 
 // ─── Skill definitions ────────────────────────────────────────────────────────
@@ -47,26 +47,32 @@ const STORAGE_KEY = 'gstack-open-phases'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type SkillStatus = 'idle' | 'queued' | 'running' | 'report_ready' | 'pr_ready' | 'failed'
+type SkillStatus = 'idle' | 'queued' | 'running' | 'report_ready' | 'pr_ready' | 'verified' | 'failed'
 
 interface GstackSkillLauncherProps {
   repoId: number
   repoName: string
-  repoHomepage?: string | null
   defaultObjectives: Record<GstackSkill, string>
-  nexusEnabled: boolean
+  /** The factory takes requests for this repo (owner + allowlist); otherwise why not. */
+  factoryEnabled: boolean
+  factoryReason?: string | null
   skillHistory?: Record<string, SkillRunRecord>
 }
 
+const POLL_MS = 15_000
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function GstackSkillLauncher({ repoId, repoName, repoHomepage, defaultObjectives, nexusEnabled, skillHistory = {} }: GstackSkillLauncherProps) {
-  const [openPhases, setOpenPhases] = useState<Set<string>>(() => {
+export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, factoryEnabled, factoryReason, skillHistory = {} }: GstackSkillLauncherProps) {
+  // Start from the defaults on both server and client, then apply the stored choice after mount:
+  // reading localStorage during render made the server and client HTML differ (hydration error).
+  const [openPhases, setOpenPhases] = useState<Set<string>>(() => new Set(['Understand', 'Monitor']))
+  useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
-      return stored ? new Set(JSON.parse(stored) as string[]) : new Set(['Understand', 'Monitor'])
-    } catch { return new Set(['Understand', 'Monitor']) }
-  })
+      if (stored) setOpenPhases(new Set(JSON.parse(stored) as string[]))
+    } catch { /* storage unavailable: keep defaults */ }
+  }, [])
   const [expandedSkill, setExpandedSkill] = useState<GstackSkill | null>(null)
   const [objectives, setObjectives] = useState(defaultObjectives)
   const [loading, setLoading] = useState<GstackSkill | null>(null)
@@ -102,7 +108,7 @@ export function GstackSkillLauncher({ repoId, repoName, repoHomepage, defaultObj
         }
         if (cancelled) return
 
-        const TERMINAL: SkillStatus[] = ['report_ready', 'pr_ready', 'failed', 'merged' as SkillStatus]
+        const TERMINAL: SkillStatus[] = ['report_ready', 'pr_ready', 'verified', 'failed', 'merged' as SkillStatus]
         const resolved: SkillStatus = data.status === 'merged' ? 'pr_ready' : data.status as SkillStatus
 
         if (TERMINAL.includes(data.status as SkillStatus)) {
@@ -130,7 +136,7 @@ export function GstackSkillLauncher({ repoId, repoName, repoHomepage, defaultObj
           const taskId = skillTaskIds[skill] ?? ''
           void pollSkill(skill, taskId)
         }
-      }, 5000)
+      }, POLL_MS)
       // immediate first poll
       for (const [skill] of inFlightSkills) {
         void pollSkill(skill, skillTaskIds[skill] ?? '')
@@ -154,10 +160,10 @@ export function GstackSkillLauncher({ repoId, repoName, repoHomepage, defaultObj
       setSkillStatus(prev => ({ ...prev, [skill]: 'queued' }))
       setExpandedSkill(null)
       const meta = SKILL_META[skill]
-      toast.success(`gstack ${meta.label} queued`, {
-        description: meta.type === 'pr'
-          ? 'Agent will open a PR when done.'
-          : 'Report will appear in Agent History when ready.',
+      toast.success(`${meta.label} queued for the factory`, {
+        description: modeForSkill(skill) === 'fix'
+          ? 'It runs sandboxed and judged, then opens a draft PR. Follow it on the Agents page.'
+          : 'A read-only report; findings appear in Agent History when ready.',
         duration: 4000,
       })
     } catch (err) {
@@ -167,14 +173,11 @@ export function GstackSkillLauncher({ repoId, repoName, repoHomepage, defaultObj
     }
   }
 
-  if (!nexusEnabled) {
+  if (!factoryEnabled) {
     return (
       <div className="rounded-lg border border-border/40 bg-muted/10 px-4 py-5 text-center space-y-1.5">
-        <p className="text-sm font-medium text-muted-foreground">gstack skills not available</p>
-        <p className="text-xs text-muted-foreground">
-          Add <code className="text-[10px] bg-muted px-1 py-0.5 rounded">NEXUS_API_URL</code> and{' '}
-          <code className="text-[10px] bg-muted px-1 py-0.5 rounded">NEXUS_API_TOKEN</code> to your environment.
-        </p>
+        <p className="text-sm font-medium text-muted-foreground">Agent skills are not available for {repoName}</p>
+        <p className="text-xs text-muted-foreground">{factoryReason ?? 'The factory is not set up for this deployment.'}</p>
       </div>
     )
   }
@@ -211,13 +214,13 @@ export function GstackSkillLauncher({ repoId, repoName, repoHomepage, defaultObj
                   const history    = skillHistory[skill.id]
                   const preview    = previewFindings[skill.id]
 
-                  // Hide canary if no deployment configured
-                  if (skill.id === 'canary' && !repoHomepage) {
+                  // Skills with no factory equivalent (canary: needs a browser and live egress)
+                  if (!modeForSkill(skill.id)) {
                     return (
-                      <div key={skill.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border/30 bg-muted/5 opacity-60">
+                      <div key={skill.id} title={skill.description} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border/30 bg-muted/5 opacity-60">
                         <Icon className={`w-3.5 h-3.5 shrink-0 ${skill.iconColor}`} />
                         <span className="text-xs font-mono text-muted-foreground">{skill.label}</span>
-                        <span className="text-[10px] text-muted-foreground ml-auto">Needs deployment URL</span>
+                        <span className="text-[10px] text-muted-foreground ml-auto">Not available in the factory</span>
                       </div>
                     )
                   }
@@ -249,6 +252,7 @@ export function GstackSkillLauncher({ repoId, repoName, repoHomepage, defaultObj
                           </a>
                         )}
                         {status === 'pr_ready'     && <Badge variant="outline" className="text-[9px] h-4 px-1.5 ml-auto bg-emerald-50 text-emerald-600 border-emerald-200">PR Ready ✓</Badge>}
+                        {status === 'verified'     && <Badge variant="outline" title="Passed the judge; no PR while owner-requested is at stage report" className="text-[9px] h-4 px-1.5 ml-auto bg-sky-50 text-sky-600 border-sky-200">Verified — held</Badge>}
                         {status === 'failed'       && <Badge variant="outline" className="text-[9px] h-4 px-1.5 ml-auto bg-red-50 text-red-600 border-red-200">Failed</Badge>}
 
                         {/* Skill run history when idle */}

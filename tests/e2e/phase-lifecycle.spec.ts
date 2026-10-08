@@ -14,7 +14,7 @@ const DB_URL = process.env.DATABASE_URL ?? ''
 
 async function getContext() {
   const sql = neon(DB_URL)
-  const [user] = await sql`SELECT id FROM users LIMIT 1`
+  const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
   if (!user) return null
   const [repo] = await sql`SELECT id FROM repositories WHERE user_id = ${user.id} LIMIT 1`
   return { userId: user.id as string, repoId: repo?.id as number | undefined }
@@ -36,6 +36,12 @@ async function cleanup(taskIdPrefix: string) {
   if (!DB_URL) return
   const sql = neon(DB_URL)
   await sql`DELETE FROM portfolio_events WHERE title LIKE ${'lifecycle-test-' + taskIdPrefix + '%'}`
+}
+
+async function getFirstRepo(userId: string) {
+  const sql = neon(DB_URL)
+  const [repo] = await sql`SELECT id FROM repositories WHERE user_id = ${userId} LIMIT 1`
+  return repo?.id as number | undefined
 }
 
 // ─── API: repoId lifecycle lookup ─────────────────────────────────────────────
@@ -98,6 +104,22 @@ test.describe('/api/agent-task-status?repoId= lifecycle lookup', () => {
     await cleanup(taskId)
   })
 
+  test('returns awaiting_approval when approval event exists', async ({ request }) => {
+    const ctx = await getContext()
+    if (!ctx?.repoId) { test.skip(true, 'No repo'); return }
+
+    const taskId = `lifecycle-approval-${Date.now()}`
+    await seedEvent(ctx.userId, ctx.repoId, 'agent_task_queued', taskId)
+    await seedEvent(ctx.userId, ctx.repoId, 'agent_awaiting_approval', taskId, { prUrl: 'https://github.com/test/r/pull/99' })
+
+    const res = await request.get(`/api/agent-task-status?repoId=${ctx.repoId}`)
+    expect(res.status()).toBe(200)
+    const body = await res.json() as { status: string }
+    expect(body.status).toBe('awaiting_approval')
+
+    await cleanup(taskId)
+  })
+
   test('returns merged when pr_merged event exists', async ({ request }) => {
     const ctx = await getContext()
     if (!ctx?.repoId) { test.skip(true, 'No repo'); return }
@@ -149,13 +171,19 @@ test.describe('/api/agent-task-status?repoId= lifecycle lookup', () => {
 
 test.describe('Run Agent button — lifecycle hydration', () => {
   test('agent tab on repo page loads without error', async ({ page }) => {
-    await page.goto('/repos')
-    const firstLink = page.getByRole('link').filter({ hasText: /[A-Za-z]/ }).first()
-    if (!await firstLink.isVisible()) return
-    await firstLink.click()
+    test.skip(!DB_URL, 'DATABASE_URL not set')
+
+    const ctx = await getContext()
+    if (!ctx?.userId) { test.skip(true, 'No user'); return }
+
+    const repoId = await getFirstRepo(ctx.userId)
+    if (!repoId) { test.skip(true, 'No repo'); return }
+
+    await page.goto(`/repos/${repoId}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    // Agent tab should render — either advisory section or history
-    await expect(page.getByText(/AI ADVISOR|Agent History|No agent activity/i)).toBeVisible({ timeout: 8000 })
+    // Agent tab should render: its skills launcher is always there, whatever the repo's history.
+    await expect(page.getByText('/investigate').first()).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText(/Application error|Something went wrong/i)).toHaveCount(0)
   })
 
   test('seeded queued task shows non-idle button state', async ({ page }) => {
@@ -188,8 +216,7 @@ test.describe('Run Agent button — lifecycle hydration', () => {
 test.describe('Agent Performance page', () => {
   test('loads and shows required sections', async ({ page }) => {
     await page.goto('/agent-performance')
-    await expect(page.getByRole('heading', { name: 'Agent Performance' })).toBeVisible({ timeout: 8000 })
-    await expect(page.getByText('Advisor Accuracy by Action Type')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible({ timeout: 8000 })
     await expect(page.getByText('Activity Log')).toBeVisible()
   })
 })

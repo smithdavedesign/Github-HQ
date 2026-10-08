@@ -7,7 +7,8 @@ const config: KnipConfig = {
     // MCP server — run as a standalone process via `node mcp/server.ts`
     'mcp/server.ts',
   ],
-  project: ['src/**/*.{ts,tsx}', 'mcp/**/*.ts'],
+  // factory/ entry points come from the package.json factory* scripts
+  project: ['src/**/*.{ts,tsx}', 'mcp/**/*.ts', 'factory/**/*.ts'],
   ignore: [
     // shadcn/ui components export their full public API — consumers may import any member.
     // Knip can't know which exports are used externally, so we exclude the ui/ barrel.
@@ -16,6 +17,8 @@ const config: KnipConfig = {
     'mcp/brief.ts',
   ],
   ignoreExportsUsedInFile: true,
+  // System tools the factory sandbox spawns (factory/lib/sandbox.ts streams the clone in with tar).
+  ignoreBinaries: ['tar'],
   ignoreDependencies: [
     // tailwindcss and tw-animate-css are imported via CSS @import in globals.css.
     // Knip only parses JS/TS imports so it flags these as unused — they are not.

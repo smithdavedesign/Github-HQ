@@ -18,7 +18,7 @@ const DB_URL = process.env.DATABASE_URL ?? ''
 
 async function getUserAndRepo() {
   const sql = neon(DB_URL)
-  const [user] = await sql`SELECT id FROM users LIMIT 1`
+  const [user] = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
   if (!user) return null
   const [repo] = await sql`SELECT id, name FROM repositories WHERE user_id = ${user.id} LIMIT 1`
   return { userId: user.id as string, repoId: repo?.id as number | undefined, repoName: repo?.name as string | undefined }
@@ -78,7 +78,7 @@ async function cleanupTestEvents(prefix: string) {
 test.describe('Agent Performance — Accuracy Table (Phase 52)', () => {
   test('page loads and shows Activity Log heading', async ({ page }) => {
     await page.goto('/agent-performance')
-    await expect(page.getByRole('heading', { name: 'Agent Performance' })).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible({ timeout: 8000 })
     await expect(page.getByText('Activity Log')).toBeVisible()
   })
 
@@ -93,9 +93,7 @@ test.describe('Agent Performance — Accuracy Table (Phase 52)', () => {
     // Check the message when there are genuinely no high-confidence merges
     await page.goto('/agent-performance')
     // Either the empty state or the table should be visible
-    const hasTable = await page.locator('table').isVisible().catch(() => false)
-    const hasEmpty = await page.getByText('No completed agent runs yet').isVisible().catch(() => false)
-    expect(hasTable || hasEmpty).toBe(true)
+    await expect(page.locator('table').or(page.getByText('No completed agent runs yet')).first()).toBeVisible({ timeout: 8000 })
   })
 
   test('accuracy table renders with seeded success data', async ({ page }) => {
@@ -118,23 +116,8 @@ test.describe('Agent Performance — Accuracy Table (Phase 52)', () => {
     await cleanupTestEvents(prefix)
   })
 
-  test('downgraded repos notice appears when failures exceed threshold', async ({ page }) => {
-    test.skip(!DB_URL, 'DATABASE_URL not set')
-
-    const ctx = await getUserAndRepo()
-    if (!ctx || !ctx.repoId) { test.skip(true, 'No user/repo'); return }
-
-    const prefix = `playwright-downgrade-${Date.now()}`
-    // 3 health failures on same repo (threshold: 60% failure rate with 3+ attempts)
-    for (let i = 0; i < 3; i++) {
-      await seedAgentFailedEvent(ctx.userId, ctx.repoId, 'health', `${prefix}-fail-${i}`)
-    }
-
-    await page.goto('/agent-performance')
-    await expect(page.getByText('Downgraded repos')).toBeVisible({ timeout: 8000 })
-
-    await cleanupTestEvents(prefix)
-  })
+  // The "Downgraded repos" notice was removed from the page in June (e45c694); the advisor still
+  // gets the downgrade list in its prompt (src/lib/ai/advisor.ts).
 
   test('unauthenticated users are redirected to login', async ({ browser }) => {
     const ctx = await browser.newContext({ storageState: undefined })
@@ -217,9 +200,8 @@ test.describe('AdvisorCard confidence badges (Phase 52)', () => {
   test('advisor section visible on dashboard', async ({ page }) => {
     await page.goto('/')
     // Either the empty advisor state or the populated card
-    const hasAdvisor = await page.getByText('AI Portfolio Advisor').isVisible().catch(() => false)
-    const hasGenerate = await page.getByRole('button', { name: /Generate/i }).isVisible().catch(() => false)
-    expect(hasAdvisor || hasGenerate).toBe(true)
+    // Auto-waiting: an immediate isVisible() ran before the page streamed in and flaked.
+    await expect(page.getByText('AI Portfolio Advisor').or(page.getByRole('button', { name: /Generate/i })).first()).toBeVisible({ timeout: 8000 })
   })
 })
 

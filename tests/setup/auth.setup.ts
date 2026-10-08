@@ -9,16 +9,21 @@ const AUTH_STATE_PATH = 'tests/setup/auth-state.json'
 setup('create authenticated session', async ({ page }) => {
   const sql = neon(process.env.DATABASE_URL!)
 
-  const users = await sql`SELECT id FROM users LIMIT 1`
+  // The most recently synced user. Every spec seeds data with this same query; a bare LIMIT 1
+  // could sign in as one account and seed another once the DB has two users.
+  const users = await sql`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
   if (!users.length) throw new Error('No user in DB — sign in at least once first')
 
   const userId = users[0].id
   const sessionToken = crypto.randomUUID()
-  const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+  // Short-lived, and deleted again by auth.teardown.ts: every run used to leave a 30-day session.
+  const expires = new Date(Date.now() + 6 * 60 * 60 * 1000)
 
+  // sessions.expires is timestamp without time zone: send UTC wall time (a Date param is
+  // serialised in local time, which stored the expiry hours early outside UTC).
   await sql`
     INSERT INTO sessions (session_token, user_id, expires)
-    VALUES (${sessionToken}, ${userId}, ${expires})
+    VALUES (${sessionToken}, ${userId}, ${expires.toISOString().replace('T', ' ').replace('Z', '')})
     ON CONFLICT (session_token) DO UPDATE SET expires = EXCLUDED.expires
   `
 

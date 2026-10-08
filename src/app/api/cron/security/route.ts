@@ -5,8 +5,12 @@ import { syncSecurityForUser } from '@/lib/github/security'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { isNotNull } from 'drizzle-orm'
 import { decrypt } from '@/lib/crypto-utils'
+import { withAutomationRun } from '@/lib/monitoring/automation-runs'
 
-export async function GET(request: Request) {
+// Recorded on the Agents page's automation timeline (src/lib/monitoring/automation-runs.ts).
+export const GET = withAutomationRun('cron:security', handle)
+
+async function handle(request: Request) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

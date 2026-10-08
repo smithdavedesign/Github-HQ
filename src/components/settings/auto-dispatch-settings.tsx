@@ -66,7 +66,7 @@ export function AutoDispatchSettings({
         <div>
           <p className="text-sm font-medium">Enable auto-dispatch</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            On Monday, the advisor automatically queues eligible actions — you wake up with PRs ready to review.
+            On Monday, the advisor queues eligible actions for the factory. Results land on the Agents page: draft PRs once fix requests are promoted to open them (owner-requested at stage pr), verified changes held for review until then.
           </p>
         </div>
         <Switch checked={enabled} onCheckedChange={setEnabled} />
@@ -77,7 +77,7 @@ export function AutoDispatchSettings({
           {/* Warning */}
           <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-3 py-2.5 flex gap-2 text-xs text-amber-700 dark:text-amber-400">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <span>Auto-dispatched tasks run automatically. Review the PRs before merging — the agent may make mistakes.</span>
+            <span>Auto-dispatched tasks run without asking. Review any PR before merging — the agent may make mistakes.</span>
           </div>
 
           {/* Effort gate */}

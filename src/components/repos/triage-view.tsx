@@ -34,10 +34,10 @@ interface Decision {
 }
 
 const ACTION_MAP = {
-  keep:    { lifecycle: 'maintaining', label: 'Keep',    icon: CheckCircle, color: 'bg-emerald-600 hover:bg-emerald-700', key: 'k' },
-  sunset:  { lifecycle: 'sunsetting',  label: 'Sunset',  icon: Skull,       color: 'bg-amber-600 hover:bg-amber-700',   key: 's' },
-  archive: { lifecycle: 'archived',    label: 'Archive', icon: Archive,     color: 'bg-slate-600 hover:bg-slate-700',   key: 'a' },
-  skip:    { lifecycle: null,          label: 'Skip',    icon: SkipForward, color: 'bg-muted hover:bg-muted/80 text-foreground', key: ' ' },
+  keep:    { lifecycle: 'maintaining', label: 'Keep',    icon: CheckCircle, color: 'bg-emerald-600 hover:bg-emerald-700 text-white', key: 'k' },
+  sunset:  { lifecycle: 'sunsetting',  label: 'Sunset',  icon: Skull,       color: 'bg-amber-600 hover:bg-amber-700 text-white',   key: 's' },
+  archive: { lifecycle: 'archived',    label: 'Archive', icon: Archive,     color: 'bg-slate-600 hover:bg-slate-700 text-white',   key: 'a' },
+  skip:    { lifecycle: null,          label: 'Skip',    icon: SkipForward, color: 'border border-border bg-muted hover:bg-muted/80 text-foreground', key: ' ' },
 }
 
 export function TriageView({ repos }: Props) {
@@ -188,7 +188,7 @@ export function TriageView({ repos }: Props) {
                 key={action}
                 onClick={() => handleAction(action)}
                 disabled={saving}
-                className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-lg text-white text-xs font-medium transition-colors ${meta.color} disabled:opacity-50`}
+                className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-lg text-xs font-medium transition-colors ${meta.color} disabled:opacity-50`}
               >
                 <Icon className="w-4 h-4" />
                 <span>{meta.label}</span>

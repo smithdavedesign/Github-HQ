@@ -37,9 +37,8 @@ test.describe('Repository detail page', () => {
     await page.goto(`/repos/${repoId}`)
     await page.getByRole('tab', { name: 'Tech Stack' }).click()
     // Should show stack cards or "no data" message
-    const hasStack = await page.locator('text=Frontend').isVisible().catch(() => false)
-    const hasEmpty = await page.locator('text=No tech stack data').isVisible().catch(() => false)
-    expect(hasStack || hasEmpty).toBe(true)
+    // Auto-waiting: an immediate isVisible() ran before the page streamed in and flaked.
+    await expect(page.getByText('Frontend').or(page.getByText('No tech stack data')).first()).toBeVisible({ timeout: 8000 })
   })
 
   test('returns 404 for non-existent repo', async ({ page }) => {

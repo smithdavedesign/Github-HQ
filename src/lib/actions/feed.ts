@@ -1,6 +1,7 @@
 'use server'
 
 import { auth } from '@/lib/auth'
+import { collapseRepeats, repeatKey } from '@/lib/feed/collapse'
 import { db } from '@/lib/db'
 import {
   repositories, repositoryMetrics, deployments,
@@ -15,7 +16,7 @@ export interface FeedEvent {
   id: string
   type: 'health_drop' | 'health_improved' | 'deployment_down' | 'deployment_slow' |
         'security_critical' | 'security_high' | 'dormant' | 'no_tests' | 'build_failing' |
-        'dep_cascade_risk' | 'agent_pr_opened' | 'agent_pr_merged' | 'agent_failed'
+        'dep_cascade_risk' | 'agent_pr_opened' | 'agent_pr_merged' | 'agent_failed' | 'agent_report_ready'
   repoId: number
   repoName: string
   description: string
@@ -39,7 +40,7 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
       deployments: true,
       securityFindings: { where: eq(securityFindings.state, 'open') },
     },
-    columns: { id: true, name: true },
+    columns: { id: true, name: true, isArchived: true, lifecycleStatus: true },
   })
 
   const repoIds = userRepos.map(r => r.id)
@@ -153,6 +154,8 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
   // ── Dormant repos ──────────────────────────────────────────────────────────
   const ninetyDaysAgo = new Date(Date.now() - 90 * 86400_000)
   for (const repo of userRepos) {
+    // Archived and sunsetting repos are meant to be quiet; flagging them drowned out the rest.
+    if (repo.isArchived || repo.lifecycleStatus === 'archived' || repo.lifecycleStatus === 'sunsetting') continue
     const lastPush = repo.metrics?.lastPush
     if (lastPush && new Date(lastPush) < ninetyDaysAgo) {
       const daysAgo = Math.floor((Date.now() - new Date(lastPush).getTime()) / 86400_000)
@@ -215,17 +218,21 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
   const agentEvents = await db.query.portfolioEvents.findMany({
     where: and(
       eq(portfolioEvents.userId, userId),
-      inArray(portfolioEvents.eventType, ['agent_pr_created', 'agent_pr_merged', 'agent_execution_failed']),
+      inArray(portfolioEvents.eventType, ['agent_pr_created', 'agent_pr_merged', 'agent_execution_failed', 'agent_skill_report']),
       gte(portfolioEvents.occurredAt, thirtyDaysAgo),
     ),
     orderBy: [desc(portfolioEvents.occurredAt)],
     with: { repository: { columns: { name: true } } },
-    limit: 20,
+    limit: 200,
   })
 
   const repoNamesById = new Map(userRepos.map(r => [r.id, r.name]))
 
-  for (const ae of agentEvents) {
+  // One row per distinct failure (×N), not one per retry of the same broken task.
+  const collapsed = collapseRepeats(agentEvents, ae =>
+    ae.eventType === 'agent_execution_failed' ? repeatKey(ae.eventType, ae.repoId, ae.description) : `id:${ae.id}`).slice(0, 20)
+
+  for (const { item: ae, count } of collapsed) {
     const meta = ae.metadata as Record<string, unknown> | null
     const repoName = ae.repository?.name ?? (meta?.repoHQRepoName as string) ?? (ae.repoId ? (repoNamesById.get(ae.repoId) ?? '—') : '—')
     const repoId = ae.repoId ?? 0
@@ -264,8 +271,21 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
         type: 'agent_failed',
         repoId,
         repoName,
-        description: 'Agent execution failed',
-        detail: meta?.error as string | undefined,
+        description: count > 1 ? `Agent execution failed ×${count} (30 days)` : 'Agent execution failed',
+        detail: ae.description ?? (meta?.error as string | undefined),
+        severity: 'warning',
+        date: ae.occurredAt,
+        meta: meta ?? undefined,
+      })
+    } else if (ae.eventType === 'agent_skill_report') {
+      const findings = Array.isArray(meta?.findings) ? meta.findings.filter((finding): finding is string => typeof finding === 'string' && finding.trim().length > 0) : []
+      events.push({
+        id: `agent_report_${ae.id}`,
+        type: 'agent_report_ready',
+        repoId,
+        repoName,
+        description: `/${String(meta?.skillName ?? 'skill')} report ready`,
+        detail: findings.length > 0 ? findings[0] : (ae.description ?? 'No findings recorded'),
         severity: 'warning',
         date: ae.occurredAt,
         meta: meta ?? undefined,

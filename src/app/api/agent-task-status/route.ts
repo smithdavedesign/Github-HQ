@@ -1,41 +1,64 @@
 import { auth } from '@/lib/auth'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { portfolioEvents } from '@/lib/db/schema'
+import { agentRequests, portfolioEvents } from '@/lib/db/schema'
 import { eq, and, inArray, desc } from 'drizzle-orm'
 import { getRepoLifecycle } from '@/lib/agents/lifecycle'
+import { LIFECYCLE_TIMEOUT_MS, prFollowUpStage } from '@/lib/agents/lifecycle-utils'
+import { stageForRequest } from '@/lib/agents/factory-request-utils'
 
 export type AgentTaskStage =
+  | 'idle'
   | 'queued'
   | 'preparing'
   | 'running'
   | 'pr_ready'
   | 'ci_failing'
   | 'needs_human'
+  | 'awaiting_approval'
   | 'merged'
   | 'rejected'
   | 'report_ready'
+  | 'verified'
   | 'failed'
   | 'timed_out'
 
-const STAGE_LABELS: Record<string, string> = {
-  idle:         'Idle',
-  queued:       'Queued',
-  preparing:    'Preparing context…',
-  running:      'Agent running…',
-  pr_ready:     'PR created',
-  ci_failing:   'CI failing — fix queued',
-  needs_human:  'Needs human review',
-  merged:       'PR merged',
-  rejected:     'PR closed — not merged',
-  report_ready: 'Report ready',
-  failed:       'Agent failed',
-  timed_out:    'Timed out',
+const STAGE_LABELS: Record<AgentTaskStage, string> = {
+  idle:              'Idle',
+  queued:            'Queued — waiting for the factory',
+  preparing:         'Preparing context…',
+  running:           'Agent running…',
+  pr_ready:          'PR created',
+  ci_failing:        'CI failing on the PR',
+  needs_human:       'Needs human review',
+  awaiting_approval: 'Awaiting approval',
+  merged:            'PR merged',
+  rejected:          'PR closed — not merged',
+  report_ready:      'Report ready',
+  verified:          'Verified — held, no PR',
+  failed:            'Agent failed',
+  timed_out:         'Timed out',
 }
 
+/** Where requests are followed in detail (queue, trace, findings). */
+const MONITOR_URL = '/agent-performance'
+
+const TASK_EVENTS = [
+  'agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected',
+  'agent_execution_failed', 'agent_skill_report',
+  'agent_ci_failed', 'agent_needs_human', 'agent_awaiting_approval',
+]
+
+/**
+ * Agent task status for the Run-agent buttons and the skill launcher.
+ *   ?repoId=…  the repo's current lifecycle (button hydration on mount)
+ *   ?taskId=…  one task: an Agent HQ request (its agent_requests row, roadmap Phase 81),
+ *              or an older Nexus task (projected from portfolio_events)
+ */
 export async function GET(request: Request) {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = session.user.id
 
   const url = new URL(request.url)
   const taskId = url.searchParams.get('taskId')
@@ -45,119 +68,51 @@ export async function GET(request: Request) {
   if (repoIdParam && !taskId) {
     const repoId = parseInt(repoIdParam, 10)
     if (isNaN(repoId)) return NextResponse.json({ error: 'invalid repoId' }, { status: 400 })
-    const lifecycle = await getRepoLifecycle(session.user.id, repoId)
-    return NextResponse.json({
-      status:  lifecycle.stage,
-      stage:   STAGE_LABELS[lifecycle.stage as keyof typeof STAGE_LABELS] ?? lifecycle.stage,
-      taskId:  lifecycle.taskId,
-      prUrl:   lifecycle.prUrl,
-      nexusUrl: process.env.NEXUS_API_URL?.replace(/\/$/, '') ?? null,
-    })
+    const lifecycle = await getRepoLifecycle(userId, repoId)
+    return ok(lifecycle.stage, { taskId: lifecycle.taskId, prUrl: lifecycle.prUrl, reason: lifecycle.reason ?? null })
   }
 
   if (!taskId) return NextResponse.json({ error: 'taskId or repoId required' }, { status: 400 })
 
-  const nexusUrl   = process.env.NEXUS_API_URL?.replace(/\/$/, '')
-  const nexusToken = process.env.NEXUS_API_TOKEN
-
-  // 1. Check portfolio_events for terminal outcome events
   const events = await db.query.portfolioEvents.findMany({
-    where: and(
-      eq(portfolioEvents.userId, session.user.id),
-      inArray(portfolioEvents.eventType, [
-        'agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected',
-        'agent_execution_failed', 'agent_skill_report',
-        'agent_ci_failed', 'agent_needs_human',
-      ]),
-    ),
+    where: and(eq(portfolioEvents.userId, userId), inArray(portfolioEvents.eventType, TASK_EVENTS)),
     orderBy: [desc(portfolioEvents.occurredAt)],
-    limit: 50,
+    limit: 100,
   })
+  const matching = events.filter(e => (e.metadata as { taskId?: string } | null)?.taskId === taskId)
+  const find = (t: string) => matching.find(e => e.eventType === t)
+  const prUrlOf = (e: (typeof matching)[number] | undefined) => (e?.metadata as { prUrl?: string } | null)?.prUrl ?? null
 
-  const matching = events.filter(e => {
-    const meta = e.metadata as { taskId?: string } | null
-    return meta?.taskId === taskId
+  // Newest first (the query's order), as prFollowUpStage expects.
+  const followUp = prFollowUpStage(matching)
+  if (followUp) return ok(followUp.stage, { prUrl: prUrlOf(followUp.event) })
+
+  const skillReport = find('agent_skill_report')
+  const reportPreview = () => {
+    const srMeta = skillReport?.metadata as { findings?: string[]; skillName?: string } | null
+    return { previewFindings: srMeta?.findings?.filter(f => f && f.trim()).slice(0, 2) ?? [], skillName: srMeta?.skillName }
+  }
+
+  // Agent HQ request: the row is the truth for everything before a PR outcome.
+  const row = await db.query.agentRequests.findFirst({
+    where: and(eq(agentRequests.id, taskId), eq(agentRequests.userId, userId)),
+    columns: { status: true, prUrl: true, reason: true },
   })
-
-  const prMerged    = matching.find(e => e.eventType === 'agent_pr_merged')
-  const prRejected  = matching.find(e => e.eventType === 'agent_pr_rejected')
-  const prCreated   = matching.find(e => e.eventType === 'agent_pr_created')
-  const execFailed  = matching.find(e => e.eventType === 'agent_execution_failed')
-  const skillReport = matching.find(e => e.eventType === 'agent_skill_report')
-  const needsHuman  = matching.find(e => e.eventType === 'agent_needs_human')
-  const ciFailed    = matching.find(e => e.eventType === 'agent_ci_failed')
-
-  if (prMerged)  {
-    const meta = prMerged.metadata as { prUrl?: string } | null
-    return ok('merged',   { prUrl: meta?.prUrl, nexusUrl })
-  }
-  if (needsHuman) {
-    const meta = needsHuman.metadata as { prUrl?: string } | null
-    return ok('needs_human', { prUrl: meta?.prUrl, nexusUrl })
-  }
-  if (ciFailed) {
-    const meta = ciFailed.metadata as { prUrl?: string } | null
-    return ok('ci_failing', { prUrl: meta?.prUrl, nexusUrl })
-  }
-  if (prRejected) {
-    const meta = prRejected.metadata as { prUrl?: string } | null
-    return ok('rejected', { prUrl: meta?.prUrl, nexusUrl })
-  }
-  if (prCreated) {
-    const meta = prCreated.metadata as { prUrl?: string } | null
-    return ok('pr_ready', { prUrl: meta?.prUrl, nexusUrl })
-  }
-  if (skillReport) {
-    const srMeta = skillReport.metadata as { findings?: string[]; skillName?: string } | null
-    return ok('report_ready', {
-      nexusUrl,
-      previewFindings: srMeta?.findings?.filter(f => f && f.trim()).slice(0, 2) ?? [],
-      skillName: srMeta?.skillName,
-    })
-  }
-  if (execFailed)  return ok('failed', { nexusUrl })
-
-  // 2. Poll Nexus directly for live stage (webhook may not have fired yet)
-  if (nexusUrl && nexusToken) {
-    try {
-      const taskRes = await fetch(`${nexusUrl}/internal/agent-tasks/${taskId}`, {
-        headers: { 'Authorization': `Bearer ${nexusToken}` },
-        signal: AbortSignal.timeout(4000),
-      })
-      if (taskRes.ok) {
-        const task = await taskRes.json() as { status?: string }
-        if (task.status === 'preparing') return ok('preparing', { nexusUrl })
-        if (task.status === 'failed')    return ok('failed',    { nexusUrl })
-        if (task.status === 'ready') {
-          // Task is ready — check executions
-          const execRes = await fetch(`${nexusUrl}/internal/agent-tasks/${taskId}/executions`, {
-            headers: { 'Authorization': `Bearer ${nexusToken}` },
-            signal: AbortSignal.timeout(4000),
-          })
-          if (execRes.ok) {
-            const execs = await execRes.json() as Array<{ status?: string }>
-            const active = execs.find(e =>
-              ['queued','running','changes-generated','validated','pr-opened'].includes(e.status ?? '')
-            )
-            if (active?.status === 'pr-opened') return ok('pr_ready', { nexusUrl })
-            if (active) return ok('running', { nexusUrl })
-          }
-          return ok('running', { nexusUrl })
-        }
-      }
-    } catch { /* Nexus unreachable — fall through */ }
+  if (row) {
+    const stage = stageForRequest(row.status)
+    return ok(stage, { prUrl: row.prUrl, reason: row.reason, ...(stage === 'report_ready' ? reportPreview() : {}) })
   }
 
-  // 3. Timeout check: queued >15 min ago with no progress
-  const queuedEvent = matching.find(e => e.eventType === 'agent_task_queued')
-  if (queuedEvent) {
-    const age = Date.now() - new Date(queuedEvent.occurredAt).getTime()
-    if (age > 15 * 60 * 1000) return ok('timed_out', { nexusUrl })
-  }
-
-  return ok('queued', { nexusUrl })
+  // Older Nexus task: project from its events.
+  const prCreated = find('agent_pr_created')
+  if (prCreated) return ok('pr_ready', { prUrl: prUrlOf(prCreated) })
+  if (skillReport) return ok('report_ready', reportPreview())
+  if (find('agent_execution_failed')) return ok('failed')
+  const queuedEvent = find('agent_task_queued')
+  if (queuedEvent && Date.now() - new Date(queuedEvent.occurredAt).getTime() > LIFECYCLE_TIMEOUT_MS) return ok('timed_out')
+  return ok('queued')
 }
 
-function ok(status: AgentTaskStage, opts: { prUrl?: string | null; nexusUrl?: string | null; previewFindings?: string[]; skillName?: string } = {}) {
-  return NextResponse.json({ status, stage: STAGE_LABELS[status], ...opts })
+function ok(status: AgentTaskStage, opts: { taskId?: string | null; prUrl?: string | null; reason?: string | null; previewFindings?: string[]; skillName?: string } = {}) {
+  return NextResponse.json({ status, stage: STAGE_LABELS[status], monitorUrl: MONITOR_URL, ...opts })
 }

@@ -4,6 +4,11 @@
  */
 import { test, expect } from '@playwright/test'
 import { neon } from '@neondatabase/serverless'
+import { DISPOSABLE_DB, DISPOSABLE_DB_REASON } from './helpers/disposable-db'
+
+
+// Overwrites every user's LLM settings.
+test.skip(!DISPOSABLE_DB, DISPOSABLE_DB_REASON)
 
 const OPENAI_KEY = process.env.OPENAI_API_KEY ?? ''
 const DB_URL     = process.env.DATABASE_URL ?? ''
@@ -21,7 +26,7 @@ async function getDBState() {
     SELECT llm_provider,
            llm_keys,
            llm_keys->>'openai' IS NOT NULL AS has_openai_key
-    FROM users LIMIT 1`
+    FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
   return row as { llm_provider: string; llm_keys: Record<string, string>; has_openai_key: boolean }
 }
 

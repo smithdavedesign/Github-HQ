@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Bell, CheckCheck, Bot, Shield, TrendingDown, ExternalLink, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { formatDistanceToNow } from '@/lib/utils'
 import { markAllNotificationsRead, markNotificationRead } from '@/lib/actions/notifications'
 import Link from 'next/link'
@@ -99,6 +99,7 @@ export function NotificationBell() {
         <SheetContent side="right" className="w-full sm:w-80 p-0 flex flex-col">
           <SheetHeader className="flex-row items-center justify-between pl-4 pr-12 py-3 border-b border-border/60 space-y-0">
             <SheetTitle className="text-sm font-semibold">Notifications</SheetTitle>
+            <SheetDescription className="sr-only">Health drops, agent results and security alerts for your repositories.</SheetDescription>
             {items.length > 0 && (
               <Button
                 variant="ghost"

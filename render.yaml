@@ -1,0 +1,23 @@
+# Agent HQ infrastructure on Render (docs/agent-hq-migration-prd.md §4, §11).
+#
+# Only the queue lives here. The app is on Vercel, Neon is the database, and the worker that
+# writes code (factory/worker.ts) runs on the owner's Mac because its sandbox needs Docker and
+# the local LiteLLM stack — Render workers can't run Docker.
+#
+# Migrated from AI-Took-My-Job's render.yaml (`ai-devops-nexus-redis`): same plan and the
+# `noeviction` policy BullMQ requires (an evicted key is a lost job).
+#
+# Apply: Render → New → Blueprint → this repo. Then copy the Key Value's *external* URL
+# (rediss://…) into Vercel as REDIS_URL and run `bash factory/bin/install-launchd.sh` on the Mac.
+services:
+  - type: keyvalue
+    name: agent-hq-redis
+    plan: starter
+    region: oregon
+    maxmemoryPolicy: noeviction
+    # Vercel functions have no fixed egress IPs and the worker runs on a home connection, so
+    # external access is open; Render requires the password and TLS on every external connection.
+    # Job payloads are ids only and the worker trusts Neon rows, not Redis (PRD §10).
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: Vercel functions + the factory worker (auth + TLS required)

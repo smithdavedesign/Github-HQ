@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { GitBranch, Globe, Star, ExternalLink, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
+import { isFeaturedPublicRepo } from '@/lib/health/showcase'
 import type { Metadata } from 'next'
 
 export const revalidate = 3600
@@ -35,12 +36,16 @@ export default async function PortfolioResumePage({ params }: Props) {
     with: { metrics: true, techStack: true, deployments: true },
     columns: {
       id: true, name: true, description: true, language: true,
-      stars: true, homepage: true, isArchived: true, aiSummary: true,
+      stars: true, homepage: true, isArchived: true, aiSummary: true, lifecycleStatus: true, isFocused: true,
     },
   })
 
+  // Same rule as the public profile, so both pages count the same repos.
   const active = publicRepos
-    .filter(r => !r.isArchived)
+    .filter(r => isFeaturedPublicRepo({
+      isArchived: r.isArchived, lifecycleStatus: r.lifecycleStatus, healthScore: r.metrics?.healthScore, isFocused: r.isFocused,
+      hasLiveDeployment: r.deployments.some(d => d.status === 'healthy' || d.status === 'slow'),
+    }))
     .sort((a, b) => (b.metrics?.healthScore ?? 0) - (a.metrics?.healthScore ?? 0))
 
   const avgHealth = active.length > 0
@@ -92,7 +97,7 @@ export default async function PortfolioResumePage({ params }: Props) {
             <div className="flex items-center gap-5 mt-4 flex-wrap text-sm">
               <div className="text-center">
                 <p className="text-2xl font-bold tabular-nums">{active.length}</p>
-                <p className="text-xs text-muted-foreground">Public repos</p>
+                <p className="text-xs text-muted-foreground">Featured of {publicRepos.length} public</p>
               </div>
               <div className="w-px h-8 bg-border" />
               <div className="text-center">

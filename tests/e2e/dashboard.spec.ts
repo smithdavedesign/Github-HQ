@@ -39,6 +39,24 @@ test.describe('Dashboard', () => {
     await expect(page.getByRole('link', { name: 'View all →' })).toBeVisible()
   })
 
+  test('Needs you: what to do next and the open PR queue lead the page', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByText('Needs you', { exact: true })).toBeVisible()
+    await expect(page.getByText(/deserve attention|Nothing needs you today/).first()).toBeVisible()
+    await expect(page.getByText(/open PRs? waiting for you|No open PRs|Couldn.t list open PRs/).first()).toBeVisible()
+  })
+
+  test('unused insights are collapsed under More insights', async ({ page }) => {
+    await page.goto('/')
+    const toggle = page.getByRole('button', { name: /More insights section/ })
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByText('Plan My Week', { exact: true })).toHaveCount(0)
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByText('Plan My Week', { exact: true })).toBeVisible()
+    await page.evaluate(() => localStorage.removeItem('dashboard-more-insights-open'))
+  })
+
   test('unauthenticated users are redirected to login', async ({ browser }) => {
     const context = await browser.newContext({ storageState: undefined })
     const page = await context.newPage()

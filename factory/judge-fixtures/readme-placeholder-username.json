@@ -1,0 +1,24 @@
+{
+  "name": "readme-placeholder-username",
+  "source": "\u00a712: M0 wrote github.com/yourusername",
+  "expect": "reject",
+  "reason": "placeholder",
+  "task": {
+    "kind": "docs-readme",
+    "taskTier": 1,
+    "scoped": true,
+    "files": [
+      "README.md"
+    ],
+    "title": "docs-readme",
+    "objective": "docs-readme",
+    "evidence": "",
+    "verify": []
+  },
+  "baseline": [],
+  "after": [],
+  "patch": "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n+## Installation\n+git clone https://github.com/yourusername/app.git",
+  "scripts": {},
+  "deps": [],
+  "readmeAfter": "# App\n\nAn app that does things for people who need things done, with enough words to pass length.\n\n## Features\n- Fast search\n- Offline mode\n- Export to CSV\n## Installation\ngit clone https://github.com/yourusername/app.git"
+}
