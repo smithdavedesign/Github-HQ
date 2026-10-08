@@ -28,6 +28,22 @@ test.describe('Dashboard', () => {
     await expect(page.getByRole('link', { name: 'Analytics', exact: true })).toBeVisible()
   })
 
+  test('sidebar: four primary pages, a More group, and Triage/Graveyard on Repositories', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/')
+    const nav = page.getByRole('navigation', { name: 'Main' })
+    for (const label of ['Dashboard', 'Repositories', 'Agents', 'Security', 'Deployments', 'Analytics', 'Feed']) {
+      await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible()
+    }
+    await expect(nav.getByText('More', { exact: true })).toBeVisible()
+    await expect(nav.getByRole('link', { name: 'Graveyard' })).toHaveCount(0)
+    await page.goto('/repos')
+    await expect(page.locator('main').getByRole('link', { name: /^Triage/ })).toBeVisible()
+    await page.locator('main').getByRole('link', { name: /^Graveyard/ }).click()
+    await expect(page).toHaveURL(/\/repos\/graveyard/)
+    await expect(nav.getByRole('link', { name: 'Repositories', exact: true })).toHaveAttribute('aria-current', 'page')
+  })
+
   test('sync button is visible in topbar', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('button', { name: /Sync/i })).toBeVisible()

@@ -3,45 +3,24 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import {
-  LayoutDashboard, GitFork, Shield, Rocket,
-  BarChart3, Activity, Settings, GitBranch, Skull, ListChecks, Workflow, Menu, X,
-} from 'lucide-react'
+import { Settings, GitBranch, Menu } from 'lucide-react'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { MORE_NAV, PRIMARY_NAV, isNavActive } from './nav-items'
 
-const navItems = [
-  { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { href: '/repos', icon: GitFork, label: 'Repositories' },
-  { href: '/repos/triage', icon: ListChecks, label: 'Triage' },
-  { href: '/repos/graveyard', icon: Skull, label: 'Graveyard' },
-  { href: '/feed', icon: Activity, label: 'Feed' },
-  { href: '/security', icon: Shield, label: 'Security' },
-  { href: '/deployments', icon: Rocket, label: 'Deployments' },
-  { href: '/analytics', icon: BarChart3, label: 'Analytics' },
-  { href: '/agent-performance', icon: Workflow, label: 'Agents' },
-  { href: '/settings', icon: Settings, label: 'Settings' },
+// Same groups as the sidebar (nav-items.ts), with Settings last.
+const sections = [
+  { title: null, items: PRIMARY_NAV },
+  { title: 'More', items: MORE_NAV },
+  { title: null, items: [{ href: '/settings', icon: Settings, label: 'Settings' }] },
 ]
 
 export function MobileNav() {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
 
-  function isActive(href: string) {
-    if (href === '/') return pathname === '/'
-    if (pathname === href) return true
-    if (!pathname.startsWith(href + '/')) return false
-
-    // Prefer the most specific matching nav item (e.g. /repos/triage over /repos).
-    const hasMoreSpecificMatch = navItems.some((item) => {
-      if (item.href === href) return false
-      if (!item.href.startsWith(href + '/')) return false
-      return pathname === item.href || pathname.startsWith(item.href + '/')
-    })
-
-    return !hasMoreSpecificMatch
-  }
+  const isActive = (href: string) => isNavActive(pathname, href)
 
   return (
     <>
@@ -68,10 +47,12 @@ export function MobileNav() {
           </SheetHeader>
 
           <nav className="flex-1 px-3 py-3 space-y-0.5">
-            <p className="px-2 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-widest text-white/25 select-none">
-              Navigation
-            </p>
-            {navItems.map(({ href, icon: Icon, label }) => {
+            {sections.map((section, si) => (
+              <div key={si} className={cn(si > 0 && 'pt-3')}>
+                {section.title && (
+                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-white/25 select-none">{section.title}</p>
+                )}
+            {section.items.map(({ href, icon: Icon, label }) => {
               const active = isActive(href)
               return (
                 <Link
@@ -90,6 +71,8 @@ export function MobileNav() {
                 </Link>
               )
             })}
+              </div>
+            ))}
           </nav>
         </SheetContent>
       </Sheet>
