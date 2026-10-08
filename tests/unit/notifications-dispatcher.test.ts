@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // We test the webhook send logic by mocking fetch
 
 // Import from the pure webhook module (no DB dependency)
-import { sendWebhook } from '../../src/lib/notifications/webhook'
+import { sendWebhook, webhookBody } from '../../src/lib/notifications/webhook'
 
 describe('sendWebhook', () => {
   beforeEach(() => {
@@ -35,6 +35,24 @@ describe('sendWebhook', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }))
 
     await expect(sendWebhook('https://example.com/hook', {})).rejects.toThrow('500')
+  })
+
+  it("surfaces the destination's reason (Slack's 400 bodies say what's wrong)", async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, text: async () => 'no_text' }))
+    await expect(sendWebhook('https://hooks.slack.com/services/T/B/x', { title: 't' })).rejects.toThrow('Webhook responded 400: no_text')
+  })
+})
+
+describe('webhookBody: formatted for the destination', () => {
+  const event = { eventType: 'health_alert', title: 'Health drop', body: 'family-tree fell to 40', timestamp: 't' }
+  it('Slack gets only text (it rejects payloads without it)', () => {
+    expect(webhookBody('https://hooks.slack.com/services/T/B/x', event)).toEqual({ text: '*Health drop*\nfamily-tree fell to 40' })
+  })
+  it('Discord gets content', () => {
+    expect(webhookBody('https://discord.com/api/webhooks/1/abc', event)).toEqual({ content: '**Health drop**\nfamily-tree fell to 40' })
+  })
+  it('anything else gets the full event plus a text summary', () => {
+    expect(webhookBody('https://hook.make.com/xyz', event)).toEqual({ text: 'Health drop: family-tree fell to 40', ...event })
   })
 })
 

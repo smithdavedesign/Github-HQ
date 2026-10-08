@@ -35,7 +35,28 @@ export function isBlockedUrl(rawUrl: string): boolean {
   return false
 }
 
-/** POST a JSON payload to a user-configured webhook URL (5s timeout). */
+/**
+ * The body a destination accepts. Slack incoming webhooks reject anything without `text`
+ * (400 "no_text") and Discord needs `content`; everything else (Make, Zapier, a custom endpoint)
+ * gets the full event plus a one-line `text` summary.
+ */
+export function webhookBody(url: string, payload: Record<string, unknown>): Record<string, unknown> {
+  const title = typeof payload.title === 'string' ? payload.title : ''
+  const body = typeof payload.body === 'string' ? payload.body : ''
+  let host = ''
+  try { host = new URL(url).hostname.toLowerCase() } catch { /* isBlockedUrl rejects it first */ }
+  if (host === 'hooks.slack.com') return { text: body ? `*${title}*\n${body}` : title }
+  if ((host === 'discord.com' || host === 'discordapp.com') && new URL(url).pathname.startsWith('/api/webhooks/')) {
+    return { content: body ? `**${title}**\n${body}` : title }
+  }
+  return { text: body ? `${title}: ${body}` : title, ...payload }
+}
+
+/**
+ * POST an event to a user-configured webhook URL (5s timeout), formatted for its destination.
+ * Server-side only: the app's CSP blocks browser connections to other origins, and Slack's
+ * webhook endpoint doesn't allow browser (CORS) requests anyway.
+ */
 export async function sendWebhook(url: string, payload: Record<string, unknown>): Promise<void> {
   if (isBlockedUrl(url)) {
     throw new Error('Webhook URL targets a blocked destination (internal/private network)')
@@ -44,11 +65,14 @@ export async function sendWebhook(url: string, payload: Record<string, unknown>)
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'User-Agent': 'RepoHQ/1.0' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(webhookBody(url, payload)),
     signal: AbortSignal.timeout(5000),
     redirect: 'manual', // never follow redirects — could redirect to internal network
   })
   if (!res.ok) {
-    throw new Error(`Webhook responded ${res.status}`)
+    // Slack answers with a short reason ("no_text", "invalid_token", "channel_not_found").
+    let reason = ''
+    try { reason = (await res.text()).trim().slice(0, 120) } catch { /* no body */ }
+    throw new Error(`Webhook responded ${res.status}${reason ? `: ${reason}` : ''}`)
   }
 }
