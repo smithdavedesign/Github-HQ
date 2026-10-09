@@ -1,9 +1,13 @@
-// Model relay: worker → LiteLLM, allowing only EGRESS_ALLOW_MODELS. GET requests (health,
-// model lists) pass; every POST must name an allowed model in its JSON body.
+// Model relay: worker → LiteLLM, allowing only EGRESS_ALLOW_MODELS. Every POST must name an
+// allowed model in its JSON body; GET is limited to health checks and model lists (LiteLLM's other
+// GET routes are admin and info endpoints). The relay adds LiteLLM's key itself, so the real key
+// never enters the worker, where the repo's own code runs: the worker sends a placeholder.
 import http from 'node:http'
 
 const upstream = new URL(process.env.LITELLM_UPSTREAM ?? 'http://host.docker.internal:4000')
 const allowed = new Set((process.env.EGRESS_ALLOW_MODELS ?? '').split(/[\s,]+/).filter(Boolean))
+const key = process.env.LITELLM_KEY ?? ''
+const READ_PATHS = /^\/(v1\/)?models\/?(\?.*)?$|^\/health(\/[a-z]+)?\/?(\?.*)?$/
 const MAX_BODY = 32 * 1024 * 1024
 
 function deny(res, status, message) {
@@ -20,7 +24,12 @@ http.createServer((req, res) => {
   })
   req.on('end', () => {
     const body = Buffer.concat(chunks)
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      if (!READ_PATHS.test(req.url ?? '')) {
+        console.log(`denied ${req.method} ${req.url}`)
+        return deny(res, 403, `GET ${req.url} is not allowed in the sandbox (health and model lists only)`)
+      }
+    } else {
       let model = null
       try { model = JSON.parse(body.toString('utf8')).model ?? null } catch { /* not JSON */ }
       if (typeof model !== 'string' || !allowed.has(model)) {
@@ -29,6 +38,10 @@ http.createServer((req, res) => {
       }
     }
     const headers = { ...req.headers, host: upstream.host, 'content-length': String(body.length) }
+    // Whatever the worker sent is replaced: only the relay knows the real key.
+    delete headers['x-api-key']
+    if (key) headers.authorization = `Bearer ${key}`
+    else delete headers.authorization
     const up = http.request({ hostname: upstream.hostname, port: upstream.port || 80, path: req.url, method: req.method, headers }, r => {
       res.writeHead(r.statusCode ?? 502, r.headers)
       r.pipe(res)
@@ -36,4 +49,4 @@ http.createServer((req, res) => {
     up.on('error', err => deny(res, 502, `upstream error: ${err.message}`))
     up.end(body)
   })
-}).listen(4000, '0.0.0.0', () => console.log(`relay → ${upstream.href} models=${[...allowed].join(',')}`))
+}).listen(Number(process.env.RELAY_PORT ?? 4000), '0.0.0.0', () => console.log(`relay → ${upstream.href} models=${[...allowed].join(',')}`))

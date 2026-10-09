@@ -3,7 +3,7 @@
 Local-first coding with a cloud fallback ladder, exposed through one endpoint.
 See [architecture](architecture.md) for diagrams.
 
-**Endpoint:** `http://localhost:4000/v1` (LiteLLM) or `http://localhost:8787/v1` (through Headroom) · **key:** `sk-local-ai`
+**Endpoint:** `http://localhost:4000/v1` (LiteLLM) or `http://localhost:8787/v1` (through Headroom) · **key:** `$LITELLM_MASTER_KEY` (in `~/ai-stack/litellm/.env`)
 
 ---
 
@@ -59,7 +59,7 @@ Context-compression proxy on `:8787`. Trims logs, history, and tool output befor
 
 ## LiteLLM
 
-OpenAI-compatible **router** on `:4000`, in Docker. [Docs](https://docs.litellm.ai) · master key `sk-local-ai`.
+OpenAI-compatible **router** on `:4000`, in Docker. [Docs](https://docs.litellm.ai) · master key from `LITELLM_MASTER_KEY` in `litellm/.env` (`master_key: os.environ/LITELLM_MASTER_KEY`).
 
 - Config bind-mounted: `~/ai-stack/litellm/config.yaml`
 - Keys in `~/ai-stack/litellm/.env` (gitignored) → `docker compose up -d` to apply
@@ -74,7 +74,7 @@ docker compose -f ~/ai-stack/litellm/docker-compose.yml up -d     # apply .env c
 
 ## Agents
 
-All point at the one endpoint with key `sk-local-ai`.
+All point at the one endpoint with the LiteLLM master key. Rotating it means updating each tool's config (OpenClaw `openclaw.json` and `agents/*/agent/models.json`, Continue, OpenCode, Aider, OpenHands) and `FACTORY_LITELLM_KEY` in `~/.repohq-factory/env`.
 
 | Agent | Type | Config | Notes |
 |---|---|---|---|
@@ -95,7 +95,7 @@ docker compose -f ~/ai-stack/openhands/docker-compose.yml up -d    # start → h
 docker compose -f ~/ai-stack/openhands/docker-compose.yml down     # stop (reclaim RAM)
 ```
 
-- Configure the LLM in the UI: model `openai/cloud-smart` (or `cloud-or`), Base URL `http://host.docker.internal:8787/v1`, key `sk-local-ai`.
+- Configure the LLM in the UI: model `openai/cloud-smart` (or `cloud-or`), Base URL `http://host.docker.internal:8787/v1`, the LiteLLM master key.
 - **Use a cloud model** — a big local model + OpenHands won't fit in 16 GB simultaneously.
 - Settings persist in `~/.openhands/openhands.db`.
 

@@ -14,7 +14,7 @@ Quick-lookup tables for ports, paths, models, secrets, and external docs.
 | `18789` | OpenClaw gateway | loopback |
 | `3000` | OpenHands (on-demand) | 127.0.0.1 |
 
-**Shared endpoint:** `http://localhost:4000/v1` · **key:** `sk-local-ai`
+**Shared endpoint:** `http://localhost:4000/v1` · **key:** `$LITELLM_MASTER_KEY` (in `~/ai-stack/litellm/.env`)
 
 ---
 
@@ -64,7 +64,7 @@ Quick-lookup tables for ports, paths, models, secrets, and external docs.
 | Anthropic / OpenRouter keys | `~/ai-stack/litellm/.env` |
 | Ollama cloud key (`OLLAMA_API_KEY`) | ollama + openclaw gateway plists |
 | OpenClaw gateway token, Notion/Google/Whisper keys | `~/.openclaw/openclaw.json` |
-| LiteLLM master key | `sk-local-ai` (config.yaml) |
+| LiteLLM master key | `LITELLM_MASTER_KEY` in `~/ai-stack/litellm/.env` (mode 600; rotated 2026-10-09) |
 
 ---
 

@@ -65,6 +65,9 @@ describe('egress container', () => {
     expect(args).toContain('EGRESS_ALLOW_MODELS=local-agent free-agent')
     expect(args).toContain('LITELLM_UPSTREAM=http://host.docker.internal:4000')
     expect(args.join(' ')).toContain('--cap-drop ALL')
+    // The key is passed by name only (docker reads it from its own env), never on the command line.
+    expect(args).toContain('LITELLM_KEY')
+    expect(args.join(' ')).not.toMatch(/LITELLM_KEY=/)
   })
   it('maps a localhost LiteLLM URL to the Docker host', () => {
     expect(upstreamUrl('http://localhost:4000')).toBe('http://host.docker.internal:4000')
@@ -195,7 +198,7 @@ describe('Sandbox lifecycle (docker mocked)', () => {
 
   async function openSandbox() {
     const { Sandbox } = await import('../../factory/lib/sandbox')
-    return Sandbox.open({ cfg: DEFAULT_SANDBOX, litellmUrl: 'http://localhost:4000', allowModels: ['local-agent'], scope: '/home/test', images: { worker: 'w:1', egress: 'e:1' } })
+    return Sandbox.open({ cfg: DEFAULT_SANDBOX, litellmUrl: 'http://localhost:4000', litellmKey: 'sk-real', allowModels: ['local-agent'], scope: '/home/test', images: { worker: 'w:1', egress: 'e:1' } })
   }
 
   it('creates an internal network, the egress gateway, then the worker', async () => {

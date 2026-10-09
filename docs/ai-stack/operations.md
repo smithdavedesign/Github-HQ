@@ -8,8 +8,8 @@ Day-to-day operation, health checks, recovery, and the hard-won gotchas.
 
 ```bash
 ollama ps                                                                  # UNTIL = "Forever"
-curl -s localhost:4000/v1/models -H "Authorization: Bearer sk-local-ai"    # LiteLLM (5 models)
-curl -s localhost:8787/v1/models -H "Authorization: Bearer sk-local-ai"    # Headroom → LiteLLM
+curl -s localhost:4000/v1/models -H "Authorization: Bearer $LITELLM_MASTER_KEY"    # LiteLLM (5 models); export it from ~/ai-stack/litellm/.env
+curl -s localhost:8787/v1/models -H "Authorization: Bearer $LITELLM_MASTER_KEY"    # Headroom → LiteLLM
 lsof -nP -iTCP:18789 -sTCP:LISTEN                                          # OpenClaw gateway
 ```
 

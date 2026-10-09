@@ -33,7 +33,7 @@ import { listAliases } from './lib/litellm-ops'
 import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
 
 import { run, type Runner } from './lib/proc'
-import { Sandbox, dockerAvailable, ensureSandboxImages, sandboxModels, sweepSandboxes } from './lib/sandbox'
+import { SANDBOX_MODEL_KEY, Sandbox, dockerAvailable, ensureSandboxImages, sandboxModels, sweepSandboxes } from './lib/sandbox'
 import { healthScores, recordApprovalNeeded, recordAttempt, recordResolution, recordValue } from './lib/sink'
 import { prValueFromLabels } from '../src/lib/agents/pr-value'
 import { pendingOutcomes, scoreOutcome } from './lib/outcomes'
@@ -383,7 +383,7 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     const basics = readRepoBasics(dir)
     if (sandboxImages) {
       sandbox = await Sandbox.open({
-        cfg: cfg.sandbox, litellmUrl: cfg.litellm.url, scope: cfg.home, images: sandboxImages,
+        cfg: cfg.sandbox, litellmUrl: cfg.litellm.url, litellmKey: cfg.litellm.key, scope: cfg.home, images: sandboxImages,
         allowModels: sandboxModels(cfg.models, { paidBudgetUsd: cfg.monthlyBudgetUsd, extra: ['local-small'] }),
       })
       await sandbox.copyIn(dir)
@@ -666,7 +666,7 @@ async function attempt(
   if (!deps && !lintFix) log(`${repo}: ${tier} ${harnessFor(tier)} → ${model}${ws.sandbox ? ' (sandboxed)' : ''}`)
 
   // Inside the sandbox the agent reaches LiteLLM through the egress relay, not localhost.
-  const harnessCfg: FactoryConfig = ws.sandbox ? { ...cfg, litellm: { ...cfg.litellm, url: ws.sandbox.litellmUrl } } : cfg
+  const harnessCfg: FactoryConfig = ws.sandbox ? { ...cfg, litellm: { ...cfg.litellm, url: ws.sandbox.litellmUrl, key: SANDBOX_MODEL_KEY } } : cfg
   const h: HarnessResult = deps ? await npmAuditFix(ws, cfg) : lintFix ? await runLintFixer(ws, lintSpec, cfg) : await runHarness({
     tier, model, cwd: ws.dir, prompt, files: task.scoped ? task.files : undefined,
     timeoutMs: tier === 'M0' ? cfg.m0TimeoutMs : undefined,
@@ -850,7 +850,7 @@ async function investigate(ctx: TaskContext, task: FactoryTask): Promise<'report
   const now = new Date()
   const report = task.kind === 'owner-report'
   const prompt = report ? reportPrompt(task, repo) : investigationPrompt(task)
-  const harnessCfg: FactoryConfig = ws.sandbox ? { ...cfg, litellm: { ...cfg.litellm, url: ws.sandbox.litellmUrl } } : cfg
+  const harnessCfg: FactoryConfig = ws.sandbox ? { ...cfg, litellm: { ...cfg.litellm, url: ws.sandbox.litellmUrl, key: SANDBOX_MODEL_KEY } } : cfg
   const attemptId = randomUUID()
   await resetWorktree(ws.dir, ws.run)
   log(`${repo}: ${task.kind} → M1 claude-code → ${cfg.models.M1} (read-only investigation${ws.sandbox ? ', sandboxed' : ''})`)

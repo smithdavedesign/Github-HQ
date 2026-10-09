@@ -151,7 +151,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FactoryConfig 
     allowFreeCloud: json.allowFreeCloud ?? [],
     litellm: {
       url: env.FACTORY_LITELLM_URL ?? 'http://localhost:4000',
-      key: env.FACTORY_LITELLM_KEY ?? 'sk-local-ai',
+      // The gateway key lives in LiteLLM's own .env (rotated 2026-10-09; the old constant
+      // `sk-local-ai` no longer works). FACTORY_LITELLM_KEY overrides it.
+      key: env.FACTORY_LITELLM_KEY ?? readEnvVar(path.join(homedir(), 'ai-stack/litellm/.env'), 'LITELLM_MASTER_KEY') ?? '',
       configPath: env.FACTORY_LITELLM_CONFIG ?? path.join(homedir(), 'ai-stack/litellm/config.yaml'),
       composeFile: env.FACTORY_LITELLM_COMPOSE ?? path.join(homedir(), 'ai-stack/litellm/docker-compose.yml'),
     },
