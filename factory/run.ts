@@ -39,6 +39,7 @@ import { prValueFromLabels } from '../src/lib/agents/pr-value'
 import { pendingOutcomes, scoreOutcome } from './lib/outcomes'
 import { failedLog, rankOpportunities, senseRepo } from './lib/sensors'
 import { acquireLock } from './lib/lock'
+import { sweepWorkDirs } from './lib/preflight'
 import { nightShiftReadiness, readinessLine, scheduledPolicy } from './lib/night-shift'
 import { freeQuota, m1Deferred } from './lib/quota'
 import { readManagedModels } from './lib/litellm-config'
@@ -148,6 +149,8 @@ async function main(): Promise<RunResult> {
     return { status: 'deferred', reason: err instanceof Error ? err.message : String(err), retryInMinutes: 5 }
   }
   mkdirSync(logDir, { recursive: true })
+  const swept = sweepWorkDirs(cfg.home, new Date())
+  if (swept) log(`removed ${swept} work folder(s) older than 2 days`)
   log(`run ${runId}${args.dryRun ? ' (dry run)' : ''}`)
   tracer.step('run', 'start', `run ${runId}${args.dryRun ? ' (dry run)' : ''}${args.scheduled ? ' · unattended policy' : ''}`, { ledgerRunId: runId, repo: args.repo })
 

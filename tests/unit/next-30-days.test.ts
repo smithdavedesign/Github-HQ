@@ -143,7 +143,7 @@ describe('morning report review queue', () => {
   it('lists every open PR oldest first, flags aging ones and annotates factory PRs', () => {
     const lines = inboxLines(prs, [att], new Map([['a1', { type: 'review', attemptId: 'a1', at: '', reviewer: 'copilot', comments: 0, highlights: [] }]]), NOW, 'me')
     expect(lines[0]).toMatch(/^2 open PRs, 1 open 7\+ days/)
-    expect(lines[1]).toBe('⚠ app#7 · 7d · factory · fix lint errors (M1) [reviewer: UNCERTAIN, review clean, draft] — https://github.com/me/app/pull/7')
+    expect(lines[1]).toBe('⚠ app#7 · 7d · factory · fix lint errors (M1) [reviewer: UNCERTAIN, review clean, draft, repo paused for new factory PRs until this is merged or closed] — https://github.com/me/app/pull/7')
     expect(lines[2]).toMatch(/^app#8 · 1d · Dependabot · Bump next — /)
   })
   it('says so when the search failed or the queue is empty', () => {
