@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
-import { and, eq, gte, ilike, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, ilike, inArray, sql } from 'drizzle-orm'
 import * as schema from '../../src/lib/db/schema'
 import { factoryActivity } from '../../src/lib/agents/factory-activity'
 import { loadRepoSignals } from '../../src/lib/portfolio/repo-signals'
@@ -9,6 +9,7 @@ import type { FactoryActivity } from '../../src/lib/health/freshness'
 import type { FactoryConfig } from './config'
 import type { AttemptEntry } from './ledger'
 import type { RequestHealth } from './system-health'
+import type { SyncRun } from '../../src/lib/health/sync-health'
 import { PIPELINES, type TaskKind } from './tasks'
 
 /**
@@ -258,6 +259,23 @@ export async function recordValue(cfg: FactoryConfig, attemptId: string, value: 
       .set({ value })
       .where(and(eq(schema.agentJobs.userId, cfg.repohq.userId!), eq(schema.agentJobs.id, attemptId)))
   })
+}
+
+/** RepoHQ's recent GitHub syncs, newest first (the report's sync check); null without the sink or on error. */
+export async function recentSyncs(cfg: FactoryConfig, limit = 6): Promise<SyncRun[] | null> {
+  const d = db(cfg)
+  if (!d) return null
+  try {
+    const rows = await d.select({ status: schema.scans.status, error: schema.scans.error, startedAt: schema.scans.startedAt })
+      .from(schema.scans)
+      .where(and(eq(schema.scans.userId, cfg.repohq.userId!), eq(schema.scans.type, 'sync')))
+      .orderBy(desc(schema.scans.startedAt))
+      .limit(limit)
+    return rows.map(r => ({ status: r.status, error: r.error, startedAt: (r.startedAt ?? new Date(0)).toISOString() }))
+  } catch (err) {
+    console.warn('[factory sink] recentSyncs failed:', err instanceof Error ? err.message : err)
+    return null
+  }
 }
 
 /** RepoHQ's per-repo signals for "what to do next" (morning report); null without the sink or on error. */

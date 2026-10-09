@@ -19,7 +19,7 @@ import { listAliases } from './lib/litellm-ops'
 import { run } from './lib/proc'
 import { freeQuota } from './lib/quota'
 import { buildMorningReport, cycleLogEntry, emailFailureReason, isCycleLog, toMime, type MorningReport, type RoleId, type RoleSection } from './lib/report'
-import { factoryActivityOf, latestHealthSnapshot, recordNotification, repoSignalsOf, requestOutcomes } from './lib/sink'
+import { factoryActivityOf, latestHealthSnapshot, recentSyncs, recordNotification, repoSignalsOf, requestOutcomes } from './lib/sink'
 import { parseGhSearchPrs, type OpenPr } from '../src/lib/agents/open-prs'
 import { nextActions } from '../src/lib/portfolio/next-actions'
 import { copilotQuota } from './lib/copilot-quota'
@@ -108,12 +108,13 @@ async function gatherSystemHealth(cfg: FactoryConfig, now: Date): Promise<System
     if (r.code !== 0) return null
     try { return inactivityDisabled(repo, JSON.parse(r.output)) } catch { return null }
   }))
-  const [latestSnapshot, requests, factory] = await Promise.all([
+  const [latestSnapshot, requests, factory, syncs] = await Promise.all([
     latestHealthSnapshot(cfg),
     requestOutcomes(cfg, new Date(now.getTime() - 7 * 86_400_000), now),
     factoryActivityOf(cfg),
+    recentSyncs(cfg),
   ])
-  return { disabledWorkflows: lists.every(l => l === null) ? null : lists.flatMap(l => l ?? []), latestSnapshot, requests, factory }
+  return { disabledWorkflows: lists.every(l => l === null) ? null : lists.flatMap(l => l ?? []), latestSnapshot, requests, factory, syncs }
 }
 
 /** One local-model call (routine work → Ollama, $0) that rephrases each role's facts as a headline. */
