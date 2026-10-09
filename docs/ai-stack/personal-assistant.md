@@ -37,14 +37,15 @@ Because memory is **file-based**, even scheduled/isolated runs stay in-character
 
 ---
 
-## Full agentic access ⚠️
+## Agentic access: approve on first use
 
-The companion runs with **full, ungated access** (owner's explicit choice): `tools.profile=coding`, `tools.exec.security=full`, `tools.exec.ask=off`. It can **write/edit files, run any shell command, and spawn coding sub-agents in any repo — unattended, no approval prompts.**
+Since 2026-10-09 (owner's choice) the companion's commands are **approved on first use**: `tools.profile=coding`, `tools.exec.security=allowlist`, `tools.exec.ask=on-miss`. It can still **write and edit files, run shell commands and spawn coding sub-agents in any repo**. A command it hasn't run before asks on WhatsApp first; reply **`/approve <id> allow-always`** once and that command runs freely after that (rules persist in `~/.openclaw/exec-approvals.json`). This keeps "just do it" for what you've approved while blocking surprise commands from prompt-injected content.
 
 - Documented for the agent in `~/.openclaw/workspace-companion/TOOLS.md`.
 - **Security boundaries (the only thing guarding this):** WhatsApp allowlisted to one number; gateway bound to **loopback** only.
-- **Risk:** it reads untrusted content (email/web) *and* has full exec → a prompt-injection could run code. Keep it off untrusted inboxes/pages. The `exec.security=full` flip must be set by the owner (the Claude Code classifier blocks assistants from ungating exec on an externally-reachable agent).
-- **History:** evolved from scoped exec (`security=allowlist` + `ask=on-miss`, per-command WhatsApp `/approve … allow-always`) → full access.
+- **Risk:** it reads untrusted content (email, web, Notion), so a prompt injection could try to run a command; with approvals on, a new command now has to get past you. Already-approved commands still run unattended, so approve broad commands (`sh`, `bash`, `curl | …`) with care.
+- **Slack** DMs use pairing (unknown senders need a one-time code), not "open" (2026-10-08).
+- **History:** scoped exec (`allowlist` + `on-miss`) → full, ungated access → back to approve-on-first-use (2026-10-09, after the security review).
 
 ## Integrations (live)
 
