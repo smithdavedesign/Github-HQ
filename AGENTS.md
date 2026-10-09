@@ -55,8 +55,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Factory code imported by the app (`factory/lib/queue.ts`, `factory/factory.config.json`) must not import `server-only` or touch Redis at module load: `next build` runs without `REDIS_URL`.
 
 ### E2E tests
-- The suite runs against `.env.local`'s DATABASE_URL, which is production. Only seed rows you can identify and delete. Anything that overwrites or deletes shared rows must `test.skip(!DISPOSABLE_DB, …)` (`tests/e2e/helpers/disposable-db.ts`).
-- Never queue runnable work from it (a `queued` request, Run agent, a cron call that dispatches): the owner's real worker would run it. Seed finished requests only.
+- `npm run test:e2e` runs the suite against a **throwaway Neon branch** of production (`scripts/e2e-branch.sh`): created for the run, deleted after it, app on port 3100, `REDIS_URL` empty so nothing reaches the real queue, and the signed-in e2e user owns the factory so owner-only specs run. Needs the Neon CLI logged in. Pass spec paths after `--`.
+- `npm run test:e2e:prod-db` is the old behaviour (`.env.local`'s DATABASE_URL, which is production). Avoid it: specs that overwrite or delete shared rows skip there (`test.skip(!DISPOSABLE_DB, …)`, `tests/e2e/helpers/disposable-db.ts`), and never queue runnable work from it, since the owner's real worker would run it.
 
 ### Flow tests (`tests/flow`, see its README)
 - The Agent HQ flow end to end on a throwaway local Postgres + Redis with the real worker: `docker compose --profile flow up -d`, then `npm run test:flow` and `npm run test:flow:e2e`. CI runs both. Run them after changing the queue, the worker, request outcomes, the status API or the Agents page.

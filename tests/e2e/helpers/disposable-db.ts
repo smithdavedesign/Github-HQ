@@ -1,7 +1,7 @@
 /**
- * The e2e suite runs against whatever DATABASE_URL .env.local holds, which is the production
- * database. Specs that overwrite or delete rows they didn't create run only when you point
- * DATABASE_URL at a throwaway Neon branch and set E2E_DISPOSABLE_DB=1. (In 2026-10 a spec that
+ * `npm run test:e2e` runs the suite on a throwaway Neon branch (scripts/e2e-branch.sh sets
+ * E2E_DISPOSABLE_DB=1). `npm run test:e2e:prod-db` still runs it against .env.local's production
+ * DATABASE_URL, where specs that overwrite or delete rows they didn't create are skipped. (In 2026-10 a spec that
  * deleted and re-inserted health history timed out mid-restore and lost months of snapshots.)
  */
 export const DISPOSABLE_DB = process.env.E2E_DISPOSABLE_DB === '1'
