@@ -119,7 +119,7 @@ Integrations currently force the companion onto **paid `cloud-smart`** (free `cl
 - Reboot-resilient auto-start for all services
 - Personal companion (persona + memory + proactive check-ins), cost-trimmed
 - **All requested integrations live & verified** — GitHub, Gmail, Calendar (macOS/icalBuddy), Notes/Reminders, Notion
-- **Agentic access** for the companion — writes code + runs commands + spawns sub-agents in any repo; new commands are approved once on WhatsApp (`allowlist` + `on-miss`, since 2026-10-09)
+- **Full agentic access** for the companion — writes code + runs commands + spawns sub-agents in any repo (owner-granted, ungated; reconfirmed 2026-10-09)
 - **Free-model pool** (RepoHQ factory) — agentic coding across Ollama Cloud / OpenRouter / Gemini free tiers
 - **Vercel MCP** configured for Claude Code + OpenCode (OAuth activation pending)
 - **RepoHQ factory front door — both sides** — message "work on repo X" → **draft PR → WhatsApp**, end to end.
@@ -135,7 +135,7 @@ Integrations currently force the companion onto **paid `cloud-smart`** (free `cl
 - **Sentry** (error tracking) — `sentry-cli` installed; needs a DSN to integrate
 - ~~**Event triggers**~~ — shipped as factory **Phase 78**: red CI, Dependabot alerts and stale bot PRs are sensed every cycle. The front door stays the owner-initiated path
 - ~~**Anthropic spend cap**~~ — done 2026-10-06 ($25/month); the companion runs on paid `cloud-smart`
-- **Security:** the companion reads untrusted content; commands need a one-time approval (2026-10-09), WhatsApp is allowlisted, Slack DMs use pairing, the gateway is loopback-only, and the LiteLLM key is rotated and out of git
+- **Security:** the full-exec companion reads untrusted content (owner accepts the risk); WhatsApp is allowlisted, Slack DMs use pairing, the gateway is loopback-only, and the LiteLLM key is rotated and out of git
 
 ---
 
