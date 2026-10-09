@@ -62,7 +62,7 @@ sequenceDiagram
     participant O as Ollama :11434
     A->>H: chat/completions (model=local-coder)
     H->>H: compress context (trim logs/history)
-    H->>L: forward (OpenAI format, key sk-local-ai)
+    H->>L: forward (OpenAI format, LiteLLM master key)
     L->>O: route to ollama_chat/qwen2.5:7b-coding
     O-->>L: completion (warm ~1-2s, cold ~80s once)
     L-->>H: response

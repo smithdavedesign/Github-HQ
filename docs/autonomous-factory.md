@@ -37,7 +37,7 @@ This is the starting point the design was built on. For what the factory became,
 | Dispatcher | **Nexus** (`AI-Took-My-Job`): API + BullMQ queue `triage` | Render (web + Redis) | ✅ |
 | Hands (paid) | Nexus worker → `scripts/gstack-*.sh` → `claude /skill --print` | Render worker, `ANTHROPIC_API_KEY` | ✅ (see bug note below) |
 | Skills | **gstack**: `/health /qa-only /review /investigate /ship /qa /canary /document-release /retro` | `~/.claude/skills/gstack` | ✅ |
-| Model gateway | **ai-stack**: Ollama :11434 → Headroom :8787 → LiteLLM :4000 (`sk-local-ai`) | this Mac, auto-start | ✅ all layers green |
+| Model gateway | **ai-stack**: Ollama :11434 → Headroom :8787 → LiteLLM :4000 (key in `~/ai-stack/litellm/.env`) | this Mac, auto-start | ✅ all layers green |
 | Local models | `local-coder` (Qwen2.5-Coder-7B), `local-coder-14b` (8k ctx), `local-qwen3` | Ollama | ✅ $0 |
 | Free cloud | `cloud-or` (OpenRouter `nemotron-3-ultra-550b:free`) | LiteLLM | ✅ $0, rate-limited |
 | Paid cloud | `cloud-smart` (Claude Sonnet) | LiteLLM | ✅ pay-per-use |

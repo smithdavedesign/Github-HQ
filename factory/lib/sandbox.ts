@@ -25,6 +25,11 @@ import { run, type ProcOptions, type Runner } from './proc'
 export const WORKDIR = '/workspace'
 /** Worker-side LiteLLM URL: the egress relay (it forwards only allowed models). */
 export const RELAY_URL = 'http://egress:4000'
+/**
+ * The key the worker uses for model calls. Not a secret: the relay swaps in LiteLLM's real key, so
+ * code running in the sandbox never sees it.
+ */
+export const SANDBOX_MODEL_KEY = 'sk-repohq-sandbox'
 const PROXY_URL = 'http://egress:8888'
 const LABEL = 'repohq.factory.sandbox'
 const DOCKER_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'docker')
@@ -114,6 +119,8 @@ export function egressRunArgs(n: SandboxNames, image: string, opts: { allowHosts
     '-e', `EGRESS_ALLOW_HOSTS=${opts.allowHosts.join(' ')}`,
     '-e', `EGRESS_ALLOW_MODELS=${opts.allowModels.join(' ')}`,
     '-e', `LITELLM_UPSTREAM=${opts.upstream}`,
+    // Name only: docker reads the value from its own environment, so the key isn't on a command line.
+    '-e', 'LITELLM_KEY',
     image,
   ]
 }
@@ -161,6 +168,8 @@ export interface SandboxOpenOptions {
   cfg: SandboxConfig
   /** The host's LiteLLM URL (factory config). */
   litellmUrl: string
+  /** LiteLLM's key: given to the egress relay only, never to the worker. */
+  litellmKey: string
   /** LiteLLM aliases the worker may call through the relay. */
   allowModels: string[]
   /** Groups this factory's sandboxes for sweeping (the factory home dir). */
@@ -178,14 +187,14 @@ export class Sandbox {
   static async open(o: SandboxOpenOptions): Promise<Sandbox> {
     const n = sandboxNames(o.scope)
     const sb = new Sandbox(n)
-    const must = async (label: string, args: string[], timeoutMs = 120_000) => {
-      const r = await run('docker', args, { timeoutMs })
+    const must = async (label: string, args: string[], timeoutMs = 120_000, env?: Record<string, string>) => {
+      const r = await run('docker', args, { timeoutMs, env })
       if (r.code !== 0) throw new Error(`sandbox ${label} failed: ${r.output.trim().split('\n').slice(-3).join(' | ')}`)
       return r
     }
     try {
       await must('network', ['network', 'create', '--internal', '--label', n.label, n.network])
-      await must('egress', egressRunArgs(n, o.images.egress, { allowHosts: o.cfg.allowHosts, allowModels: o.allowModels, upstream: upstreamUrl(o.litellmUrl) }))
+      await must('egress', egressRunArgs(n, o.images.egress, { allowHosts: o.cfg.allowHosts, allowModels: o.allowModels, upstream: upstreamUrl(o.litellmUrl) }), 120_000, { LITELLM_KEY: o.litellmKey })
       await must('egress attach', ['network', 'connect', '--alias', 'egress', n.network, n.egress])
       await must('worker', workerRunArgs(n, o.images.worker, o.cfg))
       await sb.waitForEgress()

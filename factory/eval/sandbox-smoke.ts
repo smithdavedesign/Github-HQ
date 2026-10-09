@@ -22,7 +22,7 @@ async function main() {
   }
   process.env.SANDBOX_SMOKE_SECRET = 'host-secret-value'
   const images = await ensureSandboxImages(DEFAULT_SANDBOX, m => console.log(m))
-  const sb = await Sandbox.open({ cfg: DEFAULT_SANDBOX, litellmUrl: 'http://localhost:4000', allowModels: ['local-agent'], scope: tmp, images })
+  const sb = await Sandbox.open({ cfg: DEFAULT_SANDBOX, litellmUrl: 'http://localhost:4000', litellmKey: process.env.FACTORY_LITELLM_KEY ?? '', allowModels: ['local-agent'], scope: tmp, images })
   let failed = 0
   const check = (name: string, ok: boolean, detail = '') => { if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`) }
   try {
@@ -39,7 +39,7 @@ async function main() {
     check('npm install via registry allowlist', install.code === 0, install.code === 0 ? '' : install.output.slice(-300))
     check('repo tests run inside', (await sb.run('npm', ['test'], { timeoutMs: 60_000 })).code === 0)
     check('in-container timeout kills overruns', (await sb.run('sleep', ['30'], { timeoutMs: 2_000 })).timedOut)
-    const relay = await sh(`node -e "fetch('${sb.litellmUrl}/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer sk-local-ai'},body:JSON.stringify({model:'cloud-smart',messages:[{role:'user',content:'hi'}]})}).then(r=>process.exit(r.status===403?0:1),()=>process.exit(2))"`)
+    const relay = await sh(`node -e "fetch('${sb.litellmUrl}/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer sk-repohq-sandbox'},body:JSON.stringify({model:'cloud-smart',messages:[{role:'user',content:'hi'}]})}).then(r=>process.exit(r.status===403?0:1),()=>process.exit(2))"`)
     check('relay refuses the paid alias', relay.code === 0)
     await sh('echo "More docs." >> README.md && git add -A && git commit -qm change')
     const base = (await sh('git rev-parse HEAD~1')).output.trim()

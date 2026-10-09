@@ -30,7 +30,7 @@ flowchart TB
 
     subgraph gateway["Gateway layer"]
         HR["Headroom :8787<br/>context compression"]
-        LL["LiteLLM :4000<br/>router + fallback ladder<br/>key: sk-local-ai"]
+        LL["LiteLLM :4000<br/>router + fallback ladder<br/>key: LITELLM_MASTER_KEY"]
     end
 
     subgraph models["Models"]
@@ -60,7 +60,7 @@ flowchart TB
 ```
 
 **Request path:** `agent → Headroom (:8787) → LiteLLM (:4000) → Ollama (:11434) or cloud`
-**Single endpoint:** `http://localhost:4000/v1` (or `:8787/v1` through Headroom) · **auth key:** `sk-local-ai`
+**Single endpoint:** `http://localhost:4000/v1` (or `:8787/v1` through Headroom) · **auth key:** `$LITELLM_MASTER_KEY` (in `~/ai-stack/litellm/.env`); it was the constant `sk-local-ai` until it was rotated on 2026-10-09
 
 ---
 
@@ -96,8 +96,8 @@ flowchart TB
 
 ```bash
 # health check (every layer)
-curl -s localhost:4000/v1/models -H "Authorization: Bearer sk-local-ai"   # LiteLLM
-curl -s localhost:8787/v1/models -H "Authorization: Bearer sk-local-ai"   # Headroom → LiteLLM
+curl -s localhost:4000/v1/models -H "Authorization: Bearer $LITELLM_MASTER_KEY"   # LiteLLM
+curl -s localhost:8787/v1/models -H "Authorization: Bearer $LITELLM_MASTER_KEY"   # Headroom → LiteLLM
 ollama ps                                                                 # UNTIL should say "Forever"
 
 # use it
