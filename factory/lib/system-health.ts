@@ -1,3 +1,4 @@
+import { syncFailure, type SyncRun } from '../../src/lib/health/sync-health'
 import { factoryStaleMessage, snapshotFreshness, staleDataMessage, type FactoryActivity } from '../../src/lib/health/freshness'
 
 /**
@@ -28,7 +29,10 @@ export interface SystemHealth {
   requests: RequestHealth | null
   /** When the factory last did agent work (the dashboard's idle banner); null/absent = no sink. */
   factory?: FactoryActivity | null
+  /** RepoHQ's recent GitHub syncs, newest first; null/absent = no sink. */
+  syncs?: SyncRun[] | null
 }
+
 
 /** From `gh workflow list --all --json name,state`. Manually disabled workflows are a choice, not an incident. */
 export function inactivityDisabled(repo: string, workflows: { name: string; state: string }[]): DisabledWorkflow[] {
@@ -59,6 +63,11 @@ export function systemHealthLines(h: SystemHealth, now: Date): { lines: string[]
     lines.push(`⚠ ${h.disabledWorkflows.length} scheduled workflow(s) disabled by GitHub for inactivity: ${h.disabledWorkflows.map(w => `${w.repo.split('/')[1] ?? w.repo} "${w.workflow}"`).join(', ')}. Re-enable: ${repos.map(r => `gh workflow enable <name> --repo ${r}`).join('; ')}.`)
   } else {
     lines.push('Scheduled workflows: all enabled.')
+  }
+  const sync = h.syncs ? syncFailure(h.syncs) : null
+  if (sync) {
+    alarm = true
+    lines.push(`⚠ RepoHQ sync: the last ${sync.failures === 1 ? 'sync' : `${sync.failures} syncs`} failed (since ${sync.since.slice(0, 16).replace('T', ' ')} UTC${sync.error ? `: ${sync.error.slice(0, 120)}` : ''}). Fix: ${sync.hint}.`)
   }
   const fresh = snapshotFreshness(h.latestSnapshot, now)
   const stale = staleDataMessage(fresh)

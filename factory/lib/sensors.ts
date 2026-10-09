@@ -132,6 +132,9 @@ export async function senseRepo(repo: string, integrationBranch: string, runId: 
 
 /** Category weights: red CI > security > failing checks > docs (roadmap Phase 78). */
 export const WEIGHTS = { redCi: 100, security: 80, deps: 70, checks: 60, neverScanned: 50, docs: 20 } as const
+/** A repo whose install failed sits out this long (see rankOpportunities). */
+export const INSTALL_COOLDOWN_MS = 24 * 3_600_000
+
 /** Max age bonus = 7 × 1.25 = 8.75 < the smallest gap between category weights (10). */
 export const AGE_POINTS_PER_DAY = 1.25
 const CHECK_KINDS = new Set(['fix-types', 'fix-lint', 'fix-tests', 'lint-autofix'])
@@ -173,6 +176,11 @@ export function rankOpportunities(
     // Age orders repos within a category and brings clean repos round again; it stays below
     // the 10-point gap between categories so it never outranks more valuable work.
     if (scan) score += Math.min((now.getTime() - new Date(scan.at).getTime()) / 86_400_000, 7) * AGE_POINTS_PER_DAY
+    // A repo whose install just failed can't run any task: it sits out for a day instead of taking
+    // a top slot every cycle (2026-10-08/09: three such repos took every slot all night).
+    if (scan?.checks.install === false && now.getTime() - new Date(scan.at).getTime() < INSTALL_COOLDOWN_MS) {
+      return { repo, score: 0, reasons: ['install failed in the sandbox — retried in a day'], blocked: null }
+    }
     const h = opts.health?.get(repo.toLowerCase())
     if (h !== undefined) score *= 1 + (100 - Math.max(0, Math.min(100, h))) / 200
     const stale = s?.botPrs?.stale.length ?? 0

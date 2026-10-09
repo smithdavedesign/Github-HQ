@@ -22,7 +22,7 @@ import {
   allowedTiers, canUsePaidTier, chooseTier, classifyRepoData, computeTierStats, nextTier, type ModelTier,
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
-import { collectPackageInfo, confirmFailures, detectPackageManager, installCommand, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
+import { collectPackageInfo, confirmFailures, detectPackageManager, installCommand, withoutScripts, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
 import { addPrLabel, ensureValueLabels, prLabels, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { commentOnPr, loadGstackChecklist, localReviewComment, runLocalReview, type LocalReview } from './lib/local-review'
@@ -400,6 +400,16 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
       if (ins.code !== 0 && /ETIMEDOUT|ECONNRESET|EAI_AGAIN|network/i.test(ins.output)) {
         log(`${repo}: install hit a network error — retrying once`)
         ins = await ws.run(install.cmd, install.args, { cwd: ws.dir, timeoutMs: cfg.checkTimeoutMs })
+      }
+      // A postinstall that downloads a binary from a host the sandbox can't reach (2026-10-09:
+      // sharp, Prisma, sqlite3) fails the whole install; retry without lifecycle scripts.
+      if (ins.code !== 0 && !ins.timedOut) {
+        const bare = withoutScripts(install)
+        log(`${repo}: install failed — retrying without install scripts (${bare.args.join(' ')})`)
+        tracer.step('install', 'info', 'retrying with --ignore-scripts (a postinstall download is blocked in the sandbox)')
+        const retry = await ws.run(bare.cmd, bare.args, { cwd: ws.dir, timeoutMs: cfg.checkTimeoutMs })
+        if (retry.code === 0) ins = retry
+        else ins = { ...retry, output: `${ins.output}\n\n===== retry with --ignore-scripts =====\n${retry.output}` }
       }
       if (ins.code !== 0) {
         writeFileSync(path.join(logDir, `${slug(repo)}-install.log`), ins.output)

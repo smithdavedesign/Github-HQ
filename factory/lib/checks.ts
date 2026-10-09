@@ -55,6 +55,16 @@ export function installCommand(pm: PackageManager, files: Set<string>): { cmd: s
   }
 }
 
+/**
+ * The same install without lifecycle scripts. Postinstall steps that download binaries (sharp's
+ * libvips, Prisma engines, sqlite3 prebuilds) fail in the sandbox, whose egress allowlist doesn't
+ * reach those hosts; dependency fixes and lint don't need them. Checks that do (generated Prisma
+ * types, say) then fail as environment failures, which the factory reports instead of tasking.
+ */
+export function withoutScripts(install: { cmd: string; args: string[] }): { cmd: string; args: string[] } {
+  return { cmd: install.cmd, args: [...install.args, '--ignore-scripts'] }
+}
+
 const PLACEHOLDER_TEST = /no test specified|^\s*(echo|exit)\b/i
 
 export function isPlaceholderTestScript(script: string | undefined): boolean {
