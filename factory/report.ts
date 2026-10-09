@@ -22,6 +22,7 @@ import { buildMorningReport, cycleLogEntry, emailFailureReason, isCycleLog, toMi
 import { factoryActivityOf, latestHealthSnapshot, recentSyncs, recordNotification, repoSignalsOf, requestOutcomes } from './lib/sink'
 import { parseGhSearchPrs, type OpenPr } from '../src/lib/agents/open-prs'
 import { nextActions } from '../src/lib/portfolio/next-actions'
+import { runPreflight } from './lib/preflight'
 import { copilotQuota } from './lib/copilot-quota'
 import { inactivityDisabled, type SystemHealth } from './lib/system-health'
 
@@ -52,6 +53,7 @@ async function main() {
     openPrsAll: await openPrsAcross(cfg),
     ownerLogin: await ownerLogin(),
     nextActions: await repoSignalsOf(cfg, now).then(rows => (rows ? nextActions(rows) : null)),
+    preflight: await runPreflight(cfg).catch(() => []),
   }
   let report = buildMorningReport(input)
   // Opt-in: the local 7B model mis-paraphrased numbers in testing ("4 of 8 reviews completed"

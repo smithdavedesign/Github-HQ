@@ -8,10 +8,11 @@ import { systemHealthLines, type SystemHealth } from './system-health'
 import type { Capability, CapabilityStage } from './config'
 import { ladderStatus } from './ladder'
 import type { AttemptEntry, CiOracleEntry, LedgerEntry, ResolutionEntry, ReviewEntry, ScanEntry, SignalsEntry } from './ledger'
-import { rankOpportunities } from './sensors'
+import { STALE_PR_DAYS, rankOpportunities } from './sensors'
 import { computeFactoryKpis, kpiHeadline } from '../../src/lib/agents/factory-kpis'
 import { toJobRecords } from './ledger'
 import { kpiTrend, nightShiftReadiness, readinessLine } from './night-shift'
+import { preflightLines, type PreflightCheck } from './preflight'
 import { AGING_PR_DAYS, PR_SOURCE_LABEL, prAgeDays, prSource, sortForReview, type OpenPr } from '../../src/lib/agents/open-prs'
 import { prValueFromLabels } from '../../src/lib/agents/pr-value'
 import { nextActionLines, type NextActions } from '../../src/lib/portfolio/next-actions'
@@ -45,6 +46,8 @@ export interface ReportInput {
   ownerLogin?: string | null
   /** "What should I do next?" from RepoHQ's repo data (src/lib/portfolio/next-actions.ts). */
   nextActions?: NextActions | null
+  /** What the night shift depends on, checked at report time (factory/lib/preflight.ts). */
+  preflight?: PreflightCheck[]
 }
 
 export type RoleId = 'inbox' | 'next' | 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro' | 'ladder'
@@ -93,7 +96,8 @@ export function backlog(entries: LedgerEntry[], repos?: string[]): { repo: strin
   const resolved = new Set(entries.filter((e): e is ResolutionEntry => e.type === 'resolution').map(r => r.attemptId))
   const openKinds = new Set(entries.filter(isAttempt).filter(a => a.prUrl && !resolved.has(a.id)).map(a => `${a.repo}:${a.kind}`))
   return latestScans(entries, repos)
-    .flatMap(s => s.tasks.map(kind => ({ repo: s.repo, kind })))
+    // Requests are listed with their outcomes, not as sensed work (an old scan kept showing them).
+    .flatMap(s => s.tasks.filter(k => k !== 'owner-requested' && k !== 'owner-report').map(kind => ({ repo: s.repo, kind })))
     .filter(t => !openKinds.has(`${t.repo}:${t.kind}`))
     .sort((a, b) => KIND_PRIORITY.indexOf(a.kind) - KIND_PRIORITY.indexOf(b.kind) || a.repo.localeCompare(b.repo))
 }
@@ -236,9 +240,11 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   for (const a of attempts.filter(x => x.kind === 'red-ci' && x.findings)) if (!investigations.get(a.repo) || a.at > investigations.get(a.repo)!.at) investigations.set(a.repo, a)
   const oracles = entries.filter((e): e is CiOracleEntry => e.type === 'ci_oracle' && since(e.at, now, 7 * DAY))
   const health = input.systemHealth ? systemHealthLines(input.systemHealth, now) : null
+  const pre = preflightLines(input.preflight ?? [])
   sections.push({
     id: 'ops', role: 'Ops / SRE', skill: '/canary', title: 'Stack health and budgets',
     lines: [
+      ...pre.lines,
       ...(health?.lines ?? []),
       `LiteLLM gateway: ${input.liteLLMUp ? 'up' : 'DOWN'}.`,
       `Cycles in the last 24h: ${input.cycles.length}${failedCycles.length ? ` (${failedCycles.length} failed)` : ''}.`,
@@ -308,7 +314,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
 
   const day = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
   const toReview = input.openPrsAll ? input.openPrsAll.length : openPrs.length
-  const subject = `${health?.alarm ? '⚠ ' : ''}RepoHQ factory · ${day} · ${plural(toReview, 'PR')} to review · ${plural(kpis.lastNightPrs, 'new PR')} last night`
+  const subject = `${health?.alarm || pre.alarm ? '⚠ ' : ''}RepoHQ factory · ${day} · ${plural(toReview, 'PR')} to review · ${plural(kpis.lastNightPrs, 'new PR')} last night`
   return { subject, sections, text: renderText(subject, sections), html: renderHtml(subject, sections) }
 }
 
@@ -331,6 +337,9 @@ export function inboxLines(
       ...(a?.adversary && a.adversary.verdict !== 'PASS' ? [`reviewer: ${a.adversary.verdict}`] : []),
       ...(r ? [r.comments === 0 ? 'review clean' : plural(r.comments, 'review comment')] : []),
       ...(p.isDraft ? ['draft'] : []),
+      // An unreviewed bot PR blocks new factory work on its repo after STALE_PR_DAYS (blockOnStaleBotPrs).
+      ...(src === 'factory' && age >= STALE_PR_DAYS ? ['repo paused for new factory PRs until this is merged or closed'] : []),
+      ...(src === 'factory' && age >= STALE_PR_DAYS - 2 && age < STALE_PR_DAYS ? [`repo pauses for new factory PRs in ${STALE_PR_DAYS - age}d`] : []),
       ...(prValueFromLabels(p.labels) !== null ? [`value:${prValueFromLabels(p.labels)}`] : []),
     ]
     return `${age >= AGING_PR_DAYS ? '⚠ ' : ''}${short(p.repo)}#${p.number} · ${age}d · ${PR_SOURCE_LABEL[src]} · ${what}${notes.length ? ` [${notes.join(', ')}]` : ''} — ${p.url}`
