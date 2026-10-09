@@ -327,7 +327,7 @@ See the [gstack Integration Roadmap](docs/roadmap-history.md#gstack-integration-
 
 ```bash
 npm test              # Vitest unit tests (1,100+ tests, 68 files)
-npm run test:e2e      # Playwright e2e tests (requires dev server)
+npm run test:e2e      # Playwright e2e on a throwaway Neon branch (needs the Neon CLI logged in)
 npm run test:all      # both
 npm run typecheck     # TypeScript strict check
 

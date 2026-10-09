@@ -243,7 +243,7 @@ test.describe('ActiveAgentsCard on dashboard', () => {
 test.describe('Settings — Scheduled Skills', () => {
   test('Auto-Dispatch card exists in settings', async ({ page }) => {
     await page.goto('/settings')
-    await expect(page.getByText('Agent Auto-Dispatch')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText('Monday auto-dispatch', { exact: true })).toBeVisible({ timeout: 8000 })
   })
 })
 

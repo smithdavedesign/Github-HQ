@@ -17,7 +17,7 @@ const DB_URL = process.env.DATABASE_URL ?? ''
 test.describe('Auto-Dispatch settings card', () => {
   test('renders on settings page', async ({ page }) => {
     await page.goto('/settings')
-    await expect(page.getByText('Agent Auto-Dispatch')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText('Monday auto-dispatch', { exact: true })).toBeVisible({ timeout: 8000 })
   })
 
   test('shows the main enable toggle', async ({ page }) => {
@@ -31,14 +31,15 @@ test.describe('Auto-Dispatch settings card', () => {
     const effortLabel = page.getByText('Effort gate')
     const isVisible = await effortLabel.isVisible().catch(() => false)
     // May or may not be visible depending on user's current setting — just verify page loads
-    const card = page.getByText('Agent Auto-Dispatch')
+    const card = page.getByText('Monday auto-dispatch', { exact: true })
     await expect(card).toBeVisible()
   })
 
   test('shows effort gate select when enabled', async ({ page }) => {
     await page.goto('/settings')
     // Find the toggle and turn it on if it's off
-    const toggle = page.locator('[role="switch"]').nth(1) // second switch (first is public profile)
+    // The first switch on the page is "Enable auto-dispatch" (Settings has five sections since #39).
+    const toggle = page.locator('[data-slot="switch"]').first()
     const isChecked = await toggle.getAttribute('data-state')
 
     if (isChecked !== 'checked') {
