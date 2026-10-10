@@ -151,6 +151,14 @@ Known limits:
 - Installs that download binaries from other hosts (e.g. Playwright browsers, some native modules from GitHub releases) fail inside the sandbox; the repo is then skipped as `install failed`. Add the host to `allowHosts` only if you trust what it serves.
 - Concurrency is 1: on a 16 GB Mac, Docker's VM has 8 GB and Ollama keeps a 7B model resident.
 
+## System events
+
+The factory hosts the system-wide log ([docs/logging.md](../docs/logging.md)):
+- `factory/system/events.ts` defines the format, the emitter and redaction.
+- `factory/system/collector.ts` ships `~/.system-events/events.jsonl` to Neon `system_events`. It also probes services, launchd jobs, OpenClaw crons, GitHub crons and LiteLLM provider errors, reads failed `automation_runs`, and alerts Slack #team-agents.
+- launchd `com.user.system-events` runs it every 5 minutes; `install-launchd.sh` installs it.
+- Commands: `npm run events -- collect | summary | tail | emit`.
+
 ## Tier advisor
 
 A local model (`advisor.model`, default `local-qwen3`) rates every task 1–3 before routing (`lib/tier-advisor.ts`). It runs locally, so it may read private and work code.

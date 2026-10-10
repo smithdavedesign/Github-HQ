@@ -43,7 +43,9 @@ an idea.
 | **Context index** | `factory/context/`, built daily into `~/.repohq-factory/context/index.json` | One searchable view of repos, ideas, bookmarks and docs, tagged by data class |
 | **Resource Center** | private repo `resource-center` (`my-bookmarks-hub` on Vercel, behind Vercel auth) + the Bridge Chrome extension | The owner's bookmarks as a knowledge source; feeds interests into the context index |
 | **Local AI stack** | `~/ai-stack` (local git) | Ollama, LiteLLM (model aliases and the free pool), Headroom, coding agents. [AI stack docs](ai-stack/README.md) |
-| **OpenClaw** | `~/.openclaw` | `companion` (WhatsApp, personal memory), `scout` (idea research fallback, no personal context), `main` |
+| **OpenClaw** | `~/.openclaw` | `companion` (personal memory; reachable on **WhatsApp** and **Slack**), `scout` (idea research fallback, no personal context), `main` |
+| **Slack** | workspace channel **#team-agents** (app `repoHQ-message`, socket mode through OpenClaw) | The communication layer: talk to the companion (@-mention in the channel, or DM), and where **system alerts** land: failures, reminders, recoveries |
+| **System log** | `~/.system-events/events.jsonl` → collector (launchd, 5 min) → Neon `system_events` | One log across every part, with probes and Slack alerts. [Logging](logging.md) |
 | **Notion** | Idea Board, task boards | Where the owner decides on ideas |
 
 ## Rules every part follows
@@ -66,6 +68,16 @@ an idea.
 - **Humans merge:** the factory and the idea builder open draft PRs. Nothing merges, force-pushes or
   deletes on its own.
 - **The owner's choice wins:** a Notion status the owner sets overrides any pipeline verdict.
+
+## Communication and visibility
+
+| Channel | What goes there |
+|---|---|
+| **Slack #team-agents** | Real-time: system alerts (🔴 failing, 🟠 still failing every 6h, 🟢 recovered), and conversations with the companion |
+| **WhatsApp** | Personal: companion morning and evening messages, the AI briefing, the daily idea report |
+| **Morning email** (06:45) | The daily digest: review queue, ideas and revenue, the factory's roles, what's failing now across every system |
+| **RepoHQ Agents page** | The factory's queue, runs and traces, the Activity Log, and the **System log** (failing now plus the latest events) |
+| **Notion Idea Board** | Decisions on ideas |
 
 ## How an AI agent gets context
 
@@ -96,7 +108,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Building ideas | Missing | Built, first run pending | M1 tests first on Claude Pro, draft PR. Runs on the host with install scripts off; next step is the Docker sandbox. |
 | Context | Fragmented | Works | One index (44 repos, ideas, 258 bookmarks, 183 doc sections), MCP tools, a skill. Keyword search, no embeddings. |
 | Revenue loop | Missing | Wired, no data yet | Idea MRR from RepoHQ in each idea's state, the Notion board and the morning email. Total portfolio MRR is $4.99. |
-| Operations | Fragile, visible | Fragile, visible | One Mac (AC power, memory), many moving parts; the morning email is the health check |
+| Operations | Fragile, visible | Fragile, **watched** | One system log across every part. Probes cover services, launchd jobs, OpenClaw crons, GitHub crons and provider errors, with alerts to Slack. Still one Mac. |
 
 **Weakest links now, in order:**
 1. **Distribution.** A landing page nobody sees proves nothing; posting the launch post is on the owner (permitly's is ready).
@@ -111,6 +123,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Hourly 20:00–06:00, 12:00, 16:00 | Factory cycle (fixes, reconcile, preview smoke) | BullMQ worker on the Mac |
 | 06:45 | Morning email; rebuilds the context index first | worker |
 | 09:00 | Idea research (Claude Pro, else scout on free models) | OpenClaw cron `idea-to-repo` |
+| Every 5 min | System-events collector: ship the log, probe everything, alert Slack | launchd `com.user.system-events` |
 | Every 15 min (daily steps after 09:30) | Idea pipeline tick: Notion sync, signals, decisions, promote, revenue; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |
 | Daily, weekly | RepoHQ sync, security, deployments, AI summaries, digest | GitHub Actions crons |
 
@@ -118,6 +131,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 
 - Run the idea builder inside the factory's Docker sandbox with a Claude subscription token.
 - Smoke-test logged-in pages (a test account per app).
+- Vercel runtime errors into the system log (the last unwatched surface).
 - A stronger demand signal than signups: a "what would you pay" step on landing pages.
 - Embeddings for the context index, if keyword search starts missing things.
 - Hardware: 64–128 GB unified memory, after the 30-day experiment's numbers are in (2026-11-06).

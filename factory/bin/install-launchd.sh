@@ -11,6 +11,9 @@
 #                               ≤ maxPrsPerDay per factory day) → 3–8 draft PRs by morning
 #   com.repohq.factory.report — 06:45 local: one update per gstack role, emailed
 #   com.repohq.factory.scout  — Sundays 17:10 local
+# Always:
+#   com.user.system-events    — every 5 min: the system-events collector (factory/system, docs/logging.md):
+#                               ships ~/.system-events, probes services and jobs, alerts Slack
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -66,7 +69,7 @@ PLIST
 }
 
 CALENDAR_LABELS="com.repohq.factory.cycle com.repohq.factory.report com.repohq.factory.scout"
-LABELS="$CALENDAR_LABELS com.repohq.factory.worker"
+LABELS="$CALENDAR_LABELS com.repohq.factory.worker com.user.system-events"
 for label in $LABELS; do
   launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
   rm -f "$AGENTS/$label.plist"
@@ -129,6 +132,28 @@ $CYCLE_TIMES
   plist com.repohq.factory.scout scout '<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>10</integer></dict>' > "$AGENTS/com.repohq.factory.scout.plist"
 fi
 unset REDIS
+
+# The system-events collector, on the deployed checkout like the worker (secrets come from the keychain).
+cat > "$AGENTS/com.user.system-events.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.user.system-events</string>
+  <key>ProgramArguments</key>
+  <array><string>$APP/node_modules/.bin/tsx</string><string>$APP/factory/bin/events.ts</string><string>collect</string></array>
+  <key>WorkingDirectory</key><string>$APP</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string><key>HOME</key><string>$HOME</string></dict>
+  <key>StartInterval</key><integer>300</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>$HOME/.system-events/collector.log</string>
+  <key>StandardErrorPath</key><string>$HOME/.system-events/collector.log</string>
+</dict>
+</plist>
+PLIST
+mkdir -p "$HOME/.system-events"
+INSTALL="$INSTALL com.user.system-events"
 
 for label in $INSTALL; do
   plutil -lint "$AGENTS/$label.plist" >/dev/null

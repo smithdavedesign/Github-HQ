@@ -20,9 +20,10 @@ See the [companion diagram](architecture.md#personal-assistant).
 | Piece | Where | Role |
 |---|---|---|
 | Agent | `companion` (OpenClaw) | Isolated agent, model `local/free-agent` (the free cloud pool), falling back to `cloud-or` → `local-coder` → `cloud-smart` |
-| Gateway | `ai.openclaw.gateway` :18789 | Always-on; routes WhatsApp → companion |
+| Gateway | `ai.openclaw.gateway` :18789 | Always-on; routes WhatsApp **and Slack** → companion |
 | Workspace | `~/.openclaw/workspace-companion/` | Persona + memory files |
 | Channel | WhatsApp (allowlisted number) | Text + voice (Whisper transcription) |
+| Channel | **Slack** (socket mode, app `repoHQ-message`) | Channel **#team-agents**: answers only when @-mentioned, and only to the owner's Slack user. DMs: pairing (unknown senders need a one-time code). Also where system alerts land ([logging](../logging.md)). |
 
 ### Persona & memory (files loaded every session)
 
@@ -88,7 +89,7 @@ openclaw cron edit --id <id> --cron "..."  # change schedule
 
 ## Using it
 
-Just message it on WhatsApp like a person. It will:
+Message it on WhatsApp, in a Slack DM, or by @-mentioning it in **#team-agents**, like you would a person. It will:
 - Ask your name and invite you to name *it* on first contact.
 - Remember what matters and bring it forward naturally.
 - Be direct and honest (no sycophancy) — tuned to how the owner likes to be dealt with.

@@ -40,6 +40,8 @@ export interface FactoryConfig {
    * (factory/lib/local-review.ts).
    */
   copilot: { enabled: boolean; model: string; maxTasksPerDay: number; review: boolean; maxReviewsPerDay: number; localFallback: boolean }
+  /** System events (factory/system): where failure and recovery alerts go. */
+  alerts: { slackChannel: string | null }
   /** Tier advisor (lib/tier-advisor.ts): the local model that rates task difficulty 1–3. */
   advisor: { model: string; timeoutMs: number }
   /** Preview smoke test of factory PRs (lib/smoke.ts): public paths per repo (default "/"), and the Vercel team. */
@@ -173,6 +175,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FactoryConfig 
     maxPrsPerCycle: num(env.FACTORY_MAX_PRS, json.maxPrsPerCycle ?? 1),
     maxPrsPerDay: json.maxPrsPerDay ?? 8,
     integrationBranch: json.integrationBranch ?? 'integration/agent',
+    alerts: { slackChannel: json.alerts?.slackChannel ?? null },
     advisor: {
       model: json.advisor?.model ?? 'local-qwen3',
       timeoutMs: json.advisor?.timeoutMs ?? 90_000,

@@ -28,5 +28,8 @@
         "/login"
       ]
     }
+  },
+  "alerts": {
+    "slackChannel": "C0C85QYP4MN"
   }
 }

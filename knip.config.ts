@@ -17,8 +17,9 @@ const config: KnipConfig = {
     'mcp/brief.ts',
   ],
   ignoreExportsUsedInFile: true,
-  // System tools the factory sandbox spawns (factory/lib/sandbox.ts streams the clone in with tar).
-  ignoreBinaries: ['tar'],
+  // macOS system tools: the sandbox streams the clone in with tar; the system-events CLI reads secrets
+  // from the login keychain with security.
+  ignoreBinaries: ['tar', 'security'],
   ignoreDependencies: [
     // tailwindcss and tw-animate-css are imported via CSS @import in globals.css.
     // Knip only parses JS/TS imports so it flags these as unused — they are not.

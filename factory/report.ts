@@ -30,6 +30,20 @@ import { readIdeaStates } from './context/ideas'
 
 const log = (...a: unknown[]) => console.log(`[report ${new Date().toISOString().slice(11, 19)}]`, ...a)
 
+/** Failing-now and 24h counts from `system_events` (docs/logging.md). Null without a database. */
+async function systemEventsSummary(cfg: ReturnType<typeof loadConfig>) {
+  if (!cfg.repohq.databaseUrl) return null
+  const { neon } = await import('@neondatabase/serverless')
+  const sql = neon(cfg.repohq.databaseUrl)
+  const counts = await sql`SELECT system, status, count(*)::int AS n FROM system_events WHERE ts > now() - interval '24 hours' GROUP BY system, status`
+  const latest = await sql`SELECT DISTINCT ON (fingerprint) fingerprint, status, message, ts FROM system_events WHERE status IN ('ok','fail') AND ts > now() - interval '7 days' ORDER BY fingerprint, ts DESC`
+  return {
+    hours: 24,
+    counts: counts as Array<{ system: string; status: string; n: number }>,
+    failingNow: (latest as Array<{ fingerprint: string; status: string; message: string; ts: string }>).filter(r => r.status === 'fail'),
+  }
+}
+
 async function main() {
   const argv = process.argv.slice(2)
   const cfg = loadConfig()
@@ -62,6 +76,7 @@ async function main() {
     ownerLogin: await ownerLogin(),
     nextActions: await repoSignalsOf(cfg, now).then(rows => (rows ? nextActions(rows) : null)),
     preflight: await runPreflight(cfg).catch(() => []),
+    systemEvents: await systemEventsSummary(cfg).catch(() => null),
   }
   let report = buildMorningReport(input)
   // Opt-in: the local 7B model mis-paraphrased numbers in testing ("4 of 8 reviews completed"
