@@ -4,10 +4,14 @@
  * buried everything else. Pure.
  */
 
-/** Same message modulo numbers, ids, paths' variable parts and whitespace. */
+/**
+ * Same message modulo numbers, ids, paths' variable parts and whitespace. Number parts are
+ * identifiers (a repo id) and are kept exactly: normalising them made the same message on
+ * different repos share one row (2026-10-10: five repos' PRs showed as one "PR Opened ×5").
+ */
 export function repeatKey(...parts: (string | number | null | undefined)[]): string {
   return parts
-    .map(p => String(p ?? '').toLowerCase().replace(/[0-9a-f]{8,}/g, '#').replace(/\d+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 160))
+    .map(p => typeof p === 'number' ? String(p) : String(p ?? '').toLowerCase().replace(/[0-9a-f]{8,}/g, '#').replace(/\d+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 160))
     .join('|')
 }
 

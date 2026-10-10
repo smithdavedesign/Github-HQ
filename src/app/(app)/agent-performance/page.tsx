@@ -255,7 +255,8 @@ export default async function AgentPerformancePage() {
             <Link href="/" className="underline text-xs mt-3 inline-block hover:text-foreground">← Back to dashboard</Link>
           </div>
         ) : (
-          collapseRepeats(events, e => repeatKey(e.eventType, e.repoId, e.title, e.description)).slice(0, 50).map(({ item: event, count }) => {
+          // Repeats of one message on one repo collapse; different PRs never share a row.
+          collapseRepeats(events, e => `${repeatKey(e.eventType, e.repoId, e.title, e.description)}|${(e.metadata as { prUrl?: string } | null)?.prUrl ?? ''}`).slice(0, 50).map(({ item: event, count }) => {
             const meta = event.metadata as Record<string, unknown> | null
             const repoName = event.repository?.name ?? (meta?.repoHQRepoName as string) ?? '—'
 
