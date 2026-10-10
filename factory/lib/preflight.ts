@@ -47,6 +47,16 @@ export function swapUsage(out: string): { usedMb: number; totalMb: number } | nu
   return total && used ? { usedMb: Number(used), totalMb: Number(total) } : null
 }
 
+/**
+ * Parse `sysctl -n kern.memorystatus_vm_pressure_level`, macOS's own memory pressure signal
+ * (1 normal, 2 warning, 4 critical). Swap used is no alarm on its own: macOS keeps cold pages
+ * swapped out and grows the swap file with uptime, so "9 of 10 GB" can be a healthy machine.
+ */
+export function memoryPressure(out: string): 'normal' | 'warning' | 'critical' | null {
+  const level = Number(out.trim().split(/\s+/).pop())
+  return level === 1 ? 'normal' : level === 2 ? 'warning' : level === 4 ? 'critical' : null
+}
+
 export const MIN_FREE_DISK_GB = 15
 
 export async function runPreflight(cfg: FactoryConfig): Promise<PreflightCheck[]> {
@@ -100,11 +110,18 @@ export async function runPreflight(cfg: FactoryConfig): Promise<PreflightCheck[]
     checks.push({ name: 'disk', ok: freeGb >= MIN_FREE_DISK_GB, detail: `${freeGb} GB free`, fix: 'free space; docker system prune reclaims old sandbox images and build cache' })
   } catch { /* not fatal */ }
 
-  const swap = await run('sysctl', ['vm.swapusage'], { timeoutMs: 5_000 })
-  const s = swapUsage(swap.output)
-  if (s && s.totalMb > 0) {
-    const pct = Math.round((s.usedMb / s.totalMb) * 100)
-    checks.push({ name: 'swap', ok: pct < 85, detail: `${(s.usedMb / 1024).toFixed(1)} of ${(s.totalMb / 1024).toFixed(1)} GB`, fix: 'memory is tight: lower Docker Desktop\'s memory limit (about 6 GB) or restart the Mac', soft: true })
+  const [pressureOut, swapOut] = await Promise.all([
+    run('sysctl', ['-n', 'kern.memorystatus_vm_pressure_level'], { timeoutMs: 5_000 }),
+    run('sysctl', ['vm.swapusage'], { timeoutMs: 5_000 }),
+  ])
+  const pressure = memoryPressure(pressureOut.output)
+  const s = swapUsage(swapOut.output)
+  if (pressure) {
+    const swapNote = s && s.totalMb > 0 ? ` · swap ${(s.usedMb / 1024).toFixed(1)} of ${(s.totalMb / 1024).toFixed(1)} GB` : ''
+    checks.push({
+      name: 'memory', ok: pressure === 'normal', detail: `pressure ${pressure}${swapNote}`,
+      fix: 'memory is tight right now: quit apps you are not using or restart the Mac', soft: true,
+    })
   }
   return checks
 }

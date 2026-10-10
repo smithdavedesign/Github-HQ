@@ -52,7 +52,9 @@ describe('preflight', () => {
     expect(preflightLines([{ name: 'Docker', ok: false, detail: 'not running' }]).alarm).toBe(true)
   })
   it('finds allowlisted repos the GitHub App cannot reach, and parses swap', async () => {
-    const { missingFromApp, swapUsage } = await import('../../factory/lib/preflight')
+    const { missingFromApp, swapUsage, memoryPressure } = await import('../../factory/lib/preflight')
+    expect(['1', '2', '4', ''].map(memoryPressure)).toEqual(['normal', 'warning', 'critical', null])
+    expect(memoryPressure('kern.memorystatus_vm_pressure_level: 2\n')).toBe('warning')
     expect(missingFromApp(['o/a', 'o/B'], ['o/b'])).toEqual(['o/a'])
     expect(swapUsage('vm.swapusage: total = 9216.00M  used = 8052.12M  free = 1163.88M  (encrypted)')).toEqual({ usedMb: 8052.12, totalMb: 9216 })
   })

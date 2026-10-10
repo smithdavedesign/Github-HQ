@@ -8,7 +8,7 @@ import { run, type Runner } from './proc'
  * and, after a fix, the verification gate.
  */
 
-export type CheckName = 'typecheck' | 'lint' | 'test'
+export type CheckName = 'typecheck' | 'lint' | 'test' | 'build'
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun'
 
 export interface CheckSpec {
@@ -90,6 +90,16 @@ export function planChecks(pkg: PackageJson, pm: PackageManager, hasTsconfig: bo
   if (!isPlaceholderTestScript(scripts.test) && !WATCH_MODE.test(scripts.test ?? '')) specs.push(runScript('test', 'test'))
 
   return specs
+}
+
+/**
+ * The repo's build, run only around dependency fixes: never a source of tasks. `npm audit fix`
+ * can move a package to a release the code can't build with (algorithms-docs #1, 2026-10-10:
+ * @astrojs/sitemap 3.0 → 3.7 broke the Astro 3 site while no other check existed to notice).
+ */
+export function buildCheck(pkg: PackageJson, pm: PackageManager): CheckSpec | null {
+  if (!pkg.scripts?.build || WATCH_MODE.test(pkg.scripts.build)) return null
+  return { name: 'build', cmd: pm, args: ['run', 'build'], display: `${pm} run build` }
 }
 
 export async function runChecks(specs: CheckSpec[], cwd: string, timeoutMs: number, runner: Runner = run): Promise<CheckResult[]> {

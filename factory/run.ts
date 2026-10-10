@@ -22,7 +22,7 @@ import {
   allowedTiers, canUsePaidTier, chooseTier, classifyRepoData, computeTierStats, nextTier, type ModelTier,
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
-import { collectPackageInfo, confirmFailures, detectPackageManager, installCommand, withoutScripts, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
+import { buildCheck, collectPackageInfo, confirmFailures, detectPackageManager, installCommand, withoutScripts, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
 import { addPrLabel, ensureValueLabels, prLabels, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { commentOnPr, loadGstackChecklist, localReviewComment, runLocalReview, type LocalReview } from './lib/local-review'
@@ -390,6 +390,7 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     }
     const ws: Workspace = sandbox ? { dir: sandbox.dir, run: sandbox.run, sandbox } : { dir, run, sandbox: null }
     let specs: CheckSpec[] = []
+    let buildSpec: CheckSpec | null = null
     let baseline: CheckResult[] = []
     let audit: AuditCounts | null = null
 
@@ -425,6 +426,7 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
       }
       tracer.step('install', 'ok', undefined, undefined, { durationMs: Date.now() - t0 })
       specs = planChecks(basics.pkg, pm, basics.hasTsconfig)
+      buildSpec = buildCheck(basics.pkg, pm)
       const tc = Date.now()
       tracer.step('checks', 'start', specs.map(sp => sp.name).join(', ') || '(none)')
       baseline = await runChecks(specs, ws.dir, cfg.checkTimeoutMs, ws.run)
@@ -487,7 +489,7 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     const sizeOf = (f: string) => { try { return statSync(path.join(dir, f)).size } catch { return 0 } }
     const visibility = await repoVisibility(repo)
     const dataClass = classifyRepoData({ visibility })
-    const ctx: TaskContext = { cfg, repo, dir, ws, base, pkg: basics.pkg, specs, baseline, args, aliases, dataClass, audit }
+    const ctx: TaskContext = { cfg, repo, dir, ws, base, pkg: basics.pkg, specs, buildSpec, baseline, args, aliases, dataClass, audit }
 
     // Try at most two tasks per repo: when free cloud quota defers the first,
     // local (M0) work on the next task still gets done this cycle.
@@ -552,6 +554,8 @@ interface TaskContext {
   base: string
   pkg: ReturnType<typeof readRepoBasics>['pkg']
   specs: CheckSpec[]
+  /** The repo's build script: run before and after a dependency fix only. */
+  buildSpec: CheckSpec | null
   baseline: CheckResult[]
   args: Args
   aliases: string[]
@@ -650,7 +654,8 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
 async function attempt(
   ctx: TaskContext, task: FactoryTask, tier: ModelTier, exploring: boolean, auditBefore: AuditCounts | null = null, parentId: string | null = null,
 ): Promise<'pr' | 'verified' | 'failed' | 'rate_limited'> {
-  const { cfg, repo, dir, ws, base, pkg, specs, baseline, args } = ctx
+  const { cfg, repo, dir, ws, base, pkg, specs, args } = ctx
+  let { baseline } = ctx
   const deps = task.kind === 'deps-audit'
   const lintFix = task.kind === 'lint-autofix'
   const lintSpec = specs.find(s => s.name === 'lint')
@@ -658,6 +663,14 @@ async function attempt(
   const attemptId = randomUUID()
   const branch = branchName(task, now, runId)
   await checkoutNewBranch(ws.dir, base, branch, ws.run)
+  // A dependency fix is also judged on the build: one that passed before must still pass after.
+  const checkSpecs = deps && ctx.buildSpec ? [...specs, ctx.buildSpec] : specs
+  if (deps && ctx.buildSpec) {
+    const [built] = await runChecks([ctx.buildSpec], ws.dir, cfg.checkTimeoutMs, ws.run)
+    writeFileSync(path.join(logDir, `${slug(repo)}-baseline-build.log`), built.output)
+    baseline = [...baseline, built]
+    await resetWorktree(ws.dir, ws.run)
+  }
   const model = deps || lintFix ? 'npm' : cfg.models[tier]
   tracer.step('attempt', 'start', `${task.kind} · ${tier} ${deps || lintFix ? '(no model)' : `${harnessFor(tier)} → ${model}`}${ws.sandbox ? ' · sandboxed' : ''}`,
     { kind: task.kind, tier, model, exploring, parentId }, { jobId: attemptId })
@@ -703,14 +716,14 @@ async function attempt(
   let after = baseline
   if (edits.files.length > 0) {
     await commitAll(ws.dir, 'factory: wip', ws.run)
-    after = await runChecks(specs, ws.dir, cfg.checkTimeoutMs, ws.run)
+    after = await runChecks(checkSpecs, ws.dir, cfg.checkTimeoutMs, ws.run)
     if ((await diffInfo(ws.dir, ws.run)).files.length > 0) {
       if (deps) {
         // A dependency PR must contain only package files: drop the lint fixer's rewrite.
         await resetWorktree(ws.dir, ws.run)
       } else {
         await commitAll(ws.dir, 'factory: wip (repo check autofix)', ws.run)
-        after = await runChecks(specs, ws.dir, cfg.checkTimeoutMs, ws.run)
+        after = await runChecks(checkSpecs, ws.dir, cfg.checkTimeoutMs, ws.run)
         await resetWorktree(ws.dir, ws.run)
       }
     }
