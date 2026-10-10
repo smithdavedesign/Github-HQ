@@ -12,6 +12,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { EVENTS_DIR, EVENTS_FILE, fingerprint, normalizeEvent, type SystemEvent } from './events'
+import { refreshOpenClawBrief } from '../context/brief'
 
 // ─── What's watched ─────────────────────────────────────────────────────────
 
@@ -25,8 +26,11 @@ export const WATCHED_JOBS: Array<{ label: string; kind: 'daemon' | 'interval'; s
   { label: 'com.user.idea-pipeline', kind: 'interval', system: 'idea-factory', component: 'pipeline' },
   { label: 'com.user.repohq-frontdoor-report', kind: 'interval', system: 'openclaw', component: 'frontdoor' },
   { label: 'com.user.system-events', kind: 'interval', system: 'ai-stack', component: 'collector' },
+  { label: 'com.user.factory-backup', kind: 'interval', system: 'factory', component: 'backup' },
   // homebrew.mxcl.ollama is deliberately not watched: it exits 1 by design (Ollama.app owns :11434).
 ]
+
+const VERCEL_SCOPE = process.env.VERCEL_SCOPE ?? 'team_ONe0JJaVwgXIAUMHZ7OUgkku'
 
 export const HTTP_PROBES: Array<{ system: string; component: string; url: string; auth?: 'litellm' }> = [
   { system: 'ai-stack', component: 'litellm', url: 'http://127.0.0.1:4000/health/liveliness' },
@@ -91,6 +95,20 @@ export function openClawCronEvents(lines: string[], jobNames: Map<string, string
 export function workflowEvents(repo: string, workflows: Array<{ name: string; state: string }>, now = new Date()): SystemEvent[] {
   return workflows.filter(w => /^cron/i.test(w.name)).map(w => ev('github', `workflow:${w.name}`, 'state', w.state === 'active',
     w.state === 'active' ? `${repo} "${w.name}" is active` : `${repo} "${w.name}" is ${w.state} — re-enable with gh workflow enable`, { repo }, now))
+}
+
+/** Vercel production deployments (newest first) → one event per project: its latest finished deploy. */
+export function vercelEvents(deployments: Array<{ name: string; state?: string; readyState?: string; url?: string; inspectorUrl?: string }>, now = new Date()): SystemEvent[] {
+  const latest = new Map<string, (typeof deployments)[number]>()
+  for (const d of deployments) {
+    const state = d.state ?? d.readyState ?? ''
+    if (!['READY', 'ERROR', 'CANCELED'].includes(state) || latest.has(d.name)) continue // still building: wait
+    latest.set(d.name, d)
+  }
+  return [...latest.values()].map(d => {
+    const state = d.state ?? d.readyState
+    return ev('vercel', d.name, 'deploy', state === 'READY', state === 'READY' ? `${d.name} production is live` : `${d.name}'s latest production deploy is ${state}: ${d.inspectorUrl ?? d.url ?? ''}`, undefined, now)
+  })
 }
 
 /** LiteLLM log text → one event per kind of provider trouble seen (ok when none). */
@@ -207,6 +225,8 @@ export async function probeAll(now: Date, state: CollectorState): Promise<System
   if (launchctl) out.push(...launchdEvents(launchctl, now))
   const wf = sh('gh', ['workflow', 'list', '-R', 'smithdavedesign/Github-HQ', '--all', '--json', 'name,state'])
   if (wf) { try { out.push(...workflowEvents('Github-HQ', JSON.parse(wf), now)) } catch { /* skip */ } }
+  const vercel = sh('vercel', ['api', '/v6/deployments?target=production&limit=100', ...(VERCEL_SCOPE ? ['--scope', VERCEL_SCOPE] : [])], 60_000)
+  if (vercel) { try { out.push(...vercelEvents(JSON.parse(vercel.slice(vercel.indexOf('{'))).deployments ?? [], now)) } catch { /* skip */ } }
   const logs = sh('docker', ['logs', 'litellm', '--since', '6m'], 20_000)
   if (logs !== null) out.push(...providerEvents(logs, now))
   return out
@@ -268,7 +288,11 @@ export async function collect(opts: { databaseUrl: string | null; slack: { token
   }
   if (sql && !opts.dryRun && state.lastPrune?.slice(0, 10) !== now.toISOString().slice(0, 10)) {
     try { await sql`DELETE FROM system_events WHERE ts < now() - interval '90 days'`; state.lastPrune = now.toISOString() } catch { /* keep going */ }
+    // Once a day: every secret copy matches the keychain and is owner-only (~/ai-stack/bin/secrets logs its own event).
+    sh(path.join(process.env.HOME ?? '', 'ai-stack', 'bin', 'secrets'), ['check'], 60_000)
   }
+  // Something started failing or recovered: the OpenClaw agents' brief says so at their next message.
+  if (alerts.length && !opts.dryRun) refreshOpenClawBrief(Object.entries(alertState.open).map(([fingerprint, o]) => ({ fingerprint, message: o.message })), now)
   if (!opts.dryRun) {
     const next: CollectorState = {
       ...state, offset: fromFile.offset, probes: probes.last, alerts: posted || !opts.slack.token ? alertState : state.alerts,

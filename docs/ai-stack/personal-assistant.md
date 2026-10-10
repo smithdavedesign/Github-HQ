@@ -25,6 +25,13 @@ See the [companion diagram](architecture.md#personal-assistant).
 | Channel | WhatsApp (allowlisted number) | Text + voice (Whisper transcription) |
 | Channel | **Slack** (socket mode, app `repoHQ-message`) | Channel **#team-agents**: answers only when @-mentioned, and only to the owner's Slack user. DMs: pairing (unknown senders need a one-time code). Also where system alerts land ([logging](../logging.md)). |
 
+### The system brief
+
+The companion's `AGENTS.md` ends with a generated block between `system-brief` markers (RepoHQ `factory/context/brief.ts`). It covers the goal, the parts, the rules, what's failing now, the ideas in flight, and how to look things up (`~/idea-factory/bin/context`, `~/ai-stack/bin/system-status`).
+- The morning report rewrites it daily, and the system-events collector rewrites it whenever something starts failing or recovers. The main agent gets the same block.
+- `agents.defaults.contextInjection` is `always` (2026-10-10; it was `continuation-skip`), so the workspace files, and the brief with them, go with every turn, not just a session's first. That costs about 6k extra input tokens a turn, free on the free pool.
+- Revert: `openclaw config set agents.defaults.contextInjection continuation-skip`.
+
 ### Persona & memory (files loaded every session)
 
 | File | Purpose |

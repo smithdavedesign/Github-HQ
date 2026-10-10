@@ -159,6 +159,11 @@ The factory hosts the system-wide log ([docs/logging.md](../docs/logging.md)):
 - launchd `com.user.system-events` runs it every 5 minutes; `install-launchd.sh` installs it.
 - Commands: `npm run events -- collect | summary | tail | emit`.
 
+## Backups and the system brief
+
+- **Backups:** `bin/backup-state.sh` (launchd `com.user.factory-backup`, 03:30) copies `ledger.jsonl`, `reports/`, `scout-reports/`, `value-labels/` and `queue/` to the private repo `smithdavedesign/repohq-factory-state`. It never copies secrets, the context index (work data) or logs. To restore, copy them back into `~/.repohq-factory/`.
+- **System brief:** `context/brief.ts` writes the OpenClaw agents' brief (see `docs/system-overview.md`). Run it by hand with `npm run context -- brief [--write-openclaw]`.
+
 ## Tier advisor
 
 A local model (`advisor.model`, default `local-qwen3`) rates every task 1–3 before routing (`lib/tier-advisor.ts`). It runs locally, so it may read private and work code.

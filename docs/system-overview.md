@@ -46,6 +46,8 @@ an idea.
 | **OpenClaw** | `~/.openclaw` | `companion` (personal memory; reachable on **WhatsApp** and **Slack**), `scout` (idea research fallback, no personal context), `main` |
 | **Slack** | workspace channel **#team-agents** (app `repoHQ-message`, socket mode through OpenClaw) | The communication layer: talk to the companion (@-mention in the channel, or DM), and where **system alerts** land: failures, reminders, recoveries |
 | **System log** | `~/.system-events/events.jsonl` → collector (launchd, 5 min) → Neon `system_events` | One log across every part, with probes and Slack alerts. [Logging](logging.md) |
+| **Backups** | private GitHub repos | `ai-stack` (the stack's config and scripts, never `.env`), `repohq-factory-state` (the factory's ledger and reports, nightly), `idea-factory` (every idea's record). Code repos live on GitHub. |
+| **Secrets** | macOS keychain + `~/ai-stack/bin/secrets` | One source of truth; `check` runs daily; `rotate litellm` updates every copy. [Authentication](ai-stack/authentication.md) |
 | **Notion** | Idea Board, task boards | Where the owner decides on ideas |
 
 ## Rules every part follows
@@ -89,7 +91,11 @@ an idea.
    - `get_portfolio_summary`, `get_repo_context` and `get_next_action` cover portfolio state.
 3. **CLI:** `npm run context -- search "<query>" | interests | overview` in RepoHQ, or
    `~/idea-factory/bin/context` (cloud-safe classes only).
-4. **Each repo's `CLAUDE.md`/`AGENTS.md`** points here.
+4. **Each repo's `CLAUDE.md`/`AGENTS.md`** points here, and so does `~/.claude/CLAUDE.md`, which every Claude Code session loads.
+5. **OpenClaw (Slack, WhatsApp):** the companion and main agents get a generated **system brief** in their `AGENTS.md` (`factory/context/brief.ts`). It covers the goal, the parts, the rules, what's failing now, the ideas in flight, and how to look things up.
+   - It's refreshed daily and whenever something starts failing or recovers.
+   - OpenClaw adds it to every turn (`contextInjection: always`), so local and cloud models alike answer with the current picture.
+   - They can't read the docs here, because macOS keeps launchd jobs out of `~/Documents`.
 
 ## Scorecard (2026-10-10)
 
@@ -123,7 +129,8 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Hourly 20:00–06:00, 12:00, 16:00 | Factory cycle (fixes, reconcile, preview smoke) | BullMQ worker on the Mac |
 | 06:45 | Morning email; rebuilds the context index first | worker |
 | 09:00 | Idea research (Claude Pro, else scout on free models) | OpenClaw cron `idea-to-repo` |
-| Every 5 min | System-events collector: ship the log, probe everything, alert Slack | launchd `com.user.system-events` |
+| Every 5 min | System-events collector: ship the log, probe everything (incl. Vercel deploys), alert Slack, refresh the companion's brief; daily: prune, secrets check | launchd `com.user.system-events` |
+| 03:30 | Factory state backup (ledger, reports) → private repo | launchd `com.user.factory-backup` |
 | Every 15 min (daily steps after 09:30) | Idea pipeline tick: Notion sync, signals, decisions, promote, revenue; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |
 | Daily, weekly | RepoHQ sync, security, deployments, AI summaries, digest | GitHub Actions crons |
 

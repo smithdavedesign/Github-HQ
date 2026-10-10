@@ -3,7 +3,7 @@ import { mkdtempSync, appendFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fingerprint, normalizeEvent, redact, type SystemEvent } from '../../factory/system/events'
-import { decideAlerts, launchdEvents, openClawCronEvents, probesToShip, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
+import { decideAlerts, vercelEvents, launchdEvents, openClawCronEvents, probesToShip, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
 import { systemEventLines } from '../../factory/lib/report'
 
 const e = (fp: string, status: SystemEvent['status'], ts: string, message = 'm'): SystemEvent => {
@@ -58,6 +58,14 @@ describe('probes', () => {
   it('GitHub: a disabled cron workflow is a failure (the 60-day trap)', () => {
     const evs = workflowEvents('Github-HQ', [{ name: 'Cron — Sync', state: 'disabled_inactivity' }, { name: 'CI', state: 'active' }, { name: 'Cron — Digest', state: 'active' }], now)
     expect(evs.map(x => [x.component, x.status])).toEqual([['workflow:Cron — Sync', 'fail'], ['workflow:Cron — Digest', 'ok']])
+  })
+  it('Vercel: each project\'s latest finished production deploy; builds in progress wait', () => {
+    const evs = vercelEvents([
+      { name: 'repohq', state: 'BUILDING' }, { name: 'repohq', state: 'READY' }, { name: 'repohq', state: 'ERROR' },
+      { name: 'open-travel', state: 'ERROR', inspectorUrl: 'https://vercel.com/x' }, { name: 'idea-pages', readyState: 'READY' },
+    ], now)
+    expect(evs.map(x => [x.component, x.status])).toEqual([['repohq', 'ok'], ['open-travel', 'fail'], ['idea-pages', 'ok']])
+    expect(evs[1]!.message).toMatch(/latest production deploy is ERROR: https:\/\/vercel\.com\/x/)
   })
   it('provider errors in the LiteLLM log (out of credit) become failures', () => {
     const evs = providerEvents('AnthropicError: Your credit balance is too low to access the Anthropic API\n... credit balance is too low', now)
