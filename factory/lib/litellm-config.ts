@@ -46,6 +46,14 @@ const MODELS_END = '  # <<< repohq-factory models'
 const FALLBACKS_START = '    # >>> repohq-factory fallbacks (pool ladders; only local-coder ends at paid cloud-smart — see factory/scout.ts)'
 const FALLBACKS_END = '    # <<< repohq-factory fallbacks'
 
+/**
+ * How long Ollama keeps a local model loaded after its last request. Long enough to stay warm across
+ * the hourly night-shift cycles (no ~80 s cold prefill per cycle), short enough that the 7B model's
+ * 5.5 GB is released during the day. `-1` (pin forever) left a 16 GB Mac at memory-pressure
+ * "warning" with 11 GB of swap (2026-10-10).
+ */
+export const OLLAMA_KEEP_ALIVE = '70m'
+
 export function renderModelsBlock(models: ManagedModel[]): string {
   const entries = models.map(m => {
     const params = {
@@ -53,7 +61,7 @@ export function renderModelsBlock(models: ManagedModel[]): string {
       'gemini': [`      model: gemini/${m.model}`, '      api_key: os.environ/GEMINI_API_KEY'],
       // Ollama Cloud's OpenAI-compatible endpoint (supports tool calls).
       'ollama-cloud': [`      model: openai/${m.model}`, `      api_base: ${OLLAMA_CLOUD_BASE}`, '      api_key: os.environ/OLLAMA_API_KEY'],
-      'ollama': [`      model: ollama_chat/${m.model}`, '      api_base: http://host.docker.internal:11434', `      num_ctx: ${m.numCtx ?? 16384}`],
+      'ollama': [`      model: ollama_chat/${m.model}`, '      api_base: http://host.docker.internal:11434', `      num_ctx: ${m.numCtx ?? 16384}`, `      keep_alive: ${OLLAMA_KEEP_ALIVE}`],
     }[m.kind]
     return [`  - model_name: ${m.name}`, '    litellm_params:', ...params].join('\n')
   })
