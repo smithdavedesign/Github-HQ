@@ -44,6 +44,18 @@ describe('latestScans + backlog', () => {
       { repo: 'o/app', kind: 'fix-types' }, { repo: 'o/api', kind: 'deps-audit' }, { repo: 'o/app', kind: 'docs-readme' },
     ])
   })
+  it('drops red CI from an old scan once newer signals show the branch green, and says "investigate" at stage report', () => {
+    const sig = (redCi: unknown[]) => ({
+      type: 'signals', runId: 'r', at: hoursAgo(1), repo: 'o/app', base: 'main', redCi,
+      alerts: { status: 'ok', critical: 0, high: 0, medium: 0, low: 0, npmFixable: 0 }, botPrs: { open: 0, stale: [] },
+    }) as unknown as LedgerEntry
+    const red = { workflow: 'CI', runId: 1, url: 'u', headSha: 'a', at: '', conclusion: 'failure' }
+    const old = scan('o/app', ['red-ci', 'fix-tests'], hoursAgo(48))
+    expect(backlog([old, sig([])], ['o/app']).map(t => t.kind)).toEqual(['fix-tests'])
+    expect(backlog([old, sig([red])], ['o/app']).map(t => t.kind)).toEqual(['red-ci', 'fix-tests'])
+    const text = buildMorningReport(input([old, sig([red])], { capabilities: { 'red-ci': 'report' } as ReportInput['capabilities'] })).text
+    expect(text).toMatch(/1\. app — investigate red CI \(report only, no PR\)/)
+  })
 })
 
 describe('buildMorningReport', () => {
