@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
   confirmFailures, runChecks, parseAudit, collectPackageInfo, lintScriptAutofixes, lintProblems, type CheckSpec,
-  detectPackageManager, installCommand, planChecks, isPlaceholderTestScript,
+  detectPackageManager, installCommand, planChecks, buildCheck, isPlaceholderTestScript,
   filesFromTscOutput, filesFromEslintOutput, errorExcerpt, readmeIssue, type CheckResult,
 } from '../../factory/lib/checks'
 import { tasksFromScan, filterTasks, buildPrompt, fitLocalContext, M0_MAX_BYTES, isEnvironmentFailure, ownerRequestedTask } from '../../factory/lib/tasks'
@@ -629,6 +629,20 @@ describe('deps-audit', () => {
     const src = { files: [{ path: 'src/a.ts', added: 1, removed: 0, deleted: false }], addedLines: [] }
     expect(judge({ task: t, baseline: base, after: [ok('test')], diff: src, audit: { before: counts(1, 2), after: counts(0, 0) } }).reason).toMatch(/non-package/)
     expect(judge({ task: t, baseline: base, after: [ok('test')], diff: lock }).reason).toMatch(/unavailable/)
+  })
+  it('a build that passed before the fix must still pass (algorithms-docs #1, 2026-10-10)', () => {
+    const [t] = tasksFromScan([], [], null, '/r', counts(1, 2))
+    const lock = { files: [{ path: 'package-lock.json', added: 90, removed: 70, deleted: false }], addedLines: [] }
+    const audit = { before: counts(1, 17), after: counts(0, 3) }
+    expect(judge({ task: t, baseline: [ok('build')], after: [ok('build', false)], diff: lock, audit }).reason).toMatch(/regressed: build/)
+    // A build that already failed (missing env, say) can't regress, so it doesn't block the fix.
+    expect(judge({ task: t, baseline: [ok('build', false)], after: [ok('build', false)], diff: lock, audit }).ok).toBe(true)
+  })
+  it('buildCheck: only for a real build script, never as a source of tasks', () => {
+    expect(buildCheck({ scripts: { build: 'astro build' } }, 'npm')).toMatchObject({ name: 'build', display: 'npm run build' })
+    expect(buildCheck({ scripts: {} }, 'npm')).toBeNull()
+    expect(buildCheck({ scripts: { build: 'tsc --watch' } }, 'pnpm')).toBeNull()
+    expect(planChecks({ scripts: { build: 'astro build' } }, 'npm', false)).toEqual([])
   })
 })
 
