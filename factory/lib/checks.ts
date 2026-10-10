@@ -93,13 +93,18 @@ export function planChecks(pkg: PackageJson, pm: PackageManager, hasTsconfig: bo
 }
 
 /**
- * The repo's build, run only around dependency fixes: never a source of tasks. `npm audit fix`
+ * The repo's build, run around every code change (judgesBuild): never a source of tasks. `npm audit fix`
  * can move a package to a release the code can't build with (algorithms-docs #1, 2026-10-10:
  * @astrojs/sitemap 3.0 → 3.7 broke the Astro 3 site while no other check existed to notice).
  */
 export function buildCheck(pkg: PackageJson, pm: PackageManager): CheckSpec | null {
   if (!pkg.scripts?.build || WATCH_MODE.test(pkg.scripts.build)) return null
   return { name: 'build', cmd: pm, args: ['run', 'build'], display: `${pm} run build` }
+}
+
+/** Task kinds whose changes are judged on the build too. README-only and report-only work isn't. */
+export function judgesBuild(kind: string): boolean {
+  return !['docs-readme', 'owner-report', 'red-ci'].includes(kind)
 }
 
 export async function runChecks(specs: CheckSpec[], cwd: string, timeoutMs: number, runner: Runner = run): Promise<CheckResult[]> {

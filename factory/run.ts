@@ -22,12 +22,13 @@ import {
   allowedTiers, canUsePaidTier, chooseTier, classifyRepoData, computeTierStats, nextTier, type ModelTier,
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
-import { buildCheck, collectPackageInfo, confirmFailures, detectPackageManager, installCommand, withoutScripts, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
+import { buildCheck, judgesBuild, collectPackageInfo, confirmFailures, detectPackageManager, installCommand, withoutScripts, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
 import { addPrLabel, ensureValueLabels, prLabels, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { commentOnPr, loadGstackChecklist, localReviewComment, runLocalReview, type LocalReview } from './lib/local-review'
 import { copilotHasQuota, copilotQuota } from './lib/copilot-quota'
 import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
+import { SMOKE_FAIL_LABEL, pendingSmokes, smokeComment, smokePr } from './lib/smoke'
 import { appendEntry, deadEnds, latestSignals, monthToDateUsd, openPrAttempts, pendingCiOracles, pendingReviews, pendingValues, redCiInvestigated, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry, type SignalsEntry } from './lib/ledger'
 import { listAliases } from './lib/litellm-ops'
 import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
@@ -367,6 +368,18 @@ async function reconcile(cfg: FactoryConfig) {
     appendEntry(cfg.home, { type: 'ci_oracle', attemptId: a.id, at: new Date().toISOString(), workflow, passed })
     log(`red-ci oracle ${a.prUrl}: "${workflow}" ${passed ? 'passes' : 'still fails'} on the PR`)
   }
+  // Preview smoke (lib/smoke.ts): load each open factory PR's Vercel preview next to production.
+  // A preview still building is retried next cycle; anything else is recorded once.
+  if (cfg.smoke.enabled) {
+    for (const a of pendingSmokes(readLedger(cfg.home), new Date()).slice(0, cfg.smoke.maxPerCycle)) {
+      const result = await smokePr({ repo: a.repo, prUrl: a.prUrl!, attemptId: a.id, home: cfg.home, paths: cfg.smoke.paths[a.repo], vercelScope: cfg.smoke.vercelScope })
+      if (result.verdict === 'skipped' && /preview (pending|in_progress|queued)/.test(result.reasons[0] ?? '')) continue
+      appendEntry(cfg.home, result)
+      log(`smoke ${a.prUrl}: ${result.verdict} — ${result.reasons[0] ?? ''}`)
+      if (result.verdict !== 'skipped') await commentOnPr(a.prUrl!, smokeComment(result))
+      if (result.verdict === 'fail') await addPrLabel(a.prUrl!, a.repo, SMOKE_FAIL_LABEL, 'RepoHQ factory: the preview breaks pages that work on production')
+    }
+  }
 }
 
 /** Returns the number of PRs opened (0 or 1). */
@@ -554,8 +567,10 @@ interface TaskContext {
   base: string
   pkg: ReturnType<typeof readRepoBasics>['pkg']
   specs: CheckSpec[]
-  /** The repo's build script: run before and after a dependency fix only. */
+  /** The repo's build script: run before and after every code change (judgesBuild). */
   buildSpec: CheckSpec | null
+  /** The base branch's build result, computed once per repo per cycle. */
+  buildBaseline?: CheckResult
   baseline: CheckResult[]
   args: Args
   aliases: string[]
@@ -663,14 +678,18 @@ async function attempt(
   const attemptId = randomUUID()
   const branch = branchName(task, now, runId)
   await checkoutNewBranch(ws.dir, base, branch, ws.run)
-  // A dependency fix is also judged on the build: one that passed before must still pass after.
-  const checkSpecs = deps && ctx.buildSpec ? [...specs, ctx.buildSpec] : specs
-  if (deps && ctx.buildSpec) {
-    const [built] = await runChecks([ctx.buildSpec], ws.dir, cfg.checkTimeoutMs, ws.run)
+  // Every code change is also judged on the build: a build that passed before must still pass after
+  // (2026-10-10: a dependency fix broke a site's build and a lint fix shipped a broken page).
+  // The base build runs once per repo per cycle; a base that doesn't build doesn't gate anything.
+  const judgeBuild = !!ctx.buildSpec && judgesBuild(task.kind)
+  if (judgeBuild && !ctx.buildBaseline) {
+    const [built] = await runChecks([ctx.buildSpec!], ws.dir, cfg.checkTimeoutMs, ws.run)
     writeFileSync(path.join(logDir, `${slug(repo)}-baseline-build.log`), built.output)
-    baseline = [...baseline, built]
+    ctx.buildBaseline = built
     await resetWorktree(ws.dir, ws.run)
   }
+  const checkSpecs = judgeBuild && ctx.buildBaseline?.ok ? [...specs, ctx.buildSpec!] : specs
+  if (judgeBuild && ctx.buildBaseline?.ok) baseline = [...baseline, ctx.buildBaseline]
   const model = deps || lintFix ? 'npm' : cfg.models[tier]
   tracer.step('attempt', 'start', `${task.kind} · ${tier} ${deps || lintFix ? '(no model)' : `${harnessFor(tier)} → ${model}`}${ws.sandbox ? ' · sandboxed' : ''}`,
     { kind: task.kind, tier, model, exploring, parentId }, { jobId: attemptId })

@@ -289,6 +289,25 @@ export const aiSummaryJobs = pgTable('ai_summary_jobs', {
 // ─── Health Score History (Phase 9 — drift detection) ────────────────────────
 
 /**
+ * Demand signals from idea landing pages (the idea pipeline's validation step, docs/idea-factory.md):
+ * a page view or a waitlist signup per idea slug. Written by the public POST /api/ideas/signal; read by
+ * the idea pipeline (validation decisions) and the morning report. Not tied to a user: ideas are the
+ * owner's, and visitors are anonymous apart from the email they choose to leave.
+ */
+export const ideaSignals = pgTable('idea_signals', {
+  id: serial('id').primaryKey(),
+  slug: text('slug').notNull(),
+  kind: text('kind').notNull(), // view | signup
+  email: text('email'),         // signups only
+  ipHash: text('ip_hash'),      // HMAC of the client IP: unique visitors and rate limits, never the IP
+  referrer: text('referrer'),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+}, (table) => [
+  index('idea_signals_slug_kind_idx').on(table.slug, table.kind),
+  index('idea_signals_ip_created_idx').on(table.ipHash, table.createdAt),
+])
+
+/**
  * Autonomous factory job record (roadmap Phase 79): one row per factory attempt, mirrored from
  * the local ledger by factory/lib/sink.ts. `parentJobId` links an escalation (M0 failed → M1).
  * The ledger stays the source of truth; this table is what RepoHQ queries for KPIs.

@@ -139,8 +139,8 @@ export async function createDraftPr(dir: string, opts: { base: string; head: str
 }
 
 /** Add a label to a PR, creating it in the repo first if needed. Best-effort: false on failure. */
-export async function addPrLabel(prUrl: string, repo: string, label: string): Promise<boolean> {
-  await run('gh', ['label', 'create', label, '--repo', repo, '--color', 'FBCA04', '--description', 'RepoHQ factory: the adversarial reviewer raised concerns', '--force'], { timeoutMs: 60_000 })
+export async function addPrLabel(prUrl: string, repo: string, label: string, description = 'RepoHQ factory: the adversarial reviewer raised concerns'): Promise<boolean> {
+  await run('gh', ['label', 'create', label, '--repo', repo, '--color', 'FBCA04', '--description', description, '--force'], { timeoutMs: 60_000 })
   return (await run('gh', ['pr', 'edit', prUrl, '--add-label', label], { timeoutMs: 60_000 })).code === 0
 }
 

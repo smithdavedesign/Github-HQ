@@ -27,11 +27,24 @@ import { drizzle } from 'drizzle-orm/neon-http'
 import * as schema from '../src/lib/db/schema.js'
 import { eq, and, desc, inArray, gt, count } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { overview as contextOverview, search as searchContext, type ContextIndex } from '../factory/context/index.js'
 import { OPEN_REQUEST_STATUSES, isAllowlisted, modeForSkill, newRequestRow, queuedEventValues } from '../src/lib/agents/factory-request-utils.js'
 import { requestJobOptions, withQueue } from '../factory/lib/queue.js'
 import { isGstackSkill, isSkillAllowedForRepo, parseEnvSkillAllowlistMap, parseRepoSkillAllowlist } from '../src/lib/skills/skill-policy.js'
 import { closedPrTaskIds } from '../src/lib/agents/lifecycle-utils.js'
 import factoryConfig from '../factory/factory.config.json'
+
+const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
+const FACTORY_HOME = process.env.FACTORY_HOME ?? path.join(process.env.HOME ?? '', '.repohq-factory')
+
+/** The context index built daily by the factory (factory/context); null until the first build. */
+function loadContextIndex(): ContextIndex | null {
+  const file = path.join(FACTORY_HOME, 'context', 'index.json')
+  if (!existsSync(file)) return null
+  try { return JSON.parse(readFileSync(file, 'utf8')) as ContextIndex } catch { return null }
+}
 
 const DATABASE_URL = process.env.DATABASE_URL
 const USER_ID = process.env.MCP_USER_ID
@@ -55,6 +68,24 @@ const server = new Server(
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
+    {
+      name: 'get_system_overview',
+      description: 'The big picture first: what this system is for (local AI stack + RepoHQ + idea pipeline + factory → products people use and pay for), where each part lives, the current scorecard, and live counts (repos, focus repos, MRR, ideas by stage). Call this when starting cold on any of the owner\'s repos.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'search_context',
+      description: 'Search the owner\'s context index: repos (RepoHQ), ideas (idea-factory: research, PRD, review, stage), bookmarks (Resource Center: interests and learning) and the system docs. Returns public and personal entries only; employer-confidential and financial data are never returned here.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Keywords, e.g. "travel expenses" or "idea validation"' },
+          sources: { type: 'array', items: { type: 'string', enum: ['repo', 'idea', 'bookmark', 'doc'] }, description: 'Limit to these sources (optional)' },
+          limit: { type: 'number', description: 'Max results (default 8)' },
+        },
+        required: ['query'],
+      },
+    },
     {
       name: 'get_portfolio_summary',
       description: 'Get overall portfolio health: score, grade, top priorities from the advisor, and active goals. Call this when starting a new session to get context on your portfolio state.',
@@ -205,6 +236,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     switch (name) {
+      case 'get_system_overview': {
+        const index = loadContextIndex()
+        const doc = path.join(REPO_ROOT, 'docs', 'system-overview.md')
+        const overviewDoc = existsSync(doc) ? readFileSync(doc, 'utf8').slice(0, 12_000) : '(docs/system-overview.md not found)'
+        return { content: [{ type: 'text', text: `${index ? contextOverview(index) : 'Context index not built yet: npm run context -- build'}\n\n${overviewDoc}` }] }
+      }
+
+      case 'search_context': {
+        const index = loadContextIndex()
+        if (!index) return { content: [{ type: 'text', text: 'Context index not built yet: run `npm run context -- build` in RepoHQ.' }] }
+        const a = (args ?? {}) as { query?: string; sources?: string[]; limit?: number }
+        // MCP clients are cloud models: public and personal only, never work or financial.
+        const hits = searchContext(index, String(a.query ?? ''), { classes: ['public', 'personal'], sources: a.sources as never, limit: Math.min(Number(a.limit ?? 8), 25) })
+        const text = hits.map(h => `[${h.entry.source}] ${h.entry.title}\n${h.entry.text.slice(0, 600)}${h.entry.url ? `\n${h.entry.url}` : ''}`).join('\n\n') || 'No matches.'
+        return { content: [{ type: 'text', text }] }
+      }
+
       case 'get_portfolio_summary': {
         const [repos, latestDigest, latestScore] = await Promise.all([
           db.query.repositories.findMany({

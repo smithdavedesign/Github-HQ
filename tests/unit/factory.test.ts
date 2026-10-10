@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
   confirmFailures, runChecks, parseAudit, collectPackageInfo, lintScriptAutofixes, lintProblems, type CheckSpec,
-  detectPackageManager, installCommand, planChecks, buildCheck, isPlaceholderTestScript,
+  detectPackageManager, installCommand, planChecks, buildCheck, judgesBuild, isPlaceholderTestScript,
   filesFromTscOutput, filesFromEslintOutput, errorExcerpt, readmeIssue, type CheckResult,
 } from '../../factory/lib/checks'
 import { tasksFromScan, filterTasks, buildPrompt, fitLocalContext, M0_MAX_BYTES, isEnvironmentFailure, ownerRequestedTask } from '../../factory/lib/tasks'
@@ -639,6 +639,15 @@ describe('deps-audit', () => {
     expect(judge({ task: t, baseline: [ok('build')], after: [ok('build', false)], diff: lock, audit }).reason).toMatch(/regressed: build/)
     // A build that already failed (missing env, say) can't regress, so it doesn't block the fix.
     expect(judge({ task: t, baseline: [ok('build', false)], after: [ok('build', false)], diff: lock, audit }).ok).toBe(true)
+  })
+  it('every code change is judged on the build; README-only and report-only work is not', () => {
+    expect(['fix-lint', 'fix-types', 'fix-tests', 'deps-audit', 'lint-autofix', 'owner-requested'].every(judgesBuild)).toBe(true)
+    expect(['docs-readme', 'owner-report', 'red-ci'].some(judgesBuild)).toBe(false)
+    // A lint fix that breaks the build is a regression (Open-Travel #63 class of bug, if the build catches it).
+    const specs = planChecks({ scripts: { lint: 'eslint .' } }, 'npm', false)
+    const [lintTask] = tasksFromScan([ok('lint', false, 'error  no-unused-vars')], specs, null, '/r')
+    const d = parseDiff('1\t1\tsrc/a.ts\n', '+++ b/src/a.ts\n+const a = 1\n', new Set())
+    expect(judge({ task: lintTask, baseline: [ok('lint', false), ok('build')], after: [ok('lint'), ok('build', false)], diff: d }).reason).toMatch(/regressed: build/)
   })
   it('buildCheck: only for a real build script, never as a source of tasks', () => {
     expect(buildCheck({ scripts: { build: 'astro build' } }, 'npm')).toMatchObject({ name: 'build', display: 'npm run build' })

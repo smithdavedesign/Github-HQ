@@ -25,6 +25,8 @@ import { nextActions } from '../src/lib/portfolio/next-actions'
 import { runPreflight } from './lib/preflight'
 import { copilotQuota } from './lib/copilot-quota'
 import { inactivityDisabled, type SystemHealth } from './lib/system-health'
+import { buildContextIndex } from './bin/context'
+import { readIdeaStates } from './context/ideas'
 
 const log = (...a: unknown[]) => console.log(`[report ${new Date().toISOString().slice(11, 19)}]`, ...a)
 
@@ -36,8 +38,14 @@ async function main() {
   const usage = todaysUsage(entries, now)
   const aliases = await listAliases(cfg).catch((): string[] => [])
 
+  // The context index (factory/context) is rebuilt daily here, before the report reads anything.
+  await buildContextIndex(cfg.home).then(r => log(`context index: ${Object.entries(r.counts).map(([k, v]) => `${k} ${v}`).join(', ')}${r.errors.length ? ` · errors: ${r.errors.join('; ')}` : ''}`))
+    .catch(e => log(`context index failed: ${e instanceof Error ? e.message : e}`))
+  const ideaHome = process.env.IDEA_HOME ?? path.join(process.env.HOME ?? '', 'idea-factory')
+
   const input = {
     now,
+    ideas: readIdeaStates(ideaHome),
     entries,
     repos: cfg.repos,
     pool: existsSync(cfg.litellm.configPath) ? readManagedModels(readFileSync(cfg.litellm.configPath, 'utf8')) : {},
