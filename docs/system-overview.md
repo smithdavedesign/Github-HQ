@@ -86,16 +86,16 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Verification | Weak | Fair | Every code change is judged on the build, and each PR's Vercel preview is smoke-tested in a browser next to production. Pages behind a login aren't checked yet. |
 | Local coding | Weak | Weak | The local tier (M0) verified 1 of 7 attempts last week. Building runs on Claude Pro and the free pool. Needs 64–128 GB of unified memory for 30B-class local coders. |
 | Idea generation | Works | Strong | Daily, sourced, portfolio-checked, on Claude Pro; full record in git; lossless Notion pages |
-| Idea review | Missing | Works | gstack frameworks applied non-interactively. The first three ideas all passed (scores 2–4): the bar is real. |
-| Demand test | Missing | Built, untested by a real idea | $0 landing page, waitlist, signals into RepoHQ, decision rules. End-to-end tested with a test page. Distribution is still on the owner (sharing the launch post). |
+| Idea review | Missing | Works | gstack frameworks applied non-interactively. Four free-developer-tool ideas passed (scores 2–5): the bar is real. Research now has to name who pays and learn from those verdicts, and the next idea, **permitly**, reached Validate (6/10). |
+| Demand test | Missing | **Live** | permitly's page went up automatically (https://idea-pages-livid.vercel.app/permitly/, decision on 2026-10-24). Signals, decision rules and the launch post (`LAUNCH.md`) all work. Distribution is still on the owner. |
 | Building ideas | Missing | Built, first run pending | M1 tests first on Claude Pro, draft PR. Runs on the host with install scripts off; next step is the Docker sandbox. |
 | Context | Fragmented | Works | One index (44 repos, ideas, 258 bookmarks, 183 doc sections), MCP tools, a skill. Keyword search, no embeddings. |
 | Revenue loop | Missing | Wired, no data yet | Idea MRR from RepoHQ in each idea's state, the Notion board and the morning email. Total portfolio MRR is $4.99. |
 | Operations | Fragile, visible | Fragile, visible | One Mac (AC power, memory), many moving parts; the morning email is the health check |
 
 **Weakest links now, in order:**
-1. **Distribution.** A landing page nobody sees proves nothing; posting the launch post is on the owner.
-2. **The first real build.** No idea has passed review yet, so M1 building is proven only by a test run.
+1. **Distribution.** A landing page nobody sees proves nothing; posting the launch post is on the owner (permitly's is ready).
+2. **The first real build.** M1 building is proven by a test run (tripsplit, 19 tests); the first real one follows a Build decision.
 3. **Local model quality**, which is a hardware problem.
 4. **Single-Mac operations.**
 
