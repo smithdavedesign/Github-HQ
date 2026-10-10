@@ -178,7 +178,7 @@ export async function bypassSecret(repo: string, home: string, scope?: string): 
 
 /** Visit each path in a headless browser; bypass header only for *.vercel.app hosts. */
 export async function visit(base: string, paths: string[], bypass: string | null): Promise<PageResult[]> {
-  const { chromium } = await import('playwright')
+  const { chromium } = await import('@playwright/test')
   const browser = await chromium.launch()
   const results: PageResult[] = []
   try {
