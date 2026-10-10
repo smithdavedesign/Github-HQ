@@ -7,6 +7,9 @@ describe('repeatKey', () => {
   })
   it('keeps different messages and repos apart', () => {
     expect(repeatKey('failed', 'RepoHQ', 'git clone')).not.toBe(repeatKey('failed', 'Open-Travel', 'git clone'))
+    // A numeric part is an id (repo id): kept exactly, so repos 12 and 13 never share a row.
+    expect(repeatKey('agent_attempt', 12, 'Fix vulnerable dependencies')).not.toBe(repeatKey('agent_attempt', 13, 'Fix vulnerable dependencies'))
+    expect(repeatKey('agent_attempt', 12, 'high+critical 24 → 12')).toBe(repeatKey('agent_attempt', 12, 'high+critical 43 → 17'))
     expect(repeatKey('failed', 'x', 'column "correlation_id" does not exist')).not.toBe(repeatKey('failed', 'x', 'Repository not found'))
   })
 })
