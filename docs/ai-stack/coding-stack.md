@@ -42,7 +42,7 @@ Local model server. [Docs](https://docs.ollama.com) · runs as a Homebrew Launch
 |---|---|---|
 | `OLLAMA_FLASH_ATTENTION` | `1` | Faster attention on Apple Silicon |
 | `OLLAMA_KV_CACHE_TYPE` | `q8_0` | Halves KV-cache memory vs f16 |
-| `OLLAMA_KEEP_ALIVE` | `-1` | Model stays resident → no re-eviction (fixed the original 85s/request bug) |
+| `OLLAMA_KEEP_ALIVE` | `-1` | Ignored by Ollama.app. The effective value is `keep_alive: 70m` per model in `litellm/config.yaml` (written by the factory scout): warm across the hourly factory cycles, released when idle. Pinning forever (`-1`) held 5.5 GB around the clock and pushed the 16 GB Mac into memory-pressure warning (2026-10-10). |
 | `OLLAMA_API_KEY` | *(set)* | Authenticates Ollama cloud web-search |
 
 > The GUI **Ollama.app is disabled** (`launchctl disable com.ollama.ollama`) so it can't steal `:11434` with an untuned config.

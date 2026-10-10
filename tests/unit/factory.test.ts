@@ -523,6 +523,8 @@ describe('pool members render for every provider', () => {
     expect(block).toContain('model: openai/gpt-oss:120b')
     expect(block).toContain('api_base: https://ollama.com/v1')
     expect(block).toContain('api_key: os.environ/OLLAMA_API_KEY')
+    // Local models unload when idle instead of pinning 5.5 GB forever; cloud entries get no keep_alive.
+    expect(block.match(/keep_alive: 70m/g)).toHaveLength(1)
     const text = applyManagedBlocks('model_list:\nlitellm_settings:\nrouter_settings:\n  fallbacks:\n', members, {})
     expect(readManagedModels(text)).toEqual({
       'free-agent': 'gemini:gemini-3.8-flash',
