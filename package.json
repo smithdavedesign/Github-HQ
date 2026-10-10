@@ -32,7 +32,8 @@
     "factory:backfill-jobs": "tsx factory/bin/backfill-jobs.ts",
     "factory:smoke": "tsx factory/bin/smoke.ts",
     "context": "tsx factory/bin/context.ts",
-    "factory:rate": "tsx factory/bin/rate.ts"
+    "factory:rate": "tsx factory/bin/rate.ts",
+    "events": "tsx factory/bin/events.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",

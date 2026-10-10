@@ -4,6 +4,15 @@ Day-to-day operation, health checks, recovery, and the hard-won gotchas.
 
 ---
 
+
+## Logs and alerts
+
+Every service here is watched by the system-events collector ([logging](../logging.md)):
+- LiteLLM, Ollama, Headroom and the OpenClaw gateway are probed;
+- the launchd jobs and Docker are checked;
+- the LiteLLM log is scanned for provider errors (credit, auth, rate limits).
+
+Failures and recoveries post to Slack **#team-agents**. Scripts log with `~/ai-stack/bin/emit-event <system> <component> <event> <status> "<message>"`.
 ## Health check
 
 ```bash

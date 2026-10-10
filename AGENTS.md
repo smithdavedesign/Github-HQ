@@ -14,6 +14,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 This repo is one part of a larger system (goal: products people use and pay for, near-zero owner overhead, $0 risk). Read [docs/system-overview.md](docs/system-overview.md) first, or load the `portfolio-context` skill. Live context: MCP server `repohq` (`get_system_overview`, `search_context`) or `npm run context -- search "<query>"`. If you change how a part of the system works, update `docs/system-overview.md` in the same PR.
 
+## Logging
+
+Anything that runs on a schedule or in the background logs to the shared system log ([docs/logging.md](docs/logging.md)):
+- `emitEvent` in TypeScript, `lib/events.js` in idea-factory, `~/ai-stack/bin/emit-event` from the shell.
+- Log what happened or failed, not quiet runs.
+- `status: "fail"` alerts Slack #team-agents.
+
 ## Architecture
 
 - **Framework**: Next.js App Router (server components + server actions). No pages/ directory.

@@ -2,8 +2,8 @@ import { auth } from '@/lib/auth'
 import { collapseRepeats, repeatKey } from '@/lib/feed/collapse'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
-import { portfolioEvents, scans } from '@/lib/db/schema'
-import { eq, and, inArray, desc } from 'drizzle-orm'
+import { portfolioEvents, scans, systemEvents } from '@/lib/db/schema'
+import { eq, and, inArray, desc, gt, sql } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDistanceToNow } from '@/lib/utils'
@@ -17,6 +17,7 @@ import { factoryAccess } from '@/lib/agents/factory-queue'
 import { getAgentHqOverview } from '@/lib/agents/agent-hq-data'
 import { AgentHqPanel } from '@/components/agents/agent-hq-panel'
 import { DataSyncCard } from '@/components/agents/data-sync-card'
+import { SystemLogCard, type SystemLogRow } from '@/components/agents/system-log-card'
 
 export default async function AgentPerformancePage() {
   const session = await auth()
@@ -26,7 +27,7 @@ export default async function AgentPerformancePage() {
   // Agent HQ (roadmap Phase 81): the factory's queue, schedules, runs and traces — owner only.
   const access = factoryAccess(userId)
 
-  const [events, accuracyStats, downgradedRepos, factoryEvents, kpis, overview, recentScans] = await Promise.all([
+  const [events, accuracyStats, downgradedRepos, factoryEvents, kpis, overview, recentScans, systemLog] = await Promise.all([
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.userId, userId),
@@ -53,6 +54,8 @@ export default async function AgentPerformancePage() {
       columns: { id: true, status: true, type: true, totalRepos: true, processedRepos: true, startedAt: true },
       limit: 5,
     }),
+    // System log (docs/logging.md): system-wide, so only the factory's owner sees it.
+    access.ok ? loadSystemLog().catch(() => null) : Promise.resolve(null),
   ])
   const factory = summarizeFactoryEvents(factoryEvents)
   const pctOf = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`)
@@ -244,6 +247,8 @@ export default async function AgentPerformancePage() {
 
       <DataSyncCard scans={recentScans} />
 
+      {systemLog && <SystemLogCard failing={systemLog.failing} recent={systemLog.recent} />}
+
       {/* Event log */}
       <div className="space-y-2">
         <h2 className="text-sm font-semibold">Activity Log</h2>
@@ -324,4 +329,16 @@ function StatCard({ label, value, icon: Icon, color }: { label: string; value: s
       </CardContent>
     </Card>
   )
+}
+
+/** What's failing now (latest ok/fail per fingerprint in the last 7 days) and the 30 newest events. */
+async function loadSystemLog(): Promise<{ failing: SystemLogRow[]; recent: SystemLogRow[] }> {
+  const cols = { ts: systemEvents.ts, system: systemEvents.system, component: systemEvents.component, event: systemEvents.event, status: systemEvents.status, message: systemEvents.message }
+  const [latest, recent] = await Promise.all([
+    db.selectDistinctOn([systemEvents.fingerprint], cols).from(systemEvents)
+      .where(and(inArray(systemEvents.status, ['ok', 'fail']), gt(systemEvents.ts, sql`now() - interval '7 days'`)))
+      .orderBy(systemEvents.fingerprint, desc(systemEvents.ts)),
+    db.select(cols).from(systemEvents).orderBy(desc(systemEvents.ts)).limit(30),
+  ])
+  return { failing: latest.filter(r => r.status === 'fail'), recent }
 }

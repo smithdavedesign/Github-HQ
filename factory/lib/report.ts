@@ -51,6 +51,8 @@ export interface ReportInput {
   preflight?: PreflightCheck[]
   /** Idea pipeline lifecycle records (idea-factory ideas/<slug>/state.json): stage, demand signal, revenue. */
   ideas?: IdeaState[]
+  /** The system log (factory/system): failing-now and 24h counts across every system. */
+  systemEvents?: SystemEventsSummary | null
 }
 
 export type RoleId = 'ideas' | 'inbox' | 'next' | 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro' | 'ladder'
@@ -107,6 +109,25 @@ export function backlog(entries: LedgerEntry[], repos?: string[]): { repo: strin
     // 2026-10-10: a scan from two days earlier kept "fix red CI" at the top of the list).
     .filter(t => t.kind !== 'red-ci' || !signals.has(t.repo) || (signals.get(t.repo)!.redCi?.length ?? 0) > 0)
     .sort((a, b) => KIND_PRIORITY.indexOf(a.kind) - KIND_PRIORITY.indexOf(b.kind) || a.repo.localeCompare(b.repo))
+}
+
+export interface SystemEventsSummary {
+  hours: number
+  counts: Array<{ system: string; status: string; n: number }>
+  failingNow: Array<{ fingerprint: string; message: string; ts: string }>
+}
+
+/** The system log (docs/logging.md): what's failing right now across every system, and the last day's volume. */
+export function systemEventLines(s: SystemEventsSummary | null | undefined): string[] {
+  if (!s) return []
+  const systems = [...new Set(s.counts.map(c => c.system))].sort()
+  const fails = (sys: string) => s.counts.filter(c => c.system === sys && c.status === 'fail').reduce((n, c) => n + c.n, 0)
+  const total = (sys: string) => s.counts.filter(c => c.system === sys).reduce((n, c) => n + c.n, 0)
+  return [
+    s.failingNow.length ? `⚠ Failing now (${s.failingNow.length}):` : 'Failing now: nothing, across every system the collector watches.',
+    ...s.failingNow.slice(0, 8).map(f => `✗ ${f.fingerprint}: ${f.message.slice(0, 160)}`),
+    systems.length ? `System log, last ${s.hours}h: ${systems.map(sys => `${sys} ${total(sys)}${fails(sys) ? ` (${fails(sys)} failed)` : ''}`).join(' · ')}.` : '',
+  ].filter(Boolean)
 }
 
 /** Preview smoke results (lib/smoke.ts): the app actually loading on each PR's preview, next to production. */
@@ -269,6 +290,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   sections.push({
     id: 'ops', role: 'Ops / SRE', skill: '/canary', title: 'Stack health and budgets',
     lines: [
+      ...systemEventLines(input.systemEvents),
       ...pre.lines,
       ...(health?.lines ?? []),
       `LiteLLM gateway: ${input.liteLLMUp ? 'up' : 'DOWN'}.`,

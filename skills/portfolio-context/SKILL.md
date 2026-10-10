@@ -27,5 +27,11 @@ description: |
    - **Data classes:** never send employer work data to a cloud model; never touch financial data.
    - **Draft PRs, the owner merges.** Never merge, force-push or delete on your own.
    - **The owner's Notion status overrides any verdict.**
-4. **Keep the picture true.** If you change how a part works, update `docs/system-overview.md` (and
+4. **Logs and alerts:**
+   - every system writes to one log ([docs/logging.md](/Users/davidsmith/Documents/Repos/Github-HQ/RepoHQ/docs/logging.md));
+   - `npm run events -- summary` shows what's failing now;
+   - failures and recoveries post to Slack #team-agents, which is also where the owner talks to the companion.
+
+   New background code must log what it does and when it fails.
+5. **Keep the picture true.** If you change how a part works, update `docs/system-overview.md` (and
    the scorecard if a layer got stronger or weaker) in the same PR.

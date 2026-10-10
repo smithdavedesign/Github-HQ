@@ -289,6 +289,32 @@ export const aiSummaryJobs = pgTable('ai_summary_jobs', {
 // ─── Health Score History (Phase 9 — drift detection) ────────────────────────
 
 /**
+ * System events (docs/logging.md): one log of every part of the system — RepoHQ, the factory, the idea
+ * pipeline, the local AI stack, OpenClaw, launchd jobs, GitHub Actions crons. Shipped by the collector
+ * (factory/system/collector.ts) from ~/.system-events/events.jsonl plus its own probes. Kept 90 days.
+ */
+export const systemEvents = pgTable('system_events', {
+  id: serial('id').primaryKey(),
+  ts: timestamp('ts', { mode: 'date', withTimezone: true }).notNull(),
+  system: text('system').notNull(),       // repohq | factory | idea-factory | ai-stack | openclaw | launchd | github …
+  component: text('component').notNull(), // pipeline, worker, litellm, cron:idea-to-repo …
+  event: text('event').notNull(),
+  status: text('status').notNull(),       // ok | fail | start | skipped | info
+  level: text('level').notNull(),         // info | warn | error
+  message: text('message').notNull(),
+  runId: text('run_id'),
+  subject: jsonb('subject'),              // {repo, idea, pr}
+  data: jsonb('data'),
+  durationMs: integer('duration_ms'),
+  host: text('host'),
+  fingerprint: text('fingerprint').notNull(), // system:component:event — what alerts group by
+}, (table) => [
+  index('system_events_ts_idx').on(table.ts),
+  index('system_events_system_ts_idx').on(table.system, table.ts),
+  index('system_events_fingerprint_ts_idx').on(table.fingerprint, table.ts),
+])
+
+/**
  * Demand signals from idea landing pages (the idea pipeline's validation step, docs/idea-factory.md):
  * a page view or a waitlist signup per idea slug. Written by the public POST /api/ideas/signal; read by
  * the idea pipeline (validation decisions) and the morning report. Not tied to a user: ideas are the

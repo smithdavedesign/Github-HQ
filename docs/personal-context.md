@@ -22,6 +22,7 @@ When something fits two classes, the stricter one wins.
 | **Companion** (OpenClaw, WhatsApp) | Its memory files; calendar event titles; Notion Idea Board and task boards; RepoHQ portfolio and decision states; email **only when asked about a specific message** | Financial senders and documents; bulk inbox ingestion into memory; work-confidential content | Free pool today (see open decision) |
 | **Idea research and review** (Claude Code on the Pro subscription; scout as fallback) | The public web; the Idea Board; the context index (public + personal: repos, ideas, interests, docs) | Any personal or work source (no `USER.md` or memory; Claude Code runs with no MCP servers, connectors or user settings) | Claude Pro subscription, then the free pool |
 | **RepoHQ factory** | Allowlisted repos, inside the Docker sandbox | Anything outside the repo | Private repos: local or paid, never free cloud |
+| **Slack #team-agents** (alerts, companion chat) | System alerts: component names and one-line messages, with secrets redacted. Chat goes to the companion, under the companion's rules. | Message contents of work or financial systems | Alerts: none (deterministic). Chat: the companion's models |
 | **Resource Center** (bookmarks) | Bookmarks except the finance topics | Finance & Banking, Finance Docs & Property | Work topics: local only; the rest: any |
 
 ## What enforces it
