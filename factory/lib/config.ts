@@ -40,6 +40,8 @@ export interface FactoryConfig {
    * (factory/lib/local-review.ts).
    */
   copilot: { enabled: boolean; model: string; maxTasksPerDay: number; review: boolean; maxReviewsPerDay: number; localFallback: boolean }
+  /** Preview smoke test of factory PRs (lib/smoke.ts): public paths per repo (default "/"), and the Vercel team. */
+  smoke: { enabled: boolean; paths: Record<string, string[]>; maxPerCycle: number; vercelScope?: string }
   harnessTimeoutMs: number
   /** M0 (local 7B) either finishes fast or not at all. */
   m0TimeoutMs: number
@@ -166,6 +168,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FactoryConfig 
     maxPrsPerCycle: num(env.FACTORY_MAX_PRS, json.maxPrsPerCycle ?? 1),
     maxPrsPerDay: json.maxPrsPerDay ?? 8,
     integrationBranch: json.integrationBranch ?? 'integration/agent',
+    smoke: {
+      enabled: json.smoke?.enabled ?? true,
+      paths: json.smoke?.paths ?? {},
+      maxPerCycle: json.smoke?.maxPerCycle ?? 3,
+      vercelScope: json.smoke?.vercelScope,
+    },
     copilot: {
       enabled: json.copilot?.enabled ?? true,
       model: json.copilot?.model ?? 'gpt-5-mini',

@@ -14,5 +14,19 @@
   "allowFreeCloud": [],
   "monthlyBudgetUsd": 0,
   "maxPrsPerCycle": 1,
-  "_comment": "Allowlist of repos the factory may open draft PRs on. gitHub-cron-job-app is excluded: its README is a cron heartbeat file."
+  "_comment": "Allowlist of repos the factory may open draft PRs on. gitHub-cron-job-app is excluded: its README is a cron heartbeat file.",
+  "smoke": {
+    "enabled": true,
+    "maxPerCycle": 3,
+    "vercelScope": "team_ONe0JJaVwgXIAUMHZ7OUgkku",
+    "paths": {
+      "smithdavedesign/Open-Travel": [
+        "/",
+        "/login"
+      ],
+      "smithdavedesign/Github-HQ": [
+        "/login"
+      ]
+    }
+  }
 }

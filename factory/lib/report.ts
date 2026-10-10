@@ -7,8 +7,9 @@ import type { ModelTier } from '../../src/lib/agents/model-router'
 import { systemHealthLines, type SystemHealth } from './system-health'
 import type { Capability, CapabilityStage } from './config'
 import { ladderStatus } from './ladder'
-import type { AttemptEntry, CiOracleEntry, LedgerEntry, ResolutionEntry, ReviewEntry, ScanEntry, SignalsEntry } from './ledger'
+import type { AttemptEntry, CiOracleEntry, LedgerEntry, ResolutionEntry, ReviewEntry, ScanEntry, SignalsEntry, SmokeEntry } from './ledger'
 import { STALE_PR_DAYS, rankOpportunities } from './sensors'
+import { ideaLines, type IdeaState } from '../context/ideas'
 import { computeFactoryKpis, kpiHeadline } from '../../src/lib/agents/factory-kpis'
 import { latestSignals, toJobRecords } from './ledger'
 import { kpiTrend, nightShiftReadiness, readinessLine } from './night-shift'
@@ -48,9 +49,11 @@ export interface ReportInput {
   nextActions?: NextActions | null
   /** What the night shift depends on, checked at report time (factory/lib/preflight.ts). */
   preflight?: PreflightCheck[]
+  /** Idea pipeline lifecycle records (idea-factory ideas/<slug>/state.json): stage, demand signal, revenue. */
+  ideas?: IdeaState[]
 }
 
-export type RoleId = 'inbox' | 'next' | 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro' | 'ladder'
+export type RoleId = 'ideas' | 'inbox' | 'next' | 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro' | 'ladder'
 
 export interface RoleSection {
   id: RoleId
@@ -106,6 +109,16 @@ export function backlog(entries: LedgerEntry[], repos?: string[]): { repo: strin
     .sort((a, b) => KIND_PRIORITY.indexOf(a.kind) - KIND_PRIORITY.indexOf(b.kind) || a.repo.localeCompare(b.repo))
 }
 
+/** Preview smoke results (lib/smoke.ts): the app actually loading on each PR's preview, next to production. */
+export function smokeLines(smokes: SmokeEntry[]): string[] {
+  if (!smokes.length) return []
+  const n = (v: SmokeEntry['verdict']) => smokes.filter(s => s.verdict === v).length
+  return [
+    `Preview smoke (last 24h): ${n('pass')} pass · ${n('fail')} fail · ${n('skipped')} skipped.`,
+    ...smokes.filter(s => s.verdict === 'fail').map(s => `✗ ${s.prUrl.replace('https://github.com/', '')}: ${s.reasons[0] ?? 'failed'}`),
+  ]
+}
+
 export function buildMorningReport(input: ReportInput): MorningReport {
   const { now, entries } = input
   const attempts = entries.filter(isAttempt)
@@ -132,6 +145,11 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   // ── Next: what deserves your attention, and why ─────────────────────────────
   if (input.nextActions) {
     sections.push({ id: 'next', role: 'Chief of Staff', skill: 'RepoHQ decision states', title: 'What to do next', lines: nextActionLines(input.nextActions) })
+  }
+
+  // ── Ideas & revenue: the point of the whole system (docs/system-overview.md) ─────
+  if (input.ideas?.length) {
+    sections.push({ id: 'ideas', role: 'Founder', skill: 'idea pipeline (gstack idea review → demand test → build)', title: 'Ideas, demand and revenue', lines: ideaLines(input.ideas, input.now) })
   }
 
   // ── PM: what goes to the Architect next ─────────────────────────────────────
@@ -198,6 +216,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
       ...scans.filter(s => s.envFailures?.length).map(s => `${short(s.repo)}: the ${s.envFailures!.join(' and ')} check${s.envFailures!.length > 1 ? 's need' : ' needs'} secrets or network the factory doesn't have — not a code task; run it in CI with keys.`),
       rejections.length === 0 ? 'Judge rejected nothing in the last 24h.' : `Judge rejected ${plural(rejections.length, 'attempt')}:`,
       ...rejections.slice(0, 6).map(a => `${short(a.repo)} ${a.kind} (${a.tier}): ${a.reason}`),
+      ...smokeLines(entries.filter((e): e is SmokeEntry => e.type === 'smoke' && since(e.at, now, DAY))),
     ],
   })
 

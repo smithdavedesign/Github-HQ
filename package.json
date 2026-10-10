@@ -29,7 +29,9 @@
     "factory:e2e": "bash factory/eval/e2e.sh",
     "factory:judge-fixture": "tsx factory/bin/judge-fixture.ts",
     "factory:migrate": "tsx factory/bin/migrate.ts",
-    "factory:backfill-jobs": "tsx factory/bin/backfill-jobs.ts"
+    "factory:backfill-jobs": "tsx factory/bin/backfill-jobs.ts",
+    "factory:smoke": "tsx factory/bin/smoke.ts",
+    "context": "tsx factory/bin/context.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",

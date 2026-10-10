@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { AttemptRecord, ModelTier, TaskTier } from '../../src/lib/agents/model-router'
 import type { JobRecord } from '../../src/lib/agents/factory-kpis'
 import type { AlertCounts, BotPrs, FailingRun } from './sensors'
+import type { SmokeEntry } from './smoke'
 
 /**
  * Append-only JSONL ledger at <FACTORY_HOME>/ledger.jsonl — the factory's
@@ -167,7 +168,8 @@ export interface OwnerResultEntry {
   reason?: string
 }
 
-export type LedgerEntry = AttemptEntry | ResolutionEntry | ScanEntry | ScoutEntry | ApprovalEntry | ReviewEntry | SignalsEntry | CiOracleEntry | OwnerResultEntry | ValueEntry
+export type { SmokeEntry }
+export type LedgerEntry = AttemptEntry | ResolutionEntry | ScanEntry | ScoutEntry | ApprovalEntry | ReviewEntry | SignalsEntry | CiOracleEntry | OwnerResultEntry | ValueEntry | SmokeEntry
 
 export function ledgerPath(home: string): string {
   return path.join(home, 'ledger.jsonl')
