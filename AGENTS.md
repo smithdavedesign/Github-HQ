@@ -10,6 +10,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ---
 
+## The big picture
+
+This repo is one part of a larger system (goal: products people use and pay for, near-zero owner overhead, $0 risk). Read [docs/system-overview.md](docs/system-overview.md) first, or load the `portfolio-context` skill. Live context: MCP server `repohq` (`get_system_overview`, `search_context`) or `npm run context -- search "<query>"`. If you change how a part of the system works, update `docs/system-overview.md` in the same PR.
+
 ## Architecture
 
 - **Framework**: Next.js App Router (server components + server actions). No pages/ directory.

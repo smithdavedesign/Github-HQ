@@ -2,6 +2,8 @@
 
 A self-hosted, **`$0`-by-default** local AI platform running on a single **MacBook Pro M1 Pro (16 GB)** — a unified coding stack plus a private personal assistant, with optional cloud "escape hatches" for hard tasks.
 
+> **Where it fits:** the AI stack is the engine of a larger system (idea pipeline, factory, RepoHQ, context index). See the [system overview](../system-overview.md).
+
 > **Status:** operational. One endpoint for every agent, local-first with capped cloud fallback, reboot-resilient.
 
 These docs moved here from the `smithdavedesign/ai-stack-docs` repository on 2026-10-07 (from its last commit, `112de4f`), next to the RepoHQ factory that runs on this stack. The factory uses this stack's LiteLLM gateway, local models and free-model pool ([factory/README.md](../../factory/README.md)), and OpenClaw's front door feeds it requests ([agent-hq-migration-prd.md](../agent-hq-migration-prd.md)). The live configuration stays on the Mac, in `~/ai-stack/` and `~/.openclaw/` (see [Where things live](#where-things-live)).

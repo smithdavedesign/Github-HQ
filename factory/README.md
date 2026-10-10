@@ -48,7 +48,9 @@ FACTORY_SANDBOX=off npm run factory:e2e # the same on the host (trusted fixture 
 npm run factory:sandbox:check           # live isolation checks: no host env/creds/mounts, egress allowlist, cleanup
 npm run factory:sandbox:build           # build the sandbox images (install-launchd.sh does this too)
 npm run factory:judge-fixture -- <attemptId> --expect=reject --source="PR #12 closed: …"   # wrong verdict → regression fixture
-npm run factory:migrate                 # apply factory/sql/*.sql to the RepoHQ DB (agent_jobs; idempotent)
+npm run factory:migrate                 # apply factory/sql/*.sql to the RepoHQ DB (agent_jobs, idea_signals; idempotent)
+npm run factory:smoke -- <pr-url> [--paths /,/x] [--comment]   # preview smoke by hand (skill: preview-smoke)
+npm run context -- build | search "<q>" | interests | overview   # the context index (factory/context)
 npm run factory:backfill-jobs           # copy ledger history into agent_jobs (needs ~/.repohq-factory/env sourced)
 npm run factory:morning -- --no-send   # build the morning report and print it
 bash factory/bin/setup-email.sh you@gmail.com   # one-time: Gmail app password → keychain, test email
@@ -148,6 +150,19 @@ Known limits:
 - **Copilot (MC)** needs your GitHub login, so it doesn't run in the sandbox; while the sandbox is on, routing skips MC (Copilot *review* of PRs still runs, on the host, against GitHub).
 - Installs that download binaries from other hosts (e.g. Playwright browsers, some native modules from GitHub releases) fail inside the sandbox; the repo is then skipped as `install failed`. Add the host to `allowHosts` only if you trust what it serves.
 - Concurrency is 1: on a 16 GB Mac, Docker's VM has 8 GB and Ollama keeps a 7B model resident.
+
+## Verification that runs the code
+
+The judge's checks (typecheck, lint, tests) don't run the app. Two checks added on 2026-10-10 do:
+
+- **Build on every code change.** When the repo has a `build` script, the base build runs once per repo per cycle. A change that makes a passing build fail is a regression. README-only and report-stage work is exempt (`judgesBuild`), and a base that doesn't build gates nothing.
+- **Preview smoke** (`lib/smoke.ts`). In reconcile, each open factory PR's Vercel preview is loaded in headless Chromium next to production:
+  - public paths only, from `smoke.paths` in `factory.config.json` (default `/`);
+  - each side is loaded twice;
+  - it fails on a status or crash regression, or an error that shows on every preview load and no production load;
+  - third-party noise is ignored.
+
+  The result is a PR comment, a `smoke:fail` label on failure, and a line in the morning report's QA section. Vercel protection is passed with each project's automation-bypass secret (created once, cached in `~/.repohq-factory/vercel-bypass.json`).
 
 ## Judge v2
 

@@ -37,6 +37,16 @@ The factory is the only thing that writes code (roadmap Phase 81, [PRD](agent-hq
 
 ---
 
+## The wider system
+
+RepoHQ is the portfolio half of a larger loop: idea research → gstack review → $0 demand test → M1 build → revenue, plus the factory keeping repos healthy. See [system-overview.md](system-overview.md).
+
+RepoHQ's parts in that loop:
+- `POST /api/ideas/signal` (`src/lib/ideas/signals.ts`, table `idea_signals`): landing-page demand signals.
+- The context index (`factory/context`): repos, ideas, bookmarks and docs by data class. It is served to agents by the MCP tools `get_system_overview` and `search_context`.
+- The morning report's "Ideas, demand and revenue" section.
+- Preview smoke (`factory/lib/smoke.ts`): each factory PR's Vercel preview is loaded in a browser next to production.
+
 ## Key Flows
 
 ### Authentication
