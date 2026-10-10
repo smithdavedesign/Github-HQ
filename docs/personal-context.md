@@ -20,7 +20,7 @@ When something fits two classes, the stricter one wins.
 | Consumer | May read | Never reads | Models |
 |---|---|---|---|
 | **Companion** (OpenClaw, WhatsApp) | Its memory files; calendar event titles; Notion Idea Board and task boards; RepoHQ portfolio and decision states; email **only when asked about a specific message** | Financial senders and documents; bulk inbox ingestion into memory; work-confidential content | Free pool today (see open decision) |
-| **Scout** (OpenClaw, idea research) | The public web; the Idea Board; repo names and descriptions | Any personal or work source (no `USER.md`, no memory) | Free pool |
+| **Idea research** (Claude Code on the Pro subscription; scout as fallback) | The public web; the Idea Board; repo names and descriptions | Any personal or work source (no `USER.md` or memory; Claude Code runs with no MCP servers, connectors or user settings) | Claude Pro subscription, then the free pool |
 | **RepoHQ factory** | Allowlisted repos, inside the Docker sandbox | Anything outside the repo | Private repos: local or paid, never free cloud |
 | **Resource Center** (bookmarks) | Bookmarks except the finance topics | Finance & Banking, Finance Docs & Property | Work topics: local only; the rest: any |
 
