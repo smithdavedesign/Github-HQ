@@ -208,8 +208,9 @@ export function referencedScripts(readme: string): string[] {
   const names = new Set<string>()
   // Script names may contain '.', ':' or '-', but sentence punctuation may follow them.
   const clean = (s: string) => s.replace(/[.:-]+$/, '')
-  for (const m of readme.matchAll(/\b(?:npm|pnpm|yarn|bun)\s+run\s+([a-z][\w:.-]*)/gi)) names.add(clean(m[1]))
-  for (const m of code.matchAll(/\b(?:npm|pnpm|yarn|bun)\s+([a-z][\w:.-]*)/gi)) {
+  // [ \t]+, not \s+: a "# npm" comment line followed by "npm install" must not read as script "npm".
+  for (const m of readme.matchAll(/\b(?:npm|pnpm|yarn|bun)[ \t]+run[ \t]+([a-z][\w:.-]*)/gi)) names.add(clean(m[1]))
+  for (const m of code.matchAll(/\b(?:npm|pnpm|yarn|bun)[ \t]+([a-z][\w:.-]*)/gi)) {
     if (!PM_BUILTINS.has(m[1].toLowerCase())) names.add(clean(m[1]))
   }
   return [...names]

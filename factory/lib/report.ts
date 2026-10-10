@@ -160,7 +160,9 @@ export function buildMorningReport(input: ReportInput): MorningReport {
     lines: [
       `Tier results, last 7 days: ${tiers.map(tierLine).filter(Boolean).join(' · ') || 'no attempts yet'}.`,
       `Free pool (in fallback order): ${poolLine || 'not configured'}.`,
-      `Copilot builder: ${input.copilot.enabled ? `${input.copilot.model}, ${input.copilot.tasksToday}/${input.copilot.maxTasksPerDay} tasks today` : 'disabled'}.`,
+      `Copilot builder: ${!input.copilot.enabled ? 'disabled'
+        : input.copilot.quota?.percentRemaining === 0 ? `paused until ${input.copilot.quota.resetDate ?? 'the monthly reset'} (premium requests used up)`
+        : `${input.copilot.model}, ${input.copilot.tasksToday}/${input.copilot.maxTasksPerDay} tasks today`}.`,
       `${plural(escalations, 'failed attempt')} in the last 24h (each one escalated to the next tier or was recorded as a dead end).`,
     ],
   })

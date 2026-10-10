@@ -83,6 +83,16 @@ describe('opportunity queue', () => {
     const minGap = Math.min(...weights.slice(1).map((w, i) => w - weights[i]))
     expect(7 * AGE_POINTS_PER_DAY).toBeLessThan(minGap)
   })
+  it('a repo whose every task has an open PR drops below repos with work left', () => {
+    const pr = { type: 'attempt', id: 'p', runId: 'r', at: '2026-10-20T03:00:00Z', repo: 'o/busy', kind: 'docs-readme', taskTier: 1, tier: 'M1', model: 'm', harness: 'claude-code', outcome: 'verified', reason: '', exploring: false, durationMs: 0, costUsd: 0, inputTokens: 0, outputTokens: 0, prUrl: 'https://github.com/o/busy/pull/1' } as const
+    const alerts = { alerts: { status: 'ok' as const, critical: 3, high: 40, medium: 0, low: 0, npmFixable: 10 } }
+    const ranked = rankOpportunities(['o/busy', 'o/docs'], [scan('o/busy', ['docs-readme']), scan('o/docs', ['docs-readme']), pr], [signals('o/busy', alerts)], now)
+    expect(ranked.map(o => o.repo)).toEqual(['o/docs', 'o/busy'])
+    expect(ranked[1].reasons).toEqual(['every known task has an open PR or is a dead end'])
+    // Once the PR resolves, its alerts put it back on top.
+    const merged: LedgerEntry = { type: 'resolution', attemptId: 'p', at: '2026-10-20T09:00:00Z', outcome: 'merged' }
+    expect(rankOpportunities(['o/busy', 'o/docs'], [scan('o/busy', ['docs-readme']), scan('o/docs', ['docs-readme']), pr, merged], [signals('o/busy', alerts)], now)[0].repo).toBe('o/busy')
+  })
 })
 
 describe('red-ci pipeline', () => {
@@ -134,6 +144,10 @@ describe('morning report sensor lines', () => {
     expect(text).toMatch(/Dependabot alerts are disabled on 2 of 2 repos/)
     expect(text).toMatch(/stale: 1 bot PR unreviewed for 7\+ days/)
     expect(text).toMatch(/Repo queue for the next cycle: red \(red CI: CI\)/)
+  })
+  it('says the Copilot builder is paused, not "0/6 tasks today", once premium requests run out', () => {
+    const copilot = { ...base.copilot, enabled: true, quota: { percentRemaining: 0, resetDate: '2026-11-01' } }
+    expect(buildMorningReport({ ...base, copilot }).text).toMatch(/Copilot builder: paused until 2026-11-01/)
   })
   it('security-alerts is a sensor in the ladder: never promoted to PRs', () => {
     expect(capabilityStatus('security-alerts', 'report', [signals('o/a')], now)).toMatchObject({ advice: 'hold', next: expect.stringMatching(/enable Dependabot/) })

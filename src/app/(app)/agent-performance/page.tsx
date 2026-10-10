@@ -30,7 +30,8 @@ export default async function AgentPerformancePage() {
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.userId, userId),
-        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected', 'agent_execution_failed']),
+        // agent_attempt is the factory's record (one per tier attempt); the rest are Nexus-era request events.
+        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected', 'agent_execution_failed', 'agent_attempt']),
       ),
       orderBy: [desc(portfolioEvents.occurredAt)],
       with: { repository: { columns: { name: true } } },
@@ -258,7 +259,12 @@ export default async function AgentPerformancePage() {
             const meta = event.metadata as Record<string, unknown> | null
             const repoName = event.repository?.name ?? (meta?.repoHQRepoName as string) ?? '—'
 
+            const prUrl = meta?.prUrl as string | undefined
+            const attempt = event.eventType === 'agent_attempt'
+            const attemptOk = attempt && meta?.outcome === 'success'
+
             const statusColor =
+              attempt                                     ? (attemptOk ? 'bg-blue-500/10 text-blue-600 border-blue-200' : 'bg-red-500/10 text-red-600 border-red-200') :
               event.eventType === 'agent_pr_merged'       ? 'bg-emerald-500/10 text-emerald-600 border-emerald-200' :
               event.eventType === 'agent_pr_created'      ? 'bg-blue-500/10 text-blue-600 border-blue-200' :
               event.eventType === 'agent_pr_rejected'     ? 'bg-muted text-muted-foreground border-border/60' :
@@ -266,13 +272,12 @@ export default async function AgentPerformancePage() {
                                                             'bg-muted text-muted-foreground border-border/60'
 
             const label =
+              attempt                                      ? (attemptOk ? (prUrl ? 'PR Opened' : 'Verified') : 'Rejected') :
               event.eventType === 'agent_task_queued'      ? 'Queued' :
               event.eventType === 'agent_pr_created'       ? 'PR Created' :
               event.eventType === 'agent_pr_merged'        ? 'Merged' :
               event.eventType === 'agent_pr_rejected'      ? 'Rejected' :
               event.eventType === 'agent_execution_failed' ? 'Failed' : event.eventType
-
-            const prUrl = meta?.prUrl as string | undefined
 
             return (
               <div key={event.id} className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-muted/10 text-sm">
@@ -286,7 +291,7 @@ export default async function AgentPerformancePage() {
                   )}
                   <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground flex-wrap">
                     <span>{repoName}</span>
-                    {meta?.agentName ? <span>{String(meta.agentName)}</span> : null}
+                    {meta?.agentName || meta?.agent ? <span>{String(meta.agentName ?? meta.agent)}</span> : null}
                     {meta?.predictedDelta ? <span>Predicted: {String(meta.predictedDelta)}</span> : null}
                     {meta?.costUsd ? <span>${Number(meta.costUsd).toFixed(4)}</span> : null}
                     {prUrl && (

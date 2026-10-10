@@ -1,5 +1,5 @@
 import { errorExcerpt } from './checks'
-import { redCiInvestigated, type LedgerEntry, type ScanEntry, type SignalsEntry } from './ledger'
+import { deadEnds, deadEndKey, openPrAttempts, redCiInvestigated, type LedgerEntry, type ScanEntry, type SignalsEntry } from './ledger'
 import { run } from './proc'
 
 /**
@@ -156,6 +156,8 @@ export function rankOpportunities(
 ): Opportunity[] {
   const lastScan = new Map<string, ScanEntry>()
   for (const e of entries) if (e.type === 'scan' && (!lastScan.get(e.repo) || e.at > lastScan.get(e.repo)!.at)) lastScan.set(e.repo, e)
+  const openKinds = new Set(openPrAttempts(entries).map(a => deadEndKey(a.repo, a.kind)))
+  const dead = deadEnds(entries, now)
   return repos.map(repo => {
     const s = signals.find(x => x.repo === repo)
     const scan = lastScan.get(repo)
@@ -180,6 +182,14 @@ export function rankOpportunities(
     // a top slot every cycle (2026-10-08/09: three such repos took every slot all night).
     if (scan?.checks.install === false && now.getTime() - new Date(scan.at).getTime() < INSTALL_COOLDOWN_MS) {
       return { repo, score: 0, reasons: ['install failed in the sandbox — retried in a day'], blocked: null }
+    }
+    // Every task its last scan found already has an open PR or is a dead end: the cycle would
+    // clone, install and skip it. It drops to age-only priority until a PR resolves, instead of
+    // taking a slot (2026-10-10: five cycles in a row opened nothing on the top three repos).
+    const workable = scan?.tasks.filter(t => !openKinds.has(deadEndKey(repo, t)) && !dead.has(deadEndKey(repo, t))) ?? []
+    if (scan && scan.tasks.length > 0 && workable.length === 0 && redCi.length === 0) {
+      const age = Math.min((now.getTime() - new Date(scan.at).getTime()) / 86_400_000, 7) * AGE_POINTS_PER_DAY
+      return { repo, score: Math.round(age * 10) / 10, reasons: ['every known task has an open PR or is a dead end'], blocked: null }
     }
     const h = opts.health?.get(repo.toLowerCase())
     if (h !== undefined) score *= 1 + (100 - Math.max(0, Math.min(100, h))) / 200
