@@ -41,7 +41,7 @@ idea-publish.js publish ── validates the draft
 - **Outputs:** `REVIEW.md` and `review.json`, with a verdict (`validate` or `pass`), a 0–10 score, each forcing question's evidence and score, the wedge, kill criteria, and the landing-page copy and launch post.
 - **Policy on top** (`policy.json`): a score below 6, or an MVP that needs money, is a pass whatever the reviewer said.
 
-The first three ideas (2026-10-10) all passed, scoring 4, 3 and 2: free tools already covered them, or the market was crowded. The bar is meant to be high.
+On 2026-10-10 the first four ideas all passed (scores 2–5). They were free developer tools with no payer, or in crowded markets. Research now has to name **who pays, how much, and evidence they pay for something like it today**, and must read earlier `review.json` verdicts. The next idea, **permitly** (a permit and rule-change tracker for short-term-rental operators), reached Validate (6/10), and its demand test went live the same day. The bar is meant to be high.
 
 ### 3. Demand test (14 days, $0)
 
