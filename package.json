@@ -31,7 +31,8 @@
     "factory:migrate": "tsx factory/bin/migrate.ts",
     "factory:backfill-jobs": "tsx factory/bin/backfill-jobs.ts",
     "factory:smoke": "tsx factory/bin/smoke.ts",
-    "context": "tsx factory/bin/context.ts"
+    "context": "tsx factory/bin/context.ts",
+    "factory:rate": "tsx factory/bin/rate.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",

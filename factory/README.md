@@ -151,6 +151,25 @@ Known limits:
 - Installs that download binaries from other hosts (e.g. Playwright browsers, some native modules from GitHub releases) fail inside the sandbox; the repo is then skipped as `install failed`. Add the host to `allowHosts` only if you trust what it serves.
 - Concurrency is 1: on a 16 GB Mac, Docker's VM has 8 GB and Ollama keeps a 7B model resident.
 
+## Tier advisor
+
+A local model (`advisor.model`, default `local-qwen3`) rates every task 1–3 before routing (`lib/tier-advisor.ts`). It runs locally, so it may read private and work code.
+
+| Difficulty | Means | Starts at |
+|---|---|---|
+| 1 routine | lint, dependency bumps, docs, a one-file mechanical fix | M0 local |
+| 2 moderate | bugs, failing tests, type errors, a small feature | M1 free pool |
+| 3 advanced | features across files, PRD milestones, architecture | MC Copilot, else M2 (Claude for idea builds) |
+
+- **Capability `tier-advisor`, starting at `report`:**
+  - every rating is logged (`tier_advice` in the ledger) next to what the router chose;
+  - it's scored against the lowest tier that actually produced a verified fix in that run: exact, too high or too low;
+  - the morning report's ladder shows the score and says when to promote (≥ 10 judged, ≥ 80% exact or too high, ≥ 50% exact).
+- **At `pr`**, routing starts at the advised tier, within what the task is allowed (private repos still never get free cloud).
+- **Fallback is never the advisor's call.** Escalation on failure and capacity fallbacks stay deterministic.
+- If the model doesn't answer, each task kind's usual difficulty is used.
+- By hand, or from idea-factory: `npm run factory:rate -- --kind <kind> --title "…" --objective "…"`. First live ratings: a lint fix 1, CSV export 2, accounts + scheduler + billing 3, in 2–7 s each.
+
 ## Verification that runs the code
 
 The judge's checks (typecheck, lint, tests) don't run the app. Two checks added on 2026-10-10 do:
