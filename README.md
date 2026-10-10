@@ -367,5 +367,7 @@ npm run db:generate   # Generate migration files
 - [Agentic Full Flow](docs/agentic-full-flow.md) / [Execution Flow](docs/agentic-execution-flow.md) — the Nexus-era pipeline (superseded by the PRD; kept for history)
 - [AI stack](docs/ai-stack/README.md) — the local AI platform the factory runs on: Ollama, Headroom, LiteLLM and its free-model pool, the coding agents, the OpenClaw companion; architecture, runbook, reference, roadmap (moved here from the `ai-stack-docs` repo)
 - [Autonomous Factory](docs/autonomous-factory.md) — free-model-first self-improvement loop: local AI stack lane, model-tier routing, Docker-sandboxed worker, Judge v2 + adversarial review, capability stages, sensors and a ranked queue, job record and KPIs, night shift, infra agent (Horizon 3). Operator guide: [factory/README.md](factory/README.md)
+- [Idea factory](docs/idea-factory.md) — the daily idea pipeline: research on the local stack → Notion Idea Board → the owner picks Build or Pass → private repo; how the factory will pick up idea repos after the 30-day window
+- [Personal context policy](docs/personal-context.md) — data classes (public, personal, work-confidential, financial), what each consumer (companion, scout, factory, Resource Center) may read and which models each class may reach, and what enforces it
 - [gstack Findings](docs/gstack-findings.md) — running log of skill run findings and resolutions
 - [MCP Setup](mcp/README.md) — IDE integration guide with all 14 tools

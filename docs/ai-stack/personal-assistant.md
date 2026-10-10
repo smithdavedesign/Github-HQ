@@ -19,7 +19,7 @@ See the [companion diagram](architecture.md#personal-assistant).
 
 | Piece | Where | Role |
 |---|---|---|
-| Agent | `companion` (OpenClaw) | Isolated agent, model `local/cloud-smart` |
+| Agent | `companion` (OpenClaw) | Isolated agent, model `local/free-agent` (the free cloud pool), falling back to `cloud-or` → `local-coder` → `cloud-smart` |
 | Gateway | `ai.openclaw.gateway` :18789 | Always-on; routes WhatsApp → companion |
 | Workspace | `~/.openclaw/workspace-companion/` | Persona + memory files |
 | Channel | WhatsApp (allowlisted number) | Text + voice (Whisper transcription) |
@@ -72,6 +72,9 @@ Cron jobs run *as the companion* and deliver to WhatsApp:
 | `companion-morning` | 7:30 AM daily | Warm good-morning, asks your focus (memory-only) |
 | `companion-evening` | 9:00 PM daily | Wind-down, how the day went (memory-only) |
 | `morning-briefing` | 8:00 AM daily | (separate) AI/tech briefing with web search |
+| `idea-to-repo` | 9:00 AM daily | Runs as **`scout`**, not the companion: researches one product idea and records it on the Notion Idea Board. See [Idea factory](../idea-factory.md). |
+
+**`scout`** is a separate OpenClaw agent (workspace `~/.openclaw/workspace-scout/`). It has no `USER.md` and no memory, and its cron job may only use `exec`, `read`, `write` and the Ollama web tools. It reads untrusted web pages, so it is kept away from the companion's personal context. The companion only queues `idea: …` messages for it (`idea-publish.js seed`); agent-to-agent messaging stays off.
 
 > **Note:** the proactive crons are prompted to use **memory only** (no tool calls). Reason: once the companion got full exec, it would try to *check* calendar/email during a cron, which (under the old approval gate) hung until timeout and nothing delivered. Memory-only keeps them fast and reliable. Live calendar/email summaries in proactive messages are a future refinement.
 
@@ -100,7 +103,7 @@ openclaw agent --agent companion --message "hey" --thinking off --json
 ## Cost & privacy
 
 - **Cost:** ~16k input tokens/message on `cloud-smart` (persona + bundled skills + tool schemas) ≈ **$0.05/msg**. A chatty day can reach a few dollars. Mitigations: trim unused skills (big win), or set a hard cap at [console.anthropic.com](https://console.anthropic.com) → Billing.
-- **Privacy:** the companion runs locally, but because it uses a cloud model, **conversation content goes to Anthropic.** For fully private operation, switch it to a local model (`local/local-coder`) — at the cost of warmth/memory quality. This is the core trade-off of a 16 GB machine.
+- **Privacy:** the companion runs locally, but its model is the free cloud pool (`free-agent`: Ollama Cloud, OpenRouter free, Gemini free; then `cloud-or`). **Conversation content and the persona/memory files go to those providers**, and free tiers may log or train on prompts. `cloud-smart` (Anthropic, which doesn't train on API data) is only the last fallback. For fully private operation, switch it to a local model (`local/local-coder`), at the cost of warmth and memory quality. This is the core trade-off of a 16 GB machine. What the companion may read at all is set by the [personal context policy](../personal-context.md).
 
 ---
 
