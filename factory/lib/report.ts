@@ -10,7 +10,7 @@ import { ladderStatus } from './ladder'
 import type { AttemptEntry, CiOracleEntry, LedgerEntry, ResolutionEntry, ReviewEntry, ScanEntry, SignalsEntry } from './ledger'
 import { STALE_PR_DAYS, rankOpportunities } from './sensors'
 import { computeFactoryKpis, kpiHeadline } from '../../src/lib/agents/factory-kpis'
-import { toJobRecords } from './ledger'
+import { latestSignals, toJobRecords } from './ledger'
 import { kpiTrend, nightShiftReadiness, readinessLine } from './night-shift'
 import { preflightLines, type PreflightCheck } from './preflight'
 import { AGING_PR_DAYS, PR_SOURCE_LABEL, prAgeDays, prSource, sortForReview, type OpenPr } from '../../src/lib/agents/open-prs'
@@ -95,10 +95,14 @@ const KIND_LABEL: Record<string, string> = {
 export function backlog(entries: LedgerEntry[], repos?: string[]): { repo: string; kind: string }[] {
   const resolved = new Set(entries.filter((e): e is ResolutionEntry => e.type === 'resolution').map(r => r.attemptId))
   const openKinds = new Set(entries.filter(isAttempt).filter(a => a.prUrl && !resolved.has(a.id)).map(a => `${a.repo}:${a.kind}`))
+  const signals = latestSignals(entries)
   return latestScans(entries, repos)
     // Requests are listed with their outcomes, not as sensed work (an old scan kept showing them).
     .flatMap(s => s.tasks.filter(k => k !== 'owner-requested' && k !== 'owner-report').map(kind => ({ repo: s.repo, kind })))
     .filter(t => !openKinds.has(`${t.repo}:${t.kind}`))
+    // A scan's red CI is stale once newer signals show the base branch green (ai-brand-context,
+    // 2026-10-10: a scan from two days earlier kept "fix red CI" at the top of the list).
+    .filter(t => t.kind !== 'red-ci' || !signals.has(t.repo) || (signals.get(t.repo)!.redCi?.length ?? 0) > 0)
     .sort((a, b) => KIND_PRIORITY.indexOf(a.kind) - KIND_PRIORITY.indexOf(b.kind) || a.repo.localeCompare(b.repo))
 }
 
@@ -139,7 +143,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
       todo.length === 0
         ? 'Backlog is empty: every scanned repo is green or already has a PR open. Next lever: add repos to the allowlist.'
         : `Next up (${plural(todo.length, 'task')}, highest value first):`,
-      ...todo.slice(0, 8).map((t, i) => `${i + 1}. ${short(t.repo)} — ${KIND_LABEL[t.kind] ?? t.kind}`),
+      ...todo.slice(0, 8).map((t, i) => `${i + 1}. ${short(t.repo)} — ${t.kind === 'red-ci' && input.capabilities?.['red-ci'] !== 'pr' ? 'investigate red CI (report only, no PR)' : KIND_LABEL[t.kind] ?? t.kind}`),
       ...(todo.length > 8 ? [`…and ${todo.length - 8} more.`] : []),
       ...(ranked.length ? [`Repo queue for the next cycle: ${ranked.filter(o => !o.blocked).slice(0, 5).map(o => `${short(o.repo)}${o.reasons[0] ? ` (${o.reasons[0]})` : ''}`).join(' → ')}.`] : []),
       ...stale.map(s => `${short(s.repo)}: ${plural(s.botPrs!.stale.length, 'bot PR')} unreviewed for 7+ days — no new factory PRs there until you review or close ${s.botPrs!.stale.length === 1 ? 'it' : 'them'}: ${s.botPrs!.stale.map(p => p.url).join(' ')}`),
