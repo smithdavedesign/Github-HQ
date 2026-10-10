@@ -66,6 +66,9 @@ One JSON object per line:
 | GitHub Actions cron workflows (Github-HQ) | disabled (the 60-day inactivity trap) |
 | LiteLLM log | Anthropic out of credit, a provider rejecting its key, rate limits |
 | RepoHQ `automation_runs` | a factory job or cron route failed |
+| Vercel production deploys (every project) | the latest finished production deploy is `ERROR` or `CANCELED` |
+| launchd: nightly factory backup | last run failed or not loaded |
+| Secrets (`~/ai-stack/bin/secrets check`, daily) | a copy differs from the keychain, a secrets file is readable by others, or a backup holds a live key |
 
 `homebrew.mxcl.ollama` is deliberately not watched: it exits 1 by design, because Ollama.app owns port 11434.
 
@@ -80,7 +83,11 @@ One JSON object per line:
 | Slack | bot token in keychain `system-events-slack-token` (the companion's Slack app); channel in `factory.config.json` → `alerts.slackChannel` (#team-agents) |
 | Local file | `~/.system-events/events.jsonl`, rotated at 5 MB, 10 archives kept |
 
+## The companion knows the state too
+
+When something starts failing or recovers, the collector rewrites the **system brief** in the OpenClaw agents' `AGENTS.md`. So asking the companion on Slack or WhatsApp "what's broken?" gets the current answer. See [system-overview.md](system-overview.md#how-an-ai-agent-gets-context).
+
 ## Not covered yet
 
-- **Vercel runtime errors** (RepoHQ, Open-Travel and the other apps). Vercel keeps them; the next step is a probe through the Vercel API.
+- **Vercel runtime errors** inside running apps. Failed production deploys are covered; per-request errors still live only in Vercel.
 - **The Resource Center Bridge** runs in the browser and has no server to log from.

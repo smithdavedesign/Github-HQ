@@ -14,6 +14,7 @@
 # Always:
 #   com.user.system-events    — every 5 min: the system-events collector (factory/system, docs/logging.md):
 #                               ships ~/.system-events, probes services and jobs, alerts Slack
+#   com.user.factory-backup   — 03:30: factory state (ledger, reports) → private repo repohq-factory-state
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -69,7 +70,7 @@ PLIST
 }
 
 CALENDAR_LABELS="com.repohq.factory.cycle com.repohq.factory.report com.repohq.factory.scout"
-LABELS="$CALENDAR_LABELS com.repohq.factory.worker com.user.system-events"
+LABELS="$CALENDAR_LABELS com.repohq.factory.worker com.user.system-events com.user.factory-backup"
 for label in $LABELS; do
   launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
   rm -f "$AGENTS/$label.plist"
@@ -154,6 +155,25 @@ cat > "$AGENTS/com.user.system-events.plist" <<PLIST
 PLIST
 mkdir -p "$HOME/.system-events"
 INSTALL="$INSTALL com.user.system-events"
+
+# Nightly backup of the factory's local state (ledger, reports) to a private repo: factory/bin/backup-state.sh.
+cat > "$AGENTS/com.user.factory-backup.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.user.factory-backup</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>$APP/factory/bin/backup-state.sh</string></array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string><key>HOME</key><string>$HOME</string></dict>
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>
+  <key>StandardOutPath</key><string>$HOME/.system-events/backup.log</string>
+  <key>StandardErrorPath</key><string>$HOME/.system-events/backup.log</string>
+</dict>
+</plist>
+PLIST
+INSTALL="$INSTALL com.user.factory-backup"
 
 for label in $INSTALL; do
   plutil -lint "$AGENTS/$label.plist" >/dev/null

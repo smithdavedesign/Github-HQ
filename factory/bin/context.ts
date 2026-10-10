@@ -13,6 +13,8 @@ import path from 'node:path'
 import { loadConfig } from '../lib/config'
 import { buildIndex, interests, overview, search, type ContextIndex, type DataClass, type Source } from '../context/index'
 import { loadBookmarks, loadDocs, loadIdeas, loadRepos } from '../context/sources'
+import { refreshOpenClawBrief, systemBrief } from '../context/brief'
+import { readIdeaStates } from '../context/ideas'
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..')
 const args = process.argv.slice(2)
@@ -53,7 +55,14 @@ async function main() {
   }
   if (cmd === 'interests') return console.log(JSON.stringify(interests(index), null, 1))
   if (cmd === 'overview') return console.log(overview(index))
-  throw new Error('usage: context build | search "<query>" [--classes …] [--sources …] [--limit n] [--json] | interests | overview')
+  if (cmd === 'brief') {
+    const { neon } = await import('@neondatabase/serverless')
+    const failing = cfg.repohq.databaseUrl ? await neon(cfg.repohq.databaseUrl)`SELECT DISTINCT ON (fingerprint) fingerprint, status, message FROM system_events WHERE status IN ('ok','fail') AND ts > now() - interval '7 days' ORDER BY fingerprint, ts DESC`.catch(() => []) : []
+    const failingNow = (failing as Array<{ fingerprint: string; status: string; message: string }>).filter(f => f.status === 'fail')
+    if (args.includes('--write-openclaw')) return console.log(JSON.stringify({ written: refreshOpenClawBrief(failingNow) }))
+    return console.log(systemBrief({ index, ideas: readIdeaStates(process.env.IDEA_HOME ?? path.join(process.env.HOME ?? '', 'idea-factory')), failingNow, now: new Date() }))
+  }
+  throw new Error('usage: context build | search "<query>" [--classes …] [--sources …] [--limit n] [--json] | interests | overview | brief [--write-openclaw]')
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main().catch(e => { console.error(e instanceof Error ? e.message : e); process.exitCode = 1 })

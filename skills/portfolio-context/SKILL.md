@@ -27,11 +27,13 @@ description: |
    - **Data classes:** never send employer work data to a cloud model; never touch financial data.
    - **Draft PRs, the owner merges.** Never merge, force-push or delete on your own.
    - **The owner's Notion status overrides any verdict.**
-4. **Logs and alerts:**
-   - every system writes to one log ([docs/logging.md](/Users/davidsmith/Documents/Repos/Github-HQ/RepoHQ/docs/logging.md));
-   - `npm run events -- summary` shows what's failing now;
-   - failures and recoveries post to Slack #team-agents, which is also where the owner talks to the companion.
-
-   New background code must log what it does and when it fails.
+4. **Logs, alerts, backups and secrets** ([docs/logging.md](/Users/davidsmith/Documents/Repos/Github-HQ/RepoHQ/docs/logging.md)):
+   - **One log:** every system writes to `~/.system-events/events.jsonl`; the collector ships it to Neon `system_events` every 5 minutes.
+   - **Probes:** services, launchd jobs, OpenClaw crons, GitHub crons, Vercel deploys, provider errors, secrets.
+   - **Alerts:** failures and recoveries post to Slack **#team-agents**, which is also where the owner talks to the companion.
+   - **Check the state first** when something seems off: `~/ai-stack/bin/system-status` (failing now, 24 h per system) and `npm run events -- tail` in RepoHQ.
+   - **Write events from new code:** TypeScript `emitEvent` (`factory/system/events.ts`), idea-factory `lib/events.js`, shell `~/ai-stack/bin/emit-event <system> <component> <event> <ok|fail|info> "<message>"`. Log what happened or failed, not quiet runs.
+   - **Secrets:** the keychain is the source; `~/ai-stack/bin/secrets check | rotate litellm`. Never paste a key into a file or a commit.
+   - **Backups:** private repos `ai-stack`, `repohq-factory-state` (nightly) and `idea-factory`.
 5. **Keep the picture true.** If you change how a part works, update `docs/system-overview.md` (and
    the scorecard if a layer got stronger or weaker) in the same PR.

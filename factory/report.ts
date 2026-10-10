@@ -27,6 +27,7 @@ import { copilotQuota } from './lib/copilot-quota'
 import { inactivityDisabled, type SystemHealth } from './lib/system-health'
 import { buildContextIndex } from './bin/context'
 import { readIdeaStates } from './context/ideas'
+import { refreshOpenClawBrief } from './context/brief'
 
 const log = (...a: unknown[]) => console.log(`[report ${new Date().toISOString().slice(11, 19)}]`, ...a)
 
@@ -78,6 +79,9 @@ async function main() {
     preflight: await runPreflight(cfg).catch(() => []),
     systemEvents: await systemEventsSummary(cfg).catch(() => null),
   }
+  // The OpenClaw agents' system brief (factory/context/brief.ts): rewritten daily with the fresh index.
+  const briefFiles = refreshOpenClawBrief(input.systemEvents?.failingNow ?? [], now)
+  if (briefFiles.length) log(`system brief written to ${briefFiles.length} OpenClaw agent(s)`)
   let report = buildMorningReport(input)
   // Opt-in: the local 7B model mis-paraphrased numbers in testing ("4 of 8 reviews completed"
   // for 4 *requested*), and a report the owner trusts can't misstate its own facts.

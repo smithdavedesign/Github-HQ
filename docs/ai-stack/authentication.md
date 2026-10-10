@@ -21,6 +21,19 @@ Whether you ever re-authenticate depends on the **credential type**, not the too
 
 ---
 
+## One source of truth: the keychain + `bin/secrets` (2026-10-10)
+
+The macOS login keychain holds every shared secret. Tools that can only read keys from their own config files keep a copy, and `~/ai-stack/bin/secrets` knows each copy:
+- `bin/secrets check` verifies that every copy matches the keychain, that every file is owner-only (600), and that no stray backup holds a live key. The system-events collector runs it daily and alerts Slack on a problem.
+- `bin/secrets rotate litellm` makes a new master key and updates the keychain and every copy:
+  - LiteLLM `.env`, the factory env, OpenClaw config and every agent's `models.json`;
+  - Continue, OpenCode and Aider.
+
+  It then restarts LiteLLM, the OpenClaw gateway and the factory worker. The Resource Center extension still needs the new key pasted by hand.
+- `bin/secrets list` shows what's registered, never values.
+
+Keychain services: `litellm-master-key`, `system-events-slack-token`, `repohq-factory-database-url`, `repohq-factory-redis-url`, `repohq-factory-gh-token`.
+
 ## Where credentials live
 
 | Store | What | Notes |
