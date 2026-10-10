@@ -59,6 +59,9 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
 - **Repo:** a `build` decision, or the owner setting Notion **Build**, makes `promote` create the private repo (topic `idea`) from the record.
 - **Engine:** Claude Code on the owner's Claude subscription first, because coding a product from a PRD needs the strongest model. LiteLLM's free pool (`free-agent`, through the same Claude Code harness) is used only when the subscription is out of capacity (usage or rate limit, logged out). Every PR states which engine wrote it.
   - Idea repos hold generated code from public research, so the free backup is allowed for them; the "never free cloud" rule protects the owner's own private code.
+- **Tier advisor:** before each build, RepoHQ's tier advisor rates the milestone 1–3 on a local model, and the rating is recorded in `state.build.advice`.
+  - With `policy.build.advisor` at `"report"` (the default) Claude stays first.
+  - At `"act"`, a milestone rated 1 starts on the free pool and moves up to Claude on any failure, saving subscription quota for the hard ones.
 - **Milestones:** after the owner merges a milestone's PR, the pipeline builds the next `## Mn` in ROADMAP.md.
 - **M1:** `bin/idea-build.js` builds it, at most one build a week:
   - ROADMAP M1's exit criteria become failing tests first;

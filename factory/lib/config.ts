@@ -40,6 +40,8 @@ export interface FactoryConfig {
    * (factory/lib/local-review.ts).
    */
   copilot: { enabled: boolean; model: string; maxTasksPerDay: number; review: boolean; maxReviewsPerDay: number; localFallback: boolean }
+  /** Tier advisor (lib/tier-advisor.ts): the local model that rates task difficulty 1–3. */
+  advisor: { model: string; timeoutMs: number }
   /** Preview smoke test of factory PRs (lib/smoke.ts): public paths per repo (default "/"), and the Vercel team. */
   smoke: { enabled: boolean; paths: Record<string, string[]>; maxPerCycle: number; vercelScope?: string }
   harnessTimeoutMs: number
@@ -90,7 +92,7 @@ export type CapabilityStage = 'observe' | 'report' | 'pr'
 
 export const CAPABILITIES = [
   'fix-types', 'fix-lint', 'fix-tests', 'lint-autofix', 'deps-audit', 'docs-readme',
-  'red-ci', 'security-alerts', 'adversarial-veto', 'owner-requested', 'owner-report',
+  'red-ci', 'security-alerts', 'adversarial-veto', 'owner-requested', 'owner-report', 'tier-advisor',
 ] as const
 export type Capability = typeof CAPABILITIES[number]
 
@@ -106,6 +108,9 @@ export const DEFAULT_CAPABILITIES: Record<Capability, CapabilityStage> = {
   // Agent HQ report requests (Phase 81): read-only investigations that never open a PR, so
   // `report` is their full capability; `observe` turns them off.
   'owner-report': 'report',
+  // Tier advisor (lib/tier-advisor.ts): a local model rates each task 1–3. At `report` its advice is
+  // logged and scored against outcomes; at `pr` routing starts at the advised tier.
+  'tier-advisor': 'report',
 }
 
 /** Builder tier → reviewer alias from a different model family (local = Qwen; free-agent = Nemotron → Cohere → Gemini). */
@@ -168,6 +173,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FactoryConfig 
     maxPrsPerCycle: num(env.FACTORY_MAX_PRS, json.maxPrsPerCycle ?? 1),
     maxPrsPerDay: json.maxPrsPerDay ?? 8,
     integrationBranch: json.integrationBranch ?? 'integration/agent',
+    advisor: {
+      model: json.advisor?.model ?? 'local-qwen3',
+      timeoutMs: json.advisor?.timeoutMs ?? 90_000,
+    },
     smoke: {
       enabled: json.smoke?.enabled ?? true,
       paths: json.smoke?.paths ?? {},

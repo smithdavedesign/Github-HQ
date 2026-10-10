@@ -29,6 +29,7 @@ import { commentOnPr, loadGstackChecklist, localReviewComment, runLocalReview, t
 import { copilotHasQuota, copilotQuota } from './lib/copilot-quota'
 import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
 import { SMOKE_FAIL_LABEL, pendingSmokes, smokeComment, smokePr } from './lib/smoke'
+import { advisedTier, rateTask } from './lib/tier-advisor'
 import { appendEntry, deadEnds, latestSignals, monthToDateUsd, openPrAttempts, pendingCiOracles, pendingReviews, pendingValues, redCiInvestigated, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry, type SignalsEntry } from './lib/ledger'
 import { listAliases } from './lib/litellm-ops'
 import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
@@ -626,7 +627,22 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
   const allowed = allowedTiers(task, ctx.dataClass, { allowFreeCloud: cfg.allowFreeCloud.includes(repo), copilot })
     // M0/M1 need their LiteLLM alias; MC is the Copilot CLI and M2 is gated by budget below.
     .filter(t => t === 'M2' || t === 'MC' || ctx.aliases.includes(cfg.models[t]))
-  const decision = chooseTier({ allowed, stats: computeTierStats(toAttemptRecords(ledger), task.kind, now) })
+  const routed = chooseTier({ allowed, stats: computeTierStats(toAttemptRecords(ledger), task.kind, now) })
+  // Tier advisor (lib/tier-advisor.ts): a local model rates the task 1–3. Logged and scored at stage
+  // `report`; at `pr` routing starts at the advised tier. Escalation on failure is unchanged.
+  let decision = routed
+  const advisorStage = cfg.capabilities['tier-advisor']
+  if (advisorStage !== 'observe' && allowed.length) {
+    const rating = await rateTask(cfg, { kind: task.kind, title: task.title, objective: task.objective, files: task.files, repo })
+    const advised = advisedTier(rating.difficulty, allowed)
+    const acted = advisorStage === 'pr' && !!advised && advised !== routed.tier
+    if (acted) decision = { tier: advised, exploring: false, reason: `tier advisor: difficulty ${rating.difficulty} — ${rating.reason}` }
+    appendEntry(cfg.home, {
+      type: 'tier_advice', at: now.toISOString(), runId, repo, kind: task.kind, title: task.title.slice(0, 200),
+      difficulty: rating.difficulty, source: rating.source, reason: rating.reason, advisedTier: advised, routedTier: routed.tier, acted,
+    })
+    log(`${repo}: tier advisor (${rating.source}${rating.model ? ` ${rating.model}` : ''}): difficulty ${rating.difficulty} → ${advised ?? 'none'}${acted ? ' (acting)' : ` (advice only; router chose ${routed.tier ?? 'none'})`} — ${rating.reason}`)
+  }
   log(`${repo}: ${task.kind}${task.scoped ? '' : ' (unscoped)'} → ${decision.tier ?? 'none'} (${decision.reason}); allowed ${allowed.join(',') || 'none'}; data=${ctx.dataClass}`)
   tracer.step('route', decision.tier ? 'info' : 'fail', `${task.kind} → ${decision.tier ?? 'no tier'} (${decision.reason})`, { allowed, exploring: decision.exploring, dataClass: ctx.dataClass })
   if (!decision.tier) skipReason = `no model tier is allowed for this task (${decision.reason}; data class ${ctx.dataClass})`

@@ -1,5 +1,6 @@
 import type { Capability, CapabilityStage } from './config'
 import type { AttemptEntry, LedgerEntry, ResolutionEntry, ScanEntry } from './ledger'
+import { ADVISOR_MIN_JUDGED, advisorReady, scoreAdvice } from './tier-advisor'
 
 /**
  * Promotion ladder (roadmap Phase 75): observe → report → pr. The factory never promotes
@@ -51,6 +52,15 @@ export function capabilityStatus(
       return { capability, stage, evidence, advice: 'demote', next: `its vetoes are often wrong (${pct(precision)}): set it back to "report"` }
     }
     return { capability, stage, evidence, advice: 'hold', next: stage === 'pr' ? 'vetoing' : `needs ${VETO_MIN_FLAGGED} resolved flagged PRs at ≥ ${pct(VETO_MIN_PRECISION)} precision to veto` }
+  }
+
+  if (capability === 'tier-advisor') {
+    const s = scoreAdvice(entries.filter(e => e.type !== 'tier_advice' || recent((e as { at: string }).at)))
+    const evidence = s.judged ? `${s.judged} rated tasks judged: ${s.exact} exact, ${s.tooHigh} too high, ${s.tooLow} too low` : 'no rated task has a verified fix yet'
+    const ready = advisorReady(s)
+    if (stage !== 'pr' && ready === 'promote') return { capability, stage, evidence, advice: 'promote', next: 'its ratings match outcomes: set "tier-advisor": "pr" to start each task at the advised tier' }
+    if (stage === 'pr' && ready === 'demote') return { capability, stage, evidence, advice: 'demote', next: 'it often rates too low: set it back to "report"' }
+    return { capability, stage, evidence, advice: 'hold', next: stage === 'pr' ? 'routing starts at the advised tier' : `needs ${ADVISOR_MIN_JUDGED} judged ratings, ≥ 80% exact or too high and ≥ 50% exact` }
   }
 
   if (capability === 'security-alerts') {

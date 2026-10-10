@@ -53,6 +53,7 @@ an idea.
 - **Models:**
   - Claude work runs on the owner's **Claude subscription** through headless Claude Code, never API
     credit.
+  - **A local tier advisor rates every coding task 1–3** (routine / moderate / advanced) to pick the starting model. It earns that control on the promotion ladder; until then it only advises. Fallbacks stay deterministic rules.
   - **Building an idea from its PRD is Claude first:** Claude Code on the subscription, with LiteLLM's free
     pool only as backup when the subscription is out of capacity. Product building needs the strongest
     model, so this is the reverse of the factory's free-first routing (owner, 2026-10-10).
@@ -87,6 +88,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Safety and governance | Strong | Strong | Docker sandbox, judge, human merge, capability ladder, data classes, $0 policy |
 | Maintenance factory | Works, narrow | Works, narrow | 78% acceptance at $0, but it fixes lint, deps, docs and tests and has never built a feature. Average PR value is 1.6/5. |
 | Verification | Weak | Fair | Every code change is judged on the build, and each PR's Vercel preview is smoke-tested in a browser next to production. Pages behind a login aren't checked yet. |
+| Routing | Rules + history | Rules + history + **tier advisor** (report) | A local model rates each task 1–3. It's scored against outcomes and promoted on evidence. |
 | Local coding | Weak | Weak | The local tier (M0) verified 1 of 7 attempts last week. Building runs on Claude Pro and the free pool. Needs 64–128 GB of unified memory for 30B-class local coders. |
 | Idea generation | Works | Strong | Daily, sourced, portfolio-checked, on Claude Pro; full record in git; lossless Notion pages |
 | Idea review | Missing | Works | gstack frameworks applied non-interactively. Four free-developer-tool ideas passed (scores 2–5): the bar is real. Research now has to name who pays and learn from those verdicts, and the next idea, **permitly**, reached Validate (6/10). |
