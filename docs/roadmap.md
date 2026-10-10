@@ -2,6 +2,13 @@
 
 > **Updated 2026-10-07.** RepoHQ is a personal tool (audit §9.2), and the factory is its only executor (Phase 81: Nexus, the `AI-Took-My-Job` repo, is retired). Shipped Phases 1–59 and G1–G8 are in [roadmap-history.md](roadmap-history.md). The current design is in [architecture.md](architecture.md).
 
+> **2026-10-10 decision (owner):** close the gaps from that day's system review now, rather than after the window:
+> - the idea loop: gstack review, $0 demand test, M1 build, revenue tracking;
+> - verification that runs the code: build judged on every change, preview smoke;
+> - one context layer.
+>
+> The four experiments below still run unchanged, and the idea loop is measured by its own scorecard in [system-overview.md](system-overview.md#scorecard-2026-10-10).
+
 ## Next 30 days: four experiments (2026-10-07 → 2026-11-06)
 
 The roadmap stopped being a list of phases. For the next 30 days everything serves one proof: **RepoHQ finds work you actually care about, and the factory turns that work into changes you're glad it made.** Each experiment has a pass mark, and failing one is a useful answer too: it says where the leverage isn't.

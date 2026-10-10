@@ -20,7 +20,7 @@ When something fits two classes, the stricter one wins.
 | Consumer | May read | Never reads | Models |
 |---|---|---|---|
 | **Companion** (OpenClaw, WhatsApp) | Its memory files; calendar event titles; Notion Idea Board and task boards; RepoHQ portfolio and decision states; email **only when asked about a specific message** | Financial senders and documents; bulk inbox ingestion into memory; work-confidential content | Free pool today (see open decision) |
-| **Idea research** (Claude Code on the Pro subscription; scout as fallback) | The public web; the Idea Board; repo names and descriptions | Any personal or work source (no `USER.md` or memory; Claude Code runs with no MCP servers, connectors or user settings) | Claude Pro subscription, then the free pool |
+| **Idea research and review** (Claude Code on the Pro subscription; scout as fallback) | The public web; the Idea Board; the context index (public + personal: repos, ideas, interests, docs) | Any personal or work source (no `USER.md` or memory; Claude Code runs with no MCP servers, connectors or user settings) | Claude Pro subscription, then the free pool |
 | **RepoHQ factory** | Allowlisted repos, inside the Docker sandbox | Anything outside the repo | Private repos: local or paid, never free cloud |
 | **Resource Center** (bookmarks) | Bookmarks except the finance topics | Finance & Banking, Finance Docs & Property | Work topics: local only; the rest: any |
 
@@ -44,6 +44,20 @@ The companion's primary model is the free pool (`free-agent`), so its memory and
 
 Until the owner chooses, the companion stays on the free pool, and work-confidential and financial content stay out of it by policy.
 
-## Next (after the 30-day window)
+## The context index (built 2026-10-10)
 
-One context index instead of each consumer wiring its own sources. RepoHQ already exposes an MCP server: the companion would query RepoHQ (projects and career evidence), a Resource Center export (interests, minus finance and work) and Notion, each tagged with its data class, so the class rules above are applied in one place rather than per tool.
+One index instead of each consumer wiring its own sources: `factory/context` in RepoHQ, rebuilt daily with the morning report into `~/.repohq-factory/context/index.json` (owner-only file).
+
+| Source | Class | From |
+|---|---|---|
+| Repos | public or personal (by visibility) | RepoHQ: description, AI summary, lifecycle, health, MRR |
+| Ideas | personal | idea-factory records: one-liner, problem, user, review, stage |
+| Bookmarks | personal or **work**; finance is never indexed | the resource-center repo (topics and hosts decide the class) |
+| Docs | public | this repo's docs, one entry per section |
+
+- **Access:**
+  - MCP tools `search_context` and `get_system_overview` return public and personal only;
+  - `npm run context -- search "<q>" [--classes …]` returns work only when asked, for local-model callers;
+  - `idea-factory/bin/context` always drops work.
+- **Search** is deterministic keyword ranking (BM25-style, plural folding). Embeddings come later, if needed.
+- **Interests** (top bookmark topics and recent saves) steer idea research and review.

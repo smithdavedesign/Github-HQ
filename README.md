@@ -2,7 +2,9 @@
 
 **Personal GitHub portfolio intelligence dashboard** — health scoring, AI analysis, revenue tracking, lifecycle management, automated weekly intelligence, and an AI agent execution pipeline for every repo you own.
 
-**Live:** https://repohq.vercel.app · [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
+**Live:** https://repohq.vercel.app · **[System overview: start here](docs/system-overview.md)** · [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
+
+RepoHQ is one part of a larger system whose goal is **products people use and pay for, with near-zero overhead for the owner and no financial risk**: a local AI stack with context on every repo, a research center, an idea pipeline that reviews and demand-tests ideas before building them, and a factory that keeps everything healthy. The [system overview](docs/system-overview.md) has the map, the rules and the scorecard.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fsmithdavedesign%2FGithub-HQ&env=DATABASE_URL,GITHUB_CLIENT_ID,GITHUB_CLIENT_SECRET,AUTH_SECRET,ANTHROPIC_API_KEY,CRON_SECRET,NEXTAUTH_URL&envDescription=See%20README%20for%20setup%20instructions&project-name=repohq&repository-name=repohq)
 
@@ -367,6 +369,7 @@ npm run db:generate   # Generate migration files
 - [Agentic Full Flow](docs/agentic-full-flow.md) / [Execution Flow](docs/agentic-execution-flow.md) — the Nexus-era pipeline (superseded by the PRD; kept for history)
 - [AI stack](docs/ai-stack/README.md) — the local AI platform the factory runs on: Ollama, Headroom, LiteLLM and its free-model pool, the coding agents, the OpenClaw companion; architecture, runbook, reference, roadmap (moved here from the `ai-stack-docs` repo)
 - [Autonomous Factory](docs/autonomous-factory.md) — free-model-first self-improvement loop: local AI stack lane, model-tier routing, Docker-sandboxed worker, Judge v2 + adversarial review, capability stages, sensors and a ranked queue, job record and KPIs, night shift, infra agent (Horizon 3). Operator guide: [factory/README.md](factory/README.md)
+- [System overview](docs/system-overview.md) — **start here**: the goal, the loop (research → gstack review → $0 demand test → build → revenue), where every part lives, the rules (money, models, data classes, human merges), how agents get context, the scorecard and the schedules
 - [Idea factory](docs/idea-factory.md) — the daily idea pipeline: research on the local stack → Notion Idea Board → the owner picks Build or Pass → private repo; how the factory will pick up idea repos after the 30-day window
 - [Personal context policy](docs/personal-context.md) — data classes (public, personal, work-confidential, financial), what each consumer (companion, scout, factory, Resource Center) may read and which models each class may reach, and what enforces it
 - [gstack Findings](docs/gstack-findings.md) — running log of skill run findings and resolutions

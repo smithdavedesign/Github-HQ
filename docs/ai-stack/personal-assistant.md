@@ -72,7 +72,7 @@ Cron jobs run *as the companion* and deliver to WhatsApp:
 | `companion-morning` | 7:30 AM daily | Warm good-morning, asks your focus (memory-only) |
 | `companion-evening` | 9:00 PM daily | Wind-down, how the day went (memory-only) |
 | `morning-briefing` | 8:00 AM daily | (separate) AI/tech briefing with web search |
-| `idea-to-repo` | 9:00 AM daily | Runs as **`scout`**, not the companion: researches one product idea and records it on the Notion Idea Board. See [Idea factory](../idea-factory.md). |
+| `idea-to-repo` | 9:00 AM daily | Runs as **`scout`**, not the companion. It starts the idea research on Claude Pro (`idea-research.js`); if that fails, scout researches on the free pool itself. The idea lands on the Notion Idea Board, and the idea pipeline (launchd, every 15 min) then reviews it, demand-tests it and builds it. See [Idea factory](../idea-factory.md). |
 
 **`scout`** is a separate OpenClaw agent (workspace `~/.openclaw/workspace-scout/`). It has no `USER.md` and no memory, and its cron job may only use `exec`, `read`, `write` and the Ollama web tools. It reads untrusted web pages, so it is kept away from the companion's personal context. The companion only queues `idea: …` messages for it (`idea-publish.js seed`); agent-to-agent messaging stays off.
 

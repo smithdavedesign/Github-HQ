@@ -1,10 +1,19 @@
 # Idea factory
 
-A daily job on the local AI stack researches one product idea and records it on a Notion **Idea Board**. The owner decides which ideas become repos. The plan is for the RepoHQ factory to build approved ideas later, but not yet (see [Factory pickup](#factory-pickup-after-the-30-day-window)).
+The idea half of the system ([system overview](system-overview.md)). Every day it researches one product idea, reviews it with the gstack frameworks, runs a $0 demand test on the ones worth testing, builds M1 for the ones that show signal, and tracks their revenue. The owner decides only what matters: Build or Pass on the Notion **Idea Board**, and merging the M1 PR.
 
 It lives outside this repo, in the private **`idea-factory`** repo: the pipeline code, its tests, and the **record** of every idea in full (`ideas/<slug>/`). The daily job runs in OpenClaw. This page documents the contract between those parts and RepoHQ.
 
 ## Flow
+
+```
+idea ──gstack review──▶ validate ──14-day demand test──▶ build ──▶ repo ──M1 PR (tests first)──▶ building ──▶ live (MRR)
+  └──────────────────▶ pass ◀──── no signal / review says no / owner says no
+```
+
+Each idea's lifecycle record is `ideas/<slug>/state.json` (stage, review, page, signals, validation, repo, build, revenue). RepoHQ reads it for the morning report (`factory/context/ideas.ts`).
+
+### 1. Research (daily 09:00)
 
 ```
 09:00 daily (OpenClaw cron, agent "scout")
@@ -18,12 +27,49 @@ idea-publish.js publish ── validates the draft
   └─▶ Notion row, Status "Idea": full research + PRD + roadmap + sources in the page, a Docs link
       to the record, the repo name reserved
       WhatsApp: title, one-liner, closest existing repo, Notion link, which engine did the research
-  ▼
-Owner sets Status in Notion:  "Build"  or  "Pass"
-  ▼
-idea-publish.js promote (launchd, every 15 min)
-  └─ "Build" rows with no repo → private repo (topic "idea") from the recorded draft → Status "Repo Created"
 ```
+
+### 2. Review (daily, after 09:30)
+
+`bin/idea-review.js` runs the `idea-review` skill (`idea-factory/skills/idea-review/SKILL.md`) on the Claude Pro subscription.
+- **Inputs:** the script gathers them so the review never depends on the model running commands.
+  - The owner's interests and related repos/ideas come from the context index.
+  - The gstack framework sections are taken from the installed copy, so gstack upgrades flow through:
+    - office-hours: Phase 2A (the Six Forcing Questions, anti-sycophancy), Phase 3 premise challenge, Phase 4 alternatives;
+    - plan-ceo-review: Step 0 in scope-reduction mode;
+    - plan-eng-review: Step 0, as the feasibility check on M1.
+- **Outputs:** `REVIEW.md` and `review.json`, with a verdict (`validate` or `pass`), a 0–10 score, each forcing question's evidence and score, the wedge, kill criteria, and the landing-page copy and launch post.
+- **Policy on top** (`policy.json`): a score below 6, or an MVP that needs money, is a pass whatever the reviewer said.
+
+The first three ideas (2026-10-10) all passed, scoring 4, 3 and 2: free tools already covered them, or the market was crowded. The bar is meant to be high.
+
+### 3. Demand test (14 days, $0)
+
+- **Landing page:** each `validate` idea gets one, rendered deterministically from the review (escaped, honest: "not built yet") at `https://idea-pages-livid.vercel.app/<slug>/` (Vercel Hobby, public).
+- **Signals:** the page posts a view on load and a signup on submit to RepoHQ's public `POST /api/ideas/signal`. Inputs are validated, a honeypot catches bots, IPs are stored only as an HMAC, and each visitor has hourly limits. Rows go to the `idea_signals` table.
+- **Launch post:** `LAUNCH.md` in the idea's record has a ready-to-paste post and where to share it. **Distribution is the owner's only job here, and the weakest link**: a page nobody visits proves nothing.
+- **Decision rules** (`decideValidation`, every tick):
+  - **build** early at ≥ 10 signups and ≥ 8% conversion, or at the deadline at ≥ 5 signups and ≥ 5%;
+  - **pass** below that;
+  - **extend** once if fewer than 50 visitors came, because untested isn't "no demand", then park.
+- Signups are a cheap filter, not proof: gstack's "interest is not demand" applies. Real demand is judged after M1, on usage and revenue.
+
+### 4. Build
+
+- **Repo:** a `build` decision, or the owner setting Notion **Build**, makes `promote` create the private repo (topic `idea`) from the record.
+- **M1:** `bin/idea-build.js` builds it on the Claude Pro subscription, at most one a week:
+  - ROADMAP M1's exit criteria become failing tests first;
+  - then the smallest $0 stack, implemented until the tests pass, plus `BUILD.md`;
+  - the pipeline runs the tests itself and opens a **draft PR** (branch `m1`) that the owner merges.
+- **Safety:** it runs on the host with npm install scripts disabled. Claude may only edit inside the clone and run npm, npx, node and read-only git. Next step: the factory's Docker sandbox with a subscription token.
+
+### 5. Revenue
+
+- **Tracking:** RepoHQ already tracks lifecycle and MRR per repo. Each tick, the pipeline:
+  - marks a new idea repo `building` (purpose Revenue) in RepoHQ;
+  - copies its MRR into `state.json` and the Notion `MRR` column;
+  - moves the idea to `live` when the owner sets the repo's lifecycle to beta, production or growing.
+- **Reporting:** the morning email's "Ideas, demand and revenue" section shows the whole pipeline.
 
 The first version created a private repo every night. That would have added about 30 repos a month to a portfolio where RepoHQ already rates 35 of 47 active repos as archive candidates. Now a repo exists only after the owner says yes.
 
@@ -31,10 +77,16 @@ The first version created a private repo every night. That would have added abou
 
 | Status | Set by | Meaning |
 |---|---|---|
-| `Idea` | pipeline | Researched and recorded. The page has the full research, PRD, roadmap and sources. Waiting for the owner. |
-| `Build` | owner | Create the repo. `promote` picks it up within 15 minutes. |
-| `Repo Created` | pipeline | The private repo exists (`GitHub_URL`). It carries the GitHub topic `idea`. |
-| `Pass` | owner | Rejected. Research never proposes it again. |
+| `Idea` | pipeline | Researched and recorded; review pending. The page has the full research, PRD, roadmap and sources. |
+| `Validate` | pipeline (review) | Worth a demand test: landing page live, signals counting. The page has the review. |
+| `Build` | pipeline (demand) or **owner** | Create the repo. `promote` picks it up within 15 minutes. The owner can set it at any stage to override a pass. |
+| `Repo Created` | pipeline | The private repo exists (`GitHub_URL`, topic `idea`); M1 build next, then its PR |
+| `Live` | owner (or RepoHQ lifecycle) | Shipped; MRR tracked |
+| `Pass` | pipeline or **owner** | Not now. Research never proposes it again. |
+
+**The owner's status wins:** each tick reads Notion first, and Pass, Build or Live set by the owner override any pipeline verdict.
+
+Pipeline columns: `Verdict`, `Score` (review), `Page` (landing page), `Visitors`, `Signups` (demand test), `MRR` (revenue), and `Docs` (the git record).
 
 Older options (`Pending`, `In Progress`, `Done`) belong to the earlier pipeline. Its listicle rows were set to `Pass` on 2026-10-10.
 
@@ -74,7 +126,7 @@ The agent's files are the source. Both destinations keep all of their text:
   - appends are batched by count and size.
 
   Formatting may be simplified, but text never is. `Sources` and `Description` are Notion *properties* capped at 2,000 characters, so the full source list is in the page body and in git.
-- **Tests** (`npm test` in idea-factory, 15 tests):
+- **Tests** (`npm test` in idea-factory: the conversion tests below plus the pipeline's decision rules, landing-page escaping, review validation, orchestrator rules and Claude runner guards):
   - converting markdown to blocks is lossless (every non-whitespace character, in order) up to a 1.2 MB worst-case bundle;
   - every request fits Notion's limits;
   - emoji are never split;
@@ -94,14 +146,12 @@ The agent's files are the source. Both destinations keep all of their text:
 - **The script does every side effect** (Notion, `gh`, `git`), always with argument arrays and never shell strings, because titles come from the web.
 - **Models:** Claude (Pro subscription) first, then the free pool (`free-agent`). Ideas are public research, so free cloud models are acceptable as the fallback. That is not true for private repos (below).
 
-## Factory pickup (after the 30-day window)
+## How the factory fits in
 
-The [30-day experiment window](roadmap.md) (until 2026-11-06) freezes new executors and capabilities. So the factory does **not** build idea repos yet. When the window closes, the plan is:
-
-1. **A new capability, `idea-scaffold`, starting at stage `report`** (like `red-ci`). Its first task on an idea repo turns ROADMAP M1's exit criteria into failing tests plus a minimal scaffold. That gives the judge an oracle. The factory only ships changes it can verify, and an empty repo has nothing to verify against.
-2. **Then the normal loop:** failing tests become `fix-tests` tasks, judged and opened as draft PRs the owner merges.
-3. **Model constraint:** idea repos are private, and private repos never go to free cloud models. They get the local tier (weak at greenfield work) or the paid tier, which has a $0 budget today. Building ideas at real quality therefore needs a paid budget decision, or a decision to make some idea repos public.
-4. **Portfolio:** idea repos carry the GitHub topic `idea`, so RepoHQ can treat them separately and keep them from dragging down portfolio health while they're young. RepoHQ doesn't sync topics yet; that's part of this work.
+On 2026-10-10 the owner chose to build the idea loop now rather than after the 30-day window. The factory's role is maintenance, and it stays that way:
+- **M1 is built by `idea-build.js`** on the Claude Pro subscription, with tests first, so the PR has its own oracle.
+- **After M1 merges, the idea repo is an ordinary repo.** It can join the factory's allowlist like any other, and its tests become the judge's checks.
+- **Model constraint:** private repos never go to free cloud models, so in the factory they get the local tier until better local hardware arrives. Claude Pro (in idea-build) is how they get real building quality today.
 
 ## Operations
 
@@ -112,6 +162,10 @@ The [30-day experiment window](roadmap.md) (until 2026-11-06) freezes new execut
 | Record + code | private repo `idea-factory`: `ideas/<slug>/`, `bin/`, `lib/`, `test/`, `SKILL.md` (the one copy of the research steps) |
 | Script | `bin/idea-publish.js`: `list`, `seed`, `seeds`, `publish`, `promote [--dry-run]`, `sync-page`, `verify-page` |
 | Research runner | `bin/idea-research.js` (Claude Pro); `--check` proves the subscription login without recording anything |
-| Promote job | launchd `com.user.idea-promote`, every 15 minutes, log `promote.log` in the idea-factory home |
+| Pipeline | launchd `com.user.idea-pipeline`, every 15 minutes: `bin/idea-pipeline.js tick` (daily steps after 09:30; `--daily` forces them). Log `pipeline.log` |
+| Review / build by hand | `bin/idea-review.js <slug>`, `bin/idea-build.js <slug> [--no-push]`; skill `/idea-review` |
+| Policy | `policy.json`: $0 spend, review bar, validation window and thresholds, one build a week |
+| Landing pages | `pages/<slug>/index.html` in idea-factory, deployed to the Vercel project `idea-pages` (public) |
 | Run research now | `openclaw cron run <job-id>` (records a real idea and sends the WhatsApp report) |
 | Check what would be promoted | `node idea-publish.js promote --dry-run` |
+| Demand signals | RepoHQ `POST /api/ideas/signal` → table `idea_signals` (migration `factory/sql/0004`) |
