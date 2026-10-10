@@ -51,8 +51,11 @@ an idea.
 - **Money:** $0 by default. Free tiers only (Vercel Hobby, Neon free); no paid domains, ads or services
   before an idea earns more than it costs (`idea-factory/policy.json`). A review that needs spending is a pass.
 - **Models:**
-  - Claude work runs on the owner's **Claude Pro subscription** through headless Claude Code, never API
-    credit, with free models as the fallback.
+  - Claude work runs on the owner's **Claude subscription** through headless Claude Code, never API
+    credit.
+  - **Building an idea from its PRD is Claude first:** Claude Code on the subscription, with LiteLLM's free
+    pool only as backup when the subscription is out of capacity. Product building needs the strongest
+    model, so this is the reverse of the factory's free-first routing (owner, 2026-10-10).
   - The factory runs free-model-first, and its paid tier has a $0 budget.
   - Private repos never go to free cloud models.
 - **Data classes** ([personal-context.md](personal-context.md)):
