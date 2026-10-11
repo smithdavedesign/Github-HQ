@@ -48,6 +48,8 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
 - **Landing page:** each `validate` idea gets one, rendered deterministically from the review (escaped, honest: "not built yet") at `https://idea-pages-livid.vercel.app/<slug>/` (Vercel Hobby, public).
 - **Signals:** the page posts a view on load and a signup on submit to RepoHQ's public `POST /api/ideas/signal`. Inputs are validated, a honeypot catches bots, IPs are stored only as an HMAC, and each visitor has hourly limits. Rows go to the `idea_signals` table.
 - **Launch post:** `LAUNCH.md` in the idea's record has a ready-to-paste post and where to share it. **Distribution is the owner's only job here, and the weakest link**: a page nobody visits proves nothing.
+  - The `launch` skill (idea-factory `skills/launch/`) makes it a short task. `/launch <slug>` checks that each channel exists and allows the post, adds better ones from the research, and writes a post per channel to `LAUNCH-KIT.md`. The owner posts by hand, then `/launch <slug> posted` appends to `launch-log.json`.
+  - `/launch <slug> status` and the MCP tool `get_idea_pipeline` show visitors by referring site next to the posts logged.
 - **Decision rules** (`decideValidation`, every tick):
   - **build** early at ≥ 10 signups and ≥ 8% conversion, or at the deadline at ≥ 5 signups and ≥ 5%;
   - **pass** below that;

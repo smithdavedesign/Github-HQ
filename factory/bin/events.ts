@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process'
 import { emitEvent, type EventStatus } from '../system/events'
 import { collect } from '../system/collector'
 import { loadConfig } from '../lib/config'
+import { systemStatus } from '../system/status'
 
 const args = process.argv.slice(2)
 const flag = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined }
@@ -41,10 +42,7 @@ async function main() {
   }
   const sql = await db()
   if (cmd === 'summary') {
-    const hours = Number(flag('--hours') ?? 24)
-    const counts = await sql`SELECT system, status, count(*)::int AS n FROM system_events WHERE ts > now() - make_interval(hours => ${hours}) GROUP BY system, status ORDER BY system, status`
-    const failing = await sql`SELECT DISTINCT ON (fingerprint) fingerprint, status, message, ts FROM system_events WHERE status IN ('ok','fail') ORDER BY fingerprint, ts DESC`
-    return console.log(JSON.stringify({ hours, counts, failingNow: (failing as Array<{ status: string }>).filter(f => f.status === 'fail') }, null, 1))
+    return console.log(JSON.stringify(await systemStatus(sql, { hours: Number(flag('--hours') ?? 24) }), null, 1))
   }
   if (cmd === 'tail') {
     const rows = await sql`SELECT ts, system, component, event, status, message FROM system_events ORDER BY ts DESC LIMIT ${Number(flag('--n') ?? 30)}`

@@ -287,7 +287,9 @@ computeInternalDeps()         Cross-references package.json deps across portfoli
 
 **MCP Server** — `mcp/server.ts` is a stdio MCP server using `@modelcontextprotocol/sdk`. Queries Neon directly via `DATABASE_URL` + `MCP_USER_ID` env vars. Configured in `~/.claude/claude.json`.
 
-14 tools across five tiers:
+18 tools across six tiers:
+
+*System*: `get_system_overview` (the map plus live counts), `search_context` (the context index, public and personal only), `get_system_status` (failing now and counts per system from `system_events`, via `factory/system/status.ts`), `get_idea_pipeline` (idea-factory state, policy and launch logs read from `IDEA_HOME`, visitors by source from `idea_signals`; `factory/context/idea-pipeline.ts`).
 
 *Diagnostic (read-only)*: `get_portfolio_summary`, `get_repo_context`, `get_portfolio_warnings`, `get_top_opportunities`, `get_active_goals`
 

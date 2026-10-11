@@ -35,9 +35,13 @@ import { requestJobOptions, withQueue } from '../factory/lib/queue.js'
 import { isGstackSkill, isSkillAllowedForRepo, parseEnvSkillAllowlistMap, parseRepoSkillAllowlist } from '../src/lib/skills/skill-policy.js'
 import { closedPrTaskIds } from '../src/lib/agents/lifecycle-utils.js'
 import factoryConfig from '../factory/factory.config.json'
+import { formatSystemStatus, systemStatus } from '../factory/system/status.js'
+import { readIdeaStates } from '../factory/context/ideas.js'
+import { formatIdea, formatPipeline, readLaunchLog, readValidationPolicy, type LaunchLog, type ReferrerCount } from '../factory/context/idea-pipeline.js'
 
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const FACTORY_HOME = process.env.FACTORY_HOME ?? path.join(process.env.HOME ?? '', '.repohq-factory')
+const IDEA_HOME = process.env.IDEA_HOME ?? path.join(process.env.HOME ?? '', 'idea-factory')
 
 /** The context index built daily by the factory (factory/context); null until the first build. */
 function loadContextIndex(): ContextIndex | null {
@@ -84,6 +88,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           limit: { type: 'number', description: 'Max results (default 8)' },
         },
         required: ['query'],
+      },
+    },
+    {
+      name: 'get_system_status',
+      description: 'What is failing right now across every part of the system (RepoHQ, the factory, the idea pipeline, the local AI stack, OpenClaw, launchd jobs, GitHub crons), event counts per system, and optionally the latest events. The same data as ~/ai-stack/bin/system-status. Call this before debugging anything operational, or when asked "what\'s broken".',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          hours:  { type: 'number', description: 'Window for the per-system counts (default 24)' },
+          recent: { type: 'number', description: 'Also list this many latest events (default 0, max 100)' },
+        },
+      },
+    },
+    {
+      name: 'get_idea_pipeline',
+      description: 'Live state of the idea pipeline (idea-factory): every idea by stage, each demand test against the decision rules (visitors, signups, days to decision), and idea MRR. With slug: one idea in detail, including review, visitors by referring site and the launch posts logged so far. Call this for "how is <idea> doing", before running the launch skill, or when asked about ideas or revenue.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          slug: { type: 'string', description: 'One idea, e.g. "permitly" (optional)' },
+        },
       },
     },
     {
@@ -251,6 +276,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const hits = searchContext(index, String(a.query ?? ''), { classes: ['public', 'personal'], sources: a.sources as never, limit: Math.min(Number(a.limit ?? 8), 25) })
         const text = hits.map(h => `[${h.entry.source}] ${h.entry.title}\n${h.entry.text.slice(0, 600)}${h.entry.url ? `\n${h.entry.url}` : ''}`).join('\n\n') || 'No matches.'
         return { content: [{ type: 'text', text }] }
+      }
+
+      case 'get_system_status': {
+        const a = (args ?? {}) as { hours?: number; recent?: number }
+        const status = await systemStatus(sql, {
+          hours: Math.min(Math.max(Number(a.hours ?? 24), 1), 24 * 30),
+          recent: Math.min(Math.max(Number(a.recent ?? 0), 0), 100),
+        })
+        return { content: [{ type: 'text', text: formatSystemStatus(status) }] }
+      }
+
+      case 'get_idea_pipeline': {
+        const a = (args ?? {}) as { slug?: string }
+        const ideas = readIdeaStates(IDEA_HOME)
+        if (!ideas.length) return { content: [{ type: 'text', text: `No ideas found in ${IDEA_HOME}/ideas.` }] }
+        const slug = a.slug ? String(a.slug).trim().toLowerCase() : null
+        const idea = slug ? ideas.find(i => i.slug === slug) : null
+        if (slug && !idea) return { content: [{ type: 'text', text: `No idea "${slug}". Known: ${ideas.map(i => i.slug).join(', ')}` }] }
+        const referrers = idea
+          ? await sql`SELECT slug, coalesce(substring(referrer from '^https?://(?:www\.)?([^/:?#]+)'), 'direct') AS host, count(DISTINCT coalesce(ip_hash, id::text))::int AS visitors
+              FROM idea_signals WHERE slug = ${idea.slug} AND kind = 'view' GROUP BY 1, 2` as ReferrerCount[]
+          : []
+        const launchLogs = new Map<string, LaunchLog>()
+        for (const i of idea ? [idea] : ideas) {
+          const log = readLaunchLog(IDEA_HOME, i.slug)
+          if (log) launchLogs.set(i.slug, log)
+        }
+        const input = { ideas, policy: readValidationPolicy(IDEA_HOME), referrers, launchLogs, ideaHome: IDEA_HOME, now: new Date() }
+        return { content: [{ type: 'text', text: idea ? formatIdea(idea, input) : formatPipeline(input) }] }
       }
 
       case 'get_portfolio_summary': {
