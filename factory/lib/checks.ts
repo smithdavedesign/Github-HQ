@@ -252,6 +252,33 @@ export function collectPackageInfo(dir: string, maxDepth = 2): { scripts: Record
   return { scripts, deps: [...deps] }
 }
 
+/**
+ * Sub-packages with their own package.json + package-lock.json, up to two levels down
+ * (client/, server/, packages/*), as paths relative to `dir`. Used for repos with no root
+ * package.json: family-tree's 100 Dependabot alerts sit in client/ and server/ lockfiles,
+ * and a root-only scan found nothing to audit for 20 scans in a row (2026-10-11).
+ */
+export function lockfileDirs(dir: string, maxDepth = 2): string[] {
+  const found: string[] = []
+  const visit = (rel: string, depth: number) => {
+    const d = path.join(dir, rel)
+    if (rel && existsSync(path.join(d, 'package.json')) && existsSync(path.join(d, 'package-lock.json'))) found.push(rel)
+    if (depth >= maxDepth) return
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (e.isDirectory() && !SKIP_DIRS.has(e.name) && !e.name.startsWith('.')) visit(rel ? path.join(rel, e.name) : e.name, depth + 1)
+    }
+  }
+  visit('', 0)
+  return found.sort()
+}
+
+/** `npm audit` in each sub-package, summed; null when none could be audited. */
+export async function runAuditIn(root: string, dirs: string[], timeoutMs = 120_000, runner: Runner = run): Promise<AuditCounts | null> {
+  const counts = (await Promise.all(dirs.map(d => runAudit(path.join(root, d), timeoutMs, runner)))).filter((c): c is AuditCounts => c !== null)
+  if (counts.length === 0) return null
+  return counts.reduce((a, c) => ({ critical: a.critical + c.critical, high: a.high + c.high, moderate: a.moderate + c.moderate, low: a.low + c.low }))
+}
+
 /** The repo's lint script rewrites files (eslint --fix, prettier --write). */
 export function lintScriptAutofixes(pkg: PackageJson | null): boolean {
   return /--fix\b|--write\b/.test(pkg?.scripts?.lint ?? '')

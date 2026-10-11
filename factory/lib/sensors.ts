@@ -141,6 +141,9 @@ const CHECK_KINDS = new Set(['fix-types', 'fix-lint', 'fix-tests', 'lint-autofix
 
 export interface Opportunity { repo: string; score: number; reasons: string[]; blocked: string | null }
 
+/** Reason given to a repo whose every known task has an open PR or is a dead end: it only comes round on age. */
+export const NOTHING_WORKABLE = 'every known task has an open PR or is a dead end'
+
 /**
  * Rank allowlisted repos by the value of their best known work. A repo's last scan tells
  * what's failing; signals add red CI, alerts and stale bot PRs; a low RepoHQ health score
@@ -189,7 +192,7 @@ export function rankOpportunities(
     const workable = scan?.tasks.filter(t => !openKinds.has(deadEndKey(repo, t)) && !dead.has(deadEndKey(repo, t))) ?? []
     if (scan && scan.tasks.length > 0 && workable.length === 0 && redCi.length === 0) {
       const age = Math.min((now.getTime() - new Date(scan.at).getTime()) / 86_400_000, 7) * AGE_POINTS_PER_DAY
-      return { repo, score: Math.round(age * 10) / 10, reasons: ['every known task has an open PR or is a dead end'], blocked: null }
+      return { repo, score: Math.round(age * 10) / 10, reasons: [NOTHING_WORKABLE], blocked: null }
     }
     const h = opts.health?.get(repo.toLowerCase())
     if (h !== undefined) score *= 1 + (100 - Math.max(0, Math.min(100, h))) / 200
