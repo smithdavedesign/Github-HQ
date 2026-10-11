@@ -29,6 +29,15 @@ idea-publish.js publish ── validates the draft
       WhatsApp: title, one-liner, closest existing repo, Notion link, which engine did the research
 ```
 
+**Ideas the owner sends are researched right away**, not at 09:00. That covers `idea: …` on Slack or WhatsApp and the Ideas page's New idea box.
+- **How it runs:** the next pipeline tick (within 15 minutes) runs `idea-research.js` for the oldest queued seed. It then reviews the idea and, for a validate, puts up its landing page. The verdict goes back to where it was sent through `openclaw message send`: WhatsApp seeds reply on WhatsApp, and Slack and page seeds in #team-agents. Code: idea-factory `lib/seeds.js`.
+- **Rules** (`policy.research.seeded`):
+  - at most 3 runs a day, because Claude Pro is shared with the owner's sessions and M1 builds;
+  - 60 minutes after a failed run;
+  - none from 08:30 to 09:45, around the daily run;
+  - no free-model fallback: a failed run leaves the seed queued.
+- **No overlap:** a lock in `idea-research.js` keeps a seeded run and the daily run from running at once.
+
 ### 2. Review (daily, after 09:30)
 
 `bin/idea-review.js` runs the `idea-review` skill (`idea-factory/skills/idea-review/SKILL.md`) on the Claude Pro subscription.
@@ -92,7 +101,7 @@ How a decision travels, with Notion staying the board the pipeline follows:
 3. Step 1 of the same tick follows the new status like any owner change. Build makes the repo on that tick and **starts M1 on that tick too**, within `policy.build.maxPerWeek`, instead of waiting for the next daily run. The approval note goes to the builder with the PRD.
 4. The tick mirrors every changed idea (`idea.json`, `state.json`, `review.json`, the markdown docs) to the `ideas` table. It also writes its heartbeat and `policy.json` to `idea_pipeline`, so the page shows how fresh it is.
 
-**New ideas** come from `idea: …` on Slack or WhatsApp (the companion runs `idea-publish.js seed`) or from the page's **New idea** box. The box writes an `idea_seeds` row. The next tick moves it into the same research queue (`seeds.jsonl`) and marks it `queued`. Once the 09:00 research run has written it up, the tick marks it `researched` and links it to its idea. One idea is researched a day, oldest first; a queued one shows how many are ahead of it.
+**New ideas** come from `idea: …` on Slack or WhatsApp (the companion runs `idea-publish.js seed`) or from the page's **New idea** box. The box writes an `idea_seeds` row. The next tick moves it into the same research queue (`seeds.jsonl`) and marks it `queued`. Once it's written up, the tick marks it `researched` and links it to its idea. A queued one shows how many are ahead of it.
 
 The morning email links to the page when ideas need a call. The tables are in `src/lib/db/schema.ts`; idea-factory's side is `lib/repohq.js`.
 
@@ -165,7 +174,7 @@ The agent's files are the source. Both destinations keep all of their text:
   - It runs with no user settings, plugins, hooks, MCP servers or claude.ai connectors, and no skills.
   - It may search and fetch the web, write only to `drafts/`, and run only the publish script.
 - **`scout`** (OpenClaw agent) runs the job and is the fallback researcher on the free pool. It has no personal context: no `USER.md`, no memory, and its workspace says not to read the owner's other workspaces. Its cron job may use only `exec`, `read`, `write`, `ollama_web_search` and `ollama_web_fetch`. It reads untrusted web pages all day, so it is kept apart from the owner's life context (see [personal-context.md](personal-context.md)).
-- **`companion`** (OpenClaw, WhatsApp) never researches. An `idea: …` message is only queued as a seed (`idea-publish.js seed`), and scout researches it on its next run.
+- **`companion`** (OpenClaw, WhatsApp) never researches. An `idea: …` message is only queued as a seed (`idea-publish.js seed --source slack|whatsapp`), and the pipeline researches it on its next tick.
 - **The script does every side effect** (Notion, `gh`, `git`), always with argument arrays and never shell strings, because titles come from the web.
 - **Models:** Claude (Pro subscription) first, then the free pool (`free-agent`). Ideas are public research, so free cloud models are acceptable as the fallback. That is not true for private repos (below).
 

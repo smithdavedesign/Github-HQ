@@ -86,7 +86,7 @@ export async function cancelIdeaDecision(id: number): Promise<void> {
 
 /**
  * A new idea for the research queue, like "idea: …" on Slack or WhatsApp. The pipeline moves it into
- * idea-factory's queue on its next tick; the daily 09:00 run researches the oldest queued idea.
+ * idea-factory's queue on its next tick, which also researches and reviews the oldest queued idea (policy.research.seeded).
  */
 export async function submitIdea(text: string): Promise<{ id: number }> {
   const userId = await ownerId()

@@ -360,7 +360,7 @@ export function cleanIdeaText(text: string): { ok: true; text: string } | { ok: 
 export function seedStatusLabel(s: Pick<IdeaSeedRow, 'status' | 'result'>, ahead: number): string {
   switch (s.status) {
     case 'pending': return 'Waiting for the pipeline (within 15 min)'
-    case 'queued': return ahead > 0 ? `In the research queue, ${ahead} ahead of it: one is researched each day at 09:00` : 'Next in the research queue: researched at 09:00, reviewed at 09:30'
+    case 'queued': return ahead > 0 ? `In the research queue, ${ahead} ahead of it: up to 3 are researched a day, each as soon as the one before is done` : 'Next in the research queue: researched and reviewed within about half an hour'
     case 'researched': return 'Researched'
     case 'failed': return `Couldn’t be queued: ${s.result ?? 'see the pipeline log'}`
     case 'cancelled': return 'Withdrawn'

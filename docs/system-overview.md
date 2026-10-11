@@ -133,6 +133,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Hourly 20:00–06:00, 12:00, 16:00 | Factory cycle (fixes, reconcile, preview smoke) | BullMQ worker on the Mac |
 | 06:45 | Morning email; rebuilds the context index first | worker |
 | 09:00 | Idea research (Claude Pro, else scout on free models) | OpenClaw cron `idea-to-repo` |
+| Within 15 min of sending | Research + review of an idea the owner sent, verdict back on Slack or WhatsApp (≤ 3 a day) | idea pipeline tick |
 | Every 5 min | System-events collector: ship the log, probe everything (incl. Vercel deploys), alert Slack, refresh the companion's brief; daily: prune, secrets check | launchd `com.user.system-events` |
 | 03:30 | Factory state backup (ledger, reports) → private repo | launchd `com.user.factory-backup` |
 | Every 15 min (daily steps after 09:30) | Idea pipeline tick: Ideas-page decisions, Notion sync, signals, decisions, promote, an approved idea's M1 build, revenue, sync to RepoHQ; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |

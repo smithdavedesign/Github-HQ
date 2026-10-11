@@ -120,7 +120,7 @@ describe('Ideas page: new ideas', () => {
   })
   it('says where a submitted idea stands', () => {
     expect(seedStatusLabel({ status: 'pending', result: null }, 0)).toMatch(/within 15 min/)
-    expect(seedStatusLabel({ status: 'queued', result: null }, 0)).toMatch(/Next in the research queue/)
+    expect(seedStatusLabel({ status: 'queued', result: null }, 0)).toMatch(/Next in the research queue: researched and reviewed within about half an hour/)
     expect(seedStatusLabel({ status: 'queued', result: null }, 2)).toMatch(/2 ahead of it/)
     expect(seedStatusLabel({ status: 'failed', result: 'too short' }, 0)).toMatch(/too short/)
   })
