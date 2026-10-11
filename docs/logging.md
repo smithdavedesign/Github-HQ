@@ -54,6 +54,21 @@ One JSON object per line:
 
 **Rule for new code:** log when something *happens* or *fails*, not on every quiet run. A 15-minute job that did nothing doesn't log, because its launchd exit code already shows it ran.
 
+### Events the Agents page reads
+
+The Agents page's **Idea pipeline** panel and **Subscriptions** cards (`src/lib/agents/usage-utils.ts`) are built from these events. So keep their shapes when you change them.
+
+| Event | Written by | `data` |
+|---|---|---|
+| `idea-factory/research/run` (ok, fail) | `bin/idea-research.js` | `model`, `engine`, `trigger` (`daily` or `seed`), `capacity`; `durationMs` |
+| `idea-factory/review/run` (ok, fail) | `bin/idea-review.js` | `model`, `engine`, `fellBack`, `primaryReason`; `durationMs` |
+| `idea-factory/build/<milestone>` (start) | `bin/idea-build.js`, when a build begins | `milestone`, `manual`, `model`, `effort`, `timeoutMinutes` |
+| `idea-factory/build/<milestone>` (ok, fail) | `bin/idea-build.js` | the above plus `engine`, `fellBack`, `testsPassing`, `prUrl`; `durationMs` |
+| `idea-factory/claude/capacity` (info) | `lib/claude.js`, when the subscription can't take the work | `model`, `fallback` |
+| `factory/copilot/usage` (info) | `factory/lib/copilot-quota.ts`: each cycle when the snapshot changed, and daily from the morning report | `installed`, `plan`, `percentRemaining`, `overagePermitted`, `resetDate`, `tasksToday`, `maxTasksPerDay`, `reviewsToday`, `maxReviewsPerDay` |
+
+Older events without `data` still show: the page reads the model and engine from the message where it can, and treats a missing duration as unknown, not zero.
+
 ## What the collector watches by itself
 
 | Probe | Fails when |

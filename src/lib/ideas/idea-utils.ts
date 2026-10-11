@@ -62,6 +62,7 @@ export interface IdeaPolicy {
     buildEarly?: { minSignups?: number; minSignupRate?: number }
   }
   build?: { maxPerWeek?: number; engine?: string; model?: string; effort?: string; claudeFallbackModel?: string; manualPerDay?: number; timeoutMinutes?: number }
+  research?: { seeded?: { maxPerDay?: number; retryMinutes?: number } }
 }
 
 export interface IdeaDecisionRow {

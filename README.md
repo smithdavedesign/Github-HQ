@@ -77,7 +77,11 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 - Agent history, attempt log, skill report findings, and PR links on repo detail Agent tab
 
 **Agent Observability**
-- **Agents** (`/agent-performance`) — the factory worker (online, paused, on AC, Docker), queue counts, schedules and recent runs (factory jobs and crons on one timeline), every request with its step-by-step trace, and owner controls (run now, pause/resume, cancel, retry); then factory KPIs and the advisor accuracy table
+- **Agents** (`/agent-performance`): both workers on the Mac.
+  - **The factory:** the worker (online, paused, on AC, Docker), queue counts, schedules and recent runs (factory jobs and crons on one timeline), every request with its step-by-step trace, and owner controls (run now, pause/resume, cancel, retry).
+  - **The idea pipeline:** health, what's building now, queued builds and reviews, the caps (manual builds, the weekly slot, seeded research) and the latest research, review and build runs.
+  - **Subscriptions:** Claude Pro use by the idea pipeline (runs, minutes, fallbacks, the last usage-limit hit), and GitHub Copilot (premium requests left, the factory's builder tasks and reviews against their caps).
+  - Then factory KPIs and the advisor accuracy table.
 - Portfolio Feed — agent events inline (PR opened, merged with actual delta, failed, skill report)
 - Repo list — "PR open →" badge linking directly to GitHub PR
 - Notifications — in-app bell + optional webhook (Slack, Zapier, Make) for PR ready / failed / health alerts

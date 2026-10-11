@@ -79,7 +79,7 @@ an idea.
 | **Slack #team-agents** | Real-time: system alerts (🔴 failing, 🟠 still failing every 6h, 🟢 recovered), and conversations with the companion |
 | **WhatsApp** | Personal: companion morning and evening messages, the AI briefing, the daily idea report |
 | **Morning email** (06:45) | The daily digest: review queue, ideas and revenue, the factory's roles, what's failing now across every system |
-| **RepoHQ Agents page** | The factory's queue, runs and traces, the Activity Log, and the **System log** (failing now plus the latest events) |
+| **RepoHQ Agents page** | Both workers: the factory's queue, runs and traces, and the **idea pipeline** (building now, queued, caps, latest runs). Then **Subscriptions**: Claude Pro and Copilot use. Then the Activity Log and the **System log** (failing now plus the latest events) |
 | **RepoHQ Ideas page** | Review ideas and decide: approve a build, demand-test or pass (applied through the Notion Idea Board within 15 min) |
 | **Notion Idea Board** | The board the idea pipeline follows; decisions can still be made here |
 

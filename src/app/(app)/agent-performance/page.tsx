@@ -18,6 +18,8 @@ import { getAgentHqOverview } from '@/lib/agents/agent-hq-data'
 import { AgentHqPanel } from '@/components/agents/agent-hq-panel'
 import { DataSyncCard } from '@/components/agents/data-sync-card'
 import { SystemLogCard, type SystemLogRow } from '@/components/agents/system-log-card'
+import { IdeaPipelineCard, UsageCards } from '@/components/agents/usage-cards'
+import { loadUsageOverview } from '@/lib/agents/usage-data'
 
 export default async function AgentPerformancePage() {
   const session = await auth()
@@ -27,7 +29,7 @@ export default async function AgentPerformancePage() {
   // Agent HQ (roadmap Phase 81): the factory's queue, schedules, runs and traces — owner only.
   const access = factoryAccess(userId)
 
-  const [events, accuracyStats, downgradedRepos, factoryEvents, kpis, overview, recentScans, systemLog] = await Promise.all([
+  const [events, accuracyStats, downgradedRepos, factoryEvents, kpis, overview, recentScans, systemLog, usage] = await Promise.all([
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.userId, userId),
@@ -56,7 +58,10 @@ export default async function AgentPerformancePage() {
     }),
     // System log (docs/logging.md): system-wide, so only the factory's owner sees it.
     access.ok ? loadSystemLog().catch(() => null) : Promise.resolve(null),
+    // The idea pipeline (the second worker) and the subscriptions both workers spend: owner only too.
+    access.ok ? loadUsageOverview().catch(e => { console.error('[agents/usage]', e instanceof Error ? e.message : e); return null }) : Promise.resolve(null),
   ])
+  const now = new Date()
   const factory = summarizeFactoryEvents(factoryEvents)
   const pctOf = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`)
 
@@ -96,7 +101,7 @@ export default async function AgentPerformancePage() {
             Agents
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            The factory&apos;s queue, schedules and runs — every request traced step by step — plus advisor accuracy and factory KPIs
+            Both workers on the Mac — the factory (queue, schedules, runs traced step by step) and the idea pipeline — what they spend of Claude Pro and Copilot, plus advisor accuracy and factory KPIs
           </p>
         </div>
       </div>
@@ -108,6 +113,9 @@ export default async function AgentPerformancePage() {
           {access.ok ? null : access.reason} The queue, schedules and traces are shown to the factory&apos;s owner.
         </div>
       )}
+
+      {usage && <IdeaPipelineCard o={usage} now={now} />}
+      {usage && <UsageCards o={usage} now={now} />}
 
       {/* Requests from RepoHQ, all time (Nexus-era tasks included); factory numbers are under Factory KPIs */}
       <h2 className="text-sm font-semibold" data-testid="request-stats-heading">
