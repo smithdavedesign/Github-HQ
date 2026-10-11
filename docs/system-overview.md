@@ -42,7 +42,7 @@ an idea.
 | **Idea pipeline** | private repo `idea-factory` (`~/idea-factory`), Notion **Idea Board**, public landing pages on the `idea-pages` Vercel project | Research → review → demand test → build → revenue; git holds every idea in full. [Idea factory](idea-factory.md) |
 | **Context index** | `factory/context/`, built daily into `~/.repohq-factory/context/index.json` | One searchable view of repos, ideas, bookmarks and docs, tagged by data class |
 | **Resource Center** | private repo `resource-center` (`my-bookmarks-hub` on Vercel, behind Vercel auth) + the Bridge Chrome extension | The owner's bookmarks as a knowledge source; feeds interests into the context index |
-| **Local AI stack** | `~/ai-stack` (local git) | Ollama, LiteLLM (model aliases and the free pool), Headroom, coding agents. [AI stack docs](ai-stack/README.md) |
+| **Local AI stack** | `~/ai-stack`, private repo `smithdavedesign/ai-stack` | Ollama, LiteLLM (model aliases and the free pool), Headroom, coding agents. [AI stack docs](ai-stack/README.md) |
 | **OpenClaw** | `~/.openclaw` | `companion` (personal memory; reachable on **WhatsApp** and **Slack**), `scout` (idea research fallback, no personal context), `main` |
 | **Slack** | workspace channel **#team-agents** (app `repoHQ-message`, socket mode through OpenClaw) | The communication layer: talk to the companion (@-mention in the channel, or DM), and where **system alerts** land: failures, reminders, recoveries |
 | **System log** | `~/.system-events/events.jsonl` → collector (launchd, 5 min) → Neon `system_events` | One log across every part, with probes and Slack alerts. [Logging](logging.md) |
