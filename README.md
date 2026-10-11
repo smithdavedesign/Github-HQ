@@ -97,10 +97,14 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 - **gstack** — skill names and lifecycle phases for the launcher; the factory maps each skill to a fix or report task
 - **MCP Server** (`mcp/server.ts`) — 14 tools for Claude Code and any MCP-compatible IDE
 
-**MCP Tools (14)**
+**MCP Tools (18)**
 
 | Tool | Description |
 |------|-------------|
+| `get_system_overview` | The system map (`docs/system-overview.md`) plus live counts |
+| `search_context` | Search repos, ideas, bookmarks and docs (public and personal only) |
+| `get_system_status` | What's failing now across every system, counts per system, latest events |
+| `get_idea_pipeline` | Ideas by stage, demand tests against the decision rules; one idea with visitors by source and launch posts |
 | `get_portfolio_summary` | Score, grade, top advisor actions, focused repos |
 | `get_repo_context` | Full context: health, lifecycle, tech debt, deployments |
 | `get_portfolio_warnings` | Failing builds, security alerts, low-health repos |

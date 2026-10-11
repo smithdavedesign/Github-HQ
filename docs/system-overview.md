@@ -89,6 +89,8 @@ an idea.
 2. **MCP server `repohq`**, registered at user scope:
    - `get_system_overview` gives this doc plus live counts;
    - `search_context` searches repos, ideas, bookmarks and docs (public and personal only);
+   - `get_system_status` gives what's failing now and counts per system (the same as `~/ai-stack/bin/system-status`);
+   - `get_idea_pipeline` gives each idea's stage and demand test against the decision rules, and with a slug, visitors by source and the launch posts logged;
    - `get_portfolio_summary`, `get_repo_context` and `get_next_action` cover portfolio state.
 3. **CLI:** `npm run context -- search "<query>" | interests | overview` in RepoHQ, or
    `~/idea-factory/bin/context` (cloud-safe classes only).

@@ -28,6 +28,7 @@ import { inactivityDisabled, type SystemHealth } from './lib/system-health'
 import { buildContextIndex } from './bin/context'
 import { readIdeaStates } from './context/ideas'
 import { refreshOpenClawBrief } from './context/brief'
+import { systemStatus } from './system/status'
 
 const log = (...a: unknown[]) => console.log(`[report ${new Date().toISOString().slice(11, 19)}]`, ...a)
 
@@ -36,13 +37,7 @@ async function systemEventsSummary(cfg: ReturnType<typeof loadConfig>) {
   if (!cfg.repohq.databaseUrl) return null
   const { neon } = await import('@neondatabase/serverless')
   const sql = neon(cfg.repohq.databaseUrl)
-  const counts = await sql`SELECT system, status, count(*)::int AS n FROM system_events WHERE ts > now() - interval '24 hours' GROUP BY system, status`
-  const latest = await sql`SELECT DISTINCT ON (fingerprint) fingerprint, status, message, ts FROM system_events WHERE status IN ('ok','fail') AND ts > now() - interval '7 days' ORDER BY fingerprint, ts DESC`
-  return {
-    hours: 24,
-    counts: counts as Array<{ system: string; status: string; n: number }>,
-    failingNow: (latest as Array<{ fingerprint: string; status: string; message: string; ts: string }>).filter(r => r.status === 'fail'),
-  }
+  return systemStatus(sql, { hours: 24 })
 }
 
 async function main() {

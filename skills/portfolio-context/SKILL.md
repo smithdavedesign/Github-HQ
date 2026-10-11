@@ -19,6 +19,7 @@ description: |
    - `search_context` (MCP) or `npm run context -- search "<query>"` in RepoHQ searches repos, ideas,
      bookmarks and docs. Public and personal only; work data is for local models.
    - `get_repo_context` / `get_next_action` (MCP) give one repo's health and the next useful step.
+   - `get_idea_pipeline` (MCP) gives every idea's stage and demand test; with a slug, visitors by source and launch posts.
    - Each idea is in full in `~/idea-factory/ideas/<slug>/` (research, PRD, roadmap, review, state).
 3. **Follow the rules:**
    - **$0:** free tiers only; nothing paid before it earns.
@@ -31,7 +32,7 @@ description: |
    - **One log:** every system writes to `~/.system-events/events.jsonl`; the collector ships it to Neon `system_events` every 5 minutes.
    - **Probes:** services, launchd jobs, OpenClaw crons, GitHub crons, Vercel deploys, provider errors, secrets.
    - **Alerts:** failures and recoveries post to Slack **#team-agents**, which is also where the owner talks to the companion.
-   - **Check the state first** when something seems off: `~/ai-stack/bin/system-status` (failing now, 24 h per system) and `npm run events -- tail` in RepoHQ.
+   - **Check the state first** when something seems off: `get_system_status` (MCP) or `~/ai-stack/bin/system-status` (failing now, 24 h per system) and `npm run events -- tail` in RepoHQ.
    - **Write events from new code:** TypeScript `emitEvent` (`factory/system/events.ts`), idea-factory `lib/events.js`, shell `~/ai-stack/bin/emit-event <system> <component> <event> <ok|fail|info> "<message>"`. Log what happened or failed, not quiet runs.
    - **Secrets:** the keychain is the source; `~/ai-stack/bin/secrets check | rotate litellm`. Never paste a key into a file or a commit.
    - **Backups:** private repos `ai-stack`, `repohq-factory-state` (nightly) and `idea-factory`.

@@ -15,6 +15,7 @@ import { buildIndex, interests, overview, search, type ContextIndex, type DataCl
 import { loadBookmarks, loadDocs, loadIdeas, loadRepos } from '../context/sources'
 import { refreshOpenClawBrief, systemBrief } from '../context/brief'
 import { readIdeaStates } from '../context/ideas'
+import { failingNow as failingNowQuery } from '../system/status'
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..')
 const args = process.argv.slice(2)
@@ -57,8 +58,7 @@ async function main() {
   if (cmd === 'overview') return console.log(overview(index))
   if (cmd === 'brief') {
     const { neon } = await import('@neondatabase/serverless')
-    const failing = cfg.repohq.databaseUrl ? await neon(cfg.repohq.databaseUrl)`SELECT DISTINCT ON (fingerprint) fingerprint, status, message FROM system_events WHERE status IN ('ok','fail') AND ts > now() - interval '7 days' ORDER BY fingerprint, ts DESC`.catch(() => []) : []
-    const failingNow = (failing as Array<{ fingerprint: string; status: string; message: string }>).filter(f => f.status === 'fail')
+    const failingNow = cfg.repohq.databaseUrl ? await failingNowQuery(neon(cfg.repohq.databaseUrl)).catch(() => []) : []
     if (args.includes('--write-openclaw')) return console.log(JSON.stringify({ written: refreshOpenClawBrief(failingNow) }))
     return console.log(systemBrief({ index, ideas: readIdeaStates(process.env.IDEA_HOME ?? path.join(process.env.HOME ?? '', 'idea-factory')), failingNow, now: new Date() }))
   }
