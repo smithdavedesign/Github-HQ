@@ -69,6 +69,7 @@ an idea.
   - **financial** is never ingested.
 - **Humans merge:** the factory and the idea builder open draft PRs. Nothing merges, force-pushes or
   deletes on its own.
+- **Agents never see secrets:** databases and API keys come from the credential broker `~/ai-stack/bin/provision`, which writes values straight to the keychain, Vercel env or GitHub secrets. It works on idea repos only and in agent accounts with no card. Anything it can't do is a Slack request to the owner ([provisioning](provisioning.md)).
 - **The owner's choice wins:** a decision on RepoHQ's Ideas page, or a Notion status the owner sets, overrides any pipeline verdict.
 
 ## Communication and visibility
