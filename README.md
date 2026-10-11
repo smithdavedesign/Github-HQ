@@ -82,6 +82,11 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 - Repo list — "PR open →" badge linking directly to GitHub PR
 - Notifications — in-app bell + optional webhook (Slack, Zapier, Make) for PR ready / failed / health alerts
 
+**Ideas** (`/ideas`, owner only): the idea pipeline's ideas with their research, PRD, roadmap and gstack review.
+- Approve a build, send to a $0 demand test, or pass. Each decision is applied by idea-factory within 15 minutes.
+- Queue a new idea for research.
+- **Start build now:** an approved idea's next milestone is built on Claude Opus at extra-high effort, planned and self-reviewed with gstack, and arrives as a draft PR. At most 2 a day.
+
 **Portfolio Feed** — health drops, deployments, security alerts, dependency cascade risk, agent events
 - Milestones tab — personal changelog with auto-captured events + manual entries; annual markdown export
 

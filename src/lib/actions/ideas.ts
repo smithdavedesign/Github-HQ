@@ -1,12 +1,12 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { and, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { ideaDecisions, ideaSeeds, ideas } from '@/lib/db/schema'
+import { ideaBuildRequests, ideaDecisions, ideaSeeds, ideas } from '@/lib/db/schema'
 import { factoryAccess } from '@/lib/agents/factory-queue'
-import { checkDecision, cleanIdeaText, type IdeaDecisionKind, type IdeaView } from '@/lib/ideas/idea-utils'
+import { buildNowTarget, checkDecision, cleanIdeaText, type IdeaBuildRequestRow, type IdeaDecisionKind, type IdeaView } from '@/lib/ideas/idea-utils'
 
 // Browser-facing actions for the Ideas page. The owner's decision becomes an `idea_decisions` row;
 // the idea pipeline on the Mac applies it on its next tick by setting the Notion Status
@@ -112,4 +112,44 @@ export async function cancelIdeaSeed(id: number): Promise<void> {
     if (!row) throw new DecisionError('Already in the research queue, so it can’t be withdrawn here.')
   })
   revalidatePath('/ideas')
+}
+
+/**
+ * "Start build now": the pipeline builds the idea's next milestone on its next tick, outside the weekly
+ * build slot (idea_build_requests; at most policy.build.manualPerDay starts in 24 hours, the rest wait).
+ */
+export async function requestBuild(slug: string, note?: string): Promise<{ id: number; milestone: string }> {
+  const userId = await ownerId()
+  if (!SLUG_RE.test(slug)) throw new Error('Unknown idea')
+  const text = (note ?? '').trim().slice(0, MAX_NOTE) || null
+  const row = await dbOp('queue the build', async () => {
+    const idea = await db.query.ideas.findFirst({ where: eq(ideas.slug, slug) })
+    if (!idea) throw new DecisionError('Unknown idea')
+    const requests = await db.select().from(ideaBuildRequests).where(eq(ideaBuildRequests.slug, slug)).orderBy(desc(ideaBuildRequests.createdAt)).limit(20)
+    const target = buildNowTarget({
+      stage: idea.stage as IdeaView['stage'], state: idea.state as IdeaView['state'], docs: idea.docs as IdeaView['docs'],
+      buildRequests: requests as IdeaBuildRequestRow[],
+    })
+    if (!target.ok) throw new DecisionError(target.reason)
+    const [inserted] = await db.insert(ideaBuildRequests).values({ slug, userId, milestone: target.milestone, note: text })
+      .returning({ id: ideaBuildRequests.id, milestone: ideaBuildRequests.milestone })
+    return inserted
+  })
+  revalidate(slug)
+  return { id: row.id, milestone: row.milestone ?? 'M1' }
+}
+
+/** Withdraw a build request the pipeline hasn't started. */
+export async function cancelBuildRequest(id: number): Promise<void> {
+  await ownerId()
+  if (!Number.isInteger(id) || id <= 0) throw new Error('Unknown build request')
+  const slug = await dbOp('withdraw the build', async () => {
+    const [row] = await db.update(ideaBuildRequests)
+      .set({ status: 'cancelled', result: 'withdrawn by the owner', finishedAt: new Date() })
+      .where(and(eq(ideaBuildRequests.id, id), eq(ideaBuildRequests.status, 'pending')))
+      .returning({ slug: ideaBuildRequests.slug })
+    if (!row) throw new DecisionError('Already started by the pipeline, or already withdrawn.')
+    return row.slug
+  })
+  revalidate(slug)
 }

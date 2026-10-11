@@ -2,13 +2,13 @@ import 'server-only'
 
 /**
  * Loads the Ideas page: the idea pipeline's synced records (`ideas`), live demand signals
- * (`idea_signals`), the owner's decisions (`idea_decisions`) and the pipeline's heartbeat
- * (`idea_pipeline`). Session-less: callers check factoryAccess first (ideas are the owner's).
+ * (`idea_signals`), the owner's decisions (`idea_decisions`), "Start build now" requests
+ * (`idea_build_requests`) and the pipeline's heartbeat (`idea_pipeline`). Session-less: callers check factoryAccess first (ideas are the owner's).
  */
 import { desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { ideaDecisions, ideaPipeline, ideaSeeds, ideaSignals, ideas } from '@/lib/db/schema'
-import type { IdeaDecisionRow, IdeaPolicy, IdeaSeedRow, IdeaView, Signals } from './idea-utils'
+import { ideaBuildRequests, ideaDecisions, ideaPipeline, ideaSeeds, ideaSignals, ideas } from '@/lib/db/schema'
+import type { IdeaBuildRequestRow, IdeaDecisionRow, IdeaPolicy, IdeaSeedRow, IdeaView, Signals } from './idea-utils'
 
 export interface IdeasOverview {
   views: IdeaView[]
@@ -17,11 +17,13 @@ export interface IdeasOverview {
   seeds: IdeaSeedRow[]
   /** The tables aren't in this database yet (schema not pushed). */
   missingTables: boolean
+  /** idea_build_requests isn't in this database yet: "Start build now" waits for `npm run db:push`. */
+  buildRequestsMissing: boolean
 }
 
 type IdeaRow = typeof ideas.$inferSelect
 
-function toView(r: IdeaRow, signals: Map<string, Signals>, decisions: IdeaDecisionRow[]): IdeaView {
+function toView(r: IdeaRow, signals: Map<string, Signals>, decisions: IdeaDecisionRow[], buildRequests: IdeaBuildRequestRow[]): IdeaView {
   return {
     slug: r.slug,
     title: r.title,
@@ -34,6 +36,7 @@ function toView(r: IdeaRow, signals: Map<string, Signals>, decisions: IdeaDecisi
     updatedAt: r.updatedAt,
     signals: signals.get(r.slug) ?? null,
     decisions: decisions.filter(d => d.slug === r.slug),
+    buildRequests: buildRequests.filter(b => b.slug === r.slug),
   }
 }
 
@@ -50,7 +53,7 @@ async function liveSignals(): Promise<Map<string, Signals>> {
 
 const isMissingTable = (e: unknown) => {
   const err = e as { code?: string; cause?: { code?: string }; message?: string }
-  return err?.code === '42P01' || err?.cause?.code === '42P01' || /relation "idea(s|_decisions|_pipeline|_seeds)" does not exist/.test(String(err?.message))
+  return err?.code === '42P01' || err?.cause?.code === '42P01' || /relation "idea(s|_decisions|_pipeline|_seeds|_build_requests)" does not exist/.test(String(err?.message))
 }
 
 async function pipelineRow(): Promise<IdeasOverview['pipeline']> {
@@ -58,7 +61,9 @@ async function pipelineRow(): Promise<IdeasOverview['pipeline']> {
   return { tickAt: p?.tickAt ?? null, ok: p?.ok ?? null, errors: (p?.errors as string[] | null) ?? [], policy: (p?.policy as IdeaPolicy | null) ?? null }
 }
 
-const EMPTY: IdeasOverview = { views: [], pipeline: { tickAt: null, ok: null, errors: [], policy: null }, seeds: [], missingTables: true }
+const EMPTY: IdeasOverview = { views: [], pipeline: { tickAt: null, ok: null, errors: [], policy: null }, seeds: [], missingTables: true, buildRequestsMissing: true }
+
+const BUILD_REQUESTS_MISSING = Symbol('missing')
 
 /** Submitted ideas still in flight, plus the last two weeks' researched and failed ones; oldest first. */
 async function recentSeeds(): Promise<IdeaSeedRow[]> {
@@ -71,16 +76,20 @@ async function recentSeeds(): Promise<IdeaSeedRow[]> {
 /** Every idea with its live signals and decisions (one query each, joined in memory). */
 export async function loadIdeasOverview(): Promise<IdeasOverview> {
   try {
-    const [rows, decisions, signals, pipeline, seeds] = await Promise.all([
+    const [rows, decisions, signals, pipeline, seeds, requests] = await Promise.all([
       db.select().from(ideas),
       db.select().from(ideaDecisions).orderBy(desc(ideaDecisions.createdAt)).limit(500),
       liveSignals(),
       pipelineRow(),
       // The seeds table arrived after the others: a database without it still shows the page.
       recentSeeds().catch(e => { if (isMissingTable(e)) return [] as IdeaSeedRow[]; throw e }),
+      // So did the build requests (a newer table still): without it the page works, minus "Start build now".
+      db.select().from(ideaBuildRequests).orderBy(desc(ideaBuildRequests.createdAt)).limit(300)
+        .catch(e => { if (isMissingTable(e)) return BUILD_REQUESTS_MISSING; throw e }),
     ])
     const ds = decisions as IdeaDecisionRow[]
-    return { views: rows.map(r => toView(r, signals, ds)), pipeline, seeds, missingTables: false }
+    const brs = requests === BUILD_REQUESTS_MISSING ? [] : requests as IdeaBuildRequestRow[]
+    return { views: rows.map(r => toView(r, signals, ds, brs)), pipeline, seeds, missingTables: false, buildRequestsMissing: requests === BUILD_REQUESTS_MISSING }
   } catch (e) {
     if (isMissingTable(e)) return EMPTY
     throw e

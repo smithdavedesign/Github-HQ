@@ -5,8 +5,8 @@ import { auth } from '@/lib/auth'
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { loadIdea } from '@/lib/ideas/ideas-data'
 import {
-  DECISION_LABEL, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl, pendingDecision, pipelineHealth, reviewQueue,
-  safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
+  DECISION_LABEL, buildNowSteps, buildNowTarget, buildRequestLabel, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
+  manualStartsLast24h, pendingDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
 } from '@/lib/ideas/idea-utils'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DemandMeters, ForcingQuestions, PendingBadge, ScoreBadge, StageBadge } from '@/components/ideas/idea-bits'
 import { IdeaMarkdown } from '@/components/ideas/markdown'
 import { DecisionPanel } from '@/components/ideas/decision-panel'
+import { BuildNow } from '@/components/ideas/build-now'
 import { ReviewNav } from '@/components/ideas/review-nav'
 import { CopyButton } from '@/components/ideas/copy-button'
 import { cn, formatDistanceToNow } from '@/lib/utils'
@@ -56,6 +57,10 @@ export default async function IdeaPage({ params }: Props) {
   const pr = safeUrl(v.state.build?.prUrl)
   const notion = safeUrl(v.notionUrl)
   const launchPost = r?.launch?.post ? r.launch.post.replace(/\{url\}/g, v.state.page?.url ?? '{url}') : null
+  // "Start build now": the next milestone outside the weekly slot (idea_build_requests).
+  const buildTarget = buildNowTarget(v)
+  const buildSteps = buildTarget.ok ? buildNowSteps(buildTarget.milestone, v, policy, manualStartsLast24h(overview.views, now)) : []
+  const lastRequest = v.buildRequests[0] ?? null
 
   const tabs = [
     { id: 'prd', label: 'PRD', md: v.docs.prd },
@@ -176,8 +181,23 @@ export default async function IdeaPage({ params }: Props) {
                   : v.state.build?.status === 'failed' ? `${v.state.build.milestone ?? 'M1'} failed: ${v.state.build.reason ?? 'see the record'}`
                   : pr ? `${v.state.build?.milestone ?? 'M1'} PR ${v.state.build?.status ?? 'open'}${v.state.build?.testsPassing === false ? ' — tests failing' : v.state.build?.testsPassing ? ' — tests passing' : ''}.`
                   : `M1 not started. Build slot: ${slot.free ? 'free this week' : `used, next ${slot.nextFreeAt?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? 'soon'}`}.`}</p>
+                {v.state.build?.model && v.state.build.status !== 'running' && (
+                  <p className="text-xs text-muted-foreground">Built with {v.state.build.engine === 'free' ? `the free pool (${v.state.build.model})` : `${v.state.build.model}${v.state.build.effort ? ` · effort ${v.state.build.effort}` : ''}`}{v.state.build.manual ? ', started here' : ''}.</p>
+                )}
                 {(v.state.milestonesDone ?? []).length > 0 && <p className="text-xs text-muted-foreground">Merged: {v.state.milestonesDone!.join(', ')}</p>}
                 {v.state.revenue && <p className="text-xs text-muted-foreground">MRR ${v.state.revenue.mrr.toFixed(2)}</p>}
+                {v.stage !== 'live' && (
+                  <div className="pt-2">
+                    <BuildNow
+                      slug={v.slug}
+                      name={shortTitle(v.title)}
+                      target={buildTarget}
+                      steps={buildSteps}
+                      request={lastRequest ? { id: lastRequest.id, status: lastRequest.status, label: buildRequestLabel(lastRequest), createdAt: lastRequest.createdAt.toISOString(), prUrl: safeUrl(lastRequest.prUrl), note: lastRequest.note } : null}
+                      blocked={overview.buildRequestsMissing ? 'Start build now needs the idea_build_requests table (npm run db:push).' : null}
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

@@ -285,6 +285,15 @@ The factory becomes the only executor, and Nexus's queue infrastructure (Redis/B
   - **Redis → Neon poll:** the case for dropping Redis is a monthly bill and a failure mode: Render's Key Value proxy silently dropping the connection is what hung the heartbeat on 2026-10-07.
   - **Caveat:** Neon suspends idle compute, and a worker polling every 30–60 s keeps it awake around the clock and spends compute hours. Poll slowly (minutes) outside the hours a person is likely to queue work, or wake the worker on enqueue some other way, and check the Neon plan's compute allowance first.
 
+### Phase 82 — Ideas page and idea builds (in progress)
+The owner decides on ideas and starts builds from RepoHQ, and idea-factory does the work ([idea-factory.md](idea-factory.md)).
+- [x] Ideas page: review an idea and approve a build, a demand test or a pass (`idea_decisions`, applied by the pipeline through Notion) (#65)
+- [x] New idea box: ideas typed on the page join the research queue (`idea_seeds`) (#67)
+- [x] Ideas the owner sends are researched and reviewed on the next tick and answered on Slack or WhatsApp, up to 3 a day (idea-factory#4, #68)
+- [x] Start build now: an approved idea's next milestone is built on the next tick, outside the weekly slot, at most 2 a day (`idea_build_requests`). Builds run `--model opus --effort xhigh`, fall back to Sonnet and then the free pool, plan with gstack plan-eng-review and self-review with gstack's checklist. Covered by unit, e2e and tick system tests.
+- [ ] Builds in the factory's Docker sandbox with a subscription token, instead of on the host with install scripts off
+- [ ] Preview smoke for idea repos' milestone PRs, as the factory does for its own PRs
+
 ### Phase 67+ — Horizon 3: Infrastructure Agent
 - [ ] `agent_resources` ledger table (owner, provider, kind, environment, est. cost, `ephemeral`, `ttlAt`, destroy procedure, lifecycle state) + `.infrastructure/resources.json` mirror
 - [ ] Dev-only provisioning in order: GitHub repo → Vercel preview → Neon/Supabase dev branch → Cloudflare preview DNS → AWS/GCP
