@@ -4,6 +4,8 @@
 > cold on one of its repos. Agents get it through the `portfolio-context` skill or the RepoHQ MCP tool
 > `get_system_overview`. Updated 2026-10-10.
 
+**Visual map:** [smithdavedesign System Map](https://claude.ai/artifact/SdinhSGDxFhgMbWZsSPPso), covering architecture, the idea flow and each repo's code stack. It's a private snapshot from 2026-10-11. This doc is the source of truth; the map isn't updated with it.
+
 ## The goal
 
 **Make things people use and pay for, with near-zero overhead for the owner and no financial risk.**
