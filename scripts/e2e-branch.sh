@@ -28,6 +28,9 @@ trap cleanup EXIT
 
 DATABASE_URL="$(neon connection-string "$BRANCH" --project-id "$PROJECT")"
 export DATABASE_URL
+# The branch gets this checkout's schema, so specs for new tables run before production has them.
+echo "[e2e] pushing the schema to the branch"
+npx drizzle-kit push --force >/dev/null
 export E2E_DISPOSABLE_DB=1
 export E2E_PORT="$PORT"
 export NEXTAUTH_URL="http://localhost:$PORT" AUTH_URL="http://localhost:$PORT" NEXT_PUBLIC_APP_URL="http://localhost:$PORT"

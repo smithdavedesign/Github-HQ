@@ -1,4 +1,4 @@
-import { LayoutDashboard, GitFork, Shield, Rocket, BarChart3, Activity, Workflow, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, GitFork, Shield, Rocket, BarChart3, Activity, Workflow, Lightbulb, type LucideIcon } from 'lucide-react'
 
 export interface NavItem { href: string; icon: LucideIcon; label: string }
 
@@ -11,6 +11,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/repos', icon: GitFork, label: 'Repositories' },
   { href: '/agent-performance', icon: Workflow, label: 'Agents' },
+  { href: '/ideas', icon: Lightbulb, label: 'Ideas' },
   { href: '/security', icon: Shield, label: 'Security' },
 ]
 

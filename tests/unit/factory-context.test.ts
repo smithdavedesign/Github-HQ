@@ -107,7 +107,8 @@ describe('idea lifecycle in the morning report', async () => {
       { slug: 'd', title: 'Delta', stage: 'live', revenue: { mrr: 12.5 } },
       { slug: 'e', title: 'Eps', stage: 'pass', updatedAt: '2026-10-10T08:00:00Z', validation: { startedAt: '', decideAfter: '', decision: 'pass', reason: '0 signups from 120 visitors' } },
     ], now)
-    expect(lines[0]).toBe('Pipeline: 1 awaiting review · 1 validating · 1 building · 1 live · 1 passed. Idea MRR: $12.50.')
+    expect(lines[0]).toBe('1 idea needs your call: approve, demand-test or pass on the Ideas page — https://repohq.vercel.app/ideas')
+    expect(lines[1]).toBe('Pipeline: 1 awaiting review · 1 validating · 1 building · 1 live · 1 passed. Idea MRR: $12.50.')
     expect(lines).toContain('Validating Beta: 31 visitors, 1 signup, decision in 5d — https://p/b')
     expect(lines).toContain('Building Gamma: M1 PR pr-open (tests failing) — https://github.com/o/c/pull/1')
     expect(lines).toContain('Live Delta: $12.50 MRR')

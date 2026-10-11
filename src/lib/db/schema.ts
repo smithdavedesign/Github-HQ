@@ -334,6 +334,54 @@ export const ideaSignals = pgTable('idea_signals', {
 ])
 
 /**
+ * The idea pipeline's record of each idea (idea-factory `ideas/<slug>/`), mirrored here by the
+ * pipeline every tick so the Ideas page can show it: idea.json, state.json, review.json and the
+ * markdown docs. idea-factory writes, RepoHQ only reads. Owner-only, like idea_signals.
+ */
+export const ideas = pgTable('ideas', {
+  slug: text('slug').primaryKey(),
+  title: text('title').notNull(),
+  stage: text('stage').notNull(),          // idea | validate | build | repo | building | live | pass
+  idea: jsonb('idea').notNull(),           // idea.json: oneLiner, tags, effort, confidence, sources …
+  state: jsonb('state').notNull(),         // state.json: review summary, page, signals, validation, repo, build …
+  review: jsonb('review'),                 // review.json: forcing questions, risks, kill criteria, landing, launch
+  docs: jsonb('docs').notNull(),           // { research, prd, roadmap, review, launch, build } markdown
+  notionUrl: text('notion_url'),
+  hash: text('hash').notNull(),            // of the synced content: the pipeline skips unchanged ideas
+  updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }),   // state.updatedAt
+  syncedAt: timestamp('synced_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
+})
+
+/**
+ * The owner's Build / Demand test / Pass decisions from the Ideas page. The idea pipeline applies
+ * pending ones on its next tick by setting the Notion Status, exactly as if the owner had set it
+ * there, so Notion stays the board the pipeline follows. pending → applied | failed | cancelled.
+ */
+export const ideaDecisions = pgTable('idea_decisions', {
+  id: serial('id').primaryKey(),
+  slug: text('slug').notNull(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  decision: text('decision').notNull(),    // build | validate | pass
+  note: text('note'),
+  status: text('status').notNull().default('pending'),
+  result: text('result'),                  // what the pipeline did, or why it couldn't
+  createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
+  appliedAt: timestamp('applied_at', { mode: 'date', withTimezone: true }),
+}, (table) => [
+  index('idea_decisions_slug_created_idx').on(table.slug, table.createdAt),
+  index('idea_decisions_status_idx').on(table.status),
+])
+
+/** The idea pipeline's heartbeat and policy, one row (id 'main'), written every tick. */
+export const ideaPipeline = pgTable('idea_pipeline', {
+  id: text('id').primaryKey(),
+  tickAt: timestamp('tick_at', { mode: 'date', withTimezone: true }).notNull(),
+  ok: boolean('ok').notNull(),
+  errors: jsonb('errors'),                 // string[] from the last tick
+  policy: jsonb('policy'),                 // policy.json: build cap, validation thresholds
+})
+
+/**
  * Autonomous factory job record (roadmap Phase 79): one row per factory attempt, mirrored from
  * the local ledger by factory/lib/sink.ts. `parentJobId` links an escalation (M0 failed → M1).
  * The ledger stays the source of truth; this table is what RepoHQ queries for KPIs.

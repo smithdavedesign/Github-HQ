@@ -28,7 +28,7 @@ an idea.
 | Stage | What happens | Who decides | Cost |
 |---|---|---|---|
 | Research | One idea a day, sourced (no URL, no claim), checked against the owner's portfolio and interests | the pipeline | $0 (Claude Pro subscription, free models as fallback) |
-| Review | gstack office-hours Six Forcing Questions, premise challenge, alternatives; CEO scope reduction; eng feasibility of M1 | the pipeline, policy on top; **the owner can override in Notion** | $0 |
+| Review | gstack office-hours Six Forcing Questions, premise challenge, alternatives; CEO scope reduction; eng feasibility of M1 | the pipeline, policy on top; **the owner can override on RepoHQ's Ideas page or in Notion** | $0 |
 | Demand test | A public landing page with a waitlist and a launch post the owner may share; 14 days | the numbers (`policy.json`) | $0 (Vercel Hobby) |
 | Build | M1's exit criteria become tests first, then the code; a draft PR in the idea's private repo | **the owner merges** | $0 |
 | Live and earning | RepoHQ tracks lifecycle, health and MRR; the factory keeps it healthy | the owner | free tiers until it earns |
@@ -48,7 +48,7 @@ an idea.
 | **System log** | `~/.system-events/events.jsonl` → collector (launchd, 5 min) → Neon `system_events` | One log across every part, with probes and Slack alerts. [Logging](logging.md) |
 | **Backups** | private GitHub repos | `ai-stack` (the stack's config and scripts, never `.env`), `repohq-factory-state` (the factory's ledger and reports, nightly), `idea-factory` (every idea's record). Code repos live on GitHub. |
 | **Secrets** | macOS keychain + `~/ai-stack/bin/secrets` | One source of truth; `check` runs daily; `rotate litellm` updates every copy. [Authentication](ai-stack/authentication.md) |
-| **Notion** | Idea Board, task boards | Where the owner decides on ideas |
+| **Notion** | Idea Board, task boards | The board the idea pipeline follows; the owner decides on RepoHQ's Ideas page, which sets it |
 
 ## Rules every part follows
 
@@ -69,7 +69,7 @@ an idea.
   - **financial** is never ingested.
 - **Humans merge:** the factory and the idea builder open draft PRs. Nothing merges, force-pushes or
   deletes on its own.
-- **The owner's choice wins:** a Notion status the owner sets overrides any pipeline verdict.
+- **The owner's choice wins:** a decision on RepoHQ's Ideas page, or a Notion status the owner sets, overrides any pipeline verdict.
 
 ## Communication and visibility
 
@@ -79,7 +79,8 @@ an idea.
 | **WhatsApp** | Personal: companion morning and evening messages, the AI briefing, the daily idea report |
 | **Morning email** (06:45) | The daily digest: review queue, ideas and revenue, the factory's roles, what's failing now across every system |
 | **RepoHQ Agents page** | The factory's queue, runs and traces, the Activity Log, and the **System log** (failing now plus the latest events) |
-| **Notion Idea Board** | Decisions on ideas |
+| **RepoHQ Ideas page** | Review ideas and decide: approve a build, demand-test or pass (applied through the Notion Idea Board within 15 min) |
+| **Notion Idea Board** | The board the idea pipeline follows; decisions can still be made here |
 
 ## How an AI agent gets context
 
@@ -131,7 +132,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | 09:00 | Idea research (Claude Pro, else scout on free models) | OpenClaw cron `idea-to-repo` |
 | Every 5 min | System-events collector: ship the log, probe everything (incl. Vercel deploys), alert Slack, refresh the companion's brief; daily: prune, secrets check | launchd `com.user.system-events` |
 | 03:30 | Factory state backup (ledger, reports) → private repo | launchd `com.user.factory-backup` |
-| Every 15 min (daily steps after 09:30) | Idea pipeline tick: Notion sync, signals, decisions, promote, revenue; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |
+| Every 15 min (daily steps after 09:30) | Idea pipeline tick: Ideas-page decisions, Notion sync, signals, decisions, promote, an approved idea's M1 build, revenue, sync to RepoHQ; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |
 | Daily, weekly | RepoHQ sync, security, deployments, AI summaries, digest | GitHub Actions crons |
 
 ## What's next

@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
+import { IDEAS_PAGE_URL, needsDecision, type IdeaStateJson } from '../../src/lib/ideas/idea-utils'
 
 export type IdeaStage = 'idea' | 'validate' | 'build' | 'repo' | 'building' | 'live' | 'pass'
 
@@ -20,6 +21,9 @@ export interface IdeaState {
   repo?: string
   build?: { prUrl?: string; status?: 'pr-open' | 'merged' | 'failed'; testsPassing?: boolean; at?: string }
   revenue?: { mrr: number; updatedAt?: string }
+  ownerApproved?: boolean
+  passReason?: string
+  ownerDecision?: IdeaStateJson['ownerDecision']
 }
 
 export function readIdeaStates(ideaHome: string): IdeaState[] {
@@ -45,7 +49,9 @@ export function ideaLines(ideas: IdeaState[], now: Date): string[] {
   const by = (s: IdeaStage) => ideas.filter(i => i.stage === s)
   const mrr = ideas.reduce((n, i) => n + (i.revenue?.mrr ?? 0), 0)
   const days = (iso?: string) => (iso ? Math.ceil((new Date(iso).getTime() - now.getTime()) / 86_400_000) : null)
+  const waiting = ideas.filter(i => needsDecision({ stage: i.stage, state: i as IdeaStateJson, decisions: [] }, now)).length
   return [
+    ...(waiting ? [`${waiting} idea${waiting === 1 ? ' needs' : 's need'} your call: approve, demand-test or pass on the Ideas page — ${IDEAS_PAGE_URL}`] : []),
     `Pipeline: ${by('idea').length} awaiting review · ${by('validate').length} validating · ${by('build').length + by('repo').length + by('building').length} building · ${by('live').length} live · ${by('pass').length} passed. Idea MRR: $${mrr.toFixed(2)}.`,
     ...by('validate').map(i => {
       const s = i.signals ?? { views: 0, uniqueVisitors: 0, signups: 0 }
