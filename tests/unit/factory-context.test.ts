@@ -125,3 +125,24 @@ describe('idea lifecycle in the morning report', async () => {
     expect(readIdeaStates(home).map(i => [i.slug, i.title, i.stage]).sort()).toEqual([['one', 'ONE', 'validate'], ['two', 'TWO', 'idea']])
   })
 })
+
+describe('a failed source keeps its previous entries', () => {
+  // 2026-10-11: a rebuild without the database URL saved an index with 0 repos.
+  const previous = buildIndex([entry('repo:a'), entry('repo:b'), entry('bookmark:x', { source: 'bookmark', dataClass: 'personal' })])
+  it('carries over a source that errored with nothing, and says so', async () => {
+    const { withPreviousOnFailure } = await import('../../factory/bin/context')
+    const out = withPreviousOnFailure([
+      { source: 'repo', result: { entries: [], errors: ['repos: no database URL or FACTORY_USER_ID'] } },
+      { source: 'bookmark', result: { entries: [entry('bookmark:y', { source: 'bookmark', dataClass: 'personal' })], errors: [] } },
+    ], previous)
+    expect(out.entries.map(e => e.id)).toEqual(['repo:a', 'repo:b', 'bookmark:y'])
+    expect(out.errors).toEqual(['repos: no database URL or FACTORY_USER_ID', 'repo: kept 2 entries from the previous build'])
+  })
+  it('uses fresh entries when a source partly worked, and nothing without a previous index', async () => {
+    const { withPreviousOnFailure } = await import('../../factory/bin/context')
+    const partial = withPreviousOnFailure([{ source: 'repo', result: { entries: [entry('repo:c')], errors: ['repos: health scores failed'] } }], previous)
+    expect(partial.entries.map(e => e.id)).toEqual(['repo:c'])
+    const first = withPreviousOnFailure([{ source: 'repo', result: { entries: [], errors: ['boom'] } }], null)
+    expect(first).toEqual({ entries: [], errors: ['boom'] })
+  })
+})
