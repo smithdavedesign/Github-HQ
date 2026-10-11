@@ -84,6 +84,7 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - **Self-review:** the builder checks its own diff against gstack's pre-landing checklist, fixes the CRITICAL findings and lists the rest in `BUILD.md` as `## Review`. The gstack text is read from the installed copy (`buildInput`) into a file outside the clone, so it's never committed;
   - the pipeline runs the tests itself and opens a **draft PR** (branch `m1`) that the owner merges.
 - **Start build now:** an approved idea doesn't have to wait for the weekly slot. See [Deciding: the Ideas page](#deciding-the-ideas-page).
+- **Infrastructure:** a milestone that needs a database or a Google API key gets it from the credential broker (`~/ai-stack/bin/provision neon db <slug>` and so on). The builder may run the broker and nothing else that touches credentials, never sees a value, and lists what it provisioned in BUILD.md under "## Infrastructure" ([provisioning](provisioning.md)).
 - **Safety:** it runs on the host with npm install scripts disabled. Claude may only edit inside the clone and run npm, npx, node and read-only git. Next step: the factory's Docker sandbox with a subscription token.
 
 ### 5. Revenue
