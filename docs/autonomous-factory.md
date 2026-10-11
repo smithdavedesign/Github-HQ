@@ -24,6 +24,7 @@ This doc turns that loop into a **cost-aware autonomous factory**:
 4. **Trust, secrets, identity and budget guardrails** from the PRD get mapped onto existing RepoHQ primitives instead of a parallel system.
 5. **Infrastructure provisioning** (the PRD's headline) is kept, but moved to Horizon 3. It's high-blast-radius and only pays off once the repo loop is cheap and trusted.
 6. **Factory v2 (§14, Phases 75–80) shipped 2026-10-06:** repo code runs only in a Docker sandbox, a stronger judge plus an adversarial reviewer, capability stages (observe → report → pr), sensors and one ranked queue, the `agent_jobs` record with KPIs, and the night-shift policy. What's left is time: the night shift's gate of 7 consecutive fully-sandboxed nights. Target: one good, human-approved PR every night, then more.
+7. **The idea pipeline's milestone builds use the same sandbox** (2026-10-11): `factory/bin/sandbox-session.ts` opens it for another process, copies a clone in, runs commands, and returns the patch. idea-factory drives it, with `api.anthropic.com` added to the egress for its subscription-token Claude Code ([idea-factory.md](idea-factory.md#4-build)).
 
 ---
 
