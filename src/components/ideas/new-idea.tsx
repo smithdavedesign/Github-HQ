@@ -25,7 +25,7 @@ export function NewIdea({ seeds }: { seeds: IdeaSeedRow[] }) {
     startTransition(async () => {
       try {
         await submitIdea(trimmed)
-        toast.success('Idea queued for research', { description: 'Researched at the next 09:00 run (one a day, oldest first), then reviewed at 09:30.' })
+        toast.success('Idea queued for research', { description: 'Researched and reviewed within about half an hour (up to 3 a day); the verdict lands here and in Slack.' })
         setText('')
         router.refresh()
       } catch (e) {
@@ -63,7 +63,7 @@ export function NewIdea({ seeds }: { seeds: IdeaSeedRow[] }) {
         />
       </label>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">Researched at 09:00 (one a day, oldest first), reviewed at 09:30, then it shows up here for your call.</p>
+        <p className="text-xs text-muted-foreground">Researched and reviewed within about half an hour (up to 3 a day, oldest first), then it shows up here for your call and the verdict goes to Slack.</p>
         <Button size="sm" onClick={submit} disabled={busy || trimmed.length < SEED_MIN}>
           {busy ? <Loader2 className="animate-spin" /> : <Plus />} Queue for research
           <kbd className="ml-1 text-[10px] font-mono opacity-60 max-sm:hidden">⌘↵</kbd>

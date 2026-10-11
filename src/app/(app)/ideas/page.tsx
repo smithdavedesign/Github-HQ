@@ -113,7 +113,7 @@ function Group({ group, items, policy, now }: { group: IdeaGroup; items: ReturnT
   if (items.length === 0 && group !== 'decide') return null
   const { title, blurb } = GROUP_LABEL[group]
   const body = items.length === 0
-    ? <p className="text-sm text-muted-foreground">Nothing waiting on you. New ideas arrive daily at 09:00 and are reviewed at 09:30.</p>
+    ? <p className="text-sm text-muted-foreground">Nothing waiting on you. New ideas arrive daily at 09:00, and ideas you send are researched within about half an hour.</p>
     : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{items.map(v => <IdeaCard key={v.slug} v={v} group={group} policy={policy} now={now} />)}</div>
   if (group === 'passed') {
     return (
