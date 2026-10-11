@@ -99,6 +99,7 @@ an idea.
    - It's refreshed daily and whenever something starts failing or recovers.
    - OpenClaw adds it to every turn (`contextInjection: always`), so local and cloud models alike answer with the current picture.
    - They can't read the docs here, because macOS keeps launchd jobs out of `~/Documents`.
+   - They also get the `repohq` MCP server read-only (`MCP_READONLY=1`: no queueing or logging from a chat) and the `launch` and `ai-stack` skills ([personal-assistant.md](ai-stack/personal-assistant.md)).
 
 ## Scorecard (2026-10-10)
 
