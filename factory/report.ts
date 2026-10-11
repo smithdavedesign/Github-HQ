@@ -23,7 +23,7 @@ import { factoryActivityOf, latestHealthSnapshot, recentSyncs, recordNotificatio
 import { parseGhSearchPrs, type OpenPr } from '../src/lib/agents/open-prs'
 import { nextActions } from '../src/lib/portfolio/next-actions'
 import { runPreflight } from './lib/preflight'
-import { copilotQuota } from './lib/copilot-quota'
+import { copilotQuota, copilotUsageData, publishCopilotUsage } from './lib/copilot-quota'
 import { inactivityDisabled, type SystemHealth } from './lib/system-health'
 import { buildContextIndex } from './bin/context'
 import { readIdeaStates } from './context/ideas'
@@ -53,6 +53,9 @@ async function main() {
     .catch(e => log(`context index failed: ${e instanceof Error ? e.message : e}`))
   const ideaHome = process.env.IDEA_HOME ?? path.join(process.env.HOME ?? '', 'idea-factory')
 
+  const quota = await copilotQuota()
+  // A daily Copilot snapshot for the Agents page, even on days no cycle changes it.
+  publishCopilotUsage(cfg.home, copilotUsageData(quota, usage, cfg.copilot, cfg.copilot.enabled), { force: true })
   const input = {
     now,
     ideas: readIdeaStates(ideaHome),
@@ -61,7 +64,7 @@ async function main() {
     pool: existsSync(cfg.litellm.configPath) ? readManagedModels(readFileSync(cfg.litellm.configPath, 'utf8')) : {},
     liteLLMUp: aliases.length > 0,
     openRouterQuota: await freeQuota(cfg),
-    copilot: { ...cfg.copilot, tasksToday: usage.copilotTasks, reviewsToday: usage.copilotReviews, quota: await copilotQuota() },
+    copilot: { ...cfg.copilot, tasksToday: usage.copilotTasks, reviewsToday: usage.copilotReviews, quota },
     prTarget: { min: 3, max: cfg.maxPrsPerDay },
     capabilities: cfg.capabilities,
     monthToDateUsd: monthToDateUsd(entries, now),

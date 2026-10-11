@@ -26,7 +26,7 @@ import { buildCheck, judgesBuild, collectPackageInfo, confirmFailures, detectPac
 import { addPrLabel, ensureValueLabels, prLabels, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { commentOnPr, loadGstackChecklist, localReviewComment, runLocalReview, type LocalReview } from './lib/local-review'
-import { copilotHasQuota, copilotQuota } from './lib/copilot-quota'
+import { copilotHasQuota, copilotQuota, copilotUsageData, publishCopilotUsage } from './lib/copilot-quota'
 import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
 import { SMOKE_FAIL_LABEL, pendingSmokes, smokeComment, smokePr } from './lib/smoke'
 import { advisedTier, rateTask } from './lib/tier-advisor'
@@ -160,6 +160,8 @@ async function main(): Promise<RunResult> {
   const quota = copilotInstalled ? await copilotQuota() : null
   copilotQuotaLeft = copilotHasQuota(quota)
   if (!copilotQuotaLeft) log(`Copilot premium requests used up (resets ${quota?.resetDate ?? 'next month'}) — Copilot builder and reviews paused`)
+  // For the Agents page's Copilot card: only when something changed since the last snapshot.
+  publishCopilotUsage(cfg.home, copilotUsageData(quota, todaysUsage(readLedger(cfg.home), new Date()), cfg.copilot, copilotInstalled))
   await tracer.span('reconcile', () => reconcile(cfg))
 
   const aliases = await listAliases(cfg).catch((): string[] => [])
