@@ -85,7 +85,18 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - the pipeline runs the tests itself and opens a **draft PR** (branch `m1`) that the owner merges.
 - **Start build now:** an approved idea doesn't have to wait for the weekly slot. See [Deciding: the Ideas page](#deciding-the-ideas-page).
 - **Infrastructure:** a milestone that needs a database or a Google API key gets it from the credential broker (`~/ai-stack/bin/provision neon db <slug>` and so on). The builder may run the broker and nothing else that touches credentials, never sees a value, and lists what it provisioned in BUILD.md under "## Infrastructure" ([provisioning](provisioning.md)).
-- **Safety:** it runs on the host with npm install scripts disabled. Claude may only edit inside the clone and run npm, npx, node and read-only git. Next step: the factory's Docker sandbox with a subscription token.
+- **Where it runs: the factory's Docker sandbox** (`policy.build.sandbox: "docker"`, since 2026-10-11).
+  - **In the sandbox:** Claude Code, `npm install` and `npm test` all run in the same hardened worker as the factory's own jobs (§14 of [autonomous-factory.md](autonomous-factory.md)). It has no mounts, no host environment and no credentials, and its network reaches only the package registries and `api.anthropic.com`, through the egress allowlist.
+  - **Login:** Claude logs in with a long-lived subscription token from `claude setup-token`. It's kept in the keychain as `idea-build-claude-token`, Claude Code reports it as `apiKeySource: none` (the subscription), and the free-pool fallback goes through the egress relay.
+  - **On the Mac:** idea-factory drives a session through `factory/bin/sandbox-session.ts` (JSON lines: open, put, exec, patch, close). The Mac only clones, applies the patch that comes back, scans it, commits, pushes and opens the PR, so code the builder writes, installs or tests never touches the Mac.
+  - **No silent fallback:** no token or no Docker fails the build with the reason; it never falls back to the host.
+  - **Host mode:** `"host"` is the old way, kept for emergencies. It runs on the Mac with install scripts off, and there the builder's code can read the Mac's files.
+- **Secret scan:** before any commit, the patch is scanned (idea-factory `lib/secret-scan.js`) for two things:
+  - credential-shaped strings, fake ones included, because a literal fixture turns a PR's GitGuardian check red;
+  - this Mac's real secrets, by value: the build token, LiteLLM's key and the factory env.
+
+  On a hit, the builder gets one repair round: build fakes at runtime, read real values from the environment. If anything's still there, the build fails and no PR is opened. The builder's instructions say the same up front. (dawnlog's M1 on 2026-10-11 put fake keys for its redaction tests in as literals; none was real.)
+- **Credential broker in the sandbox:** the builder can't run `~/ai-stack/bin/provision` from inside it. Instead it writes what it needs into `.provision` (the broker's verbs, for this idea's repo only). The Mac checks each line, runs it through the broker after the secret scan, and lists the result in the PR. `.provision` is never committed.
 
 ### 5. Revenue
 

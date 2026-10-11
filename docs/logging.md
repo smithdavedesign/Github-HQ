@@ -63,7 +63,8 @@ The Agents page's **Idea pipeline** panel and **Subscriptions** cards (`src/lib/
 | `idea-factory/research/run` (ok, fail) | `bin/idea-research.js` | `model`, `engine`, `trigger` (`daily` or `seed`), `capacity`; `durationMs` |
 | `idea-factory/review/run` (ok, fail) | `bin/idea-review.js` | `model`, `engine`, `fellBack`, `primaryReason`; `durationMs` |
 | `idea-factory/build/<milestone>` (start) | `bin/idea-build.js`, when a build begins | `milestone`, `manual`, `model`, `effort`, `timeoutMinutes` |
-| `idea-factory/build/<milestone>` (ok, fail) | `bin/idea-build.js` | the above plus `engine`, `fellBack`, `testsPassing`, `prUrl`; `durationMs` |
+| `idea-factory/build/<milestone>` (ok, fail) | `bin/idea-build.js` | the above plus `engine`, `fellBack`, `sandbox` (`docker` or `host`), `testsPassing`, `prUrl`, `repaired`; a failed secret scan adds `findings` (file, line, kind; never the value); `durationMs` |
+| `idea-factory/build/<milestone>` (info) | `bin/idea-build.js`: the secret scan asking for a repair, and what the credential broker provisioned | `findings` |
 | `idea-factory/claude/capacity` (info) | `lib/claude.js`, when the subscription can't take the work | `model`, `fallback` |
 | `factory/copilot/usage` (info) | `factory/lib/copilot-quota.ts`: each cycle when the snapshot changed, and daily from the morning report | `installed`, `plan`, `percentRemaining`, `overagePermitted`, `resetDate`, `tasksToday`, `maxTasksPerDay`, `reviewsToday`, `maxReviewsPerDay` |
 

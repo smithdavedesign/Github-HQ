@@ -116,7 +116,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Idea generation | Works | Strong | Daily, sourced, portfolio-checked, on Claude Pro; full record in git; lossless Notion pages |
 | Idea review | Missing | Works | gstack frameworks applied non-interactively. Four free-developer-tool ideas passed (scores 2–5): the bar is real. Research now has to name who pays and learn from those verdicts, and the next idea, **permitly**, reached Validate (6/10). |
 | Demand test | Missing | **Live** | permitly's page went up automatically (https://idea-pages-livid.vercel.app/permitly/, decision on 2026-10-24). Signals, decision rules and the launch post (`LAUNCH.md`) all work. Distribution is still on the owner. |
-| Building ideas | Missing | Built, first runs under way | Milestones tests first on Claude Opus at extra-high effort (Sonnet, then the free pool, as fallbacks), planned and self-reviewed with gstack, draft PR. One a week automatically, plus up to 2 a day started from the Ideas page. Runs on the host with install scripts off; next step is the Docker sandbox. |
+| Building ideas | Missing | Built, first runs under way | Milestones tests first on Claude Opus at extra-high effort (Sonnet, then the free pool, as fallbacks), planned and self-reviewed with gstack, draft PR. One a week automatically, plus up to 2 a day started from the Ideas page. Runs in the factory's Docker sandbox (subscription token; network only to registries and Anthropic), and every patch passes a secret scan before it's committed. |
 | Context | Fragmented | Works | One index (44 repos, ideas, 258 bookmarks, 183 doc sections), MCP tools, a skill. Keyword search, no embeddings. |
 | Revenue loop | Missing | Wired, no data yet | Idea MRR from RepoHQ in each idea's state, the Notion board and the morning email. Total portfolio MRR is $4.99. |
 | Operations | Fragile, visible | Fragile, **watched** | One system log across every part. Probes cover services, launchd jobs, OpenClaw crons, GitHub crons and provider errors, with alerts to Slack. Still one Mac. |
@@ -142,7 +142,6 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 
 ## What's next
 
-- Run the idea builder inside the factory's Docker sandbox with a Claude subscription token.
 - Smoke-test logged-in pages (a test account per app).
 - Vercel runtime errors into the system log (the last unwatched surface).
 - A stronger demand signal than signups: a "what would you pay" step on landing pages.
