@@ -43,12 +43,12 @@ Browser-only steps (signing up for a new service, an OAuth consent screen) stay 
 
 Set 2026-10-11. Progress is tracked here.
 
-- [ ] **1. Agent accounts (owner, about 30 min).** Each one separate from the owner's own accounts, with no card on file:
-  - [ ] a Google account for agents;
-  - [ ] a Neon org → API key → `provision token neon` (and `neon-org` if the key isn't org-scoped);
-  - [ ] a Vercel team or Hobby account with the GitHub app on the idea repos → token → `provision token vercel` (and `vercel-team`);
-  - [ ] a GCP project with no billing account → `provision token gcp-project`, then `brew install --cask google-cloud-sdk` and `gcloud auth login` as the agent account;
-  - [ ] check: `provision status` shows ✓ for neon and vercel.
+- [~] **1. Agent accounts (owner).** Step-by-step setup is in the ai-stack README under "Provisioning → One-time setup".
+  - [x] Google account `1426davejobs.agent@gmail.com`, 2-Step Verification on, password in macOS Passwords (2026-10-11);
+  - [x] Neon (Free, no card), API key stored. A personal key works: the broker finds its org;
+  - [x] Vercel: the existing Hobby account with a team-scoped token, since a GitHub account links to only one Vercel login;
+  - [ ] GCP project with no billing account, plus `gcloud auth login` as the agent account. Only needed once a build wants a Google API;
+  - [x] `provision status` shows ✓ for neon and vercel. First live run: grantgate got a Neon DB and a Vercel project with `DATABASE_URL` in its env (2026-10-11).
 - [x] **2. The broker:** `~/ai-stack/bin/provision`, unit tests in `~/ai-stack/bin/tests/test_provision.py` (keychain and APIs stubbed; the main test is that values are never printed).
 - [x] **3. Hooked into the builder:** idea-factory `bin/idea-build.js` (allowed tool and prompt). OpenClaw uses it through exec and the `ai-stack` skill.
 - [ ] **4. Browser-only checklist:** collect, per new service, the one-time steps with no API as they come up (the first `provision request`s show which).
