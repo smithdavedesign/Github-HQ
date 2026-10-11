@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildSlot, checkDecision, decisionLabel, demandProgress, groupIdeas, needsDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline,
+  buildSlot, checkDecision, cleanIdeaText, decisionLabel, seedStatusLabel, demandProgress, groupIdeas, needsDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline,
   whatHappens, type IdeaDecisionRow, type IdeaView,
 } from '../../src/lib/ideas/idea-utils'
 
@@ -109,5 +109,19 @@ describe('Ideas page: text and links', () => {
     expect(safeUrl('not a url')).toBeNull()
     expect(decisionLabel('pass', 'pass')).toBe('Agree, keep passed')
     expect(decisionLabel('pass', 'validate')).toBe('Pass')
+  })
+})
+
+describe('Ideas page: new ideas', () => {
+  it('cleans submitted text like idea-publish.js seed', () => {
+    expect(cleanIdeaText('idea: warn co-hosts about rule changes')).toEqual({ ok: true, text: 'warn co-hosts about rule changes' })
+    expect(cleanIdeaText('  short ')).toMatchObject({ ok: false, reason: expect.stringMatching(/at least 8/) })
+    expect((cleanIdeaText('x'.repeat(3000)) as { text: string }).text).toHaveLength(2000)
+  })
+  it('says where a submitted idea stands', () => {
+    expect(seedStatusLabel({ status: 'pending', result: null }, 0)).toMatch(/within 15 min/)
+    expect(seedStatusLabel({ status: 'queued', result: null }, 0)).toMatch(/Next in the research queue/)
+    expect(seedStatusLabel({ status: 'queued', result: null }, 2)).toMatch(/2 ahead of it/)
+    expect(seedStatusLabel({ status: 'failed', result: 'too short' }, 0)).toMatch(/too short/)
   })
 })

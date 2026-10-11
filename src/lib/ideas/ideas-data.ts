@@ -7,12 +7,14 @@ import 'server-only'
  */
 import { desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { ideaDecisions, ideaPipeline, ideaSignals, ideas } from '@/lib/db/schema'
-import type { IdeaDecisionRow, IdeaPolicy, IdeaView, Signals } from './idea-utils'
+import { ideaDecisions, ideaPipeline, ideaSeeds, ideaSignals, ideas } from '@/lib/db/schema'
+import type { IdeaDecisionRow, IdeaPolicy, IdeaSeedRow, IdeaView, Signals } from './idea-utils'
 
 export interface IdeasOverview {
   views: IdeaView[]
   pipeline: { tickAt: Date | null; ok: boolean | null; errors: string[]; policy: IdeaPolicy | null }
+  /** Ideas submitted on the page: waiting, queued, or researched in the last two weeks. */
+  seeds: IdeaSeedRow[]
   /** The tables aren't in this database yet (schema not pushed). */
   missingTables: boolean
 }
@@ -48,7 +50,7 @@ async function liveSignals(): Promise<Map<string, Signals>> {
 
 const isMissingTable = (e: unknown) => {
   const err = e as { code?: string; cause?: { code?: string }; message?: string }
-  return err?.code === '42P01' || err?.cause?.code === '42P01' || /relation "idea(s|_decisions|_pipeline)" does not exist/.test(String(err?.message))
+  return err?.code === '42P01' || err?.cause?.code === '42P01' || /relation "idea(s|_decisions|_pipeline|_seeds)" does not exist/.test(String(err?.message))
 }
 
 async function pipelineRow(): Promise<IdeasOverview['pipeline']> {
@@ -56,19 +58,29 @@ async function pipelineRow(): Promise<IdeasOverview['pipeline']> {
   return { tickAt: p?.tickAt ?? null, ok: p?.ok ?? null, errors: (p?.errors as string[] | null) ?? [], policy: (p?.policy as IdeaPolicy | null) ?? null }
 }
 
-const EMPTY: IdeasOverview = { views: [], pipeline: { tickAt: null, ok: null, errors: [], policy: null }, missingTables: true }
+const EMPTY: IdeasOverview = { views: [], pipeline: { tickAt: null, ok: null, errors: [], policy: null }, seeds: [], missingTables: true }
+
+/** Submitted ideas still in flight, plus the last two weeks' researched and failed ones; oldest first. */
+async function recentSeeds(): Promise<IdeaSeedRow[]> {
+  const rows = await db.select().from(ideaSeeds)
+    .where(sql`${ideaSeeds.status} IN ('pending', 'queued') OR (${ideaSeeds.status} IN ('researched', 'failed') AND ${ideaSeeds.createdAt} > now() - interval '14 days')`)
+    .orderBy(ideaSeeds.createdAt)
+  return rows as IdeaSeedRow[]
+}
 
 /** Every idea with its live signals and decisions (one query each, joined in memory). */
 export async function loadIdeasOverview(): Promise<IdeasOverview> {
   try {
-    const [rows, decisions, signals, pipeline] = await Promise.all([
+    const [rows, decisions, signals, pipeline, seeds] = await Promise.all([
       db.select().from(ideas),
       db.select().from(ideaDecisions).orderBy(desc(ideaDecisions.createdAt)).limit(500),
       liveSignals(),
       pipelineRow(),
+      // The seeds table arrived after the others: a database without it still shows the page.
+      recentSeeds().catch(e => { if (isMissingTable(e)) return [] as IdeaSeedRow[]; throw e }),
     ])
     const ds = decisions as IdeaDecisionRow[]
-    return { views: rows.map(r => toView(r, signals, ds)), pipeline, missingTables: false }
+    return { views: rows.map(r => toView(r, signals, ds)), pipeline, seeds, missingTables: false }
   } catch (e) {
     if (isMissingTable(e)) return EMPTY
     throw e

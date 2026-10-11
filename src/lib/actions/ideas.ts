@@ -4,9 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { and, eq } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { ideaDecisions, ideas } from '@/lib/db/schema'
+import { ideaDecisions, ideaSeeds, ideas } from '@/lib/db/schema'
 import { factoryAccess } from '@/lib/agents/factory-queue'
-import { checkDecision, type IdeaDecisionKind, type IdeaView } from '@/lib/ideas/idea-utils'
+import { checkDecision, cleanIdeaText, type IdeaDecisionKind, type IdeaView } from '@/lib/ideas/idea-utils'
 
 // Browser-facing actions for the Ideas page. The owner's decision becomes an `idea_decisions` row;
 // the idea pipeline on the Mac applies it on its next tick by setting the Notion Status
@@ -82,4 +82,34 @@ export async function cancelIdeaDecision(id: number): Promise<void> {
     return row.slug
   })
   revalidate(slug)
+}
+
+/**
+ * A new idea for the research queue, like "idea: …" on Slack or WhatsApp. The pipeline moves it into
+ * idea-factory's queue on its next tick; the daily 09:00 run researches the oldest queued idea.
+ */
+export async function submitIdea(text: string): Promise<{ id: number }> {
+  const userId = await ownerId()
+  const clean = cleanIdeaText(text)
+  if (!clean.ok) throw new Error(clean.reason)
+  const row = await dbOp('queue the idea', async () => {
+    const [inserted] = await db.insert(ideaSeeds).values({ userId, text: clean.text }).returning({ id: ideaSeeds.id })
+    return inserted
+  })
+  revalidatePath('/ideas')
+  return { id: row.id }
+}
+
+/** Withdraw a submitted idea the pipeline hasn't picked up yet. */
+export async function cancelIdeaSeed(id: number): Promise<void> {
+  await ownerId()
+  if (!Number.isInteger(id) || id <= 0) throw new Error('Unknown idea')
+  await dbOp('withdraw the idea', async () => {
+    const [row] = await db.update(ideaSeeds)
+      .set({ status: 'cancelled', result: 'withdrawn by the owner' })
+      .where(and(eq(ideaSeeds.id, id), eq(ideaSeeds.status, 'pending')))
+      .returning({ id: ideaSeeds.id })
+    if (!row) throw new DecisionError('Already in the research queue, so it can’t be withdrawn here.')
+  })
+  revalidatePath('/ideas')
 }
