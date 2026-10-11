@@ -11,8 +11,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { loadConfig } from '../lib/config'
-import { buildIndex, interests, overview, search, type ContextIndex, type DataClass, type Source } from '../context/index'
-import { loadBookmarks, loadDocs, loadIdeas, loadRepos } from '../context/sources'
+import { buildIndex, interests, overview, search, type ContextEntry, type ContextIndex, type DataClass, type Source } from '../context/index'
+import { loadBookmarks, loadDocs, loadIdeas, loadRepos, type LoadResult } from '../context/sources'
 import { refreshOpenClawBrief, systemBrief } from '../context/brief'
 import { readIdeaStates } from '../context/ideas'
 import { failingNow as failingNowQuery } from '../system/status'
@@ -23,11 +23,35 @@ const flag = (name: string) => { const i = args.indexOf(name); return i >= 0 ? a
 
 export function indexPath(home: string) { return path.join(home, 'context', 'index.json') }
 
+/**
+ * A source that failed and returned nothing keeps its entries from the previous index, so one bad
+ * build (no database URL, a GitHub hiccup) doesn't empty it until the next good one. Pure.
+ */
+export function withPreviousOnFailure(fresh: Array<{ source: Source; result: LoadResult }>, previous: ContextIndex | null): { entries: ContextEntry[]; errors: string[] } {
+  const entries: ContextEntry[] = []
+  const errors: string[] = []
+  for (const { source, result } of fresh) {
+    errors.push(...result.errors)
+    const kept = result.errors.length && !result.entries.length ? (previous?.entries ?? []).filter(e => e.source === source) : []
+    if (kept.length) errors.push(`${source}: kept ${kept.length} entries from the previous build`)
+    entries.push(...result.entries, ...kept)
+  }
+  return { entries, errors }
+}
+
 export async function buildContextIndex(home: string, ideaHome = process.env.IDEA_HOME ?? path.join(process.env.HOME ?? '', 'idea-factory')) {
   const cfg = loadConfig()
-  const results = [await loadRepos(cfg), loadIdeas(ideaHome), await loadBookmarks(), loadDocs(ROOT)]
-  const index = buildIndex(results.flatMap(r => r.entries))
-  const errors = results.flatMap(r => r.errors)
+  const fresh = [
+    { source: 'repo' as const, result: await loadRepos(cfg) },
+    { source: 'idea' as const, result: loadIdeas(ideaHome) },
+    { source: 'bookmark' as const, result: await loadBookmarks() },
+    { source: 'doc' as const, result: loadDocs(ROOT) },
+  ]
+  let previous: ContextIndex | null = null
+  try { previous = existsSync(indexPath(home)) ? JSON.parse(readFileSync(indexPath(home), 'utf8')) as ContextIndex : null } catch { /* unreadable: rebuild from scratch */ }
+  const merged = withPreviousOnFailure(fresh, previous)
+  const index = buildIndex(merged.entries)
+  const errors = merged.errors
   mkdirSync(path.dirname(indexPath(home)), { recursive: true })
   // Holds work-class entries: owner-only file.
   writeFileSync(indexPath(home), JSON.stringify({ ...index, errors }), { mode: 0o600 })
