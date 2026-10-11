@@ -1,6 +1,6 @@
 # Idea factory
 
-The idea half of the system ([system overview](system-overview.md)). Every day it researches one product idea, reviews it with the gstack frameworks, runs a $0 demand test on the ones worth testing, builds M1 for the ones that show signal, and tracks their revenue. The owner decides only what matters: Build or Pass on the Notion **Idea Board**, and merging the M1 PR.
+The idea half of the system ([system overview](system-overview.md)). Every day it researches one product idea, reviews it with the gstack frameworks, runs a $0 demand test on the ones worth testing, builds M1 for the ones that show signal, and tracks their revenue. The owner decides only what matters: Build, Demand test or Pass on RepoHQ's **Ideas page** (or the Notion **Idea Board**), and merging the M1 PR.
 
 It lives outside this repo, in the private **`idea-factory`** repo: the pipeline code, its tests, and the **record** of every idea in full (`ideas/<slug>/`). The daily job runs in OpenClaw. This page documents the contract between those parts and RepoHQ.
 
@@ -79,12 +79,25 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
 
 The first version created a private repo every night. That would have added about 30 repos a month to a portfolio where RepoHQ already rates 35 of 47 active repos as archive candidates. Now a repo exists only after the owner says yes.
 
+## Deciding: the Ideas page
+
+RepoHQ's [Ideas page](https://repohq.vercel.app/ideas) (`src/app/(app)/ideas/`, owner only) is where the owner reviews and decides. It lists the ideas that need a call first: unreviewed ones, and ones the review passed in the last 14 days that the owner hasn't seen. Then come the running demand tests, builds, live ideas and the passed list. Each idea opens to its review at a glance and tabs for the PRD, research, roadmap, full review, launch post and sources. A decision panel offers **Approve build**, **Demand test first** or **Pass**, or **Agree, keep passed** on an idea the review already passed. Each one confirms what will happen next. Keys: A / T / P to decide, ← → to step through the queue, Esc to go back.
+
+How a decision travels, with Notion staying the board the pipeline follows:
+
+1. The page writes a pending `idea_decisions` row (Neon) and nothing else.
+2. On its next tick, at most 15 minutes later, the pipeline sets that Notion Status exactly as the owner would. It marks the row `applied`, or `failed` with the reason. A row still pending can be withdrawn on the page.
+3. Step 1 of the same tick follows the new status like any owner change. Build makes the repo on that tick and **starts M1 on that tick too**, within `policy.build.maxPerWeek`, instead of waiting for the next daily run. The approval note goes to the builder with the PRD.
+4. The tick mirrors every changed idea (`idea.json`, `state.json`, `review.json`, the markdown docs) to the `ideas` table. It also writes its heartbeat and `policy.json` to `idea_pipeline`, so the page shows how fresh it is.
+
+The morning email links to the page when ideas need a call. The tables are in `src/lib/db/schema.ts`; idea-factory's side is `lib/repohq.js`.
+
 ## Status lifecycle (Notion `Status`)
 
 | Status | Set by | Meaning |
 |---|---|---|
 | `Idea` | pipeline | Researched and recorded; review pending. The page has the full research, PRD, roadmap and sources. |
-| `Validate` | pipeline (review) | Worth a demand test: landing page live, signals counting. The page has the review. |
+| `Validate` | pipeline (review) or **owner** | Worth a demand test: landing page live, signals counting. The page has the review. The owner can send a reviewed idea here from Idea or Pass. |
 | `Build` | pipeline (demand) or **owner** | Create the repo. `promote` picks it up within 15 minutes. The owner can set it at any stage to override a pass. |
 | `Repo Created` | pipeline | The private repo exists (`GitHub_URL`, topic `idea`); M1 build next, then its PR |
 | `Live` | owner (or RepoHQ lifecycle) | Shipped; MRR tracked |

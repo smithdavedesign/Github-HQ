@@ -3,8 +3,8 @@ import { MORE_NAV, PRIMARY_NAV, isNavActive } from '../../src/components/layout/
 import { factoryStatus } from '../../src/lib/health/factory-status'
 
 describe('sidebar navigation', () => {
-  it('leads with the four primary pages; Triage and Graveyard are reached from Repositories', () => {
-    expect(PRIMARY_NAV.map(i => i.label)).toEqual(['Dashboard', 'Repositories', 'Agents', 'Security'])
+  it('leads with the five primary pages; Triage and Graveyard are reached from Repositories', () => {
+    expect(PRIMARY_NAV.map(i => i.label)).toEqual(['Dashboard', 'Repositories', 'Agents', 'Ideas', 'Security'])
     expect(MORE_NAV.map(i => i.label)).toEqual(['Deployments', 'Analytics', 'Feed'])
     expect([...PRIMARY_NAV, ...MORE_NAV].some(i => /triage|graveyard/i.test(i.href))).toBe(false)
   })
