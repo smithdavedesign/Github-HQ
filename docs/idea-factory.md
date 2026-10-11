@@ -92,6 +92,8 @@ How a decision travels, with Notion staying the board the pipeline follows:
 3. Step 1 of the same tick follows the new status like any owner change. Build makes the repo on that tick and **starts M1 on that tick too**, within `policy.build.maxPerWeek`, instead of waiting for the next daily run. The approval note goes to the builder with the PRD.
 4. The tick mirrors every changed idea (`idea.json`, `state.json`, `review.json`, the markdown docs) to the `ideas` table. It also writes its heartbeat and `policy.json` to `idea_pipeline`, so the page shows how fresh it is.
 
+**New ideas** come from `idea: …` on Slack or WhatsApp (the companion runs `idea-publish.js seed`) or from the page's **New idea** box. The box writes an `idea_seeds` row. The next tick moves it into the same research queue (`seeds.jsonl`) and marks it `queued`. Once the 09:00 research run has written it up, the tick marks it `researched` and links it to its idea. One idea is researched a day, oldest first; a queued one shows how many are ahead of it.
+
 The morning email links to the page when ideas need a call. The tables are in `src/lib/db/schema.ts`; idea-factory's side is `lib/repohq.js`.
 
 ## Status lifecycle (Notion `Status`)

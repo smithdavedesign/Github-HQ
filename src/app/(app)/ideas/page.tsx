@@ -8,6 +8,7 @@ import {
   GROUP_LABEL, GROUP_ORDER, IDEA_BOARD_URL, buildSlot, groupIdeas, pipelineHealth, type IdeaGroup,
 } from '@/lib/ideas/idea-utils'
 import { IdeaCard } from '@/components/ideas/idea-card'
+import { NewIdea } from '@/components/ideas/new-idea'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -27,7 +28,7 @@ export default async function IdeasPage() {
     )
   }
 
-  const { views, pipeline, missingTables } = await loadIdeasOverview()
+  const { views, pipeline, seeds, missingTables } = await loadIdeasOverview()
   const now = new Date()
   const groups = groupIdeas(views, now)
   const slot = buildSlot(views, pipeline.policy, now)
@@ -80,6 +81,8 @@ export default async function IdeasPage() {
               </div>
             ))}
           </div>
+
+          <NewIdea seeds={seeds} />
 
           <div className={cn('flex items-start gap-2 text-xs rounded-lg border px-3 py-2', health.stale || pipeline.ok === false ? 'border-amber-500/30 bg-amber-500/5' : 'bg-muted/30')}>
             <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', health.stale ? 'bg-amber-500' : pipeline.ok === false ? 'bg-red-500' : 'bg-emerald-500')} aria-hidden />

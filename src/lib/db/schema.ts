@@ -372,6 +372,27 @@ export const ideaDecisions = pgTable('idea_decisions', {
   index('idea_decisions_status_idx').on(table.status),
 ])
 
+/**
+ * Ideas the owner submits on the Ideas page for research. The idea pipeline moves each pending one
+ * into its research queue (idea-factory seeds.jsonl, the same queue as "idea: …" on Slack/WhatsApp)
+ * on its next tick, and marks it researched once the daily research run has written it up.
+ * pending → queued → researched | failed; pending ones can be cancelled.
+ */
+export const ideaSeeds = pgTable('idea_seeds', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  text: text('text').notNull(),
+  status: text('status').notNull().default('pending'),
+  seedId: text('seed_id'),                 // idea-factory's seed id once queued
+  slug: text('slug'),                      // the idea it became
+  result: text('result'),
+  createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
+  queuedAt: timestamp('queued_at', { mode: 'date', withTimezone: true }),
+  researchedAt: timestamp('researched_at', { mode: 'date', withTimezone: true }),
+}, (table) => [
+  index('idea_seeds_status_idx').on(table.status),
+])
+
 /** The idea pipeline's heartbeat and policy, one row (id 'main'), written every tick. */
 export const ideaPipeline = pgTable('idea_pipeline', {
   id: text('id').primaryKey(),

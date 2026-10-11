@@ -42,6 +42,7 @@ async function cleanup() {
   if (!DB_URL) return
   await sql()`DELETE FROM idea_decisions WHERE slug IN (${SLUG}, ${SLUG2})`.catch(() => {})
   await sql()`DELETE FROM ideas WHERE slug IN (${SLUG}, ${SLUG2})`.catch(() => {})
+  await sql()`DELETE FROM idea_seeds WHERE text LIKE 'e2e:%'`.catch(() => {})
 }
 
 test.describe('Ideas page', () => {
@@ -104,5 +105,18 @@ test.describe('Ideas page', () => {
     await page.keyboard.press('t')
     await expect(page.getByRole('dialog').getByRole('heading', { name: /Demand test first: Beta/ })).toBeVisible()
     await page.keyboard.press('Escape')
+  })
+
+  test('a new idea joins the research queue and can be withdrawn before the pipeline takes it', async ({ page }) => {
+    const skip = await ready()
+    test.skip(!!skip, skip ?? '')
+    await page.goto('/ideas')
+    await page.getByRole('textbox', { name: /New idea/ }).fill('e2e: a tool that warns co-hosts about rule changes')
+    await page.getByRole('button', { name: /Queue for research/ }).click()
+    await expect(page.getByText('Waiting for the pipeline (within 15 min)')).toBeVisible()
+    const [row] = await sql()`SELECT status FROM idea_seeds WHERE text = 'e2e: a tool that warns co-hosts about rule changes'`
+    expect(row.status).toBe('pending')
+    await page.getByRole('button', { name: /Withdraw/ }).click()
+    await expect(page.getByText('e2e: a tool that warns co-hosts')).toHaveCount(0)
   })
 })

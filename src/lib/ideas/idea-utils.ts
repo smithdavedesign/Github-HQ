@@ -331,3 +331,38 @@ export function scoreTone(score: number | undefined, policy: IdeaPolicy | null):
   const bar = policy?.review?.minScore ?? 6
   return score >= bar ? 'good' : score >= bar - 2 ? 'mid' : 'low'
 }
+
+export type IdeaSeedStatus = 'pending' | 'queued' | 'researched' | 'failed' | 'cancelled'
+
+export interface IdeaSeedRow {
+  id: number
+  text: string
+  status: IdeaSeedStatus
+  seedId: string | null
+  slug: string | null
+  result: string | null
+  createdAt: Date
+  queuedAt: Date | null
+  researchedAt: Date | null
+}
+
+/** Same bounds as idea-factory's `idea-publish.js seed`: 8–2000 characters, an "idea:" prefix dropped. */
+export const SEED_MIN = 8
+export const SEED_MAX = 2000
+
+export function cleanIdeaText(text: string): { ok: true; text: string } | { ok: false; reason: string } {
+  const t = String(text ?? '').replace(/^\s*idea:\s*/i, '').trim()
+  if (t.length < SEED_MIN) return { ok: false, reason: `Describe the idea in at least ${SEED_MIN} characters.` }
+  return { ok: true, text: t.slice(0, SEED_MAX) }
+}
+
+/** Where a submitted idea stands, in one line. */
+export function seedStatusLabel(s: Pick<IdeaSeedRow, 'status' | 'result'>, ahead: number): string {
+  switch (s.status) {
+    case 'pending': return 'Waiting for the pipeline (within 15 min)'
+    case 'queued': return ahead > 0 ? `In the research queue, ${ahead} ahead of it: one is researched each day at 09:00` : 'Next in the research queue: researched at 09:00, reviewed at 09:30'
+    case 'researched': return 'Researched'
+    case 'failed': return `Couldn’t be queued: ${s.result ?? 'see the pipeline log'}`
+    case 'cancelled': return 'Withdrawn'
+  }
+}
