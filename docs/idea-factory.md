@@ -69,15 +69,21 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
 
 - **Repo:** a `build` decision, or the owner setting Notion **Build**, makes `promote` create the private repo (topic `idea`) from the record.
 - **Engine:** Claude Code on the owner's Claude subscription first, because coding a product from a PRD needs the strongest model. LiteLLM's free pool (`free-agent`, through the same Claude Code harness) is used only when the subscription is out of capacity (usage or rate limit, logged out). Every PR states which engine wrote it.
+  - **Model and effort** (`policy.build`): `--model opus --effort xhigh`, which is `claude-opus-5-5` on the subscription.
+  - If Opus is overloaded or unavailable on the plan, Claude Code itself drops to `claudeFallbackModel` (`sonnet`), still on the subscription. Effort and model never go to the free pool.
+  - There's no local-model step: a 16 GB Mac can't run a coder strong enough for a milestone.
   - Idea repos hold generated code from public research, so the free backup is allowed for them; the "never free cloud" rule protects the owner's own private code.
 - **Tier advisor:** before each build, RepoHQ's tier advisor rates the milestone 1–3 on a local model, and the rating is recorded in `state.build.advice`.
   - With `policy.build.advisor` at `"report"` (the default) Claude stays first.
   - At `"act"`, a milestone rated 1 starts on the free pool and moves up to Claude on any failure, saving subscription quota for the hard ones.
 - **Milestones:** after the owner merges a milestone's PR, the pipeline builds the next `## Mn` in ROADMAP.md.
-- **M1:** `bin/idea-build.js` builds it, at most one build a week:
+- **M1:** `bin/idea-build.js` builds it, at most one build a week from the weekly slot:
+  - **Plan:** gstack's plan-eng-review (Step 0 scope challenge, architecture review, test review) is applied to the milestone first, and the result goes into `BUILD.md` as `## Plan`;
   - ROADMAP M1's exit criteria become failing tests first;
   - then the smallest $0 stack, implemented until the tests pass, plus `BUILD.md`;
+  - **Self-review:** the builder checks its own diff against gstack's pre-landing checklist, fixes the CRITICAL findings and lists the rest in `BUILD.md` as `## Review`. The gstack text is read from the installed copy (`buildInput`) into a file outside the clone, so it's never committed;
   - the pipeline runs the tests itself and opens a **draft PR** (branch `m1`) that the owner merges.
+- **Start build now:** an approved idea doesn't have to wait for the weekly slot. See [Deciding: the Ideas page](#deciding-the-ideas-page).
 - **Safety:** it runs on the host with npm install scripts disabled. Claude may only edit inside the clone and run npm, npx, node and read-only git. Next step: the factory's Docker sandbox with a subscription token.
 
 ### 5. Revenue
@@ -103,7 +109,16 @@ How a decision travels, with Notion staying the board the pipeline follows:
 
 **New ideas** come from `idea: …` on Slack or WhatsApp (the companion runs `idea-publish.js seed`) or from the page's **New idea** box. The box writes an `idea_seeds` row. The next tick moves it into the same research queue (`seeds.jsonl`) and marks it `queued`. Once it's written up, the tick marks it `researched` and links it to its idea. A queued one shows how many are ahead of it.
 
-The morning email links to the page when ideas need a call. The tables are in `src/lib/db/schema.ts`; idea-factory's side is `lib/repohq.js`.
+**Start build now** is on the Build card of an approved idea whose repo exists. It also appears after a milestone's PR is merged, to build the next one.
+- **The request:** the button confirms what happens, takes an optional note for the builder, and writes a pending `idea_build_requests` row.
+- **When it runs:** on its next tick, the pipeline takes the oldest pending request, re-checks it (`manualBuildTarget`, the same rules as the page's `buildNowTarget`) and builds that milestone, outside `maxPerWeek`.
+- **Limits:**
+  - one build per tick;
+  - at most `policy.build.manualPerDay` (2) manual starts in any 24 hours, because an Opus build at xhigh can use most of a usage window the owner's own sessions share. Over the cap a request waits, and the reason shows on the page;
+  - manual builds don't use the weekly slot.
+- **Result:** the row moves `pending → running → done | failed`, with the PR link and the engine, and the PR is posted in Slack (#team-agents). A queued request can be withdrawn. If the weekly slot builds the same idea first, the waiting request is settled with that PR.
+
+The morning email links to the page when ideas need a call. The tables are in `src/lib/db/schema.ts`; idea-factory's side is `lib/repohq.js`. A table added later (`idea_seeds`, `idea_build_requests`) only needs `npm run db:push`, and the page works without it until then.
 
 ## Status lifecycle (Notion `Status`)
 

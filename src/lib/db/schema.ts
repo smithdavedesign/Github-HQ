@@ -393,6 +393,30 @@ export const ideaSeeds = pgTable('idea_seeds', {
   index('idea_seeds_status_idx').on(table.status),
 ])
 
+/**
+ * "Start build now" on the Ideas page: build an approved idea's next milestone without waiting for the
+ * weekly build slot. The idea pipeline takes the oldest pending one on its next tick (at most
+ * policy.build.manualPerDay starts in 24 hours) and records the outcome here.
+ * pending → running → done | failed; pending ones can be cancelled. `result` says why one is waiting.
+ */
+export const ideaBuildRequests = pgTable('idea_build_requests', {
+  id: serial('id').primaryKey(),
+  slug: text('slug').notNull(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  milestone: text('milestone'),            // M1, M2 … : the page's guess, then what the pipeline built
+  note: text('note'),                      // for the builder, with the PRD
+  status: text('status').notNull().default('pending'),
+  result: text('result'),
+  prUrl: text('pr_url'),
+  engine: text('engine'),                  // e.g. "claude-opus-5-5 · xhigh", or "free pool (…)"
+  createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
+  startedAt: timestamp('started_at', { mode: 'date', withTimezone: true }),
+  finishedAt: timestamp('finished_at', { mode: 'date', withTimezone: true }),
+}, (table) => [
+  index('idea_build_requests_status_idx').on(table.status),
+  index('idea_build_requests_slug_created_idx').on(table.slug, table.createdAt),
+])
+
 /** The idea pipeline's heartbeat and policy, one row (id 'main'), written every tick. */
 export const ideaPipeline = pgTable('idea_pipeline', {
   id: text('id').primaryKey(),

@@ -43,6 +43,7 @@ RepoHQ is the portfolio half of a larger loop: idea research â†’ gstack review â
 
 RepoHQ's parts in that loop:
 - `POST /api/ideas/signal` (`src/lib/ideas/signals.ts`, table `idea_signals`): landing-page demand signals.
+- The Ideas page (`src/app/(app)/ideas/`, `src/lib/ideas/`, actions in `src/lib/actions/ideas.ts`): the owner decides on ideas and starts builds. The page only writes requests: `idea_decisions`, `idea_seeds` and `idea_build_requests`. The idea pipeline on the Mac acts on them each tick and mirrors the record back to `ideas` and `idea_pipeline` ([idea-factory.md](idea-factory.md#deciding-the-ideas-page)).
 - The context index (`factory/context`): repos, ideas, bookmarks and docs by data class. It is served to agents by the MCP tools `get_system_overview` and `search_context`.
 - The morning report's "Ideas, demand and revenue" section.
 - Preview smoke (`factory/lib/smoke.ts`): each factory PR's Vercel preview is loaded in a browser next to production.

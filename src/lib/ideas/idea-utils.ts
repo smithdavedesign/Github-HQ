@@ -28,7 +28,7 @@ export interface IdeaStateJson {
   signals?: { views: number; uniqueVisitors: number; signups: number; updatedAt?: string }
   validation?: { startedAt: string; decideAfter: string; extensions?: number; decision?: 'build' | 'pass' | 'extend'; reason?: string }
   repo?: string
-  build?: { milestone?: string; prUrl?: string; status?: string; testsPassing?: boolean; at?: string; reason?: string }
+  build?: { milestone?: string; prUrl?: string; status?: string; testsPassing?: boolean; at?: string; reason?: string; manual?: boolean; engine?: string; model?: string | null; effort?: string | null }
   milestonesDone?: string[]
   revenue?: { mrr: number; updatedAt?: string }
   ownerApproved?: boolean
@@ -61,7 +61,7 @@ export interface IdeaPolicy {
     build?: { minSignups?: number; minSignupRate?: number }
     buildEarly?: { minSignups?: number; minSignupRate?: number }
   }
-  build?: { maxPerWeek?: number; engine?: string }
+  build?: { maxPerWeek?: number; engine?: string; model?: string; effort?: string; claudeFallbackModel?: string; manualPerDay?: number; timeoutMinutes?: number }
 }
 
 export interface IdeaDecisionRow {
@@ -73,6 +73,23 @@ export interface IdeaDecisionRow {
   result: string | null
   createdAt: Date
   appliedAt: Date | null
+}
+
+export type IdeaBuildRequestStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+
+/** "Start build now" (idea_build_requests): the pipeline builds the milestone outside the weekly slot. */
+export interface IdeaBuildRequestRow {
+  id: number
+  slug: string
+  milestone: string | null
+  note: string | null
+  status: IdeaBuildRequestStatus
+  result: string | null
+  prUrl: string | null
+  engine: string | null
+  createdAt: Date
+  startedAt: Date | null
+  finishedAt: Date | null
 }
 
 export interface Signals { views: number; uniqueVisitors: number; signups: number }
@@ -92,6 +109,8 @@ export interface IdeaView {
   signals: Signals | null
   /** Newest first. */
   decisions: IdeaDecisionRow[]
+  /** "Start build now" requests for this idea, newest first. */
+  buildRequests: IdeaBuildRequestRow[]
 }
 
 const DAY = 86_400_000
@@ -105,7 +124,7 @@ export const RECENT_REVIEW_DAYS = 14
 export const PIPELINE_STALE_MINUTES = 60
 
 const DEFAULTS = {
-  maxPerWeek: 1, maxValidating: 5, days: 14, minVisitorsToJudge: 50,
+  maxPerWeek: 1, manualPerDay: 2, maxValidating: 5, days: 14, minVisitorsToJudge: 50,
   build: { minSignups: 5, minSignupRate: 0.05 }, buildEarly: { minSignups: 10, minSignupRate: 0.08 },
 }
 
@@ -224,7 +243,8 @@ export interface BuildSlot { used: number; max: number; free: boolean; nextFreeA
 /** policy.build.maxPerWeek over builds started in the last 7 days (idea-factory buildsThisWeek). */
 export function buildSlot(views: Pick<IdeaView, 'state'>[], policy: IdeaPolicy | null, now: Date): BuildSlot {
   const max = policy?.build?.maxPerWeek ?? DEFAULTS.maxPerWeek
-  const starts = views.map(v => v.state.build?.at).filter((at): at is string => !!at)
+  // Builds started with "Start build now" have their own cap (manualPerDay), not the weekly slot.
+  const starts = views.map(v => v.state.build).filter(b => !!b?.at && !b.manual).map(b => b!.at!)
     .map(at => new Date(at).getTime()).filter(t => now.getTime() - t < 7 * DAY).sort((a, b) => a - b)
   const free = starts.length < max
   return { used: starts.length, max, free, nextFreeAt: free ? null : new Date(starts[starts.length - max]! + 7 * DAY) }
@@ -282,8 +302,8 @@ export function whatHappens(decision: IdeaDecisionKind, v: Pick<IdeaView, 'slug'
     case 'build': {
       const repo = v.state.repo ? `Uses the existing repo ${v.state.repo.replace('https://github.com/', '')}.` : `Creates the private repo ${v.slug} (topic “idea”) on the same run.`
       const when = slot.free
-        ? 'Builds M1 right after, on your Claude subscription (the free pool only if it’s out of capacity): tests first, then code until they pass.'
-        : `This week’s build slot is used (${slot.used} of ${slot.max}); M1 starts after ${slot.nextFreeAt ? fmtDay(slot.nextFreeAt) : 'the slot frees up'}.`
+        ? 'Builds M1 right after, on your Claude subscription (Opus at extra-high effort; the free pool only if it’s out of capacity): a gstack plan, tests first, then code until they pass.'
+        : `This week’s build slot is used (${slot.used} of ${slot.max}); M1 starts after ${slot.nextFreeAt ? fmtDay(slot.nextFreeAt) : 'the slot frees up'}, or sooner with Start build now once the repo exists.`
       return [
         'On its next run (within 15 min) the pipeline sets the Notion row to Build.',
         repo,
@@ -363,6 +383,73 @@ export function seedStatusLabel(s: Pick<IdeaSeedRow, 'status' | 'result'>, ahead
     case 'queued': return ahead > 0 ? `In the research queue, ${ahead} ahead of it: up to 3 are researched a day, each as soon as the one before is done` : 'Next in the research queue: researched and reviewed within about half an hour'
     case 'researched': return 'Researched'
     case 'failed': return `Couldn’t be queued: ${s.result ?? 'see the pipeline log'}`
+    case 'cancelled': return 'Withdrawn'
+  }
+}
+
+/** ROADMAP.md's milestones in order ("## M1 …", "## M2 …"), as idea-factory reads them. */
+export function roadmapMilestones(md: string | undefined): string[] {
+  const out: string[] = []
+  for (const m of String(md ?? '').matchAll(/^#{2,3}\s*(M\d+)\b/gm)) if (!out.includes(m[1]!)) out.push(m[1]!)
+  return out
+}
+
+export type BuildNowTarget = { ok: true; milestone: string } | { ok: false; reason: string }
+
+/**
+ * What "Start build now" would build, or why it can't. The same rules as idea-factory's
+ * manualBuildTarget (bin/idea-build.js), which has the last word when the request runs.
+ */
+export function buildNowTarget(v: Pick<IdeaView, 'stage' | 'state' | 'docs' | 'buildRequests'>): BuildNowTarget {
+  const open = v.buildRequests.find(r => r.status === 'pending' || r.status === 'running')
+  if (open) return { ok: false, reason: open.status === 'running' ? 'A build is running now.' : 'A build request is already queued.' }
+  const s = v.state
+  const b = s.build ?? {}
+  if (!s.repo) return { ok: false, reason: 'No repo yet: approve the build first, and the pipeline creates it.' }
+  if (b.status === 'running') return { ok: false, reason: `${b.milestone ?? 'M1'} is being built now.` }
+  if (b.status === 'pr-open') return { ok: false, reason: `${b.milestone ?? 'M1'}’s PR is waiting for your review: merge it first.` }
+  if (v.stage === 'repo') {
+    const approved = s.ownerApproved === true || s.validation?.decision === 'build' || (!!s.review && s.review.verdict !== 'pass')
+    if (!approved) return { ok: false, reason: 'Not approved yet: approve the build first.' }
+    return { ok: true, milestone: b.status === 'failed' && b.milestone ? b.milestone : 'M1' }
+  }
+  if (v.stage === 'building' && (b.status === 'merged' || b.status === 'failed' || b.status === 'closed')) {
+    if (b.status !== 'merged') return { ok: true, milestone: b.milestone ?? 'M1' }
+    const next = roadmapMilestones(v.docs.roadmap).find(m => !(s.milestonesDone ?? []).includes(m))
+    return next ? { ok: true, milestone: next } : { ok: false, reason: 'Every roadmap milestone is merged.' }
+  }
+  return { ok: false, reason: v.stage === 'live' ? 'Already live.' : 'Nothing to build yet.' }
+}
+
+/** Manual builds started in the last 24 hours, across all ideas (policy.build.manualPerDay's window). */
+export function manualStartsLast24h(views: Pick<IdeaView, 'buildRequests'>[], now: Date): number {
+  return views.flatMap(v => v.buildRequests).filter(r => r.startedAt && now.getTime() - r.startedAt.getTime() < DAY).length
+}
+
+/** What happens after "Start build now", in order, for the confirm dialog. */
+export function buildNowSteps(milestone: string, v: Pick<IdeaView, 'state'>, policy: IdeaPolicy | null, startsLast24h: number): string[] {
+  const b = policy?.build
+  const cap = b?.manualPerDay ?? DEFAULTS.manualPerDay
+  const repo = v.state.repo ? v.state.repo.replace('https://github.com/', '') : 'its repo'
+  return [
+    startsLast24h >= cap
+      ? `${startsLast24h} manual builds started in the last 24 hours (the cap is ${cap}): this one waits in the queue until the oldest is a day old.`
+      : `On its next run (within 15 min) the pipeline builds ${milestone} in ${repo}, without waiting for the weekly build slot.`,
+    `Claude Code on your subscription: ${b?.model ?? 'opus'} at effort ${b?.effort ?? 'xhigh'}. ${b?.claudeFallbackModel ? `${b.claudeFallbackModel[0]!.toUpperCase()}${b.claudeFallbackModel.slice(1)} if it’s unavailable; ` : ''}the free pool only if the subscription can’t take it.`,
+    'It plans with gstack’s plan-eng-review first, writes failing tests, codes until they pass, then checks its own diff against gstack’s review checklist.',
+    `It can use up to ${b?.timeoutMinutes ?? 45} minutes of your Claude Pro usage, which your own sessions share.`,
+    'Opens a draft PR for you to merge and posts it in Slack. Merging it unlocks the next milestone.',
+  ]
+}
+
+/** Where a build request stands, in one line. */
+export function buildRequestLabel(r: Pick<IdeaBuildRequestRow, 'status' | 'milestone' | 'result' | 'engine'>): string {
+  const m = r.milestone ?? 'The build'
+  switch (r.status) {
+    case 'pending': return r.result?.startsWith('waiting') ? `Queued, ${r.result}` : 'Queued: starts on the pipeline’s next run (within 15 min)'
+    case 'running': return `Building ${m} now${r.engine ? ` (${r.engine})` : ''}`
+    case 'done': return `${m}: ${r.result ?? 'PR opened'}${r.engine ? ` · ${r.engine}` : ''}`
+    case 'failed': return `Failed: ${r.result ?? 'see the pipeline log'}`
     case 'cancelled': return 'Withdrawn'
   }
 }
