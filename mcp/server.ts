@@ -70,6 +70,13 @@ const server = new Server(
   { capabilities: { tools: {} } },
 )
 
+/**
+ * MCP_READONLY=1 hides the tools that write (log rows, queue factory work). For clients on cloud models
+ * that anyone in a chat can drive, like the OpenClaw companion (docs/ai-stack/personal-assistant.md).
+ */
+const READONLY = process.env.MCP_READONLY === '1'
+const WRITE_TOOLS = new Set(['log_session_complete', 'queue_gstack_skill', 'log_attempt'])
+
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
@@ -253,11 +260,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['repo_name', 'action', 'outcome'],
       },
     },
-  ],
+  ].filter(t => !(READONLY && WRITE_TOOLS.has(t.name))),
 }))
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params
+  if (READONLY && WRITE_TOOLS.has(name)) {
+    return { content: [{ type: 'text', text: `${name} is disabled: this server runs read-only (MCP_READONLY=1).` }], isError: true }
+  }
 
   try {
     switch (name) {

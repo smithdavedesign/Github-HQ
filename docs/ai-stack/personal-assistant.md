@@ -32,6 +32,17 @@ The companion's `AGENTS.md` ends with a generated block between `system-brief` m
 - `agents.defaults.contextInjection` is `always` (2026-10-10; it was `continuation-skip`), so the workspace files, and the brief with them, go with every turn, not just a session's first. That costs about 6k extra input tokens a turn, free on the free pool.
 - Revert: `openclaw config set agents.defaults.contextInjection continuation-skip`.
 
+### Live tools and skills
+
+- **MCP server `repohq`, read-only.** `factory/bin/install-launchd.sh` registers it after each deploy: `~/.repohq-factory/app/mcp/run.sh` with `MCP_READONLY=1`. The agents get `get_system_status`, `get_idea_pipeline`, `search_context`, `get_system_overview` and the portfolio reads, as `repohq__<tool>`.
+  - **Why read-only:** the companion runs on the free cloud pool, anyone on an allowlisted chat can drive it, and exec approval is off. So the tools that write (`queue_gstack_skill`, `log_attempt`, `log_session_complete`) are hidden and refused.
+  - `search_context` returns public and personal entries only, like it does for every cloud client.
+  - Check: `openclaw mcp show repohq`. Remove: `openclaw mcp unset repohq`.
+- **Skills.** OpenClaw loads them from `~/idea-factory/skills` (`launch`) and `~/ai-stack/skills` (`ai-stack`) through `skills.load.extraDirs`; RepoHQ `skills/install.sh` sets it. `idea-review` is switched off (`skills.entries.idea-review.enabled false`) because the pipeline runs it.
+  - OpenClaw ignores symlinks that leave `~/.openclaw/skills` (`symlink-escape` in its log), so linking skills there doesn't work.
+  - No `portfolio-context`: the system brief does its job, and launchd can't read `~/Documents`.
+  - Check: `openclaw skills list`. Config changes apply after a gateway restart.
+
 ### Persona & memory (files loaded every session)
 
 | File | Purpose |

@@ -93,6 +93,14 @@ git -C "$APP" checkout -q --detach "$SHA"
 (cd "$APP" && npm ci --no-audit --no-fund --silent >/dev/null)
 echo "deployed $(git -C "$APP" log -1 --format='%h %s') → $APP"
 
+# ── OpenClaw gets the RepoHQ MCP server read-only (MCP_READONLY=1: no queueing or logging from a chat) ─
+# Registered here, after the deploy, so it only ever points at a checkout that has the read-only switch.
+if command -v openclaw >/dev/null 2>&1 && [ -f "$APP/mcp/run.sh" ]; then
+  openclaw mcp set repohq "{\"command\":\"bash\",\"args\":[\"$APP/mcp/run.sh\"],\"env\":{\"MCP_READONLY\":\"1\"}}" >/dev/null \
+    && echo "OpenClaw: repohq MCP server registered (read-only)" \
+    || echo "warning: couldn't register the repohq MCP server with OpenClaw"
+fi
+
 # ── Sandbox images (Phase 76): build now so the first scheduled cycle doesn't spend minutes on it ─
 if docker info >/dev/null 2>&1; then
   (cd "$APP" && npx --no-install tsx factory/bin/build-sandbox.ts) || echo "warning: sandbox image build failed — cycles will retry it, and skip until Docker can build"
