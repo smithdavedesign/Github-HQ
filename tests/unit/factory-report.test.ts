@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { backlog, buildMorningReport, latestScans, toMime, type ReportInput } from '../../factory/lib/report'
+import { backlog, buildMorningReport, clip, latestScans, queueLines, rejectionLines, toMime, type ReportInput } from '../../factory/lib/report'
 import type { AttemptEntry, LedgerEntry } from '../../factory/lib/ledger'
 
 const NOW = new Date('2026-10-06T13:45:00Z')
@@ -43,6 +43,11 @@ describe('latestScans + backlog', () => {
     expect(backlog(entries, ['o/app', 'o/api'])).toEqual([
       { repo: 'o/app', kind: 'fix-types' }, { repo: 'o/api', kind: 'deps-audit' }, { repo: 'o/app', kind: 'docs-readme' },
     ])
+  })
+  it('drops dead ends, which the cycle skips (2026-10-11: three dead deps fixes listed as next up)', () => {
+    const dead = { repo: 'o/api', kind: 'deps-audit', tier: 'M0' as const, harness: 'npm-audit-fix', outcome: 'failed' as const }
+    const entries = [scan('o/api', ['deps-audit', 'docs-readme']), att(dead), att(dead)]
+    expect(backlog(entries, ['o/api'], NOW)).toEqual([{ repo: 'o/api', kind: 'docs-readme' }])
   })
   it('drops red CI from an old scan once newer signals show the branch green, and says "investigate" at stage report', () => {
     const sig = (redCi: unknown[]) => ({
@@ -137,5 +142,34 @@ describe('toMime', () => {
     expect(mime).toMatch(/Subject: (=\?UTF-8\?B\?|RepoHQ)/)
     const text = mime.split('Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n')[1].split('\r\n--')[0]
     expect(Buffer.from(text.replace(/\r\n/g, ''), 'base64').toString()).toContain('PRODUCT MANAGER')
+  })
+})
+
+describe('report wording', () => {
+  it('clips at a sentence or word, never mid-word', () => {
+    expect(clip('short', 10)).toBe('short')
+    expect(clip('The smoke tests run in npm test. They need API keys the job lacks.', 50)).toBe('The smoke tests run in npm test.')
+    expect(clip('The smoke integration tests need NPS_API_KEY and DATABASE_URL which are', 40)).toBe('The smoke integration tests need…')
+  })
+  it('lists idle repos apart from the queue', () => {
+    const o = (repo: string, reasons: string[], blocked: string | null = null) => ({ repo, score: 1, reasons, blocked })
+    expect(queueLines([o('o/a', ['77 high/critical alerts']), o('o/b', ['every known task has an open PR or is a dead end']), o('o/c', [], 'stale')])).toEqual([
+      'Repo queue for the next cycle: a (77 high/critical alerts).',
+      'Waiting on your PR reviews or dead ends, nothing to do: b.',
+    ])
+  })
+  it('folds repeated rejections and counts the ones not shown', () => {
+    const r = (reason: string, kind = 'docs-readme') => att({ outcome: 'failed', kind, tier: 'M0', reason })
+    const lines = rejectionLines([r('README did not grow'), r('README did not grow'), r('a'), r('b'), r('c')], 3)
+    expect(lines).toEqual([
+      '5 attempts rejected by the judge or failed to run:',
+      'app docs-readme (M0): README did not grow ×2', 'app docs-readme (M0): a', 'app docs-readme (M0): b',
+      '…and 1 more (see the ledger).',
+    ])
+  })
+  it('says Copilot reviews are paused when premium requests are used up', () => {
+    const text = buildMorningReport(input([], { copilot: { enabled: true, model: 'm', tasksToday: 0, maxTasksPerDay: 6, reviewsToday: 0, maxReviewsPerDay: 8, quota: { percentRemaining: 0, resetDate: '2026-11-01' } } as ReportInput['copilot'] })).text
+    expect(text).toMatch(/Copilot reviews: paused until 2026-11-01/)
+    expect(text).not.toMatch(/Copilot reviews today/)
   })
 })

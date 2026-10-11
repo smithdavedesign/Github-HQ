@@ -22,7 +22,7 @@ import {
   allowedTiers, canUsePaidTier, chooseTier, classifyRepoData, computeTierStats, nextTier, type ModelTier,
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
-import { buildCheck, judgesBuild, collectPackageInfo, confirmFailures, detectPackageManager, installCommand, withoutScripts, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
+import { buildCheck, judgesBuild, collectPackageInfo, confirmFailures, detectPackageManager, installCommand, withoutScripts, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runAuditIn, lockfileDirs, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
 import { addPrLabel, ensureValueLabels, prLabels, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { commentOnPr, loadGstackChecklist, localReviewComment, runLocalReview, type LocalReview } from './lib/local-review'
@@ -407,6 +407,8 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     let buildSpec: CheckSpec | null = null
     let baseline: CheckResult[] = []
     let audit: AuditCounts | null = null
+    // No root package.json: audit each sub-package's lockfile instead (no install needed).
+    const auditDirs = basics.pkg ? [] : lockfileDirs(dir)
 
     if (basics.pkg && !basics.pkg.workspaces) {
       const pm = detectPackageManager(basics.files)
@@ -459,6 +461,10 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
       if (pm === 'npm' && basics.files.has('package-lock.json')) audit = await runAudit(ws.dir, undefined, ws.run)
       tracer.step('checks', baseline.every(b => b.ok) ? 'ok' : 'info', baseline.map(b => `${b.name}=${b.ok ? 'ok' : 'FAIL'}`).join(' ') || '(none)',
         { checks: Object.fromEntries(baseline.map(b => [b.name, b.ok])), ...(audit ? { audit } : {}) }, { durationMs: Date.now() - tc })
+    } else if (auditDirs.length > 0) {
+      audit = await runAuditIn(ws.dir, auditDirs, undefined, ws.run)
+      log(`${repo}: no root package.json — audited ${auditDirs.join(', ')}: ${audit ? `${audit.critical} critical, ${audit.high} high` : 'audit unavailable'}`)
+      tracer.step('checks', 'info', `npm audit in ${auditDirs.join(', ')}`, audit ? { audit } : undefined)
     }
 
     const ledger = readLedger(cfg.home)
@@ -503,7 +509,7 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     const sizeOf = (f: string) => { try { return statSync(path.join(dir, f)).size } catch { return 0 } }
     const visibility = await repoVisibility(repo)
     const dataClass = classifyRepoData({ visibility })
-    const ctx: TaskContext = { cfg, repo, dir, ws, base, pkg: basics.pkg, specs, buildSpec, baseline, args, aliases, dataClass, audit }
+    const ctx: TaskContext = { cfg, repo, dir, ws, base, pkg: basics.pkg, specs, buildSpec, baseline, args, aliases, dataClass, audit, auditDirs }
 
     // Try at most two tasks per repo: when free cloud quota defers the first,
     // local (M0) work on the next task still gets done this cycle.
@@ -577,6 +583,8 @@ interface TaskContext {
   aliases: string[]
   dataClass: ReturnType<typeof classifyRepoData>
   audit: AuditCounts | null
+  /** Sub-packages audited and fixed lockfile-only when the repo has no root package.json. */
+  auditDirs: string[]
 }
 
 /** Why the free pool (M1) can't take work right now, or null when it can. */
@@ -715,7 +723,7 @@ async function attempt(
 
   // Inside the sandbox the agent reaches LiteLLM through the egress relay, not localhost.
   const harnessCfg: FactoryConfig = ws.sandbox ? { ...cfg, litellm: { ...cfg.litellm, url: ws.sandbox.litellmUrl, key: SANDBOX_MODEL_KEY } } : cfg
-  const h: HarnessResult = deps ? await npmAuditFix(ws, cfg) : lintFix ? await runLintFixer(ws, lintSpec, cfg) : await runHarness({
+  const h: HarnessResult = deps ? await npmAuditFix(ws, cfg, ctx.auditDirs) : lintFix ? await runLintFixer(ws, lintSpec, cfg) : await runHarness({
     tier, model, cwd: ws.dir, prompt, files: task.scoped ? task.files : undefined,
     timeoutMs: tier === 'M0' ? cfg.m0TimeoutMs : undefined,
     // Claude Code's small-model role → local Ollama (falls back to the pool). Measured: zero
@@ -780,7 +788,7 @@ async function attempt(
   // Scripts/deps from every package.json (root + sub-packages like client/, server/).
   const judgeInputs = diff.files.length > 0 ? {
     ...collectPackageInfo(dir), readmeAfter, repo, repoFiles: await listFiles(dir), modelEdits: edits as DiffInfo,
-    audit: deps ? { before: auditBefore, after: await runAudit(ws.dir, undefined, ws.run) } : undefined,
+    audit: deps ? { before: auditBefore, after: ctx.auditDirs.length ? await runAuditIn(ws.dir, ctx.auditDirs, undefined, ws.run) : await runAudit(ws.dir, undefined, ws.run) } : undefined,
     lintProblems: lintFix ? { before: lintProblems(baseline.find(b => b.name === 'lint')), after: lintProblems(after.find(a => a.name === 'lint')) } : undefined,
   } : null
   const verdict = judgeInputs
@@ -946,12 +954,19 @@ async function runLintFixer(ws: Workspace, spec: CheckSpec | undefined, cfg: Fac
   }
 }
 
-async function npmAuditFix(ws: Workspace, cfg: FactoryConfig): Promise<HarnessResult> {
-  const r = await ws.run('npm', ['audit', 'fix', '--no-fund'], { cwd: ws.dir, timeoutMs: cfg.checkTimeoutMs })
+async function npmAuditFix(ws: Workspace, cfg: FactoryConfig, subDirs: string[] = []): Promise<HarnessResult> {
+  // Sub-packages (no root package.json) are fixed lockfile-only: nothing is installed or run.
+  const targets = subDirs.length ? subDirs.map(d => ({ cwd: path.join(ws.dir, d), args: ['audit', 'fix', '--package-lock-only', '--no-fund'], label: d })) : [{ cwd: ws.dir, args: ['audit', 'fix', '--no-fund'], label: '' }]
+  const rs = []
+  for (const t of targets) rs.push({ ...t, r: await ws.run('npm', t.args, { cwd: t.cwd, timeoutMs: cfg.checkTimeoutMs }) })
+  // Lockfile-only mode prints no "fixed N of M" and exits 1 while any advisory remains; the judge's
+  // before/after audit decides whether it helped.
+  const fixed = (r: { code: number | null; output: string; timedOut: boolean }) => subDirs.length ? !r.timedOut && (r.code === 0 || r.code === 1) : r.code === 0 || /fixed \d+ of \d+/i.test(r.output)
   return {
     requests: 0,
-    ok: r.code === 0 || /fixed \d+ of \d+/i.test(r.output), harness: 'npm-audit-fix', model: 'npm', output: r.output,
-    durationMs: r.durationMs, inputTokens: 0, outputTokens: 0, costUsd: 0, rateLimited: false, timedOut: r.timedOut,
+    ok: rs.some(x => fixed(x.r)), harness: 'npm-audit-fix', model: 'npm',
+    output: rs.map(x => (x.label ? `===== ${x.label} =====\n` : '') + x.r.output).join('\n'),
+    durationMs: rs.reduce((n, x) => n + x.r.durationMs, 0), inputTokens: 0, outputTokens: 0, costUsd: 0, rateLimited: false, timedOut: rs.some(x => x.r.timedOut),
   }
 }
 

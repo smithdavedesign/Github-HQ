@@ -274,12 +274,20 @@ export function parsePatch(patch: string): DiffInfo {
 }
 
 /**
- * deps-audit: only package.json + package-lock.json may change (lockfile diffs are
- * exempt from the size cap), high+critical must drop, and no check may regress.
+ * deps-audit: only package.json + package-lock.json may change, at the root or in a
+ * sub-package like client/ (lockfile diffs are exempt from the size cap), high+critical
+ * must drop, and no check may regress.
  */
 function judgeDeps(diff: DiffInfo, baseline: CheckResult[], after: CheckResult[], audit?: { before: AuditCounts | null; after: AuditCounts | null }): Verdict {
-  const other = diff.files.filter(f => f.path !== 'package.json' && f.path !== 'package-lock.json')
-  if (other.length > 0) return { ok: false, reason: `deps task edited non-package files: ${other.map(f => f.path).join(', ')}` }
+  const other = diff.files.filter(f => !/(^|\/)package(-lock)?\.json$/.test(f.path))
+  if (other.length > 0) {
+    // A repo that commits node_modules/ gets hundreds of these (gitHub-cron-job-app, 2026-10-11).
+    const vendored = other.filter(f => /(^|\/)node_modules\//.test(f.path)).length
+    const named = other.filter(f => !/(^|\/)node_modules\//.test(f.path)).slice(0, 5).map(f => f.path)
+    const parts = [...named, ...(vendored ? [`${vendored} file(s) under node_modules/ (committed to git)`] : [])]
+    const rest = other.length - named.length - vendored
+    return { ok: false, reason: `deps task edited non-package files: ${parts.join(', ')}${rest > 0 ? ` and ${rest} more` : ''}` }
+  }
   if (!audit?.before || !audit.after) return { ok: false, reason: 'npm audit result unavailable' }
   const serious = (a: AuditCounts) => a.critical + a.high
   if (serious(audit.after) >= serious(audit.before)) return { ok: false, reason: `high+critical did not drop (${serious(audit.before)} → ${serious(audit.after)})` }

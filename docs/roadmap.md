@@ -139,6 +139,7 @@ Toward the Architect / Builder / Reviewer / Operator team (docs/autonomous-facto
 - [x] **MC tier = GitHub Copilot CLI** (prepaid seat) between free cloud and paid: locked down (`--disable-builtin-mcps`, no git writes, deny beats allow), ≤ 6 tasks/day; passed 2/2 fix evals with `gpt-5-mini`
 - [x] **Reviewer = GitHub Copilot code review**, requested on every factory PR (works on drafts), ≤ 8/day; results recorded in the ledger during reconcile
 - [x] **deps-audit**: every npm scan runs `npm audit`; high/critical → deterministic `npm audit fix` (no model, never `--force`), judged on package files only, advisories must drop, no regressions
+  - Repos with no root package.json (family-tree: `client/` + `server/`) are audited per sub-package lockfile and fixed with `npm audit fix --package-lock-only` (nothing installed or run); the judge accepts `package.json`/`package-lock.json` at any depth (2026-10-11)
 - [x] **Morning report**: one update per gstack role (PM → Architect plan, Builder, QA, Reviewer, Security, Ops, Retro) from the ledger, with local-model headlines; saved to `~/.repohq-factory/reports/` and emailed via himalaya + Gmail app password in the keychain
 - [x] Schedule: cycles hourly 20:00–05:00 plus 12:00/16:00, ≤ 1 PR per cycle, ≤ 8 per factory day (07:00–07:00); report 06:45 (extended to 06:00 and AC-only in Phase 80)
 - [ ] Owner: run `bash factory/bin/setup-email.sh <gmail>` once (needs a Gmail app password)

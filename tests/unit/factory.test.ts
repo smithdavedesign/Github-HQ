@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
-  confirmFailures, runChecks, parseAudit, collectPackageInfo, lintScriptAutofixes, lintProblems, type CheckSpec,
+  confirmFailures, runChecks, parseAudit, collectPackageInfo, lockfileDirs, runAuditIn, lintScriptAutofixes, lintProblems, type CheckSpec,
   detectPackageManager, installCommand, planChecks, buildCheck, judgesBuild, isPlaceholderTestScript,
   filesFromTscOutput, filesFromEslintOutput, errorExcerpt, readmeIssue, type CheckResult,
 } from '../../factory/lib/checks'
@@ -632,6 +632,15 @@ describe('deps-audit', () => {
     expect(judge({ task: t, baseline: base, after: [ok('test')], diff: src, audit: { before: counts(1, 2), after: counts(0, 0) } }).reason).toMatch(/non-package/)
     expect(judge({ task: t, baseline: base, after: [ok('test')], diff: lock }).reason).toMatch(/unavailable/)
   })
+  it('judge: sub-package lockfiles count as package files (family-tree client/ + server/)', () => {
+    const [t] = tasksFromScan([], [], null, '/r', counts(1, 2))
+    const sub = { files: [{ path: 'client/package-lock.json', added: 300, removed: 200, deleted: false }, { path: 'server/package.json', added: 1, removed: 1, deleted: false }], addedLines: [] }
+    expect(judge({ task: t, baseline: [], after: [], diff: sub, audit: { before: counts(1, 2), after: counts(0, 1) } }).ok).toBe(true)
+    const vendored = { files: [{ path: 'package-lock.json', added: 1, removed: 1, deleted: false }, ...Array.from({ length: 150 }, (_, i) => ({ path: `node_modules/x/${i}.js`, added: 1, removed: 0, deleted: false }))], addedLines: [] }
+    expect(judge({ task: t, baseline: [], after: [], diff: vendored, audit: { before: counts(1, 2), after: counts(0, 1) } }).reason).toBe('deps task edited non-package files: 150 file(s) under node_modules/ (committed to git)')
+    const near = { files: [{ path: 'client/my-package.json', added: 1, removed: 0, deleted: false }], addedLines: [] }
+    expect(judge({ task: t, baseline: [], after: [], diff: near, audit: { before: counts(1, 2), after: counts(0, 1) } }).reason).toMatch(/non-package/)
+  })
   it('a build that passed before the fix must still pass (algorithms-docs #1, 2026-10-10)', () => {
     const [t] = tasksFromScan([], [], null, '/r', counts(1, 2))
     const lock = { files: [{ path: 'package-lock.json', added: 90, removed: 70, deleted: false }], addedLines: [] }
@@ -704,6 +713,26 @@ describe('sub-package scripts', () => {
     const info = collectPackageInfo(dir)
     expect(Object.keys(info.scripts).sort()).toEqual(['dev', 'start', 'test:e2e'])
     expect(info.deps.sort()).toEqual(['express', 'vite'])
+  })
+})
+
+describe('sub-package audits', () => {
+  it('finds sub-packages with a lockfile, skipping node_modules and the root', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'factory-locks-'))
+    const write = (p: string) => { mkdirSync(path.dirname(path.join(dir, p)), { recursive: true }); writeFileSync(path.join(dir, p), '{}') }
+    for (const p of ['package-lock.json', 'client/package.json', 'client/package-lock.json', 'server/package.json', 'server/package-lock.json',
+      'docs/package.json', 'client/node_modules/x/package.json', 'client/node_modules/x/package-lock.json']) write(p)
+    expect(lockfileDirs(dir)).toEqual(['client', 'server'])
+  })
+  it('sums npm audit across sub-packages and ignores unparseable ones', async () => {
+    const out: Record<string, string> = {
+      '/r/client': JSON.stringify({ metadata: { vulnerabilities: { critical: 1, high: 2, moderate: 3, low: 0 } } }),
+      '/r/server': JSON.stringify({ metadata: { vulnerabilities: { critical: 0, high: 5, moderate: 0, low: 1 } } }),
+      '/r/web': 'npm error',
+    }
+    const runner = (async (_c: string, _a: string[], o: { cwd: string }) => ({ code: 1, output: out[o.cwd], durationMs: 0, timedOut: false })) as unknown as Parameters<typeof runAuditIn>[3]
+    expect(await runAuditIn('/r', ['client', 'server', 'web'], undefined, runner)).toEqual({ critical: 1, high: 7, moderate: 3, low: 1 })
+    expect(await runAuditIn('/r', ['web'], undefined, runner)).toBeNull()
   })
 })
 

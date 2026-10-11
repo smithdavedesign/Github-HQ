@@ -8,10 +8,10 @@ import { systemHealthLines, type SystemHealth } from './system-health'
 import type { Capability, CapabilityStage } from './config'
 import { ladderStatus } from './ladder'
 import type { AttemptEntry, CiOracleEntry, LedgerEntry, ResolutionEntry, ReviewEntry, ScanEntry, SignalsEntry, SmokeEntry } from './ledger'
-import { STALE_PR_DAYS, rankOpportunities } from './sensors'
+import { NOTHING_WORKABLE, STALE_PR_DAYS, rankOpportunities, type Opportunity } from './sensors'
 import { ideaLines, type IdeaState } from '../context/ideas'
 import { computeFactoryKpis, kpiHeadline } from '../../src/lib/agents/factory-kpis'
-import { latestSignals, toJobRecords } from './ledger'
+import { deadEndKey, deadEnds, latestSignals, toJobRecords } from './ledger'
 import { kpiTrend, nightShiftReadiness, readinessLine } from './night-shift'
 import { preflightLines, type PreflightCheck } from './preflight'
 import { AGING_PR_DAYS, PR_SOURCE_LABEL, prAgeDays, prSource, sortForReview, type OpenPr } from '../../src/lib/agents/open-prs'
@@ -96,15 +96,20 @@ const KIND_LABEL: Record<string, string> = {
   'deps-audit': 'patch vulnerable dependencies', 'docs-readme': 'fill README gaps', 'red-ci': 'fix red CI',
 }
 
-/** PM backlog: open work from the latest scans, minus kinds with an open PR. */
-export function backlog(entries: LedgerEntry[], repos?: string[]): { repo: string; kind: string }[] {
+/**
+ * PM backlog: open work from the latest scans, minus kinds with an open PR and dead ends.
+ * Dead ends are skipped by the cycle (and the repo ranker), so listing them read as planned
+ * work that never happens (2026-10-11: three "patch vulnerable dependencies" that were dead ends).
+ */
+export function backlog(entries: LedgerEntry[], repos?: string[], now = new Date()): { repo: string; kind: string }[] {
   const resolved = new Set(entries.filter((e): e is ResolutionEntry => e.type === 'resolution').map(r => r.attemptId))
   const openKinds = new Set(entries.filter(isAttempt).filter(a => a.prUrl && !resolved.has(a.id)).map(a => `${a.repo}:${a.kind}`))
+  const dead = deadEnds(entries, now)
   const signals = latestSignals(entries)
   return latestScans(entries, repos)
     // Requests are listed with their outcomes, not as sensed work (an old scan kept showing them).
     .flatMap(s => s.tasks.filter(k => k !== 'owner-requested' && k !== 'owner-report').map(kind => ({ repo: s.repo, kind })))
-    .filter(t => !openKinds.has(`${t.repo}:${t.kind}`))
+    .filter(t => !openKinds.has(`${t.repo}:${t.kind}`) && !dead.has(deadEndKey(t.repo, t.kind)))
     // A scan's red CI is stale once newer signals show the base branch green (ai-brand-context,
     // 2026-10-10: a scan from two days earlier kept "fix red CI" at the top of the list).
     .filter(t => t.kind !== 'red-ci' || !signals.has(t.repo) || (signals.get(t.repo)!.redCi?.length ?? 0) > 0)
@@ -140,6 +145,47 @@ export function smokeLines(smokes: SmokeEntry[]): string[] {
   ]
 }
 
+/** Cut to at most `max` chars at a sentence end, else a word boundary, marking the cut with "…". */
+export function clip(text: string, max: number): string {
+  if (text.length <= max) return text
+  const head = text.slice(0, max)
+  const sentence = head.lastIndexOf('. ')
+  if (sentence > max / 2) return head.slice(0, sentence + 1)
+  const word = head.lastIndexOf(' ')
+  return `${(word > max / 2 ? head.slice(0, word) : head).replace(/[\s,;:(–—-]+$/, '')}…`
+}
+
+/**
+ * The repos the next cycle will work on. A repo whose every task has an open PR or is a dead
+ * end only comes round on age and the cycle skips it, so it's listed apart instead of as a stop
+ * on the queue (2026-10-11: three of five "queued" repos had nothing to do).
+ */
+export function queueLines(ranked: Opportunity[]): string[] {
+  const open = ranked.filter(o => !o.blocked)
+  const idle = open.filter(o => o.reasons[0] === NOTHING_WORKABLE)
+  const queue = open.filter(o => o.reasons[0] !== NOTHING_WORKABLE).slice(0, 5)
+  return [
+    ...(queue.length ? [`Repo queue for the next cycle: ${queue.map(o => `${short(o.repo)}${o.reasons[0] ? ` (${o.reasons[0]})` : ''}`).join(' → ')}.`] : []),
+    ...(idle.length ? [`Waiting on your PR reviews or dead ends, nothing to do: ${idle.map(o => short(o.repo)).join(', ')}.`] : []),
+  ]
+}
+
+/** Failed attempts, repeats folded into one line with a count, and the rest counted rather than dropped. */
+export function rejectionLines(rejections: AttemptEntry[], max = 6): string[] {
+  if (rejections.length === 0) return ['Judge rejected nothing in the last 24h.']
+  const groups = new Map<string, number>()
+  for (const a of rejections) {
+    const key = `${short(a.repo)} ${a.kind} (${a.tier}): ${clip(a.reason, 200)}`
+    groups.set(key, (groups.get(key) ?? 0) + 1)
+  }
+  const lines = [...groups.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => (n > 1 ? `${k} ×${n}` : k))
+  return [
+    `${plural(rejections.length, 'attempt')} rejected by the judge or failed to run:`,
+    ...lines.slice(0, max),
+    ...(lines.length > max ? [`…and ${lines.length - max} more (see the ledger).`] : []),
+  ]
+}
+
 export function buildMorningReport(input: ReportInput): MorningReport {
   const { now, entries } = input
   const attempts = entries.filter(isAttempt)
@@ -150,7 +196,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   const openPrs = attempts.filter(a => a.prUrl && !resolutions.has(a.id))
   const newPrs = last24.filter(a => a.prUrl)
   const scans = latestScans(entries, input.repos)
-  const todo = backlog(entries, input.repos)
+  const todo = backlog(entries, input.repos, now)
   const signals = new Map<string, SignalsEntry>()
   for (const e of entries) if (e.type === 'signals' && input.repos.includes(e.repo) && (!signals.get(e.repo) || e.at > signals.get(e.repo)!.at)) signals.set(e.repo, e)
   const ranked = signals.size ? rankOpportunities(input.repos, entries, [...signals.values()], now, { blockOnStalePrs: true, redCiReportOnly: input.capabilities?.['red-ci'] === 'report' }) : []
@@ -184,7 +230,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
         : `Next up (${plural(todo.length, 'task')}, highest value first):`,
       ...todo.slice(0, 8).map((t, i) => `${i + 1}. ${short(t.repo)} — ${t.kind === 'red-ci' && input.capabilities?.['red-ci'] !== 'pr' ? 'investigate red CI (report only, no PR)' : KIND_LABEL[t.kind] ?? t.kind}`),
       ...(todo.length > 8 ? [`…and ${todo.length - 8} more.`] : []),
-      ...(ranked.length ? [`Repo queue for the next cycle: ${ranked.filter(o => !o.blocked).slice(0, 5).map(o => `${short(o.repo)}${o.reasons[0] ? ` (${o.reasons[0]})` : ''}`).join(' → ')}.`] : []),
+      ...queueLines(ranked),
       ...stale.map(s => `${short(s.repo)}: ${plural(s.botPrs!.stale.length, 'bot PR')} unreviewed for 7+ days — no new factory PRs there until you review or close ${s.botPrs!.stale.length === 1 ? 'it' : 'them'}: ${s.botPrs!.stale.map(p => p.url).join(' ')}`),
     ],
   })
@@ -201,7 +247,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   sections.push({
     id: 'architect', role: 'Architect', skill: '/plan-eng-review', title: 'Routing and model decisions',
     lines: [
-      `Tier results, last 7 days: ${tiers.map(tierLine).filter(Boolean).join(' · ') || 'no attempts yet'}.`,
+      `Model tier results, last 7 days (npm audit fix and lint autofix not counted): ${tiers.map(tierLine).filter(Boolean).join(' · ') || 'no attempts yet'}.`,
       `Free pool (in fallback order): ${poolLine || 'not configured'}.`,
       `Copilot builder: ${!input.copilot.enabled ? 'disabled'
         : input.copilot.quota?.percentRemaining === 0 ? `paused until ${input.copilot.quota.resetDate ?? 'the monthly reset'} (premium requests used up)`
@@ -235,8 +281,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
       'Latest scan per repo (typecheck / lint / test):',
       ...scans.map(s => `${short(s.repo)}: ${s.checks.install === false ? 'install failed' : `${mark(s.checks.typecheck)} ${mark(s.checks.lint)} ${mark(s.checks.test)}`}`),
       ...scans.filter(s => s.envFailures?.length).map(s => `${short(s.repo)}: the ${s.envFailures!.join(' and ')} check${s.envFailures!.length > 1 ? 's need' : ' needs'} secrets or network the factory doesn't have — not a code task; run it in CI with keys.`),
-      rejections.length === 0 ? 'Judge rejected nothing in the last 24h.' : `Judge rejected ${plural(rejections.length, 'attempt')}:`,
-      ...rejections.slice(0, 6).map(a => `${short(a.repo)} ${a.kind} (${a.tier}): ${a.reason}`),
+      ...rejectionLines(rejections),
       ...smokeLines(entries.filter((e): e is SmokeEntry => e.type === 'smoke' && since(e.at, now, DAY))),
     ],
   })
@@ -256,7 +301,9 @@ export function buildMorningReport(input: ReportInput): MorningReport {
           : (r.comments === 0 ? 'no line comments' : plural(r.comments, 'line comment'))
         return `${short(a.repo)} ${a.kind}: ${what} — ${a.prUrl}`
       }),
-      `Copilot reviews today: ${input.copilot.reviewsToday}/${input.copilot.maxReviewsPerDay}.`,
+      input.copilot.quota?.percentRemaining === 0
+        ? `Copilot reviews: paused until ${input.copilot.quota.resetDate ?? 'the monthly reset'} (premium requests used up); the local reviewer covers new PRs.`
+        : `Copilot reviews today: ${input.copilot.reviewsToday}/${input.copilot.maxReviewsPerDay}.`,
     ],
   })
 
@@ -307,7 +354,7 @@ export function buildMorningReport(input: ReportInput): MorningReport {
       ...red.map(s => {
         const inv = investigations.get(s.repo)
         const cause = inv?.findings?.split('\n').slice(1).find(l => l.trim() && !l.startsWith('#'))?.trim()
-        return `${short(s.repo)} (${s.base}): ${s.redCi!.map(r => r.workflow).join(', ')}${cause ? ` — root cause: ${cause.slice(0, 200)}` : ''}`
+        return `${short(s.repo)} (${s.base}): ${s.redCi!.map(r => r.workflow).join(', ')}${cause ? ` — root cause: ${clip(cause, 300)}` : ''}`
       }),
       ...oracles.map(o => `red-ci PR: "${o.workflow}" ${o.passed ? 'passes' : 'still fails'} on the PR.`),
     ],
