@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, rmSync, statSync, writeFileSync, readFileSync } 
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import {
-  allowedTiers, canUsePaidTier, chooseTier, classifyRepoData, computeTierStats, nextTier, type ModelTier,
+  allowedTiers, canUsePaidTier, chooseTier, paidStopReason, routableTiers, classifyRepoData, computeTierStats, nextTier, type ModelTier,
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
 import { buildCheck, judgesBuild, collectPackageInfo, confirmFailures, detectPackageManager, installCommand, withoutScripts, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runAuditIn, lockfileDirs, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
@@ -635,7 +635,9 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
   const allowed = allowedTiers(task, ctx.dataClass, { allowFreeCloud: cfg.allowFreeCloud.includes(repo), copilot })
     // M0/M1 need their LiteLLM alias; MC is the Copilot CLI and M2 is gated by budget below.
     .filter(t => t === 'M2' || t === 'MC' || ctx.aliases.includes(cfg.models[t]))
-  const routed = chooseTier({ allowed, stats: computeTierStats(toAttemptRecords(ledger), task.kind, now) })
+  const paidAvailable = () => canUsePaidTier({ monthToDateUsd: monthToDateUsd(readLedger(cfg.home), new Date()), monthlyBudgetUsd: cfg.monthlyBudgetUsd }, cfg.m2EstimateUsd)
+  // Start on a tier that can run: at $0 that's a free one, even if M2 is the only tier without history.
+  const routed = chooseTier({ allowed: routableTiers(allowed, paidAvailable()), stats: computeTierStats(toAttemptRecords(ledger), task.kind, now) })
   // Tier advisor (lib/tier-advisor.ts): a local model rates the task 1–3. Logged and scored at stage
   // `report`; at `pr` routing starts at the advised tier. Escalation on failure is unchanged.
   let decision = routed
@@ -658,13 +660,15 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
   let tier: ModelTier | null = decision.tier
   let exploring = decision.exploring
   let parentId: string | null = null
+  let attemptedFree = false
   while (tier) {
-    if (tier === 'M2' && !canUsePaidTier({ monthToDateUsd: monthToDateUsd(readLedger(cfg.home), new Date()), monthlyBudgetUsd: cfg.monthlyBudgetUsd }, cfg.m2EstimateUsd)) {
+    if (tier === 'M2' && !paidAvailable()) {
       const reason = cfg.monthlyBudgetUsd <= 0 ? 'paid tier disabled (monthlyBudgetUsd = 0)' : 'monthly paid budget exhausted'
-      skipReason = `free tiers could not complete it and ${reason}`
-      tracer.step('ladder', 'fail', `stopping at M2 — ${reason}`)
-      appendEntry(cfg.home, { type: 'approval_needed', runId, at: new Date().toISOString(), repo, kind: task.kind, reason })
-      await recordApprovalNeeded(cfg, repo, `Factory needs approval: ${task.title} in ${repo}`, `Free tiers could not complete this task; ${reason}. Raise FACTORY_MONTHLY_BUDGET_USD to allow M2, or fix manually.`)
+      const why = paidStopReason(attemptedFree, reason)
+      skipReason = why.skip
+      tracer.step('ladder', 'fail', `stopping at M2 — ${reason}${attemptedFree ? '' : ' (no free tier tried)'}`)
+      appendEntry(cfg.home, { type: 'approval_needed', runId, at: new Date().toISOString(), repo, kind: task.kind, reason, attemptedFree })
+      await recordApprovalNeeded(cfg, repo, `Factory needs approval: ${task.title} in ${repo}`, `${why.detail} Raise FACTORY_MONTHLY_BUDGET_USD to allow M2, or fix manually.`)
       log(`${repo}: stopping at M2 — ${reason}`)
       return 'stop'
     }
@@ -680,6 +684,7 @@ async function runLadder(ctx: TaskContext, task: FactoryTask, ledger: ReturnType
       }
     }
     const result = await attempt(ctx, task, tier, exploring, null, parentId)
+    attemptedFree = true
     if (result === 'pr' || result === 'verified') return result
     if (result === 'rate_limited') return 'deferred'
     // The next tier's job is the child of this failed one (escalation chain, Phase 79).
