@@ -107,6 +107,8 @@ export interface ApprovalEntry {
   repo: string
   kind: string
   reason: string
+  /** False when the task stopped at M2 without any free tier trying it. */
+  attemptedFree?: boolean
 }
 
 /** What the sensors saw for one repo at the start of a cycle (Phase 78). */

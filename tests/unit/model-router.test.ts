@@ -8,6 +8,8 @@ import {
   nextTier,
   canUsePaidTier,
   emptyTierStats,
+  routableTiers,
+  paidStopReason,
   type AttemptRecord,
   type ModelTier,
 } from '../../src/lib/agents/model-router'
@@ -161,5 +163,33 @@ describe('difficulty buckets (coarse routing key, Phase 79)', () => {
     const s = computeTierStats(recs, 'fix-types', NOW)
     expect(s.M0.attempts).toBe(10)
     expect(s.M0.rate).toBeCloseTo(1)
+  })
+})
+
+describe('routing at $0 (paid tier off)', () => {
+  // 2026-10-11: an owner request routed to M2 on a cold start (M1 had history below the bar, M2 none),
+  // then stopped because M2 is off, without any free tier trying it.
+  const stats = computeTierStats([...attempts('M1', 5, 6, 'owner-requested')], 'owner-requested', NOW)
+  const noExplore = () => 1
+
+  it('starts on a free tier instead of cold-starting on M2', () => {
+    expect(chooseTier({ allowed: ['M1', 'M2'], stats, rand: noExplore }).tier).toBe('M2')
+    const d = chooseTier({ allowed: routableTiers(['M1', 'M2'], false), stats, rand: noExplore })
+    expect(d.tier).toBe('M1')
+    expect(d.reason).toMatch(/strongest allowed \(M1\)/)
+  })
+  it('leaves the tiers alone with a paid budget, and keeps M2 for M2-only tasks', () => {
+    expect(routableTiers(['M1', 'M2'], true)).toEqual(['M1', 'M2'])
+    expect(routableTiers(['M2'], false)).toEqual(['M2'])
+    expect(routableTiers(['M0', 'M1'], false)).toEqual(['M0', 'M1'])
+  })
+  it('M2 stays on the ladder after a free tier fails', () => {
+    expect(nextTier('M1', ['M1', 'M2'])).toBe('M2')
+  })
+  it('the stop message says whether a free tier actually tried', () => {
+    const r = 'paid tier disabled (monthlyBudgetUsd = 0)'
+    expect(paidStopReason(true, r).skip).toBe(`free tiers could not complete it and ${r}`)
+    expect(paidStopReason(false, r).skip).toMatch(/^not attempted: only the paid tier \(M2\) can take this task/)
+    expect(paidStopReason(false, r).detail).toMatch(/so nothing ran/)
   })
 })

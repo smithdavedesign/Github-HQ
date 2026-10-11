@@ -189,6 +189,9 @@ success(impactType, skill, tier) = merged PRs with actualDelta ≥ 0  /  attempt
 3. If no tier has enough data, start at the cheapest allowed tier (cold start is free).
 4. **Exploration:** about 10% of eligible tasks are tried **one tier cheaper** than policy says. That's how the system notices a new free model got good. Capped so an exploration failure always has a cheaper retry budget.
 5. Downgrade is automatic; upgrade-to-paid needs budget (§7).
+6. **Without paid budget, routing starts on a free tier** (`routableTiers`). Before 2026-10-11, a free tier with history below the bar plus an M2 with none sent the task straight to M2. It then stopped, because M2 is off, and the notice wrongly said the free tiers had failed.
+   - Now the strongest free tier tries first. M2 stays on the ladder, so the approval notice still comes, but only after a free tier has really failed.
+   - When no free tier is allowed (security work, or a private repo without `allowFreeCloud`), the notice says nothing ran.
 
 This gives the PRD's "measure → learn → next mission" a concrete number: **% of merged improvements produced at $0**.
 

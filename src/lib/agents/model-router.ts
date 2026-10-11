@@ -220,6 +220,24 @@ export function canUsePaidTier(budget: BudgetState, estimateUsd: number): boolea
   return budget.monthToDateUsd + Math.max(0, estimateUsd) <= budget.monthlyBudgetUsd
 }
 
+/**
+ * The tiers routing may start on. Without paid budget M2 is left out, so a free tier gets the first try
+ * even when M2 has no history yet (a cold start there would just stop). M2 stays on the escalation ladder,
+ * so a task the free tiers really can't do still asks for approval. Only-M2 tasks keep M2.
+ */
+export function routableTiers(allowed: ModelTier[], paidAvailable: boolean): ModelTier[] {
+  if (paidAvailable) return allowed
+  const free = allowed.filter(t => t !== 'M2')
+  return free.length ? free : allowed
+}
+
+/** Why the ladder stopped at the paid tier, saying whether any free tier actually tried. */
+export function paidStopReason(attemptedFree: boolean, reason: string): { skip: string; detail: string } {
+  return attemptedFree
+    ? { skip: `free tiers could not complete it and ${reason}`, detail: `Free tiers could not complete this task; ${reason}.` }
+    : { skip: `not attempted: only the paid tier (M2) can take this task and ${reason}`, detail: `No free tier is allowed for this task (security work, or a private repo without allowFreeCloud), so nothing ran; ${reason}.` }
+}
+
 function pct(n: number): string {
   return `${Math.round(n * 100)}%`
 }
