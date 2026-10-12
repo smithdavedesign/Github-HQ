@@ -32,11 +32,15 @@ export interface IdeaStateJson {
     milestone?: string; prUrl?: string; status?: string; testsPassing?: boolean; at?: string; reason?: string; manual?: boolean; engine?: string; model?: string | null; effort?: string | null
     /** An MVP run: what it set out to build, what completed (a merge marks these done), and why it stopped early. */
     planned?: string[]; milestones?: string[]; stopped?: string | null; sandbox?: string
+    /** A growth build (milestone "GROWTH"): its experiment and the kind of change. */
+    experiment?: string; kind?: string
   }
   /** The road from M1 to the first dollar (idea-factory lib/revenue.js), refreshed every tick. */
   launch?: LaunchChecklist
   /** A built product's funnel from its beacon (docs/growth-loop-prd.md, "Measurement"). */
   funnel?: Funnel
+  /** A focus product's growth record: stage, bottleneck, next mission, experiments (idea-factory step 5d). */
+  growth?: GrowthState
   /** Set when a go-live PR merges. */
   golive?: { mergedAt?: string; prUrl?: string }
   milestonesDone?: string[]
@@ -83,6 +87,64 @@ export interface Funnel {
   at?: string; d7?: FunnelCounts; prev7?: FunnelCounts; all?: FunnelCounts; referrers7d?: { host: string; visitors: number }[]
   /** Which events the product's beacon has ever sent: no `visit` means it still runs the old one-view beacon. */
   seen?: { visit?: boolean; activate?: boolean; checkout?: boolean }
+}
+
+export type GrowthMetric = 'beacon' | 'visit' | 'activate' | 'checkout'
+
+/** One growth-loop experiment (idea-factory lib/growth.js newExperiment, judged when its window ends). */
+export interface GrowthExperiment {
+  id: string; kind: string; executor: 'build' | 'claude'; hypothesis: string; metric: GrowthMetric
+  baseline: number; target: number; windowDays: number
+  status: 'proposed' | 'running' | 'measuring' | 'decided' | 'abandoned'
+  createdAt: string; updatedAt?: string; startedAt?: string; endsAt?: string
+  prUrl?: string; reason?: string; channels?: number; artifact?: string
+  decision?: 'keep' | 'iterate' | 'revert' | 'park'; result?: { lift?: boolean }
+}
+
+/** A focus product's growth record, refreshed every pipeline tick (idea-factory step 5d). */
+export interface GrowthState {
+  stage?: 'launch' | 'instrument' | 'acquire' | 'activate' | 'monetize' | 'retain' | 'park'
+  bottleneck?: string
+  /** The next mission; null while the last one's result is pending. */
+  next?: { kind: string; executor: 'build' | 'claude' | 'owner'; metric?: string } | null
+  experiments?: GrowthExperiment[]
+  checkedAt?: string
+}
+
+export const GROWTH_STAGE_LABEL: Record<NonNullable<GrowthState['stage']>, string> = {
+  launch: 'Getting launch-ready', instrument: 'Measuring the funnel', acquire: 'Getting visitors', activate: 'Getting first use',
+  monetize: 'Getting paid', retain: 'Keeping buyers', park: 'Park it?',
+}
+const GROWTH_KIND_LABEL: Record<string, string> = {
+  instrumentation: 'funnel beacon', kit: 'launch kit', seo: 'search pages', landing: 'first screen', paywall: 'paid offer placement',
+  post: 'post the next kit channel', park: 'decide whether to park it',
+}
+/** "search pages" for "seo"; unknown kinds as they are. */
+export const growthKindLabel = (kind: string) => GROWTH_KIND_LABEL[kind] ?? kind
+
+/** "3 visitors a week", "8.0% of visitors", "beacon live", as idea-factory's valueText says it. */
+export function growthValue(metric: GrowthMetric, v: number): string {
+  if (metric === 'beacon') return v ? 'beacon live' : 'old beacon'
+  if (metric === 'visit') return `${v} visitor${v === 1 ? '' : 's'} a week`
+  return `${(v * 100).toFixed(1)}% of visitors`
+}
+
+/** The next mission in words, with who does it. */
+export function nextMissionText(next: GrowthState['next']): string {
+  if (!next) return 'waiting for the last mission’s result'
+  if (next.executor === 'owner') return `yours: ${growthKindLabel(next.kind)}`
+  return `${growthKindLabel(next.kind)} (${next.executor === 'build' ? 'a growth build, as a draft PR' : 'posts drafted for you'})`
+}
+
+const shortDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+
+/** One line per experiment: "search pages · running until Nov 10 · 3 visitors a week → 50 visitors a week". */
+export function experimentLine(e: GrowthExperiment): string {
+  const when = e.status === 'running' && e.endsAt ? `running until ${shortDay(e.endsAt)}`
+    : e.status === 'proposed' ? (e.executor === 'build' ? (e.prUrl ? 'PR waiting for you' : 'being built') : 'kit ready, waiting for your first post')
+    : e.status === 'abandoned' ? `abandoned${e.reason ? `: ${e.reason}` : ''}`
+    : e.status === 'decided' ? `decided: ${e.decision ?? '?'}` : e.status
+  return `${growthKindLabel(e.kind)} · ${when} · ${growthValue(e.metric, e.baseline)} → ${growthValue(e.metric, e.target)}`
 }
 
 /** "3 visitors this week (0 the week before), 0 activations, 0 Buy clicks", as idea-factory's funnelText says it. */

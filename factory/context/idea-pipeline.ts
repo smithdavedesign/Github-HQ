@@ -5,7 +5,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { funnelSummary } from '../../src/lib/ideas/idea-utils'
+import { GROWTH_STAGE_LABEL, experimentLine, funnelSummary, growthKindLabel, nextMissionText } from '../../src/lib/ideas/idea-utils'
 import type { IdeaState } from './ideas'
 
 export interface ValidationPolicy {
@@ -69,8 +69,8 @@ export interface PipelineInput {
 const STAGE_ORDER = ['validate', 'building', 'repo', 'build', 'live', 'idea', 'pass'] as const
 
 /** All ideas by stage, with validating ones in detail. Pure. */
-/** A build's name: a milestone, the whole MVP, or the go-live (idea-factory's "MVP" and "GOLIVE"). */
-const buildName = (m?: string) => (m === 'GOLIVE' ? 'Go-live' : m ?? 'M1')
+/** A build's name: a milestone, the whole MVP, the go-live or a growth change (idea-factory's "MVP", "GOLIVE", "GROWTH"). */
+const buildName = (m?: string, kind?: string) => (m === 'GOLIVE' ? 'Go-live' : m === 'GROWTH' ? `Growth build (${growthKindLabel(kind ?? 'one change')})` : m ?? 'M1')
 
 export function formatPipeline(p: PipelineInput): string {
   const by = new Map<string, IdeaState[]>()
@@ -88,10 +88,11 @@ export function formatPipeline(p: PipelineInput): string {
       } else if (stage === 'pass') {
         lines.push(`- ${i.slug}: ${i.validation?.reason ?? (i.review?.summary ? clip(i.review.summary, 160) : undefined) ?? 'passed'}`)
       } else {
-        const extra = i.build?.prUrl ? ` ${buildName(i.build.milestone)} PR ${i.build.status ?? 'open'}: ${i.build.prUrl}` : i.revenue ? ` $${i.revenue.mrr.toFixed(2)} MRR` : i.review ? ` review ${i.review.score}/10` : ''
+        const extra = i.build?.prUrl ? ` ${buildName(i.build.milestone, i.build.kind)} PR ${i.build.status ?? 'open'}: ${i.build.prUrl}` : i.revenue ? ` $${i.revenue.mrr.toFixed(2)} MRR` : i.review ? ` review ${i.review.score}/10` : ''
         const road = i.launch?.total ? ` Road to revenue ${i.launch.done}/${i.launch.total}${i.launch.next ? `, next: ${i.launch.next.label} (${i.launch.next.owner === 'david' ? 'yours' : 'agents'})` : ', done'}.` : ''
         const funnel = i.funnel ? ` Funnel: ${funnelSummary(i.funnel)}.` : ''
-        lines.push(`- ${i.slug}: ${i.title.split(' — ')[0]}.${extra}${road}${funnel}`)
+        const growth = i.growth?.stage ? ` Growth: ${GROWTH_STAGE_LABEL[i.growth.stage].toLowerCase()}, next: ${nextMissionText(i.growth.next)}.` : ''
+        lines.push(`- ${i.slug}: ${i.title.split(' — ')[0]}.${extra}${road}${funnel}${growth}`)
       }
     }
   }
@@ -111,11 +112,16 @@ export function formatIdea(i: IdeaState, p: PipelineInput): string {
   lines.push(posts.length
     ? `Launch posts:\n${posts.map(x => `- ${day(x.postedAt)} ${x.channel}${x.postUrl ? `: ${x.postUrl}` : ''}${x.note ? ` (${x.note})` : ''}`).join('\n')}`
     : i.stage === 'validate' ? 'Launch posts: none logged yet. The `launch` skill drafts them from LAUNCH.md.' : 'Launch posts: none logged.')
-  if (i.build) lines.push(`Build: ${buildName(i.build.milestone)} ${i.build.status ?? '?'}${i.build.prUrl ? ` ${i.build.prUrl}` : ''}${i.build.testsPassing === false ? ' (tests failing)' : ''}`)
+  if (i.build) lines.push(`Build: ${buildName(i.build.milestone, i.build.kind)} ${i.build.status ?? '?'}${i.build.prUrl ? ` ${i.build.prUrl}` : ''}${i.build.testsPassing === false ? ' (tests failing)' : ''}`)
   // A built product's funnel (idea-factory lib/growth.js): this week against the last, and its sources.
   if (i.funnel) {
     const f = i.funnel
     lines.push(`Funnel: ${funnelSummary(f)}${f.referrers7d?.length ? `; this week's sources: ${f.referrers7d.map(r => `${r.host} ${r.visitors}`).join(', ')}` : ''}.${f.seen?.visit ? '' : ' It still runs the old beacon (one view from the home page): activations and Buy clicks aren\'t counted yet.'}`)
+  }
+  // The growth loop on a focus product (idea-factory step 5d): what it sees, what's next, its experiments.
+  if (i.growth?.stage) {
+    lines.push(`Growth: ${GROWTH_STAGE_LABEL[i.growth.stage]}: ${i.growth.bottleneck ?? ''}. Next: ${nextMissionText(i.growth.next)}.`)
+    for (const e of [...(i.growth.experiments ?? [])].reverse().slice(0, 6)) lines.push(`- Experiment ${e.id}: ${experimentLine(e)}${e.prUrl ? ` ${e.prUrl}` : ''}. ${e.hypothesis}`)
   }
   // The road to the first dollar (idea-factory lib/revenue.js), with whose step is next.
   if (i.launch?.total) {

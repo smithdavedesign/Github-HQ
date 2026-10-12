@@ -116,4 +116,15 @@ describe('get_idea_pipeline: the road to revenue', () => {
     expect(formatIdea({ ...live, funnel: { ...funnel, seen: { visit: true } } }, input({ ideas: [live] }))).not.toMatch(/old beacon/)
     expect(formatPipeline(input({ ideas: [live] }))).toMatch(/- tiebreak: CodeSpend\..* Funnel: 3 visitors this week/)
   })
+  it('shows the growth loop on a focus product (stage, next mission, experiments) and names a growth build', () => {
+    const g: IdeaState = { ...built, slug: 'tiebreak', build: { milestone: 'GROWTH', kind: 'seo', status: 'pr-open', prUrl: 'https://github.com/o/tiebreak/pull/9' },
+      growth: { stage: 'acquire', bottleneck: '3 visitors this week, under 50', next: { kind: 'post', executor: 'owner' },
+        experiments: [{ id: 'tiebreak-20261013-seo', kind: 'seo', executor: 'build', hypothesis: 'Pages bring visitors.', metric: 'visit', baseline: 3, target: 50, windowDays: 28,
+          status: 'proposed', createdAt: '2026-10-13T10:00:00Z', prUrl: 'https://github.com/o/tiebreak/pull/9' }] } }
+    const t = formatIdea(g, input({ ideas: [g] }))
+    expect(t).toMatch(/Build: Growth build \(search pages\) pr-open https:\/\/github\.com\/o\/tiebreak\/pull\/9/)
+    expect(t).toMatch(/Growth: Getting visitors: 3 visitors this week, under 50\. Next: yours: post the next kit channel\./)
+    expect(t).toMatch(/- Experiment tiebreak-20261013-seo: search pages · PR waiting for you · 3 visitors a week → 50 visitors a week https:\/\/github\.com\/o\/tiebreak\/pull\/9\. Pages bring visitors\./)
+    expect(formatPipeline(input({ ideas: [g] }))).toMatch(/Growth: getting visitors, next: yours: post the next kit channel\./)
+  })
 })

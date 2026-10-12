@@ -35,7 +35,12 @@ an idea.
 | Build | M1's exit criteria become tests first, then the code; a draft PR in the idea's private repo | **the owner merges** | $0 |
 | Live and earning | RepoHQ tracks lifecycle, health and MRR; the factory keeps it healthy | the owner | free tiers until it earns |
 
-**After launch: the growth loop** ([growth-loop-prd.md](growth-loop-prd.md), being built from 2026-10-12). Once a day, for each focus product (`policy.growth.focus` in idea-factory; tiebreak first), the pipeline reads the funnel and picks the bottleneck by rule. It then starts at most one mission: a growth build as a draft PR, a launch kit of posts the owner publishes, or an item in the morning email's Today block. Each mission is an experiment with a baseline, judged when its window ends, and the lesson is kept. Until a focus product reaches 50 visitors a week, the weekly build slot only finishes MVPs it has started.
+**After launch: the growth loop** ([growth-loop-prd.md](growth-loop-prd.md), step 5d of the idea pipeline, since 2026-10-12).
+- **Each tick:** for each focus product (`policy.growth.focus` in idea-factory; tiebreak first), the pipeline reads the funnel and picks the bottleneck by rule: launch → instrument → acquire → activate → monetize → retain, or park.
+- **Once a day per product:** it starts one mission. That's a growth build (one change, as a draft PR, on Sonnet), a launch kit of posts the owner publishes, or an item in the morning email's Today block.
+- **Each mission is an experiment** with a baseline, a target and a window. A merged growth PR starts it; closing the PR abandons it.
+- **Where it shows:** the Ideas page's Growth card, the email's Growth section, and MCP.
+- **Until a focus product reaches 50 visitors a week,** the weekly build slot only finishes MVPs it has started.
 
 ## Where everything lives
 
@@ -143,7 +148,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Within 15 min of sending | Research + review of an idea the owner sent, verdict back on Slack or WhatsApp (≤ 3 a day) | idea pipeline tick |
 | Every 5 min | System-events collector: ship the log, probe everything (incl. Vercel deploys), alert Slack, refresh the companion's brief; daily: prune, secrets check | launchd `com.user.system-events` |
 | 03:30 | Factory state backup (ledger, reports) → private repo | launchd `com.user.factory-backup` |
-| Every 15 min (daily steps after 09:30) | Idea pipeline tick: Ideas-page decisions, Notion sync, signals, decisions, promote, an approved idea's M1 build, revenue, a go-live once an MVP is complete (≤ 1 a day), the live audit (every 6 h per live idea), sync to RepoHQ; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |
+| Every 15 min (daily steps after 09:30) | Idea pipeline tick: Ideas-page decisions, Notion sync, signals and funnels, decisions, promote, an approved idea's M1 build, revenue, a go-live once an MVP is complete (≤ 1 a day), the live audit (every 6 h per live idea), the growth step (focus products; from 10:00, ≤ 2 missions a day), sync to RepoHQ; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |
 | Every 6 h, daily, weekly | RepoHQ sync (with security alerts, so counts follow merges within hours), the full security scan, deployments, AI summaries, digest | GitHub Actions crons |
 
 ## What's next

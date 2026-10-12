@@ -6,7 +6,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { OpenPr } from '../../src/lib/agents/open-prs'
-import { IDEAS_PAGE_URL, funnelSummary, launchKitOrder } from '../../src/lib/ideas/idea-utils'
+import { GROWTH_STAGE_LABEL, IDEAS_PAGE_URL, experimentLine, funnelSummary, launchKitOrder, nextMissionText } from '../../src/lib/ideas/idea-utils'
 import type { IdeaState } from './ideas'
 import { readLaunchLog, type LaunchLog } from './idea-pipeline'
 
@@ -92,6 +92,8 @@ export function todayLines(ideas: IdeaState[], g: GrowthInput, openPrs: OpenPr[]
   for (const i of focus) {
     const next = i.launch?.next
     if (next?.owner === 'david' && ACTION_STEPS.has(next.id)) items.push(`${short(i.title)}, your step on the road to revenue: ${next.label} (${IDEAS_PAGE_URL}/${i.slug})`)
+    // The loop stops building on a product whose experiments keep moving nothing: whether to park it is yours.
+    if (i.growth?.next?.kind === 'park') items.push(`${short(i.title)}: ${i.growth.bottleneck ?? 'its experiments moved nothing'}. Park it or keep going? (${IDEAS_PAGE_URL}/${i.slug})`)
   }
   // Demand tests closest to their decision first: a test short of visitors at its deadline is extended, then parked.
   const tests = ideas.filter(x => x.stage === 'validate' && !g.focus.includes(x.slug))
@@ -125,6 +127,13 @@ export function growthLines(ideas: IdeaState[], g: GrowthInput): string[] {
     const sources = f?.referrers7d?.length ? `; sources: ${f.referrers7d.map(r => `${r.host} ${r.visitors}`).join(', ')}` : ''
     lines.push(`${name}: ${f ? `${funnelSummary(f)}${sources}` : 'no funnel yet (the pipeline saves one once the product is deployed or has a visitor)'}.`)
     if (f && !f.seen?.visit) lines.push(`${name} still runs the old beacon (one view from the home page), so activations and Buy clicks aren't counted yet; its next growth build adds them.`)
+    const gr = i.growth
+    if (gr?.stage) {
+      lines.push(`Growth loop: ${GROWTH_STAGE_LABEL[gr.stage].toLowerCase()} (${gr.bottleneck ?? ''}). Next: ${nextMissionText(gr.next)}.`)
+      for (const e of (gr.experiments ?? []).filter(x => x.status === 'proposed' || x.status === 'running' || x.status === 'measuring')) {
+        lines.push(`Experiment: ${experimentLine(e)}${e.prUrl ? ` — ${e.prUrl}` : ''}`)
+      }
+    }
     const channels = kitChannels(g.kits[i.slug])
     const posts = g.logs[i.slug]?.posts ?? []
     const last = posts.map(p => p.postedAt).sort().at(-1)

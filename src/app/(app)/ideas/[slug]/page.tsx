@@ -6,7 +6,7 @@ import { factoryAccess } from '@/lib/agents/factory-queue'
 import { loadIdea } from '@/lib/ideas/ideas-data'
 import {
   DECISION_LABEL, launchKitOrder, buildMvpSteps, buildMvpTarget, goLiveSteps, goLiveTarget, buildNowSteps, buildNowTarget, buildRequestLabel, milestoneRange, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
-  manualStartsLast24h, pendingDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
+  growthKindLabel, manualStartsLast24h, pendingDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
 } from '@/lib/ideas/idea-utils'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,6 +16,7 @@ import { IdeaMarkdown } from '@/components/ideas/markdown'
 import { DecisionPanel } from '@/components/ideas/decision-panel'
 import { BuildNow } from '@/components/ideas/build-now'
 import { RevenueCard } from '@/components/ideas/revenue-card'
+import { GrowthCard } from '@/components/ideas/growth-card'
 import { ReviewNav } from '@/components/ideas/review-nav'
 import { CopyButton } from '@/components/ideas/copy-button'
 import { cn, errorSummary, formatDistanceToNow } from '@/lib/utils'
@@ -197,6 +198,7 @@ export default async function IdeaPage({ params }: Props) {
                 <p>{v.state.build?.status === 'running' ? `${v.state.build.milestone ?? 'M1'} is being built now.`
                   : v.state.build?.status === 'failed' ? `${v.state.build.milestone ?? 'M1'} failed: ${errorSummary(v.state.build.reason ?? 'see the record', 200)}`
                   : pr && v.state.build?.milestone === 'GOLIVE' ? `Go-live PR ${v.state.build.status ?? 'open'}: launch-ready changes, waiting for your review.`
+                  : pr && v.state.build?.milestone === 'GROWTH' ? `Growth PR ${v.state.build.status ?? 'open'}: ${growthKindLabel(v.state.build.kind ?? 'one change')}, one change to test one idea.`
                   : pr && v.state.build?.milestone === 'MVP' ? `MVP (${milestoneRange(v.state.build.milestones?.length ? v.state.build.milestones : v.state.build.planned ?? [])}) PR ${v.state.build.status ?? 'open'}${v.state.build.stopped ? ` — stopped: ${v.state.build.stopped}` : ''}.`
                   : pr ? `${v.state.build?.milestone ?? 'M1'} PR ${v.state.build?.status ?? 'open'}${v.state.build?.testsPassing === false ? ' — tests failing' : v.state.build?.testsPassing ? ' — tests passing' : ''}.`
                   : slot.held ? `M1 not started: ${slot.held}. Start build now still works.`
@@ -225,6 +227,8 @@ export default async function IdeaPage({ params }: Props) {
           )}
 
           {(repo || v.state.launch) && v.stage !== 'pass' && <RevenueCard launch={v.state.launch} hasRepo={!!repo} />}
+
+          {(v.state.funnel || v.state.growth) && v.stage !== 'pass' && <GrowthCard funnel={v.state.funnel} growth={v.state.growth} focus={!!policy?.growth?.focus?.includes(v.slug)} />}
 
           {v.idea.overlaps && (
             <Card>

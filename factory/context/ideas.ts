@@ -5,7 +5,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
-import { IDEAS_PAGE_URL, funnelSummary, milestoneRange, needsDecision, type IdeaStateJson } from '../../src/lib/ideas/idea-utils'
+import { IDEAS_PAGE_URL, funnelSummary, growthKindLabel, milestoneRange, needsDecision, type IdeaStateJson } from '../../src/lib/ideas/idea-utils'
 
 export type IdeaStage = 'idea' | 'validate' | 'build' | 'repo' | 'building' | 'live' | 'pass'
 
@@ -19,7 +19,7 @@ export interface IdeaState {
   signals?: { views: number; uniqueVisitors: number; signups: number; updatedAt?: string }
   validation?: { startedAt: string; decideAfter: string; decision?: 'build' | 'pass' | 'extend'; reason?: string }
   repo?: string
-  build?: { milestone?: string; milestones?: string[]; planned?: string[]; prUrl?: string; status?: 'pr-open' | 'merged' | 'failed' | 'running'; testsPassing?: boolean; at?: string }
+  build?: { milestone?: string; milestones?: string[]; planned?: string[]; prUrl?: string; status?: 'pr-open' | 'merged' | 'failed' | 'running'; testsPassing?: boolean; at?: string; kind?: string }
   /** Roadmap milestones whose PRs have merged. */
   milestonesDone?: string[]
   /** An M1 built on the Mac but never pushed (e.g. a `--no-push` builder test). */
@@ -32,6 +32,8 @@ export interface IdeaState {
   launch?: IdeaStateJson['launch']
   /** A built product's funnel from its beacon (idea-factory lib/growth.js). */
   funnel?: IdeaStateJson['funnel']
+  /** A focus product's growth record (idea-factory step 5d). */
+  growth?: IdeaStateJson['growth']
 }
 
 export function readIdeaStates(ideaHome: string): IdeaState[] {
@@ -51,9 +53,10 @@ export function readIdeaStates(ideaHome: string): IdeaState[] {
 
 const short = (t: string) => t.split(' — ')[0]!.slice(0, 40)
 
-/** A build's name: a milestone, the MVP's range, or the go-live. */
+/** A build's name: a milestone, the MVP's range, the go-live, or a growth change. */
 function buildName(b: NonNullable<IdeaState['build']>): string {
   if (b.milestone === 'MVP') { const m = b.milestones?.length ? b.milestones : b.planned ?? []; return m.length ? `MVP (${milestoneRange(m)})` : 'MVP' }
+  if (b.milestone === 'GROWTH') return `Growth build (${growthKindLabel(b.kind ?? 'one change')})`
   return b.milestone === 'GOLIVE' ? 'Go-live' : b.milestone ?? 'M1'
 }
 
