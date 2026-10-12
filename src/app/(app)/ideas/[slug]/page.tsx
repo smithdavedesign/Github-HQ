@@ -18,7 +18,7 @@ import { BuildNow } from '@/components/ideas/build-now'
 import { RevenueCard } from '@/components/ideas/revenue-card'
 import { ReviewNav } from '@/components/ideas/review-nav'
 import { CopyButton } from '@/components/ideas/copy-button'
-import { cn, formatDistanceToNow } from '@/lib/utils'
+import { cn, errorSummary, formatDistanceToNow } from '@/lib/utils'
 
 type Props = { params: Promise<{ slug: string }> }
 
@@ -191,7 +191,7 @@ export default async function IdeaPage({ params }: Props) {
               <CardHeader className="pb-2"><CardTitle className="text-base">Build</CardTitle></CardHeader>
               <CardContent className="text-sm space-y-1.5">
                 <p>{v.state.build?.status === 'running' ? `${v.state.build.milestone ?? 'M1'} is being built now.`
-                  : v.state.build?.status === 'failed' ? `${v.state.build.milestone ?? 'M1'} failed: ${v.state.build.reason ?? 'see the record'}`
+                  : v.state.build?.status === 'failed' ? `${v.state.build.milestone ?? 'M1'} failed: ${errorSummary(v.state.build.reason ?? 'see the record', 200)}`
                   : pr && v.state.build?.milestone === 'MVP' ? `MVP (${milestoneRange(v.state.build.milestones?.length ? v.state.build.milestones : v.state.build.planned ?? [])}) PR ${v.state.build.status ?? 'open'}${v.state.build.stopped ? ` — stopped: ${v.state.build.stopped}` : ''}.`
                   : pr ? `${v.state.build?.milestone ?? 'M1'} PR ${v.state.build?.status ?? 'open'}${v.state.build?.testsPassing === false ? ' — tests failing' : v.state.build?.testsPassing ? ' — tests passing' : ''}.`
                   : `M1 not started. Build slot: ${slot.free ? 'free this week' : `used, next ${slot.nextFreeAt?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? 'soon'}`}.`}</p>

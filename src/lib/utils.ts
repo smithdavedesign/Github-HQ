@@ -27,3 +27,15 @@ export function formatDistanceToNow(date: Date | string | null, now: number = Da
   if (seconds < 86400 * 365) return `${Math.floor(seconds / (86400 * 30))}mo ago`
   return `${Math.floor(seconds / (86400 * 365))}y ago`
 }
+
+/**
+ * A long error as one readable line: a log's last "Error:" line if it has one, else the text with
+ * whitespace collapsed and git's "hint:" lines dropped; cut at `max` with an ellipsis. Show the full
+ * text on hover or behind a toggle where it matters.
+ */
+export function errorSummary(text: string | null | undefined, max = 160): string {
+  const raw = String(text ?? '')
+  const errorLine = raw.split('\n').map(l => l.replace(/^\s*\[[^\]]*\]\s*/, '').trim()).filter(l => /^(error|fatal)\b/i.test(l)).at(-1)
+  const one = (errorLine ?? raw).replace(/\s+/g, ' ').replace(/\s*\bhint:.*$/i, '').trim()
+  return one.length > max ? `${one.slice(0, max - 1).trimEnd()}…` : one
+}

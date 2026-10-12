@@ -19,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExternalLink, GitFork, Star, AlertTriangle, Lock, Globe, CheckCircle, XCircle, Clock, Bot, GitPullRequest, GitMerge } from 'lucide-react'
 // ExternalLink used in header homepage link
-import { formatDistanceToNow } from '@/lib/utils'
+import { formatDistanceToNow, errorSummary } from '@/lib/utils'
 import { CommitActivityChart } from '@/components/repos/commit-activity-chart'
 import { TagEditor } from '@/components/repos/tag-editor'
 import { RevenueEditor } from '@/components/repos/revenue-editor'
@@ -520,9 +520,15 @@ export default async function RepoDetailPage({ params }: Props) {
                       </div>
                       {event.description && (
                         isFailed ? (
-                          <pre className="text-[10px] text-red-500/80 mt-1 bg-red-500/5 border border-red-500/10 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
-                            {event.description}
-                          </pre>
+                          <div className="mt-1 text-xs">
+                            <p className="text-red-600 dark:text-red-400 break-words">{errorSummary(event.description, 200)}</p>
+                            {event.description.length > 200 || event.description.includes('\n') ? (
+                              <details className="mt-1">
+                                <summary className="cursor-pointer text-[10px] text-muted-foreground">Full log</summary>
+                                <pre className="text-[10px] text-red-500/80 mt-1 bg-red-500/5 border border-red-500/10 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-48 overflow-y-auto">{event.description}</pre>
+                              </details>
+                            ) : null}
+                          </div>
                         ) : (
                           <p className="text-xs text-muted-foreground mt-0.5 break-words">{event.description}</p>
                         )

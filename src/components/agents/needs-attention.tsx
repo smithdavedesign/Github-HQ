@@ -21,10 +21,10 @@ export function NeedsAttention({ items }: { items: AttentionItem[] }) {
       <h2 className="text-sm font-semibold">Needs attention ({items.length})</h2>
       {items.map((item, i) => {
         const { icon: Icon, cls } = TONE[item.tone]
-        const body = <span className={item.tone === 'info' ? 'text-muted-foreground' : ''}>{item.text}</span>
+        const body = <span className={item.tone === 'info' ? 'text-muted-foreground' : ''} title={item.detail}>{item.text}</span>
         return (
           <p key={i} className="flex items-start gap-1.5 text-xs">
-            <Icon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${cls}`} />
+            <Icon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${cls}`} aria-hidden />
             {item.href ? <a href={item.href} className="hover:underline">{body}</a> : body}
           </p>
         )
