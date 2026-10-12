@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Deploy the factory to ~/.repohq-factory/app and install (or remove with --uninstall) its launchd jobs.
-# Re-run after committing factory changes to redeploy.
+# Re-run after factory changes merge to redeploy: it deploys origin/main, whatever branch this checkout
+# is on. --head deploys this checkout's HEAD instead (testing a branch on purpose).
 #
 # With a REDIS_URL (Agent HQ, roadmap Phase 81 — env, keychain, or REDIS_URL in .env.local):
 #   com.repohq.factory.worker — the BullMQ worker (factory/worker.ts), always on (KeepAlive). It runs
@@ -82,9 +83,16 @@ fi
 
 mkdir -p "$AGENTS" "$HOME/.repohq-factory/logs"
 
-# ── Deploy: pinned checkout of this repo's committed HEAD ────────────────────
-SHA="$(git -C "$ROOT" rev-parse HEAD)"
-[ -n "$(git -C "$ROOT" status --porcelain -- factory src/lib/agents)" ] && echo "warning: uncommitted factory changes are NOT deployed (deploying $SHA)"
+# ── Deploy: a pinned checkout of origin/main, or with --head this checkout's committed HEAD ─────
+# Merging is how factory code gets approved (and the factory merges its own PRs now), so an
+# unmerged branch is never deployed by accident.
+if [ "${1:-}" = "--head" ]; then
+  SHA="$(git -C "$ROOT" rev-parse HEAD)"
+  [ -n "$(git -C "$ROOT" status --porcelain -- factory src/lib/agents)" ] && echo "warning: uncommitted factory changes are NOT deployed (deploying $SHA)"
+else
+  git -C "$ROOT" fetch -q origin main
+  SHA="$(git -C "$ROOT" rev-parse origin/main)"
+fi
 if [ ! -d "$APP/.git" ]; then
   git clone -q "$ROOT" "$APP"
 fi
