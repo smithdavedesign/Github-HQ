@@ -56,7 +56,9 @@ describe('sandbox session (idea builds in the factory sandbox)', () => {
     expect((await s.handle({ op: 'put', path: 'relative.md', content: '' })).error).toMatch(/absolute/)
     const p = await s.handle({ id: 9, op: 'patch', exclude: ['.cache'] })
     expect(p).toEqual({ id: 9, ok: true, file: '/tmp/x/build.patch' })
-    expect(f.calls.find(c => c.cmd === 'git' && c.args[0] === 'add')?.args).toEqual(['add', '-A', '--', '.', ':(exclude)node_modules', ':(exclude).cache'])
+    // Stage all, then reset the excluded paths: an :(exclude) pathspec on an ignored path makes git 2.5x exit 1.
+    expect(f.calls.find(c => c.cmd === 'git' && c.args[0] === 'add')?.args).toEqual(['add', '-A', '--', '.'])
+    expect(f.calls.find(c => c.cmd === 'git' && c.args[0] === 'reset')?.args).toEqual(['reset', '-q', '--', 'node_modules', '.cache'])
     expect(f.state.patchedFrom).toBe('abc1234def->/tmp/x/build.patch')
   })
 
@@ -72,5 +74,25 @@ describe('sandbox session (idea builds in the factory sandbox)', () => {
     expect(f.state.closed).toBe(1)
     const failing = createSession({ open: async () => { throw new Error('Docker is not running') }, tmpDir: () => '/tmp/x', log: () => {} })
     expect(await failing.handle({ id: 5, op: 'open', dir: '/w' })).toEqual({ id: 5, ok: false, error: 'Docker is not running' })
+  })
+})
+
+describe('sandbox patch staging against real git', () => {
+  it('ignored node_modules no longer fails the add, and excluded paths stay out of the patch', async () => {
+    const { execFileSync } = await import('node:child_process')
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const path = await import('node:path')
+    const dir = mkdtempSync(path.join(tmpdir(), 'sbx-'))
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } })
+    git('init', '-q')
+    writeFileSync(path.join(dir, '.gitignore'), 'node_modules\n')
+    mkdirSync(path.join(dir, 'node_modules', 'x'), { recursive: true })
+    writeFileSync(path.join(dir, 'node_modules', 'x', 'a.js'), '1')
+    writeFileSync(path.join(dir, 'app.js'), 'ok')
+    writeFileSync(path.join(dir, '.provision'), 'neon db x')
+    git('add', '-A', '--', '.')
+    git('reset', '-q', '--', 'node_modules', '.provision')
+    expect(git('diff', '--cached', '--name-only').trim().split('\n').sort()).toEqual(['.gitignore', 'app.js'])
   })
 })
