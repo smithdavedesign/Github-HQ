@@ -84,7 +84,13 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
 - **Tier advisor:** before each build, RepoHQ's tier advisor rates the milestone 1–3 on a local model, and the rating is recorded in `state.build.advice`.
   - With `policy.build.advisor` at `"report"` (the default) Claude stays first.
   - At `"act"`, a milestone rated 1 starts on the free pool and moves up to Claude on any failure, saving subscription quota for the hard ones.
-- **Milestones:** after the owner merges a milestone's PR, the pipeline builds the next `## Mn` in ROADMAP.md.
+- **Milestones:** once a milestone's PR has merged, the pipeline builds the next `## Mn` in ROADMAP.md.
+- **Autonomy** (`lib/autonomy.js`, `policy.autonomy`; the owner's call on 2026-10-12: agents merge everything, he reviews each morning). Each tick (step 4a0), every open pipeline PR is looked at:
+  - **Merged** (`gh pr ready`, then a squash merge) once the pipeline's own run of the tests passed, every GitHub check is green (CI, GitGuardian, the Vercel preview) and it doesn't conflict. `state.build` records `mergedBy: 'agent'` and `mergedAt`, and the live site is audited again on the next tick.
+  - **Closed** when it's a growth PR whose checks failed: its experiment is abandoned as `failed`, and the mission is tried again the next day.
+  - **Left for the owner** when it's a milestone or go-live build whose tests or checks failed, or it touches a protected path (`.github/workflows/`). `state.build.held` says why; the morning email's Today block lists it.
+  - **Reverted** when the live site's launch checks fail within a day of an agent merge (step 5b): a revert PR, merged, `state.build.reverted`, and a `fail` event so Slack hears of it. The alert closes (Slack: recovered) once the site passes its launch checks again. An experiment the judge finds clearly worse is reverted the same way, as news for the morning email rather than an alert.
+  - Interactive Claude sessions don't follow this: they open draft PRs and ask before merging.
 - **M1:** `bin/idea-build.js` builds it, at most one build a week from the weekly slot:
   - **Plan:** gstack's plan-eng-review (Step 0 scope challenge, architecture review, test review) is applied to the milestone first, and the result goes into `BUILD.md` as `## Plan`;
   - ROADMAP M1's exit criteria become failing tests first;
@@ -92,7 +98,7 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - **Self-review:** the builder checks its own diff against gstack's pre-landing checklist, fixes the CRITICAL findings and lists the rest in `BUILD.md` as `## Review`. The gstack text is read from the installed copy (`buildInput`) into a file outside the clone, so it's never committed;
   - **Screenshot proof** (the owner's rule, 2026-10-11): the last milestone of a run adds `npm run screenshots`, which starts the app, drives it with Playwright on the sandbox's Chromium (`$CHROMIUM_PATH`) and captures the main flow at desktop size and on a phone. The builder looks at each PNG, then puts them under `docs/screenshots/` and at the top of README.md, under the title;
     - the pipeline checks the README itself (local images above its first other section, at least two, present in the repo). If they're missing it gives the builder one reminder round. The PR then shows the screenshots, pinned to the commit, or says they're missing; it doesn't lose the build over it;
-  - the pipeline runs the tests itself and opens a **draft PR** (branch `m1`) that the owner merges.
+  - the pipeline runs the tests itself and opens a PR (branch `m1`), which it merges once its tests and checks pass (autonomy, above).
 - **Start build now:** an approved idea doesn't have to wait for the weekly slot. See [Deciding: the Ideas page](#deciding-the-ideas-page).
 - **New-build hold** (`policy.build.startNew: false`, the owner's call on 2026-10-12: distribution before more MVPs).
   - **What waits:** an idea that has never been built waits for its first build, from both the weekly slot and an approval (`newBuildsHeld` in `lib/pipeline.js`).
@@ -186,7 +192,7 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   A tried mission isn't repeated. An abandoned one can come back after a week.
 - **One mission a day per product,** from 10:00, at most `maxMissionsPerDay` (2) a day and `maxBuildsPerWeek` (2) growth builds a week. Never on a tick that already built or wrote a revenue plan. Never while something waits for the owner: an open growth PR, or a kit nobody has posted from. `policy.growth.auto: false` stops new missions; `tick --growth` ignores the 10:00 start in tests.
 - **The missions:**
-  - **A growth build** (`buildOne({growth})`, branch `growth-<experiment id>`, one draft PR "Growth: <slug> (<kind>)"):
+  - **A growth build** (`buildOne({growth})`, branch `growth-<experiment id>`, one PR "Growth: <slug> (<kind>)", merged by the pipeline once its checks pass):
     - one change, on Sonnet at high effort, in the sandbox, with no free-pool fallback;
     - the brief goes in the build-input file: the mission, the funnel, `LEARNINGS.md`, `PLAYBOOK.md`'s Rules, and how the same kind of experiment went on other products;
     - the builder keeps the beacon, adds tests, appends to `GROWTH.md` and writes honest copy only;
@@ -198,10 +204,15 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - **When one starts:** recorded as `proposed` before it starts, with the baseline from this week's funnel and the target (50 visitors a week; or half as much again as a share of visitors, at least 10% for activations and 2% for Buy clicks).
   - **Windows:** 14 days by default, 28 for search pages, 7 for the beacon.
   - **What moves them on:**
-    - a merged growth PR starts the window, and closing the PR abandons the experiment (step 4a);
+    - a merged growth PR starts the window, and a closed one abandons the experiment (step 4a);
     - a kit runs from its first logged post after it was written, and is abandoned after 7 days unposted;
     - a build that never opened a PR is abandoned after a day.
-  - **Judging** at the window's end comes in Phase 3.
+  - **Judging** (`judge` in `lib/growth.js`), once the window ends, against the window of the same length before it (`funnelWindow` in `lib/repohq.js`):
+    - **visitors a week** (the kit and search pages): at or above the target → keep; anything else → iterate (lift or not is recorded);
+    - **a share of visitors** (activations, Buy clicks): needs at least `minSampleVisits` (30) visitors in the window, else it's extended once and then recorded as not enough data. At or above the target → keep; 30% or more worse than before on a first screen or paid offer → revert; otherwise iterate;
+    - **the beacon:** kept once a `visit` arrives.
+
+    The result goes in the experiment (`decision`, `decidedAt`, `result`) and as a line in the product's `LEARNINGS.md`, with what else ran in the same window. A kept experiment is proposed under `PLAYBOOK.md` "## Proposed"; moving it to "## Rules" is the owner's call.
 
 The first version created a private repo every night. That would have added about 30 repos a month to a portfolio where RepoHQ already rates 35 of 47 active repos as archive candidates. Now a repo exists only after the owner says yes.
 

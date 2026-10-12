@@ -7,9 +7,9 @@ import type { ModelTier } from '../../src/lib/agents/model-router'
 import { systemHealthLines, type SystemHealth } from './system-health'
 import type { Capability, CapabilityStage } from './config'
 import { ladderStatus } from './ladder'
-import type { AttemptEntry, CiOracleEntry, LedgerEntry, ResolutionEntry, ReviewEntry, ScanEntry, SignalsEntry, SmokeEntry } from './ledger'
+import type { AttemptEntry, AutomergeEntry, CiOracleEntry, LedgerEntry, PostmergeEntry, ResolutionEntry, ReviewEntry, ScanEntry, SignalsEntry, SmokeEntry } from './ledger'
 import { NOTHING_WORKABLE, STALE_PR_DAYS, rankOpportunities, type Opportunity } from './sensors'
-import { ideaLines, type IdeaState } from '../context/ideas'
+import { buildName, ideaLines, type IdeaState } from '../context/ideas'
 import { growthLines, todayLines, type GrowthInput } from '../context/growth'
 import { computeFactoryKpis, kpiHeadline } from '../../src/lib/agents/factory-kpis'
 import { deadEndKey, deadEnds, latestSignals, toJobRecords } from './ledger'
@@ -18,6 +18,7 @@ import { preflightLines, type PreflightCheck } from './preflight'
 import { AGING_PR_DAYS, PR_SOURCE_LABEL, prAgeDays, prSource, sortForReview, type OpenPr } from '../../src/lib/agents/open-prs'
 import { prValueFromLabels } from '../../src/lib/agents/pr-value'
 import { nextActionLines, type FactoryFixKind, type NextActions } from '../../src/lib/portfolio/next-actions'
+import { experimentLine } from '../../src/lib/ideas/idea-utils'
 
 export interface ReportInput {
   now: Date
@@ -56,9 +57,11 @@ export interface ReportInput {
   growth?: GrowthInput
   /** The system log (factory/system): failing-now and 24h counts across every system. */
   systemEvents?: SystemEventsSummary | null
+  /** The factory's autonomy settings (config `autonomy`): whether it merges its own PRs and reverts what breaks. */
+  autonomy?: { merge: boolean; revert: boolean; protectedPaths: string[] }
 }
 
-export type RoleId = 'today' | 'ideas' | 'growth' | 'inbox' | 'next' | 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro' | 'ladder'
+export type RoleId = 'overnight' | 'today' | 'ideas' | 'growth' | 'inbox' | 'next' | 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro' | 'ladder'
 
 export interface RoleSection {
   id: RoleId
@@ -220,14 +223,20 @@ export function buildMorningReport(input: ReportInput): MorningReport {
 
   const sections: RoleSection[] = []
 
-  // ── Today: the growth loop's ten minutes for you, first (docs/growth-loop-prd.md) ──
+  // ── Done overnight: what the agents merged, reverted and decided on their own (autonomy, 2026-10-12) ──
+  const overnight = overnightLines(entries, input.ideas ?? [], now)
+  if (overnight.length || input.autonomy?.merge) {
+    sections.push({ id: 'overnight', role: 'Done overnight', skill: 'autonomy: agents merge their own green PRs and revert what breaks', title: 'What the agents did on their own (last 24h)', lines: overnight.length ? overnight : ['Nothing merged, reverted or decided by the agents in the last 24 hours.'] })
+  }
+
+  // ── Today: the growth loop's ten minutes for you (docs/growth-loop-prd.md) ──
   if (input.growth && input.ideas?.length) {
     sections.push({ id: 'today', role: 'Today', skill: 'growth loop', title: 'Your ten minutes, money first', lines: todayLines(input.ideas, input.growth, input.openPrsAll, now) })
   }
 
   // ── Inbox: every open PR waiting for you, so none get lost ──────────────────
   if (input.openPrsAll !== undefined) {
-    sections.push({ id: 'inbox', role: 'Your review queue', skill: 'open PRs across your repos', title: 'Waiting for you, oldest first', lines: inboxLines(input.openPrsAll, attempts, reviews, now, input.ownerLogin) })
+    sections.push({ id: 'inbox', role: 'Your review queue', skill: 'open PRs across your repos', title: 'Waiting for you, oldest first', lines: inboxLines(input.openPrsAll, attempts, reviews, now, input.ownerLogin, heldReasons(entries)) })
   }
 
   // ── Next: what deserves your attention, and why ─────────────────────────────
@@ -348,7 +357,9 @@ export function buildMorningReport(input: ReportInput): MorningReport {
       ...risky.map(s => `${short(s.repo)}: ${s.audit!.critical} critical, ${s.audit!.high} high, ${s.audit!.moderate} moderate`),
       ...alerting.map(s => `${short(s.repo)}: Dependabot ${s.alerts.critical} critical, ${s.alerts.high} high open (${s.alerts.npmFixable} npm-fixable)`),
       ...(disabled.length ? [`Dependabot alerts are disabled on ${disabled.length} of ${alertSignals.length} repos (${disabled.map(s => short(s.repo)).join(', ')}): enable them in each repo's Settings → Code security so this sensor has data.`] : []),
-      'Policy in force: private repos never go to free-cloud models; the factory never merges, force-pushes or deletes.',
+      input.autonomy?.merge
+        ? `Policy in force: private repos never go to free-cloud models; the factory merges its own PRs only when every check is green and nothing objected${input.autonomy.revert ? ', reverts a merge that turns the base branch red' : ''}, leaves PRs touching ${input.autonomy.protectedPaths.join(', ')} to you, and never force-pushes or deletes.`
+        : 'Policy in force: private repos never go to free-cloud models; the factory never merges, force-pushes or deletes.',
     ],
   })
 
@@ -438,9 +449,57 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   return { subject, sections, text: renderText(subject, sections), html: renderHtml(subject, sections) }
 }
 
-/** One line per open PR, oldest first; factory PRs carry what they fix and the reviewer's verdict. */
+/**
+ * What the agents did on their own in the last day (autonomy, the owner's call on 2026-10-12): the
+ * factory's and the idea pipeline's merges and reverts, a main branch still red after a revert, judged
+ * growth experiments and growth PRs closed for failing. PRs left for the owner are in the review queue.
+ */
+export function overnightLines(entries: LedgerEntry[], ideas: IdeaState[], now: Date): string[] {
+  const recent = (iso?: string | null) => !!iso && since(iso, now, DAY)
+  const attempts = new Map(entries.filter(isAttempt).map(a => [a.id, a]))
+  const name = (a?: AttemptEntry) => (a?.prUrl ? `${short(a.repo)}#${a.prUrl.split('/').pop()}` : 'a factory PR')
+  const what = (a?: AttemptEntry) => (a ? KIND_LABEL[a.kind] ?? a.kind : '')
+  const title = (t: string) => t.split(' — ')[0]!.slice(0, 40)
+  const post = entries.filter((e): e is PostmergeEntry => e.type === 'postmerge')
+  const reverted = new Set(post.filter(e => !e.passed && !e.revert).map(e => e.attemptId))
+  const merges = [
+    ...entries.filter((e): e is AutomergeEntry => e.type === 'automerge' && e.action === 'merged' && recent(e.at)).map(e => {
+      const a = attempts.get(e.attemptId)
+      return `Merged ${name(a)} · ${what(a)}: ${e.reason}${reverted.has(e.attemptId) ? ' (reverted since, below)' : ''} — ${a?.prUrl ?? ''}`
+    }),
+    ...ideas.filter(i => i.build?.mergedBy === 'agent' && recent(i.build.mergedAt))
+      .map(i => `Merged ${title(i.title)} · ${buildName(i.build!)}${i.build!.reverted ? ' (reverted since, below)' : ''} — ${i.build!.prUrl ?? ''}`),
+  ]
+  const reverts = [
+    ...post.filter(e => !e.passed && !e.revert && recent(e.at)).map(e => {
+      const a = attempts.get(e.attemptId)
+      return e.revertError
+        ? `${name(a)} broke its base branch (${e.reason}) and wasn't reverted (${e.revertError}): needs you — ${e.revertUrl ?? a?.prUrl ?? ''}`
+        : `Reverted ${name(a)}: ${e.reason} — ${e.revertUrl ?? ''}`
+    }),
+    ...post.filter(e => e.revert && !e.passed && recent(e.at)).map(e => `${name(attempts.get(e.attemptId))}: ${e.reason}. Needs you.`),
+    ...ideas.filter(i => recent(i.build?.reverted?.at)).map(i => `Reverted ${title(i.title)} · ${buildName(i.build!)}: ${i.build!.reverted!.reason ?? 'its live site broke'} — ${i.build!.reverted!.url ?? ''}`),
+  ]
+  const experiments = ideas.flatMap(i => (i.growth?.experiments ?? []).flatMap(e => {
+    if (e.status === 'decided' && recent(e.decidedAt)) return [`Experiment judged · ${title(i.title)}: ${experimentLine(e)}${e.reverted?.url ? ` — reverted: ${e.reverted.url}` : ''}`]
+    if (e.status === 'abandoned' && e.failed && e.prUrl && recent(e.updatedAt)) return [`Closed ${title(i.title)}'s growth PR (${e.reason ?? 'its checks failed'}); the mission is tried again the next day — ${e.prUrl}`]
+    return []
+  }))
+  if (!merges.length && !reverts.length && !experiments.length) return []
+  return [
+    `${plural(merges.length, 'PR')} merged by the agents, ${reverts.length} reverted, ${plural(experiments.length, 'experiment')} judged or closed.`,
+    ...merges, ...reverts, ...experiments,
+  ]
+}
+
+/** The autonomy gate's latest reason for holding each factory PR it left for the owner. */
+export function heldReasons(entries: LedgerEntry[]): Map<string, string> {
+  return new Map(entries.filter((e): e is AutomergeEntry => e.type === 'automerge' && e.action === 'held').map(e => [e.attemptId, e.reason]))
+}
+
+/** One line per open PR, oldest first; factory PRs carry what they fix, the reviewer's verdict, and why the factory didn't merge it. */
 export function inboxLines(
-  prs: OpenPr[] | null, attempts: AttemptEntry[], reviews: Map<string, ReviewEntry>, now: Date, ownerLogin?: string | null,
+  prs: OpenPr[] | null, attempts: AttemptEntry[], reviews: Map<string, ReviewEntry>, now: Date, ownerLogin?: string | null, held?: Map<string, string>,
 ): string[] {
   if (prs === null) return ['Could not list open PRs (gh search failed) — check `gh auth status`.']
   if (prs.length === 0) return ['No open PRs anywhere. Inbox zero.']
@@ -454,6 +513,7 @@ export function inboxLines(
     const r = a ? reviews.get(a.id) : undefined
     const what = a ? `${KIND_LABEL[a.kind] ?? a.kind} (${a.tier})` : p.title.slice(0, 80)
     const notes = [
+      ...(a && held?.get(a.id) ? [`not merged: ${held.get(a.id)}`] : []),
       ...(a?.adversary && a.adversary.verdict !== 'PASS' ? [`reviewer: ${a.adversary.verdict}`] : []),
       ...(r ? [r.comments === 0 ? 'review clean' : plural(r.comments, 'review comment')] : []),
       ...(p.isDraft ? ['draft'] : []),

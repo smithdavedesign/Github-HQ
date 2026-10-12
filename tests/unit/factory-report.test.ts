@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { backlog, buildMorningReport, clip, latestScans, queueLines, rejectionLines, toMime, type ReportInput } from '../../factory/lib/report'
+import { backlog, buildMorningReport, clip, heldReasons, inboxLines, latestScans, overnightLines, queueLines, rejectionLines, toMime, type ReportInput } from '../../factory/lib/report'
 import type { AttemptEntry, LedgerEntry } from '../../factory/lib/ledger'
 
 const NOW = new Date('2026-10-06T13:45:00Z')
@@ -139,6 +139,67 @@ describe('buildMorningReport', () => {
     expect(g.sections.map(s => s.id).slice(0, 4)).toEqual(['today', 'inbox', 'ideas', 'growth'])
     expect(g.sections[0]!.lines[0]).toMatch(/^tiebreak, your step on the road to revenue: Stripe product/)
     expect(g.text).toMatch(/^RepoHQ factory .*\n\nTODAY \(growth loop\) — Your ten minutes, money first/)
+  })
+})
+
+describe('Done overnight (autonomy)', () => {
+  const pr7 = att({ id: 'a7', repo: 'o/app', kind: 'fix-lint', prUrl: 'https://github.com/o/app/pull/7' })
+  const pr8 = att({ id: 'a8', repo: 'o/api', kind: 'deps-audit', prUrl: 'https://github.com/o/api/pull/8' })
+  const pr9 = att({ id: 'a9', repo: 'o/api', kind: 'fix-types', prUrl: 'https://github.com/o/api/pull/9' })
+  const entries: LedgerEntry[] = [
+    pr7, pr8, pr9,
+    { type: 'automerge', attemptId: 'a7', at: hoursAgo(5), action: 'merged', reason: '2 checks green, preview smoke passed', sha: 's7', base: 'main' },
+    { type: 'automerge', attemptId: 'a8', at: hoursAgo(4), action: 'merged', reason: '1 check green', sha: 's8', base: 'main' },
+    { type: 'postmerge', attemptId: 'a8', at: hoursAgo(3), sha: 's8', passed: false, reason: 'CI failed on main after it merged, and passed before it', revertUrl: 'https://github.com/o/api/pull/10', revertSha: 'r10' },
+    { type: 'postmerge', attemptId: 'a8', at: hoursAgo(2), sha: 'r10', passed: true, revert: true, reason: 'main is green again after the revert' },
+    { type: 'automerge', attemptId: 'a9', at: hoursAgo(1), action: 'held', reason: 'CI failed' },
+    { type: 'automerge', attemptId: 'a7', at: hoursAgo(40), action: 'merged', reason: 'yesterday', sha: 'old', base: 'main' },
+  ]
+  const ideas = [
+    { slug: 'tiebreak', title: 'tiebreak — polls', stage: 'live' as const, repo: 'https://github.com/o/tiebreak',
+      build: { milestone: 'GROWTH', kind: 'seo', status: 'merged' as const, prUrl: 'https://github.com/o/tiebreak/pull/12', mergedBy: 'agent' as const, mergedAt: hoursAgo(6) },
+      growth: { experiments: [
+        { id: 'tiebreak-1', kind: 'landing', executor: 'build' as const, hypothesis: 'h', metric: 'activate' as const, baseline: 0.2, target: 0.3, windowDays: 14, status: 'decided' as const, createdAt: hoursAgo(400),
+          decision: 'revert' as const, decidedAt: hoursAgo(7), result: { lift: false, value: 0.05, before: 0.2, sample: 100 }, reverted: { at: hoursAgo(7), url: 'https://github.com/o/tiebreak/pull/13' } },
+        { id: 'tiebreak-2', kind: 'seo', executor: 'build' as const, hypothesis: 'h', metric: 'visit' as const, baseline: 3, target: 50, windowDays: 28, status: 'abandoned' as const, createdAt: hoursAgo(30),
+          updatedAt: hoursAgo(8), failed: true, reason: 'web failed', prUrl: 'https://github.com/o/tiebreak/pull/11' },
+      ] } },
+    { slug: 'dawnlog', title: 'dawnlog — journal', stage: 'building' as const, repo: 'https://github.com/o/dawnlog',
+      build: { milestone: 'GOLIVE', status: 'merged' as const, prUrl: 'https://github.com/o/dawnlog/pull/3', mergedBy: 'agent' as const, mergedAt: hoursAgo(9),
+        reverted: { at: hoursAgo(8), url: 'https://github.com/o/dawnlog/pull/4', reason: "the live site's launch checks failed after it merged (missing Terms page)" } } },
+  ]
+  it('lists what the agents merged, reverted and judged in the last day', () => {
+    expect(overnightLines(entries, ideas, NOW)).toEqual([
+      '4 PRs merged by the agents, 2 reverted, 2 experiments judged or closed.',
+      'Merged app#7 · fix lint errors: 2 checks green, preview smoke passed — https://github.com/o/app/pull/7',
+      'Merged api#8 · patch vulnerable dependencies: 1 check green (reverted since, below) — https://github.com/o/api/pull/8',
+      'Merged tiebreak · Growth build (search pages) — https://github.com/o/tiebreak/pull/12',
+      'Merged dawnlog · Go-live (reverted since, below) — https://github.com/o/dawnlog/pull/3',
+      'Reverted api#8: CI failed on main after it merged, and passed before it — https://github.com/o/api/pull/10',
+      "Reverted dawnlog · Go-live: the live site's launch checks failed after it merged (missing Terms page) — https://github.com/o/dawnlog/pull/4",
+      'Experiment judged · tiebreak: first screen · decided: revert (reverted) · 20.0% of visitors → 5.0% of visitors (target 30.0% of visitors) — reverted: https://github.com/o/tiebreak/pull/13',
+      "Closed tiebreak's growth PR (web failed); the mission is tried again the next day — https://github.com/o/tiebreak/pull/11",
+    ])
+  })
+  it('calls out a merge that broke main and could not be undone, or a main still red after a revert', () => {
+    const broke: LedgerEntry[] = [pr8, { type: 'postmerge', attemptId: 'a8', at: hoursAgo(3), sha: 's8', passed: false, reason: 'CI failed on main', revertUrl: null, revertSha: null, revertError: 'git push failed: denied' }]
+    expect(overnightLines(broke, [], NOW)[1]).toBe("api#8 broke its base branch (CI failed on main) and wasn't reverted (git push failed: denied): needs you — https://github.com/o/api/pull/8")
+    const still: LedgerEntry[] = [pr8, { type: 'postmerge', attemptId: 'a8', at: hoursAgo(2), sha: 'r10', passed: false, revert: true, reason: 'CI still fails on main after the revert' }]
+    expect(overnightLines(still, [], NOW)[1]).toBe('api#8: CI still fails on main after the revert. Needs you.')
+  })
+  it('comes first in the email, and says so when the agents did nothing', () => {
+    const autonomy = { merge: true, revert: true, protectedPaths: ['factory/'] }
+    const r = buildMorningReport(input(entries, { ideas, autonomy }))
+    expect(r.sections[0]!.id).toBe('overnight')
+    expect(r.text).toMatch(/^RepoHQ factory .*\n\nDONE OVERNIGHT \(autonomy: agents merge their own green PRs and revert what breaks\) — What the agents did on their own \(last 24h\)\n  4 PRs merged/)
+    expect(buildMorningReport(input([], { autonomy })).sections[0]!.lines).toEqual(['Nothing merged, reverted or decided by the agents in the last 24 hours.'])
+    expect(buildMorningReport(input([])).sections.map(s => s.id)).not.toContain('overnight')
+  })
+  it("says in the review queue why the factory didn't merge a PR, and states the policy", () => {
+    const prs = [{ repo: 'o/api', number: 9, title: 'fix types', url: 'https://github.com/o/api/pull/9', author: 'app/repohq-factory', createdAt: new Date(hoursAgo(2)), isDraft: true, labels: [] }]
+    expect(inboxLines(prs, [pr9], new Map(), NOW, 'me', heldReasons(entries))[1]).toMatch(/^api#9 · 0d · factory · fix type errors \(M1\) \[not merged: CI failed, draft\]/)
+    const sec = buildMorningReport(input([], { autonomy: { merge: true, revert: true, protectedPaths: ['factory/', '.github/workflows/'] } })).sections.find(s => s.id === 'security')!
+    expect(sec.lines.at(-1)).toBe('Policy in force: private repos never go to free-cloud models; the factory merges its own PRs only when every check is green and nothing objected, reverts a merge that turns the base branch red, leaves PRs touching factory/, .github/workflows/ to you, and never force-pushes or deletes.')
   })
 })
 

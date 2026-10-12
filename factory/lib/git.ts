@@ -5,7 +5,9 @@ import { run, type Runner } from './proc'
 import { PR_VALUE_LABELS } from '../../src/lib/agents/pr-value'
 
 // Use gh as the credential helper per command — no global git config changes.
-const CRED = ['-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential']
+/** Host git authenticates through gh (the factory's GitHub App token when configured, github-app.ts). */
+export const GIT_CRED = ['-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential']
+const CRED = GIT_CRED
 
 /**
  * Working-tree operations take an optional `runner` so they can run inside the sandbox
@@ -136,6 +138,13 @@ export async function createDraftPr(dir: string, opts: { base: string; head: str
   const url = r.output.match(/https:\/\/github\.com\/\S+\/pull\/\d+/)?.[0]
   if (!url) throw new Error(`gh pr create returned no URL: ${r.output.slice(-200)}`)
   return url
+}
+
+/** Commits on a PR beyond the factory's one: a human's edits (review-load proxy, Phase 79). null when gh fails. */
+export async function humanCommitsOn(prUrl: string, runner: Runner = run): Promise<number | null> {
+  const r = await runner('gh', ['pr', 'view', prUrl, '--json', 'commits', '--jq', '.commits | length'], { timeoutMs: 60_000 })
+  const n = Number(r.output.trim())
+  return r.code === 0 && Number.isFinite(n) && n > 0 ? n - 1 : null
 }
 
 /** Add a label to a PR, creating it in the repo first if needed. Best-effort: false on failure. */

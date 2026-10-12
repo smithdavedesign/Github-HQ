@@ -110,7 +110,7 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 ### Phase 65 — Trust, Approvals & Budget
 - [x] Budget ledger: monthly paid cap (default $0) enforced before every M2 attempt; M2 cost computed from token usage
 - [x] Human boundary: `approval_needed` ledger entry + RepoHQ in-app notification (fans out via the existing outbound webhook)
-- [x] Draft-only PRs; the factory never merges, force-pushes or deletes branches
+- [x] Draft-only PRs; the factory never merges, force-pushes or deletes branches (merging reversed 2026-10-12: Phase 82, Autonomy)
 - [x] `awaiting_approval` lifecycle stage in RepoHQ
 - [ ] Signed, single-use approval links. A first `/approve/[token]` page was removed in the 2026-10 audit: nothing issued tokens, approving changed nothing downstream, single-use lived in per-instance memory, and the secret fell back to a hard-coded string. Rebuild when the factory actually pauses for approval: a dedicated required secret, DB-backed single use, and the approval recorded where the factory reads it
 - [ ] OpenClaw → WhatsApp relay for approvals (needs owner sign-off before any outbound WhatsApp)
@@ -295,7 +295,10 @@ The owner decides on ideas and starts builds from RepoHQ, and idea-factory does 
 - [x] Road to revenue: a plan once M1 is merged (gstack startup frameworks), the launch checklist checked every tick, a card on the idea page and morning-email lines; build queues ordered by how close each idea is to its first dollar
 - [x] Let it rip: MVP builds, the whole roadmap in one sandbox run and one PR, stopping at failing tests, an Opus fallback or the time budget (the default when the owner approves); merged PRs picked up every tick
 - [x] Go live: once the MVP is merged, one build makes it launch-ready (SEO basics, share image, sitemap and robots, privacy and terms, a Buy button on a Stripe payment link, the visit beacon, a Vercel project via the broker). After the merge, the production URL becomes the repo's homepage, and a live audit every 6 hours checks the 9 launch basics (checklist step Launch-ready). Starts by itself at most once a day, or from **Get it launch-ready** on the Ideas page. The launch skill also drafts posts for live products.
+- [x] Growth loop ([growth-loop-prd.md](growth-loop-prd.md)): the funnel for every live product, a daily growth step for focus products (missions as experiments, growth builds and launch kits), experiments judged when their window ends (`LEARNINGS.md`, playbook proposals), the Growth card and the morning email's Today and Growth sections (#91, #92, #94, #95)
+- [x] Autonomy (the owner's call, 2026-10-12): the idea pipeline and the factory merge their own PRs once every check is green and nothing objected, and revert a merge that breaks the base branch or a live site, telling Slack. PRs touching the agents' own rules wait for the owner; interactive sessions still open draft PRs. The morning email opens with Done overnight (idea-factory `lib/autonomy.js`, `factory/lib/automerge.ts`)
 - [ ] Preview smoke for idea repos' milestone PRs, as the factory does for its own PRs
+- [ ] CI on pull requests for the factory repos that have none (7 of 9), now that their PRs merge without a person
 - [ ] A money gate: no builds past M1 without a stated buyer and price, ideally with demand-test signups
 
 ### Phase 67+ — Horizon 3: Infrastructure Agent

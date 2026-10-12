@@ -112,7 +112,13 @@ export function formatIdea(i: IdeaState, p: PipelineInput): string {
   lines.push(posts.length
     ? `Launch posts:\n${posts.map(x => `- ${day(x.postedAt)} ${x.channel}${x.postUrl ? `: ${x.postUrl}` : ''}${x.note ? ` (${x.note})` : ''}`).join('\n')}`
     : i.stage === 'validate' ? 'Launch posts: none logged yet. The `launch` skill drafts them from LAUNCH.md.' : 'Launch posts: none logged.')
-  if (i.build) lines.push(`Build: ${buildName(i.build.milestone, i.build.kind)} ${i.build.status ?? '?'}${i.build.prUrl ? ` ${i.build.prUrl}` : ''}${i.build.testsPassing === false ? ' (tests failing)' : ''}`)
+  if (i.build) {
+    const b = i.build
+    // Autonomy (idea-factory lib/autonomy.js): who merged it, why it waits for the owner, or why it was reverted.
+    const who = b.reverted ? ` (merged by the pipeline, then reverted: ${b.reverted.reason ?? ''}${b.reverted.url ? ` ${b.reverted.url}` : ''})`
+      : b.mergedBy === 'agent' ? ' (merged by the pipeline)' : b.held && b.status === 'pr-open' ? ` (left for the owner: ${b.held})` : ''
+    lines.push(`Build: ${buildName(b.milestone, b.kind)} ${b.status ?? '?'}${b.prUrl ? ` ${b.prUrl}` : ''}${b.testsPassing === false ? ' (tests failing)' : ''}${who}`)
+  }
   // A built product's funnel (idea-factory lib/growth.js): this week against the last, and its sources.
   if (i.funnel) {
     const f = i.funnel

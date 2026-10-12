@@ -4,7 +4,7 @@ description: |
   The big picture of the owner's system: what it's for (products people use and pay for, near-zero
   owner overhead, no financial risk), how the parts fit (RepoHQ, the factory, the idea pipeline,
   the Resource Center, the local AI stack, OpenClaw), the rules every part follows (money, models,
-  data classes, human merges), and how to look up live context. Use at the start of work in any of
+  data classes, who merges), and how to look up live context. Use at the start of work in any of
   the owner's repos (Github-HQ/RepoHQ, idea-factory, resource-center, ai-stack, OpenClaw
   workspaces, or any repo RepoHQ tracks), or when asked about the big picture, priorities,
   ideas, revenue, "what should I work on", or how the system works.
@@ -21,6 +21,7 @@ description: |
    - `get_repo_context` / `get_next_action` (MCP) give one repo's health and the next useful step.
    - `get_idea_pipeline` (MCP) gives every idea's stage and demand test; with a slug, visitors by source, launch posts and its **road to revenue**.
    - **From idea to money** (docs/idea-factory.md): approving a build builds the whole MVP in one sandbox run. When M1 merges, a revenue plan is written (`REVENUE.md`: who pays, the price). Once the MVP is complete, a go-live build makes it launch-ready (SEO basics, privacy and terms, payment link, visit beacon, Vercel project), and the live site is audited every 6 hours.
+   - **The growth loop** (docs/growth-loop-prd.md): for focus products, a daily mission picked from the funnel (a growth build, a launch kit, or a step for the owner), each an experiment judged when its window ends (`LEARNINGS.md`, playbook proposals). The morning email opens with what the agents did overnight.
    - **Every built idea has a checklist** to the first dollar (`state.launch`, the Road to revenue card): the next step says whose it is. The owner's steps are the Stripe product, posting (the `launch` skill drafts the posts) and a price decision.
    - Each idea is in full in `~/idea-factory/ideas/<slug>/` (research, PRD, roadmap, review, state).
 3. **Follow the rules:**
@@ -28,7 +29,9 @@ description: |
    - **Claude work on the Pro subscription, never API credit.** Strip `ANTHROPIC_API_KEY`; the
      reference is `idea-factory/lib/claude.js`.
    - **Data classes:** never send employer work data to a cloud model; never touch financial data.
-   - **Draft PRs, the owner merges.** Never merge, force-push or delete on your own.
+   - **Who merges** (the owner's call, 2026-10-12): the factory and the idea pipeline merge their own
+     PRs once tests and every check are green, and revert what breaks. In an interactive session you
+     open draft PRs and the owner merges them. Never force-push or delete on your own.
    - **The owner's Notion status overrides any verdict.**
 4. **Logs, alerts, backups and secrets** ([docs/logging.md](/Users/davidsmith/Documents/Repos/Github-HQ/RepoHQ/docs/logging.md)):
    - **One log:** every system writes to `~/.system-events/events.jsonl`; the collector ships it to Neon `system_events` every 5 minutes.

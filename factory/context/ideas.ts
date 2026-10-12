@@ -19,7 +19,11 @@ export interface IdeaState {
   signals?: { views: number; uniqueVisitors: number; signups: number; updatedAt?: string }
   validation?: { startedAt: string; decideAfter: string; decision?: 'build' | 'pass' | 'extend'; reason?: string }
   repo?: string
-  build?: { milestone?: string; milestones?: string[]; planned?: string[]; prUrl?: string; status?: 'pr-open' | 'merged' | 'failed' | 'running'; testsPassing?: boolean; at?: string; kind?: string }
+  build?: {
+    milestone?: string; milestones?: string[]; planned?: string[]; prUrl?: string; status?: 'pr-open' | 'merged' | 'failed' | 'running' | 'closed'; testsPassing?: boolean; at?: string; kind?: string
+    /** Autonomy (idea-factory lib/autonomy.js): merged by the pipeline, left for the owner (why), or reverted. */
+    mergedBy?: 'agent'; mergedAt?: string; held?: string; reverted?: { at: string; url?: string | null; reason?: string }
+  }
   /** Roadmap milestones whose PRs have merged. */
   milestonesDone?: string[]
   /** An M1 built on the Mac but never pushed (e.g. a `--no-push` builder test). */
@@ -56,7 +60,7 @@ export function readIdeaStates(ideaHome: string): IdeaState[] {
 const short = (t: string) => t.split(' — ')[0]!.slice(0, 40)
 
 /** A build's name: a milestone, the MVP's range, the go-live, or a growth change. */
-function buildName(b: NonNullable<IdeaState['build']>): string {
+export function buildName(b: NonNullable<IdeaState['build']>): string {
   if (b.milestone === 'MVP') { const m = b.milestones?.length ? b.milestones : b.planned ?? []; return m.length ? `MVP (${milestoneRange(m)})` : 'MVP' }
   if (b.milestone === 'GROWTH') return `Growth build (${growthKindLabel(b.kind ?? 'one change')})`
   return b.milestone === 'GOLIVE' ? 'Go-live' : b.milestone ?? 'M1'

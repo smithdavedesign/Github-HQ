@@ -84,6 +84,7 @@ async function main() {
     }),
     preflight: await runPreflight(cfg).catch(() => []),
     systemEvents: await systemEventsSummary(cfg).catch(() => null),
+    autonomy: cfg.autonomy,
   }
   // The OpenClaw agents' system brief (factory/context/brief.ts): rewritten daily with the fresh index.
   const briefFiles = refreshOpenClawBrief(input.systemEvents?.failingNow ?? [], now)

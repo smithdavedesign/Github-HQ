@@ -41,7 +41,7 @@ David set these on 2026-10-12.
 flowchart LR
   A["Read the funnel<br/>visits, activations, checkouts"] --> B["Pick the bottleneck<br/>the first rule that matches"]
   B --> C["Start one mission<br/>build · kit · owner"]
-  C --> D["David merges or posts<br/>nothing ships without him"]
+  C --> D["Ships itself when green<br/>David posts; reverted if it breaks"]
   D --> E["Measure the window<br/>14 days, 28 for SEO"]
   E --> F["Decide and record<br/>keep · iterate · revert · park"]
   F -->|"next day, the lesson in the brief"| A
@@ -118,8 +118,8 @@ The morning email opens with a Today block of at most five items, money first:
 
 - checklist steps for focus products, such as "create tiebreak's Stripe payment link";
 - the next channel to post from a launch kit, at most one post a day per product;
-- growth PRs to merge;
-- experiments that need a decision (revert or park);
+- growth PRs the pipeline left for him, with why (it merges the green ones itself);
+- whether to park a product whose last two experiments moved nothing;
 - playbook rules to accept.
 
 Everything else the system does stays out of the block.
@@ -128,8 +128,9 @@ Everything else the system does stays out of the block.
 
 - **Money:** $0. Claude runs on the subscription only, and growth runs never fall back to the shared free
   model pool.
-- **Never post, spend or merge:** kit runs can write one file, with no shell and no MCP. Builds run in
-  the sandbox and open draft PRs. A growth build can only ask David for a credential, never create one.
+- **Never post or spend:** kit runs can write one file, with no shell and no MCP. Builds run in the
+  sandbox and open PRs. A growth build can only ask David for a credential, never create one.
+- **Merging is gated, and reversible** (see Autonomy).
 - **Honest distribution:** posts say a builder is asking. Each community's rules decide whether a link
   goes in. No fake accounts, votes or paid placement.
 - **Privacy:** prompts and reports carry counts and site names, never emails or visitor hashes.
@@ -141,9 +142,30 @@ Everything else the system does stays out of the block.
   about 50 days to get through the beacon, a kit and search pages. Overlapping windows are noted when an
   experiment is judged.
 
+## Autonomy (David's call, 2026-10-12)
+
+David asked for full autonomy: agents merge their own work and carry on, and he reviews what was done each
+morning instead of starting sessions or assigning work. His choices: merge scope **everything** (the
+factory's PRs and the idea pipeline's, including RepoHQ and idea-factory), failures **reverted
+automatically, with Slack told**, and the "draft PRs, David merges" rule **scoped to interactive
+sessions**.
+
+| | The idea pipeline (`lib/autonomy.js`, `policy.autonomy`) | The factory (`factory/lib/automerge.ts`, config `autonomy`) |
+|---|---|---|
+| Merges when | its own run of the tests passed, every GitHub check is green, no conflict | every check is green; the preview smoke test, the adversarial reviewer, a `hold` label or a review asking for changes didn't object; no conflict |
+| Otherwise | a red growth PR is closed and its mission retried the next day; anything else waits for David (`state.build.held`) | the PR waits for David, with the reason in the morning email's review queue |
+| Never merges | PRs touching `.github/workflows/` | PRs touching `factory/`, `.github/workflows/` or the model router |
+| Reverts when | the live site's launch checks fail within a day of the merge, or the judge finds an experiment clearly worse | a check on the base branch fails on the merge commit after passing on the commit before it (push runs and commit statuses; scheduled runs don't count) |
+| Tells David | Slack for a breakage revert (closed when the site passes again); the morning email for everything | Slack for a revert (closed when the base branch is green again); the morning email for everything |
+
+The morning email opens with **Done overnight**: what the agents merged, reverted and judged in the last
+24 hours. Interactive Claude sessions still open draft PRs and ask before merging. Nothing force-pushes or
+deletes.
+
 ## Kept and cut from v1
 
-v2 keeps v1's principles: extend what exists, one executor, no automatic merge, post or spend, evidence
+v2 keeps v1's principles: extend what exists, one executor, no automatic post or spend (merging became
+gated and automatic on 2026-10-12, see Autonomy), evidence
 over activity, and four levels of measurement (activity, output, outcome, revenue). It cuts the platform
 v1 would have built.
 
@@ -159,7 +181,8 @@ v1 would have built.
 
 ## Rollout
 
-Each phase ships as draft PRs to RepoHQ and idea-factory, and David merges them.
+Each phase ships as draft PRs to RepoHQ and idea-factory, and David merges them (these are interactive
+sessions, so the autonomy rule doesn't apply to them).
 
 1. **Day 0, no code (done 2026-10-12):** tiebreak's first launch kit; David creates its Stripe payment link.
 2. **Phase 0, fixes (live 2026-10-12):** a bug that can rerun the daily steps; merges on live products
@@ -170,8 +193,9 @@ Each phase ships as draft PRs to RepoHQ and idea-factory, and David merges them.
 4. **Phase 2, the growth step:** the rules, the experiment record, growth builds, kit runs and caps,
    and the Growth card on the Ideas page. tiebreak's first missions: its funnel beacon, then SEO pages
    for searches such as "PickFu alternative".
-5. **Phase 3, outcomes:** experiments judged when their window ends, lessons appended, playbook rules
-   proposed.
+5. **Phase 3, outcomes, and autonomy:** experiments judged when their window ends, lessons appended,
+   playbook rules proposed; the pipeline and the factory merge their own green PRs and revert what breaks;
+   the morning email's Done overnight section.
 6. **Later:** Search Console, a "mark posted" button, one-time Stripe payments counted as revenue,
    research missions.
 

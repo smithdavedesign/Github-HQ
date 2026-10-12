@@ -1,6 +1,7 @@
-# Every change lands with one PR to main that a human merges (2026-10: the integration/agent
-# hop and its release-label gate were removed). The one rule left for autonomous branches:
-# they may not touch the factory's own judge, loop or router.
+# Every change lands with one PR to main (2026-10: the integration/agent hop and its
+# release-label gate were removed). Since 2026-10-12 the factory merges its own PRs once every
+# check is green (factory/lib/automerge.ts), and this is one of those checks. The one rule left
+# for autonomous branches: they may not touch the factory's own judge, loop or router.
 name: Autonomous PR Policy
 
 on:

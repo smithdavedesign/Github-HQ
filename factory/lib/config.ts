@@ -26,7 +26,7 @@ export interface FactoryConfig {
   /**
    * Repos with this branch get factory PRs targeted at it instead of the default branch
    * Only used when a repo still has this branch; otherwise PRs target the default branch (since
-   * 2026-10, RepoHQ and Nexus have none: every change is one PR to main that the owner merges).
+   * 2026-10, RepoHQ and Nexus have none: every change is one PR to main).
    */
   integrationBranch: string
   /**
@@ -46,6 +46,12 @@ export interface FactoryConfig {
   advisor: { model: string; timeoutMs: number }
   /** Preview smoke test of factory PRs (lib/smoke.ts): public paths per repo (default "/"), and the Vercel team. */
   smoke: { enabled: boolean; paths: Record<string, string[]>; maxPerCycle: number; vercelScope?: string }
+  /**
+   * Autonomy (the owner's call, 2026-10-12; lib/automerge.ts): `merge` lets the factory merge its own PRs
+   * once every check is green and nothing objected; `revert` undoes a merge whose commit turns the base
+   * branch red. PRs touching `protectedPaths` (the agents' own rules) stay with the owner.
+   */
+  autonomy: { merge: boolean; revert: boolean; protectedPaths: string[] }
   harnessTimeoutMs: number
   /** M0 (local 7B) either finishes fast or not at all. */
   m0TimeoutMs: number
@@ -185,6 +191,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FactoryConfig 
       paths: json.smoke?.paths ?? {},
       maxPerCycle: json.smoke?.maxPerCycle ?? 3,
       vercelScope: json.smoke?.vercelScope,
+    },
+    autonomy: {
+      merge: json.autonomy?.merge ?? false,
+      revert: json.autonomy?.revert ?? true,
+      protectedPaths: json.autonomy?.protectedPaths ?? ['factory/', '.github/workflows/', 'src/lib/agents/model-router.ts'],
     },
     copilot: {
       enabled: json.copilot?.enabled ?? true,

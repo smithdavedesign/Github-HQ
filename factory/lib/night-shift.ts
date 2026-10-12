@@ -4,7 +4,7 @@ import { toJobRecords, type AttemptEntry, type LedgerEntry } from './ledger'
 
 /**
  * Night Shift v2 (roadmap Phase 80, docs/autonomous-factory.md §14). Scheduled cycles run
- * 20:00–06:00 on AC power, sandboxed, at $0, ≤ maxPrsPerDay, human merge, PAUSE-able. Before the
+ * 20:00–06:00 on AC power, sandboxed, at $0, ≤ maxPrsPerDay, merged only once green (lib/automerge.ts), PAUSE-able. Before the
  * night shift counts as "on", the sandbox has to prove itself for 7 consecutive nights with no
  * host-side repo code; success is then a rising yield and acceptance, not PR count.
  *
