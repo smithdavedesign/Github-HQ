@@ -6,11 +6,16 @@ test.describe('Settings — AI Provider', () => {
     await expect(page.getByText('AI provider', { exact: true })).toBeVisible()
   })
 
-  test('shows all three provider options', async ({ page }) => {
+  test('shows every provider, with the paid ones off ($0 by default)', async ({ page }) => {
     await page.goto('/settings')
-    await expect(page.getByText('Claude (Anthropic)')).toBeVisible()
-    await expect(page.getByText('GPT-4o (OpenAI)')).toBeVisible()
-    await expect(page.getByText('Gemini (Google)')).toBeVisible()
+    for (const name of ['Gemini (Google)', 'OpenRouter (free models)']) {
+      await expect(page.getByRole('button').filter({ hasText: name })).toBeEnabled()
+    }
+    for (const name of ['Claude (Anthropic)', 'GPT-4o (OpenAI)']) {
+      const button = page.getByRole('button').filter({ hasText: name })
+      await expect(button).toBeDisabled()
+      await expect(button.getByText('paid · off')).toBeVisible()
+    }
   })
 
   // One of three key states is always shown; wait for it (an immediate isVisible() ran before
@@ -45,13 +50,10 @@ test.describe('Settings — AI Provider', () => {
 
   test('provider buttons are clickable', async ({ page }) => {
     await page.goto('/settings')
-    // Clicking OpenAI should not throw
-    const openaiBtn = page.getByRole('button').filter({ hasText: 'GPT-4o (OpenAI)' })
-    if (await openaiBtn.isVisible()) {
-      await openaiBtn.click()
-      // After clicking, the hint text for OpenAI should be visible
-      await expect(page.getByText(/platform.openai.com/)).toBeVisible()
-    }
+    // Clicking a free provider shows its hint
+    const geminiBtn = page.getByRole('button').filter({ hasText: 'Gemini (Google)' })
+    await geminiBtn.click()
+    await expect(page.getByText(/aistudio.google.com/)).toBeVisible()
   })
 
   test('unauthenticated users cannot access settings', async ({ browser }) => {

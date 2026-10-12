@@ -79,6 +79,8 @@ test.describe('Ideas page', () => {
   test.beforeAll(async () => {
     if (await ready()) return
     await cleanup()
+    // The branch copies production, whose real builds today would hit the manual cap and change every dialog. Age them (disposable branch only: ready() checks).
+    await sql()`UPDATE idea_build_requests SET started_at = started_at - interval '2 days' WHERE started_at > now() - interval '1 day'`
     await seed(SLUG, 'Alpha', 8)
     await seed(SLUG2, 'Beta', 5)
     await seedApproved(SLUG3, 'Gamma')

@@ -8,6 +8,7 @@
  * - Terminal states allow re-queue
  */
 import { test, expect } from '@playwright/test'
+import { getFactoryRepo } from './helpers/factory'
 import { neon } from '@neondatabase/serverless'
 
 const DB_URL = process.env.DATABASE_URL ?? ''
@@ -176,13 +177,14 @@ test.describe('Run Agent button — lifecycle hydration', () => {
     const ctx = await getContext()
     if (!ctx?.userId) { test.skip(true, 'No user'); return }
 
-    const repoId = await getFirstRepo(ctx.userId)
+    // The skills launcher shows on factory-allowlisted repos; elsewhere the tab says why it's off.
+    const factoryRepo = await getFactoryRepo()
+    const repoId = factoryRepo?.id ?? await getFirstRepo(ctx.userId)
     if (!repoId) { test.skip(true, 'No repo'); return }
 
     await page.goto(`/repos/${repoId}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    // Agent tab should render: its skills launcher is always there, whatever the repo's history.
-    await expect(page.getByText('/investigate').first()).toBeVisible({ timeout: 8000 })
+    await expect(factoryRepo ? page.getByText('/investigate').first() : page.getByText(/Agent skills are not available/)).toBeVisible({ timeout: 8000 })
     await expect(page.getByText(/Application error|Something went wrong/i)).toHaveCount(0)
   })
 
