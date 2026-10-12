@@ -42,6 +42,15 @@ export async function dockerAvailable(): Promise<boolean> {
   return r.code === 0 && r.output.trim().length > 0
 }
 
+/**
+ * Docker is only reported down after a second probe agrees. `docker info` can miss its timeout on a
+ * busy Mac (2026-10-12 03:05: an idea build's sandbox and a factory cycle starting together), and a
+ * single miss turned the Agents page to "Docker isn't running" while both sandboxes were up.
+ */
+export async function dockerAvailableConfirmed(probe: () => Promise<boolean> = dockerAvailable): Promise<boolean> {
+  return (await probe()) || (await probe())
+}
+
 /** `name:<12-hex>` — a hash of the image's build inputs, so any edit produces a new tag. */
 export function imageTag(name: string, inputs: string[]): string {
   const h = createHash('sha256')

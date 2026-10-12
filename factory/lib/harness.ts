@@ -34,6 +34,8 @@ export interface HarnessResult {
   costUsd: number
   rateLimited: boolean
   timedOut: boolean
+  /** Why it failed, when the harness can tell (shown instead of a bare "harness failed"). */
+  failure?: string
 }
 
 /** Tools a fixing agent may use. No commit/push, no network fetch — the factory owns git. */
