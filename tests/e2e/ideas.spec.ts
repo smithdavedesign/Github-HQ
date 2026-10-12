@@ -16,6 +16,7 @@ const sql = () => neon(DB_URL)
 const SLUG = 'e2e-idea-alpha'
 const SLUG2 = 'e2e-idea-beta'
 const SLUG3 = 'e2e-idea-gamma'
+const SLUG4 = 'e2e-idea-delta'
 
 async function ready(): Promise<string | null> {
   if (!DISPOSABLE_DB) return DISPOSABLE_DB_REASON
@@ -60,6 +61,17 @@ async function seedApproved(slug: string, title: string) {
     ON CONFLICT (slug) DO NOTHING`
 }
 
+/** A built idea: M1 merged, M2 left, priced by its plan. "Get it launch-ready" and "Build the MVP (M2)" apply. */
+async function seedBuilt(slug: string, title: string) {
+  const state = { stage: 'building', repo: `https://github.com/smithdavedesign/${slug}`, milestonesDone: ['M1'], build: { milestone: 'M1', status: 'merged' },
+    launch: { steps: [], next: { id: 'mvp', label: 'MVP built: every roadmap milestone merged', owner: 'agent' }, done: 2, total: 10, price: '$12 once' } }
+  const docs = { prd: '# PRD', roadmap: '# Roadmap\n\n## M1 — core\n\n## M2 — more' }
+  await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, notion_url, hash, updated_at)
+    VALUES (${slug}, ${`${title} — a built test idea`}, 'building', ${JSON.stringify({ oneLiner: 'x' })}::jsonb, ${JSON.stringify(state)}::jsonb,
+      ${JSON.stringify({ verdict: 'pass', score: 4 })}::jsonb, ${JSON.stringify(docs)}::jsonb, 'https://www.notion.so/e2e', 'e2e', now())
+    ON CONFLICT (slug) DO NOTHING`
+}
+
 async function buildReady(): Promise<string | null> {
   const base = await ready()
   if (base) return base
@@ -69,9 +81,9 @@ async function buildReady(): Promise<string | null> {
 
 async function cleanup() {
   if (!DB_URL) return
-  await sql()`DELETE FROM idea_build_requests WHERE slug IN (${SLUG}, ${SLUG2}, ${SLUG3})`.catch(() => {})
-  await sql()`DELETE FROM idea_decisions WHERE slug IN (${SLUG}, ${SLUG2}, ${SLUG3})`.catch(() => {})
-  await sql()`DELETE FROM ideas WHERE slug IN (${SLUG}, ${SLUG2}, ${SLUG3})`.catch(() => {})
+  await sql()`DELETE FROM idea_build_requests WHERE slug IN (${SLUG}, ${SLUG2}, ${SLUG3}, ${SLUG4})`.catch(() => {})
+  await sql()`DELETE FROM idea_decisions WHERE slug IN (${SLUG}, ${SLUG2}, ${SLUG3}, ${SLUG4})`.catch(() => {})
+  await sql()`DELETE FROM ideas WHERE slug IN (${SLUG}, ${SLUG2}, ${SLUG3}, ${SLUG4})`.catch(() => {})
   await sql()`DELETE FROM idea_seeds WHERE text LIKE 'e2e:%'`.catch(() => {})
 }
 
@@ -84,6 +96,7 @@ test.describe('Ideas page', () => {
     await seed(SLUG, 'Alpha', 8)
     await seed(SLUG2, 'Beta', 5)
     await seedApproved(SLUG3, 'Gamma')
+    await seedBuilt(SLUG4, 'Delta')
   })
   test.afterAll(cleanup)
 
@@ -227,5 +240,24 @@ test.describe('Ideas page', () => {
     await expect(card.getByText('Stripe product created and mapped to the repo in RepoHQ')).toBeVisible()
     await page.getByRole('tab', { name: 'Revenue plan' }).click()
     await expect(page.getByText('Indie devs pay $9 a month for the digest.')).toBeVisible()
+  })
+
+  test('Get it launch-ready queues a go-live for a built idea, and says what it adds', async ({ page }) => {
+    const skip = await buildReady()
+    test.skip(!!skip, skip ?? '')
+    await page.goto(`/ideas/${SLUG4}`)
+    await expect(page.getByRole('button', { name: 'Start M2 build now' })).toBeVisible()
+    await page.getByRole('button', { name: 'Get it launch-ready' }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByRole('heading', { name: /Get it launch-ready: Delta/ })).toBeVisible()
+    await expect(dialog.getByText(/sitemap\.xml, robots\.txt and structured data/)).toBeVisible()
+    await expect(dialog.getByText(/A Buy button for \$12 once/)).toBeVisible()
+    await dialog.getByRole('button', { name: /^Make it launch-ready/ }).click()
+    await expect(page.getByText('Queued: starts on the pipeline’s next run (within 15 min)')).toBeVisible()
+    const [r] = await sql()`SELECT milestone, status FROM idea_build_requests WHERE slug = ${SLUG4} ORDER BY id DESC LIMIT 1`
+    expect(r).toMatchObject({ milestone: 'GOLIVE', status: 'pending' })
+    await expect(page.getByRole('button', { name: 'Get it launch-ready' })).toHaveCount(0)
+    await page.getByRole('button', { name: /Withdraw/ }).click()
+    await expect(page.getByText('Withdrawn')).toBeVisible()
   })
 })

@@ -19,7 +19,7 @@ export interface IdeaState {
   signals?: { views: number; uniqueVisitors: number; signups: number; updatedAt?: string }
   validation?: { startedAt: string; decideAfter: string; decision?: 'build' | 'pass' | 'extend'; reason?: string }
   repo?: string
-  build?: { prUrl?: string; status?: 'pr-open' | 'merged' | 'failed'; testsPassing?: boolean; at?: string }
+  build?: { milestone?: string; prUrl?: string; status?: 'pr-open' | 'merged' | 'failed' | 'running'; testsPassing?: boolean; at?: string }
   /** An M1 built on the Mac but never pushed (e.g. a `--no-push` builder test). */
   localM1?: { path: string; branch: string; testsPassing?: boolean; note?: string }
   revenue?: { mrr: number; updatedAt?: string }

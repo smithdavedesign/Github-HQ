@@ -476,6 +476,8 @@ export function buildNowSteps(milestone: string, v: Pick<IdeaView, 'state'>, pol
 
 /** Where a build request stands, in one line. */
 export function buildRequestLabel(r: Pick<IdeaBuildRequestRow, 'status' | 'milestone' | 'result' | 'engine'>): string {
+  if (r.milestone === 'GOLIVE' && r.status === 'running') return `Making it launch-ready now${r.engine ? ` (${r.engine})` : ''}`
+  if (r.milestone === 'GOLIVE' && r.status === 'done') return `Go-live: ${r.result ?? 'PR opened'}${r.engine ? ` · ${r.engine}` : ''}`
   const m = r.milestone === 'MVP' ? 'the MVP' : r.milestone ?? 'The build'
   switch (r.status) {
     case 'pending': return r.result?.startsWith('waiting') ? `Queued, ${r.result}` : 'Queued: starts on the pipeline’s next run (within 15 min)'
@@ -518,5 +520,39 @@ export function buildMvpSteps(milestones: string[], v: Pick<IdeaView, 'state'>, 
     `It stops at the first milestone whose tests fail${policy?.build?.mvp?.stopOnFallback === false ? '' : ' or that falls back off Opus'}, and opens a PR with what's done. Merging marks the completed milestones done, and the next build starts where it stopped.`,
     'A long Opus run uses a lot of your Claude Pro usage, which your own sessions share.',
     ...rest,
+  ]
+}
+
+export type GoLiveTarget = { ok: true } | { ok: false; reason: string }
+
+/**
+ * Whether "Get it launch-ready" can run: after M1 is merged, with nothing building or waiting for
+ * review (idea-factory lib/golive.js goLiveTarget decides when the request runs).
+ */
+export function goLiveTarget(v: Pick<IdeaView, 'state' | 'buildRequests'>): GoLiveTarget {
+  const open = v.buildRequests.find(r => r.status === 'pending' || r.status === 'running')
+  if (open) return { ok: false, reason: open.status === 'running' ? 'A build is running now.' : 'A build request is already queued.' }
+  const s = v.state
+  const b = s.build ?? {}
+  if (!s.repo) return { ok: false, reason: 'No repo yet.' }
+  if (!(s.milestonesDone ?? []).length) return { ok: false, reason: 'Merge at least M1 first.' }
+  if (b.status === 'running') return { ok: false, reason: `${b.milestone ?? 'A build'} is running now.` }
+  if (b.status === 'pr-open') return { ok: false, reason: `${b.milestone === 'GOLIVE' ? 'The go-live' : b.milestone ?? 'A'} PR is waiting for your review: merge it first.` }
+  return { ok: true }
+}
+
+/** What happens after "Get it launch-ready", for the confirm dialog. */
+export function goLiveSteps(v: Pick<IdeaView, 'state'>, policy: IdeaPolicy | null, startsLast24h: number): string[] {
+  const cap = policy?.build?.manualPerDay ?? DEFAULTS.manualPerDay
+  const price = v.state.launch?.price
+  return [
+    startsLast24h >= cap
+      ? `${startsLast24h} manual builds started in the last 24 hours (the cap is ${cap}): this one waits in the queue until the oldest is a day old.`
+      : 'On its next run (within 15 min) the pipeline makes it launch-ready, in the sandbox, without changing what it does:',
+    'SEO basics: titles, meta descriptions, a share image, sitemap.xml, robots.txt and structured data.',
+    'Privacy and terms pages, linked from the footer.',
+    price ? `A Buy button for ${price} that links to your Stripe payment link (STRIPE_PAYMENT_LINK), hidden until you set it.` : 'No price in a revenue plan yet, so no payment button.',
+    'A visit beacon, so real visitors count on this page, and a Vercel project through the credential broker so it deploys.',
+    'Opens a "Go live" draft PR with LAUNCH-READY.md (what is left for you). After it merges, the live site is audited every 6 hours on the Road to revenue card.',
   ]
 }

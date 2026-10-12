@@ -111,7 +111,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'get_idea_pipeline',
-      description: 'Live state of the idea pipeline (idea-factory): every idea by stage, each demand test against the decision rules (visitors, signups, days to decision), and idea MRR. With slug: one idea in detail, including review, visitors by referring site and the launch posts logged so far. Call this for "how is <idea> doing", before running the launch skill, or when asked about ideas or revenue.',
+      description: 'Live state of the idea pipeline (idea-factory): every idea by stage, each demand test against the decision rules (visitors, signups, days to decision), and idea MRR. Built ideas also show their road to revenue: steps done toward the first dollar, the price and buyer from the revenue plan, and the next step with whose it is (yours or the agents\'). With slug: one idea in detail, including review, visitors by referring site, the launch posts logged so far and every road-to-revenue step with its evidence. Call this for "how is <idea> doing", "what\'s next for <idea>", before running the launch skill, or when asked about ideas or revenue.',
       inputSchema: {
         type: 'object',
         properties: {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { launchKitOrder,
   buildSlot, checkDecision, cleanIdeaText, decisionLabel, seedStatusLabel, demandProgress, groupIdeas, needsDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline,
-  whatHappens, buildNowTarget, buildNowSteps, buildRequestLabel, manualStartsLast24h, roadmapMilestones, buildMvpTarget, buildMvpSteps, milestoneRange,
+  whatHappens, buildNowTarget, buildNowSteps, buildRequestLabel, manualStartsLast24h, roadmapMilestones, buildMvpTarget, buildMvpSteps, milestoneRange, goLiveTarget, goLiveSteps,
   type IdeaBuildRequestRow, type IdeaDecisionRow, type IdeaView,
 } from '../../src/lib/ideas/idea-utils'
 
@@ -226,5 +226,29 @@ describe('launch kit order', () => {
     expect(launchKitOrder(undefined)).toBeNull()
     expect(launchKitOrder('# Kit\n\n## Dropped\n- x')).toBeNull()
     expect(launchKitOrder('# Kit\n\n## Order\n1. **HN**')).toBe('1. **HN**')
+  })
+})
+
+describe('Get it launch-ready (go-live)', () => {
+  const repo = 'https://github.com/o/dawnlog'
+  const merged = idea('dawnlog', { stage: 'building', state: { repo, milestonesDone: ['M1'], build: { milestone: 'M1', status: 'merged' }, launch: { steps: [], next: null, done: 3, total: 10, price: '$12 once' } } })
+  it('runs after M1 is merged, with nothing building or waiting for review', () => {
+    expect(goLiveTarget(merged)).toEqual({ ok: true })
+    expect(goLiveTarget(idea('x', { state: { repo } }))).toEqual({ ok: false, reason: 'Merge at least M1 first.' })
+    expect(goLiveTarget({ ...merged, state: { ...merged.state, build: { milestone: 'GOLIVE', status: 'pr-open' } } })).toEqual({ ok: false, reason: 'The go-live PR is waiting for your review: merge it first.' })
+    expect(goLiveTarget({ ...merged, buildRequests: [{ id: 1, slug: 'dawnlog', milestone: 'GOLIVE', note: null, status: 'pending', result: null, prUrl: null, engine: null, createdAt: NOW, startedAt: null, finishedAt: null }] })).toMatchObject({ ok: false })
+  })
+  it('the dialog lists what it adds, the price for the Buy button, and that the live site is audited after', () => {
+    const steps = goLiveSteps(merged, null, 0)
+    expect(steps[0]).toMatch(/makes it launch-ready, in the sandbox, without changing what it does/)
+    expect(steps.join(' ')).toMatch(/titles, meta descriptions, a share image, sitemap\.xml, robots\.txt/)
+    expect(steps.join(' ')).toMatch(/A Buy button for \$12 once that links to your Stripe payment link \(STRIPE_PAYMENT_LINK\), hidden until you set it/)
+    expect(steps[steps.length - 1]).toMatch(/audited every 6 hours on the Road to revenue card/)
+    expect(goLiveSteps(idea('x'), null, 0).join(' ')).toMatch(/No price in a revenue plan yet/)
+    expect(goLiveSteps(merged, { build: { manualPerDay: 2 } }, 2)[0]).toMatch(/^2 manual builds started in the last 24 hours/)
+  })
+  it('labels a go-live request', () => {
+    expect(buildRequestLabel({ status: 'running', milestone: 'GOLIVE', result: null, engine: null })).toBe('Making it launch-ready now')
+    expect(buildRequestLabel({ status: 'done', milestone: 'GOLIVE', result: 'Go-live PR opened, tests passing', engine: null })).toBe('Go-live: Go-live PR opened, tests passing')
   })
 })
