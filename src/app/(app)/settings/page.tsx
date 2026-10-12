@@ -61,7 +61,7 @@ export default async function SettingsPage() {
           <CardTitle className="text-base flex items-center gap-2"><Sparkles className="w-4 h-4" />AI provider</CardTitle>
         </CardHeader>
         <CardContent>
-          <LLMSettings initialProvider={llmSettings.provider} keySource={llmSettings.keySource} savedProviders={llmSettings.savedProviders} />
+          <LLMSettings initialProvider={llmSettings.provider} keySource={llmSettings.keySource} savedProviders={llmSettings.savedProviders} effectiveProvider={llmSettings.effectiveProvider} paidAllowed={llmSettings.paidAllowed} />
         </CardContent>
       </Card>
 

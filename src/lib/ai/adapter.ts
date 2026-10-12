@@ -5,7 +5,7 @@ import { decrypt } from '@/lib/crypto-utils'
 export type { LLMProvider } from './providers'
 export { PROVIDER_LABELS, PROVIDER_MODELS, PROVIDER_KEY_HINTS } from './providers'
 import type { LLMProvider } from './providers'
-import { PROVIDER_LABELS, PROVIDER_MODELS } from './providers'
+import { PROVIDER_MODELS, FREE_PROVIDERS, NO_FREE_PROVIDER, chooseProvider, paidAllowed } from './providers'
 
 export interface GenerateParams {
   system: string
@@ -122,33 +122,36 @@ function createGeminiAdapter(apiKey: string): LLMAdapter {
   }
 }
 
+/** The server's own key for a provider, if any. */
+function envKeyFor(provider: LLMProvider): string | null {
+  return (
+    provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY :
+    provider === 'openai'    ? process.env.OPENAI_API_KEY :
+    provider === 'gemini'    ? process.env.GEMINI_API_KEY :
+    provider === 'openrouter' ? process.env.OPENROUTER_API_KEY : null
+  ) || null
+}
+
 export async function getLLMAdapter(userId: string): Promise<LLMAdapter> {
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
     columns: { llmProvider: true, llmKeys: true, llmApiKey: true },
   })
 
-  const provider = (user?.llmProvider ?? 'anthropic') as LLMProvider
+  const chosen = (user?.llmProvider ?? 'openrouter') as LLMProvider
   const keys = (user?.llmKeys ?? {}) as Partial<Record<LLMProvider, string>>
 
-  const envKey =
-    provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY :
-    provider === 'openai'    ? process.env.OPENAI_API_KEY :
-    provider === 'gemini'    ? process.env.GEMINI_API_KEY :
-    provider === 'openrouter' ? process.env.OPENROUTER_API_KEY : null
-
-  // Priority: per-provider key > legacy single key > env var. Both key fields may be
-  // AES-GCM encrypted (enc: prefix) or legacy plaintext — decrypt handles both.
-  const rawKey = keys[provider] || user?.llmApiKey || null
-  const apiKey = rawKey ? decrypt(rawKey) : envKey || null
-
-  if (!apiKey) {
-    throw new Error(
-      `No API key for ${PROVIDER_LABELS[provider]}. Add one in Settings → AI Provider.`
-    )
+  // Priority per provider: the user's key > the legacy single key (the chosen provider's) > env var.
+  // Both key fields may be AES-GCM encrypted (enc: prefix) or legacy plaintext — decrypt handles both.
+  const keyFor = (p: LLMProvider): string | null => {
+    const raw = keys[p] || (p === chosen ? user?.llmApiKey : null) || null
+    return raw ? decrypt(raw) : envKeyFor(p)
   }
 
-  return createAdapter(provider, apiKey)
+  // Paid providers only with LLM_ALLOW_PAID=1; otherwise the first free provider with a key.
+  const provider = chooseProvider(chosen, p => !!keyFor(p), paidAllowed())
+  if (!provider) throw new Error(NO_FREE_PROVIDER)
+  return createAdapter(provider, keyFor(provider)!)
 }
 
 function createAdapter(provider: LLMProvider, apiKey: string): LLMAdapter {
@@ -159,15 +162,14 @@ function createAdapter(provider: LLMProvider, apiKey: string): LLMAdapter {
 }
 
 /**
- * Fallback for structured-output calls when a (usually free) primary model
- * returns unusable JSON twice. Uses the server's Anthropic key so a user on a
- * free provider still gets a result; returns null when no key is configured or
- * the primary already is Anthropic.
+ * Fallback for structured-output calls when the primary model returns unusable JSON twice: the
+ * other free provider the server has a key for, or Claude Haiku when paid providers are allowed.
+ * Null when there's nothing else to try.
  */
 export function getFallbackAdapter(primary: LLMProvider): LLMAdapter | null {
-  if (primary === 'anthropic') return null
-  const key = process.env.ANTHROPIC_API_KEY
-  return key ? createAnthropicAdapter(key) : null
+  if (paidAllowed() && primary !== 'anthropic' && process.env.ANTHROPIC_API_KEY) return createAnthropicAdapter(process.env.ANTHROPIC_API_KEY)
+  const other = FREE_PROVIDERS.find(p => p !== primary && envKeyFor(p))
+  return other ? createAdapter(other, envKeyFor(other)!) : null
 }
 
 export async function testLLMKey(provider: LLMProvider, apiKey: string): Promise<void> {

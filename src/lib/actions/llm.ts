@@ -6,7 +6,7 @@ import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { testLLMKey } from '@/lib/ai/adapter'
 import type { LLMProvider } from '@/lib/ai/adapter'
-import { PROVIDER_SHORT_NAME } from '@/lib/ai/providers'
+import { PROVIDER_SHORT_NAME, chooseProvider, isPaidProvider, paidAllowed } from '@/lib/ai/providers'
 import { encrypt, decrypt } from '@/lib/crypto-utils'
 
 type LLMKeys = Partial<Record<LLMProvider, string>>
@@ -16,6 +16,10 @@ export async function getLLMSettings(): Promise<{
   hasKey: boolean
   keySource: 'user' | 'env' | null
   savedProviders: LLMProvider[]   // which providers have a key stored in llmKeys
+  /** What AI calls actually use (getLLMAdapter's choice): null when no allowed provider has a key. */
+  effectiveProvider: LLMProvider | null
+  /** LLM_ALLOW_PAID=1: Claude and GPT-4o may run. Off by default (the $0 rule). */
+  paidAllowed: boolean
 }> {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
@@ -25,16 +29,17 @@ export async function getLLMSettings(): Promise<{
     columns: { llmProvider: true, llmKeys: true },
   })
 
-  const provider = (user?.llmProvider ?? 'anthropic') as LLMProvider
+  const provider = (user?.llmProvider ?? 'openrouter') as LLMProvider
   const keys = (user?.llmKeys ?? {}) as LLMKeys
   const hasUserKey = !!(keys[provider] && keys[provider]!.length > 0)
-
-  const hasEnvKey = (
-    (provider === 'anthropic' && !!process.env.ANTHROPIC_API_KEY) ||
-    (provider === 'openai'    && !!process.env.OPENAI_API_KEY) ||
-    (provider === 'gemini'    && !!process.env.GEMINI_API_KEY) ||
-    (provider === 'openrouter' && !!process.env.OPENROUTER_API_KEY)
+  const envHas = (p: LLMProvider) => (
+    (p === 'anthropic' && !!process.env.ANTHROPIC_API_KEY) ||
+    (p === 'openai'    && !!process.env.OPENAI_API_KEY) ||
+    (p === 'gemini'    && !!process.env.GEMINI_API_KEY) ||
+    (p === 'openrouter' && !!process.env.OPENROUTER_API_KEY)
   )
+  const hasEnvKey = envHas(provider)
+  const allowPaid = paidAllowed()
 
   const savedProviders = (Object.entries(keys) as [LLMProvider, string][])
     .filter(([, v]) => v && v.length > 0)
@@ -45,12 +50,16 @@ export async function getLLMSettings(): Promise<{
     hasKey: hasUserKey || hasEnvKey,
     keySource: hasUserKey ? 'user' : hasEnvKey ? 'env' : null,
     savedProviders,
+    effectiveProvider: chooseProvider(provider, p => !!keys[p] || envHas(p), allowPaid),
+    paidAllowed: allowPaid,
   }
 }
 
 export async function saveLLMSettings(provider: LLMProvider, apiKey: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
+
+  if (isPaidProvider(provider) && !paidAllowed()) throw new Error(`${PROVIDER_SHORT_NAME[provider]} is a paid API and RepoHQ runs at $0. Set LLM_ALLOW_PAID=1 to use it.`)
 
   // Validate key before touching the DB
   try {
@@ -93,7 +102,7 @@ export async function removeLLMKey() {
     columns: { llmProvider: true, llmKeys: true },
   })
 
-  const provider = (current?.llmProvider ?? 'anthropic') as LLMProvider
+  const provider = (current?.llmProvider ?? 'openrouter') as LLMProvider
   const keys = { ...((current?.llmKeys ?? {}) as LLMKeys) }
   delete keys[provider]
 
@@ -111,6 +120,8 @@ export async function removeLLMKey() {
 export async function setLLMProvider(provider: LLMProvider) {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
+
+  if (isPaidProvider(provider) && !paidAllowed()) throw new Error(`${PROVIDER_SHORT_NAME[provider]} is a paid API and RepoHQ runs at $0. Set LLM_ALLOW_PAID=1 to use it.`)
 
   // Only update the active provider — NEVER touch llmKeys (other providers keep their keys)
   const [updated] = await db.update(users)

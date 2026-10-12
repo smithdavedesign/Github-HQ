@@ -141,7 +141,7 @@ export default async function RepoDetailPage({ params }: Props) {
             repoId={repo.id}
             hasExistingAnalysis={!!claudeAnalysis}
             isStale={analysisIsStale}
-            providerName={PROVIDER_SHORT_NAME[llmSettings.provider as keyof typeof PROVIDER_SHORT_NAME] ?? 'Claude'}
+            providerName={llmSettings.effectiveProvider ? PROVIDER_SHORT_NAME[llmSettings.effectiveProvider] : 'AI'}
           />
           <ResyncButton repoId={repo.id} />
         </div>

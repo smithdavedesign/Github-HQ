@@ -33,3 +33,27 @@ export const PROVIDER_KEY_HINTS: Record<LLMProvider, string> = {
   gemini:    'AIza...',
   openrouter: 'sk-or-...',
 }
+
+/**
+ * Providers that cost nothing: OpenRouter's free models and Gemini's free tier (Flash models).
+ * Claude and GPT-4o bill per call, so they run only when LLM_ALLOW_PAID=1: RepoHQ's own AI is $0
+ * by default, like the rest of the system.
+ */
+export const FREE_PROVIDERS: readonly LLMProvider[] = ['openrouter', 'gemini']
+
+export const isPaidProvider = (p: LLMProvider) => !FREE_PROVIDERS.includes(p)
+
+export const paidAllowed = (env: Record<string, string | undefined> = process.env) => env.LLM_ALLOW_PAID === '1'
+
+/**
+ * The provider to call: the chosen one if it's allowed and has a key, else the first free one
+ * with a key, else null (AI features then say what to set up).
+ */
+export function chooseProvider(chosen: LLMProvider, hasKey: (p: LLMProvider) => boolean, allowPaid: boolean): LLMProvider | null {
+  if ((allowPaid || !isPaidProvider(chosen)) && hasKey(chosen)) return chosen
+  return FREE_PROVIDERS.find(p => p !== chosen && hasKey(p)) ?? null
+}
+
+export const NO_FREE_PROVIDER =
+  'No free AI provider is set up. Add an OpenRouter key (free models) or a Gemini key in Settings → AI provider. ' +
+  'Paid providers are off: RepoHQ runs at $0 (LLM_ALLOW_PAID=1 turns them on).'
