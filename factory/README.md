@@ -143,7 +143,7 @@ host ◀──────────────── patch (file contents on
 
 Configure under `sandbox` in `factory/factory.config.json`: `mode` (`docker` | `off`), `cpus`, `memory`, `pidsLimit`, `lifetimeMs`, `allowHosts`. `FACTORY_SANDBOX=off` is for trusted fixtures (the e2e check), not for real repos.
 
-Images (`factory/docker/`): `worker.Dockerfile` (Node 22, git, Aider, Claude Code, pnpm; ~1.8 GB) and `egress.Dockerfile` (tinyproxy + the model relay; ~235 MB). Tags are a hash of the Dockerfiles, so an edit rebuilds them on the next cycle and older tags are removed. `install-launchd.sh` prebuilds them.
+Images (`factory/docker/`): `worker.Dockerfile` (Node 22, git, Aider, Claude Code, pnpm, and Chromium at `$CHROMIUM_PATH` for the idea builder's screenshots; ~2.8 GB) and `egress.Dockerfile` (tinyproxy + the model relay; ~235 MB). Tags are a hash of the Dockerfiles, so an edit rebuilds them on the next cycle and older tags are removed. `install-launchd.sh` prebuilds them.
 
 Known limits:
 - **Disk** isn't capped per container (Docker Desktop's overlay2 doesn't support `--storage-opt size`); the container's writable layer is deleted after each repo, and the Docker VM disk is the ceiling.
