@@ -11,7 +11,7 @@ function computeTrend(currentScore: number, oldScore: number, days: number): Tre
 }
 
 describe('buildHealthTrendSeries', () => {
-  it('fills missing dates and keeps the 30-day window stable', () => {
+  it('keeps the 30-day window stable, with days that have no snapshot as gaps, not zeros', () => {
     const base = new Date('2026-02-18T12:00:00Z')
     const trend = buildHealthTrendSeries([
       { date: '2026-02-01', healthScore: 70, securityScore: 80, activityScore: 60 },
@@ -19,10 +19,11 @@ describe('buildHealthTrendSeries', () => {
       { date: '2026-02-18', healthScore: 80, securityScore: 70, activityScore: 75 },
     ], 30, base)
 
-    expect(trend[0]).toMatchObject({ date: '2026-01-20', avgHealth: 0, avgSecurity: 0, avgActivity: 0 })
+    expect(trend[0]).toMatchObject({ date: '2026-01-20', avgHealth: null, avgSecurity: null, avgActivity: null })
     expect(trend.at(-1)).toMatchObject({ date: '2026-02-18', avgHealth: 80, avgSecurity: 70, avgActivity: 75 })
     expect(trend.some(point => point.date === '2026-02-16')).toBe(true)
-    expect(trend.every(point => point.avgHealth >= 0 && point.avgHealth <= 100)).toBe(true)
+    expect(trend.filter(point => point.avgHealth !== null)).toHaveLength(3)
+    expect(trend.every(point => point.avgHealth === null || (point.avgHealth >= 0 && point.avgHealth <= 100))).toBe(true)
   })
 
   it('rounds the composite averages to one decimal place', () => {

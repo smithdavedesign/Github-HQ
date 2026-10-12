@@ -64,7 +64,7 @@ export function HealthTrendLineChart({ data, hasLiveFallback = false }: Props) {
               />
               <Tooltip
                 formatter={(value: any, name: any) => [
-                  typeof value === 'number' ? value.toFixed(1) : value,
+                  typeof value === 'number' ? value.toFixed(1) : '—',
                   name === 'avgHealth' ? 'Health' : name === 'avgSecurity' ? 'Security' : 'Activity',
                 ]}
                 labelFormatter={(label: any) => typeof label === 'string' ? formatDate(label) : String(label)}

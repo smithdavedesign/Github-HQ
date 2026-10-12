@@ -12,6 +12,7 @@ interface AgentStats {
   successRate: number | null
   totalScoreGained: number
   recentMergeCount: number
+  windowDays: number
 }
 
 export function AgentStatsBlock({ stats }: { stats: AgentStats }) {
@@ -23,7 +24,7 @@ export function AgentStatsBlock({ stats }: { stats: AgentStats }) {
         <CardTitle className="text-sm font-semibold flex items-center justify-between">
           <span className="flex items-center gap-2">
             <Bot className="w-4 h-4 text-indigo-500" />
-            Agent Activity <span className="font-normal text-muted-foreground">· requests from RepoHQ, all time (factory KPIs are on Agents)</span>
+            Agent Activity <span className="font-normal text-muted-foreground">· requests from RepoHQ, last {stats.windowDays} days (factory KPIs are on Agents)</span>
           </span>
           <Link href="/agent-performance" className="text-xs font-normal text-muted-foreground hover:text-foreground">
             Full report →
@@ -32,7 +33,7 @@ export function AgentStatsBlock({ stats }: { stats: AgentStats }) {
       </CardHeader>
       <CardContent className="pt-0">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <Stat icon={Clock}       color="text-indigo-500" value={stats.queued}  label="Queued" />
+          <Stat icon={Clock}       color="text-indigo-500" value={stats.queued}  label="Requests" />
           <Stat icon={GitPullRequest} color="text-blue-500"   value={stats.created} label="PRs opened" />
           <Stat icon={CheckCircle} color="text-emerald-500" value={stats.merged}  label="Merged" />
           <Stat icon={XCircle}     color="text-red-400"     value={stats.failed}  label="Failed" />

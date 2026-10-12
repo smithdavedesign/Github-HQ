@@ -5,7 +5,8 @@ import { auth } from '@/lib/auth'
 import { toNum } from '@/lib/utils'
 import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, techStack, deployments, securityFindings } from '@/lib/db/schema'
-import { eq, and, sql, inArray, desc } from 'drizzle-orm'
+import { eq, and, sql, inArray, desc, gte } from 'drizzle-orm'
+import { requestStats, REQUEST_EVENT_TYPES } from '@/lib/agents/request-stats'
 import { agentRequests, portfolioEvents } from '@/lib/db/schema'
 import { closedPrTaskIds } from '@/lib/agents/lifecycle-utils'
 import { decrypt } from '@/lib/crypto-utils'
@@ -898,35 +899,17 @@ export async function getAgentStats() {
   const session = await auth()
   if (!session?.user?.id) return null
 
+  const windowDays = 90
   const events = await db.query.portfolioEvents.findMany({
     where: and(
       eq(portfolioEvents.userId, session.user.id),
-      inArray(portfolioEvents.eventType, [
-        'agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_execution_failed',
-      ]),
+      inArray(portfolioEvents.eventType, [...REQUEST_EVENT_TYPES]),
+      gte(portfolioEvents.occurredAt, new Date(Date.now() - windowDays * 86_400_000)),
     ),
     columns: { eventType: true, metadata: true, occurredAt: true },
     orderBy: [desc(portfolioEvents.occurredAt)],
   })
-
-  const queued  = events.filter(e => e.eventType === 'agent_task_queued').length
-  const created = events.filter(e => e.eventType === 'agent_pr_created').length
-  const merged  = events.filter(e => e.eventType === 'agent_pr_merged').length
-  const failed  = events.filter(e => e.eventType === 'agent_execution_failed').length
-  const successRate = queued > 0 ? Math.round((merged / queued) * 100) : null
-
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000)
-  const recentMerges = events.filter(
-    e => e.eventType === 'agent_pr_merged' && e.occurredAt >= thirtyDaysAgo
-  )
-
-  // Sum actual deltas from merged events (written by webhook handler after resync)
-  const totalScoreGained = recentMerges.reduce((sum, e) => {
-    const meta = e.metadata as { actualDelta?: number } | null
-    return sum + (meta?.actualDelta ?? 0)
-  }, 0)
-
-  return { queued, created, merged, failed, successRate, totalScoreGained, recentMergeCount: recentMerges.length }
+  return requestStats(events, new Date(), windowDays)
 }
 
 /** Returns repos with active (non-terminal) agent tasks — used by the Active Agents dashboard card */
