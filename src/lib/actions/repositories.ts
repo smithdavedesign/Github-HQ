@@ -8,7 +8,7 @@ import { repositories, repositoryMetrics, techStack, deployments, securityFindin
 import { eq, and, sql, inArray, desc, gte } from 'drizzle-orm'
 import { requestStats, REQUEST_EVENT_TYPES } from '@/lib/agents/request-stats'
 import { skillRuns, type SkillRunRecord } from '@/lib/skills/skill-runs'
-import { agentRequests, portfolioEvents } from '@/lib/db/schema'
+import { agentRequests, ideas, portfolioEvents } from '@/lib/db/schema'
 import { closedPrTaskIds } from '@/lib/agents/lifecycle-utils'
 import { decrypt } from '@/lib/crypto-utils'
 
@@ -809,16 +809,22 @@ export async function getOpportunityCost() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
-  const { computeOpportunityCost } = await import('@/lib/health/opportunity-cost')
+  const { computeOpportunityCost, machineWrittenRepos } = await import('@/lib/health/opportunity-cost')
 
-  const rows = await db.query.repositories.findMany({
-    where: eq(repositories.userId, session.user.id),
-    with: { metrics: { columns: { opportunityScore: true, weeklyCommits: true } } },
-    columns: { id: true, name: true, mrr: true, isFocused: true, lifecycleStatus: true, purpose: true },
-  })
+  const [rows, ideaRepos] = await Promise.all([
+    db.query.repositories.findMany({
+      where: eq(repositories.userId, session.user.id),
+      with: { metrics: { columns: { opportunityScore: true, weeklyCommits: true } } },
+      columns: { id: true, name: true, fullName: true, mrr: true, isFocused: true, lifecycleStatus: true, purpose: true },
+    }),
+    // The ideas table may not exist before `npm run db:push`: then no idea repos to leave out.
+    db.select({ repo: sql<string | null>`${ideas.state}->>'repo'` }).from(ideas).then(r => r.map(x => x.repo)).catch(() => [] as (string | null)[]),
+  ])
+  // The system's commits aren't the owner's choices: idea repos and the factory's backup stay out.
+  const machine = machineWrittenRepos(ideaRepos)
 
   const inputs = rows
-    .filter(r => r.metrics != null && r.purpose !== 'Reference')
+    .filter(r => r.metrics != null && r.purpose !== 'Reference' && !machine.has(r.fullName.toLowerCase()))
     .map(r => ({
       id: r.id,
       name: r.name,

@@ -140,7 +140,7 @@ describe('healthLabel', () => {
   })
 
   it('labels dead repos correctly', () => {
-    expect(healthLabel(0)).toBe('Dead')
-    expect(healthLabel(54)).toBe('Dead')
+    expect(healthLabel(0)).toBe('Low health')
+    expect(healthLabel(54)).toBe('Low health')
   })
 })

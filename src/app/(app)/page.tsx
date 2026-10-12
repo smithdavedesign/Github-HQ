@@ -32,7 +32,7 @@ import { loadOpenPrs, type OpenPrsResult } from '@/lib/github/open-prs-query'
 import { getNextActions } from '@/lib/portfolio/next-actions-query'
 import { getMyAccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { getGoals } from '@/lib/actions/goals'
-import { GitFork, Lock, Globe, Smile, AlertTriangle, Skull, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
+import { GitFork, Lock, Globe, Smile, AlertTriangle, HeartPulse, Shield, Rocket, DollarSign, TrendingUp, TrendingDown, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
@@ -120,7 +120,7 @@ export default async function DashboardPage() {
         <MetricCard title="Public" value={stats.public} icon={Globe} />
         <MetricCard title="Healthy" value={stats.healthy} icon={Smile} variant="success" description="Active, score ≥ 75" />
         <MetricCard title="At Risk" value={stats.atRisk} icon={AlertTriangle} variant="warning" description="Active, score 55–74" />
-        <MetricCard title="Dead" value={stats.dead} icon={Skull} variant="danger" description="Active, score < 55" />
+        <MetricCard title="Low health" value={stats.dead} icon={HeartPulse} variant="danger" description="Active, score < 55" />
         <MetricCard title="Security Issues" value={stats.securityIssues} icon={Shield} variant={stats.securityIssues > 0 ? 'danger' : 'default'} description="Critical + High" />
         <MetricCard
           title="Avg Health"

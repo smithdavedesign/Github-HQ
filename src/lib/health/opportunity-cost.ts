@@ -45,3 +45,17 @@ export function computeOpportunityCost(repos: CostInput[]): OpportunityCostResul
     hasSignificantCost: scoreDelta >= 10 && workedOn.length > 0 && topMissed.length > 0,
   }
 }
+
+/** The factory's nightly state backup (factory/bin/backup-state.sh). */
+export const FACTORY_BACKUP_REPO = 'smithdavedesign/repohq-factory-state'
+
+/**
+ * Repos whose commits are the system's, not the owner's: the idea pipeline's product repos (from each
+ * idea's state.repo URL) and the factory's state backup. "This week you committed to" listed them.
+ */
+export function machineWrittenRepos(ideaRepoUrls: (string | null | undefined)[], backupRepo = FACTORY_BACKUP_REPO): Set<string> {
+  const names = ideaRepoUrls
+    .map(u => /github\.com\/([^/\s]+\/[^/\s#?]+)/i.exec(u ?? '')?.[1]?.replace(/\.git$/, ''))
+    .filter((n): n is string => !!n)
+  return new Set([...names, backupRepo].map(n => n.toLowerCase()))
+}

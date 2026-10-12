@@ -6,7 +6,7 @@ test.describe('Dashboard', () => {
     await expect(page.getByRole('heading', { name: 'Portfolio Dashboard' })).toBeVisible()
 
     // Metric card titles live in CardTitle elements
-    for (const label of ['Total Repos', 'Private', 'Public', 'Healthy', 'At Risk', 'Dead', 'Security Issues', 'Avg Health']) {
+    for (const label of ['Total Repos', 'Private', 'Public', 'Healthy', 'At Risk', 'Low health', 'Security Issues', 'Avg Health']) {
       await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
     }
   })
