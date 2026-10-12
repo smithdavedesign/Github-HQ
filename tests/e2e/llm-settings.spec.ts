@@ -21,7 +21,7 @@ test.describe('Settings — AI Provider', () => {
   // One of the key states is always shown, or, when the chosen provider is paid and off, the line
   // saying which provider AI calls use instead. Wait for it (an immediate isVisible() ran before the
   // card rendered and read every state as absent).
-  const keyStatus = /Your key active|App key active|No key|AI features use|AI features are off/
+  const keyStatus = /Your key active|App key active|No key|No .+ key yet|AI features use|AI features are off/
 
   test('shows key status badge', async ({ page }) => {
     await page.goto('/settings')

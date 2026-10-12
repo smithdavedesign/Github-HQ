@@ -161,7 +161,7 @@ export function LLMSettings({ initialProvider, keySource, savedProviders: initia
           ) : (
             <>
               <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
-              <span className="text-sm text-amber-600">No key — AI features disabled</span>
+              <span className="text-sm text-amber-600">{effectiveProvider ? `No ${providerMeta.label} key yet` : 'No key — AI features disabled'}</span>
             </>
           )}
         </div>
