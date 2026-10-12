@@ -1,4 +1,5 @@
 import { getLLMAdapter, getFallbackAdapter } from './adapter'
+import { describeAiError } from './errors'
 import { generateJson } from './structured'
 import { db } from '@/lib/db'
 import { repositories } from '@/lib/db/schema'
@@ -59,8 +60,8 @@ ${context.readmeExcerpt ? `README (excerpt): ${context.readmeExcerpt.slice(0, 80
       system: SYSTEM_PROMPT, user: prompt, fast: false, maxTokens: 512, cacheSystem: true,
     }, { fallback: getFallbackAdapter(adapter.provider), label: 'summary' }))
   } catch (err) {
-    console.error('[summary] failed to parse model response:', err instanceof Error ? err.message : err)
-    throw new Error('Summary: model returned non-JSON response')
+    console.error('[summary] generation failed:', err instanceof Error ? err.message : err)
+    throw new Error(`Summary: ${describeAiError(err)}`)
   }
 
   await db

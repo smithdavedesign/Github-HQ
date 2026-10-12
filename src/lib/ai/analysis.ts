@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { describeAiError } from './errors'
 import { repositories, repositoryMetrics, techStack, securityFindings } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { getLLMAdapter, getFallbackAdapter } from './adapter'
@@ -142,8 +143,8 @@ Tags: ${(repo.tags ?? []).join(', ') || 'None'}`
       system: SYSTEM_PROMPT, user: prompt, fast: false, maxTokens: 2048, cacheSystem: true,
     }, { fallback: getFallbackAdapter(adapter.provider), label: 'analysis' }))
   } catch (err) {
-    console.error('[analysis] failed to parse model response:', err instanceof Error ? err.message : err)
-    throw new Error('Analysis: model returned non-JSON response')
+    console.error('[analysis] generation failed:', err instanceof Error ? err.message : err)
+    throw new Error(`Analysis: ${describeAiError(err)}`)
   }
 
   const result: ClaudeAnalysis = { ...analysis, generatedAt: new Date().toISOString() }

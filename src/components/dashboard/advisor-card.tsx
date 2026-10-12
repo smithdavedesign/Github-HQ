@@ -9,11 +9,10 @@ import type { AdvisorContent, AdvisorAction } from '@/lib/ai/advisor'
 import type { TimeAllocationItem } from '@/lib/health/scoring'
 import type { AccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy-utils'
-import { triggerAdvisor } from '@/lib/actions/repositories'
+import { useAiRun, AiRunLine } from './use-ai-run'
 import { formatDistanceToNow } from '@/lib/utils'
 import { QueueButton } from './queue-button'
 import Link from 'next/link'
-import { toast } from 'sonner'
 
 const IMPACT_ICON = {
   opportunity: Zap,
@@ -76,8 +75,9 @@ function ConfidenceBadge({ impactType, accuracyStats }: { impactType: string; ac
 }
 
 export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10, factoryRepoIds = [], accuracyStats }: AdvisorCardProps) {
-  const [advisor, setAdvisor] = useState(initialAdvisor)
-  const [generating, setGenerating] = useState(false)
+  // The prop, not a copy in state: after a run finishes, router.refresh() brings the new advisor.
+  const advisor = initialAdvisor
+  const { start: handleGenerate, busy: generating, line } = useAiRun('ai:advisor', initialAdvisor ? new Date(initialAdvisor.generatedAt) : null)
   const [showAll, setShowAll] = useState(false)
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set())
 
@@ -87,18 +87,6 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
       next.has(i) ? next.delete(i) : next.add(i)
       return next
     })
-  }
-
-  async function handleGenerate() {
-    setGenerating(true)
-    try {
-      await triggerAdvisor()
-      toast.success('Advisor is running — refresh in ~30 seconds to see results')
-    } catch {
-      toast.error('Failed to start advisor')
-    } finally {
-      setGenerating(false)
-    }
   }
 
   if (!advisor) {
@@ -113,6 +101,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
             <p className="text-xs text-muted-foreground mt-0.5">
               Get a prioritised action plan with quantified opportunity score gains, generated from your actual portfolio data
             </p>
+            <div className="mt-1"><AiRunLine line={line} /></div>
           </div>
           <Button size="sm" onClick={handleGenerate} disabled={generating} className="gap-1.5 shrink-0">
             {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
@@ -150,6 +139,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
             </Button>
           </div>
         </div>
+        <AiRunLine line={line} />
         {/* Headline */}
         <p className="text-sm font-medium text-foreground mt-1 leading-snug">
           {advisor.headline}

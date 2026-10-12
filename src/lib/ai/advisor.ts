@@ -1,4 +1,5 @@
 import { toNum } from '@/lib/utils'
+import { describeAiError } from './errors'
 import { getLLMAdapter, getFallbackAdapter } from './adapter'
 import { generateJson } from './structured'
 import { db } from '@/lib/db'
@@ -238,8 +239,9 @@ Rules:
       cacheSystem: true,
     }, { fallback: getFallbackAdapter(adapter.provider), label: 'advisor' }))
   } catch (err) {
-    console.error('[advisor] failed to parse model response:', err instanceof Error ? err.message : err)
-    throw new Error('Advisor: model returned non-JSON response')
+    console.error('[advisor] generation failed:', err instanceof Error ? err.message : err)
+    // Say what happened: a free tier's daily limit used to surface as "non-JSON response".
+    throw new Error(`Advisor: ${describeAiError(err)}`)
   }
 
   const result: AdvisorContent = { ...parsed, generatedAt: new Date().toISOString() }
