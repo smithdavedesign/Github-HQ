@@ -97,9 +97,14 @@ export function createSession(deps: SessionDeps) {
         }
         case 'patch': {
           const s = need()
-          const exclude = [...new Set([...ALWAYS_EXCLUDE, ...strings(req.exclude)])].map(p => `:(exclude)${p}`)
-          const add = await s.run('git', ['add', '-A', '--', '.', ...exclude], { timeoutMs: 120_000 })
+          // Stage everything, then put the excluded paths back to the base commit. Not `:(exclude)`
+          // pathspecs: git 2.5x exits 1 when one names a path .gitignore already ignores, and every
+          // idea repo ignores node_modules (the tiebreak MVP build lost its patch to it, 2026-10-12).
+          const exclude = [...new Set([...ALWAYS_EXCLUDE, ...strings(req.exclude)])]
+          const add = await s.run('git', ['add', '-A', '--', '.'], { timeoutMs: 120_000 })
           if (add.code !== 0) throw new Error(`git add failed: ${add.output.trim().slice(-300)}`)
+          const unstage = await s.run('git', ['reset', '-q', '--', ...exclude], { timeoutMs: 120_000 })
+          if (unstage.code !== 0) throw new Error(`git reset of excluded paths failed: ${unstage.output.trim().slice(-300)}`)
           const commit = await s.run('git', ['-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '--no-verify', '-m', 'sandbox build'], { timeoutMs: 120_000 })
           if (commit.code !== 0) throw new Error(`git commit failed: ${commit.output.trim().slice(-300)}`)
           const file = path.join(deps.tmpDir(), 'build.patch')
