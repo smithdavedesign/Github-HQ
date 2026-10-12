@@ -58,7 +58,19 @@ export interface ReviewJson {
   launch?: { channels?: { name: string; url?: string; why?: string }[]; post?: string }
 }
 
-export interface IdeaDocs { research?: string; prd?: string; roadmap?: string; review?: string; launch?: string; build?: string; revenue?: string }
+export interface IdeaDocs { research?: string; prd?: string; roadmap?: string; review?: string; launch?: string; build?: string; revenue?: string; launchKit?: string }
+
+/**
+ * The "## Order" section of an idea's launch kit (LAUNCH-KIT.md, written by the launch skill): the
+ * channels checked to exist and allow the post, in posting order. The review's channels are
+ * unchecked guesses (permitly's named subreddits that don't exist), so the page prefers this.
+ */
+export function launchKitOrder(kit: string | undefined): string | null {
+  if (!kit) return null
+  const m = /^##\s+Order\s*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(kit)
+  const body = m?.[1].trim()
+  return body ? body : null
+}
 
 export interface LaunchStep { id: string; label: string; owner: 'agent' | 'david'; done: boolean; evidence?: string }
 export interface LaunchChecklist {

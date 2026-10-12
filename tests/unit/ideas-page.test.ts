@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
+import { launchKitOrder,
   buildSlot, checkDecision, cleanIdeaText, decisionLabel, seedStatusLabel, demandProgress, groupIdeas, needsDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline,
   whatHappens, buildNowTarget, buildNowSteps, buildRequestLabel, manualStartsLast24h, roadmapMilestones, buildMvpTarget, buildMvpSteps, milestoneRange,
   type IdeaBuildRequestRow, type IdeaDecisionRow, type IdeaView,
@@ -214,5 +214,17 @@ describe('Build the MVP ("let it rip")', () => {
     const free = { used: 0, max: 1, free: true, nextFreeAt: null }
     expect(whatHappens('build', idea('x'), free, { build: { mode: 'mvp' } }, 0).join(' ')).toMatch(/Builds the MVP right after: every roadmap milestone in one run/)
     expect(whatHappens('build', idea('x'), free, { build: { mode: 'milestone' } }, 0).join(' ')).toMatch(/Builds M1 right after/)
+  })
+})
+
+describe('launch kit order', () => {
+  const kit = `# Launch kit: permitly (2026-10-12)\n\nPage: x\n\n## Order\n1. **BiggerPockets source thread** (today): no link.\n2. **r/AirBnBHosts** (tomorrow).\n\nSpace them a day apart.\n\n## 1. BiggerPockets\nhttps://example.com\n`
+  it('is the Order section of the kit, up to the next heading', () => {
+    expect(launchKitOrder(kit)).toBe('1. **BiggerPockets source thread** (today): no link.\n2. **r/AirBnBHosts** (tomorrow).\n\nSpace them a day apart.')
+  })
+  it('is null without a kit or an Order section, and reads an Order section at the end', () => {
+    expect(launchKitOrder(undefined)).toBeNull()
+    expect(launchKitOrder('# Kit\n\n## Dropped\n- x')).toBeNull()
+    expect(launchKitOrder('# Kit\n\n## Order\n1. **HN**')).toBe('1. **HN**')
   })
 })

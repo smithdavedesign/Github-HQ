@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth'
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { loadIdea } from '@/lib/ideas/ideas-data'
 import {
-  DECISION_LABEL, buildMvpSteps, buildMvpTarget, buildNowSteps, buildNowTarget, buildRequestLabel, milestoneRange, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
+  DECISION_LABEL, launchKitOrder, buildMvpSteps, buildMvpTarget, buildNowSteps, buildNowTarget, buildRequestLabel, milestoneRange, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
   manualStartsLast24h, pendingDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
 } from '@/lib/ideas/idea-utils'
 import { Badge } from '@/components/ui/badge'
@@ -58,6 +58,7 @@ export default async function IdeaPage({ params }: Props) {
   const pr = safeUrl(v.state.build?.prUrl)
   const notion = safeUrl(v.notionUrl)
   const launchPost = r?.launch?.post ? r.launch.post.replace(/\{url\}/g, v.state.page?.url ?? '{url}') : null
+  const kitOrder = launchKitOrder(v.docs.launchKit)
   // "Start build now": the next milestone outside the weekly slot (idea_build_requests).
   const buildTarget = buildNowTarget(v)
   const startsToday = manualStartsLast24h(overview.views, now)
@@ -73,6 +74,7 @@ export default async function IdeaPage({ params }: Props) {
     { id: 'roadmap', label: 'Roadmap', md: v.docs.roadmap },
     { id: 'review', label: 'Full review', md: v.docs.review },
     { id: 'launch', label: 'Launch post', md: v.docs.launch },
+    { id: 'launchKit', label: 'Launch kit', md: v.docs.launchKit },
     { id: 'build', label: 'Build notes', md: v.docs.build },
     { id: 'revenue', label: 'Revenue plan', md: v.docs.revenue },
   ].filter((t): t is { id: string; label: string; md: string } => !!t.md?.trim())
@@ -167,7 +169,12 @@ export default async function IdeaPage({ params }: Props) {
                 <DemandMeters d={demandProgress(v.signals, v.state, policy, now)} />
                 {v.state.validation?.reason && <p className="text-xs text-muted-foreground">Last decision: {v.state.validation.reason}</p>}
                 {launchPost && <CopyButton text={launchPost} label="Copy launch post" />}
-                {(r?.launch?.channels ?? []).length > 0 && (
+                {kitOrder ? (
+                  <div className="text-xs space-y-1">
+                    <p className="font-medium">Where to post, in order <span className="font-normal text-muted-foreground">(launch kit: channels checked; posts in the Launch kit tab)</span></p>
+                    <IdeaMarkdown>{kitOrder}</IdeaMarkdown>
+                  </div>
+                ) : (r?.launch?.channels ?? []).length > 0 && (
                   <ul className="text-xs space-y-1">
                     {r!.launch!.channels!.slice(0, 5).map(c => {
                       const u = safeUrl(c.url)
