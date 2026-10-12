@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildSlot, checkDecision, cleanIdeaText, decisionLabel, seedStatusLabel, demandProgress, groupIdeas, needsDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline,
-  whatHappens, buildNowTarget, buildNowSteps, buildRequestLabel, manualStartsLast24h, roadmapMilestones,
+  whatHappens, buildNowTarget, buildNowSteps, buildRequestLabel, manualStartsLast24h, roadmapMilestones, buildMvpTarget, buildMvpSteps, milestoneRange,
   type IdeaBuildRequestRow, type IdeaDecisionRow, type IdeaView,
 } from '../../src/lib/ideas/idea-utils'
 
@@ -183,5 +183,36 @@ describe('Start build now (idea_build_requests)', () => {
     const at = new Date(NOW.getTime() - 86_400_000).toISOString()
     expect(buildSlot([{ state: { build: { at, manual: true } } }], POLICY, NOW)).toMatchObject({ used: 0, free: true })
     expect(buildSlot([{ state: { build: { at } } }], POLICY, NOW)).toMatchObject({ used: 1, free: false })
+  })
+})
+
+describe('Build the MVP ("let it rip")', () => {
+  const repo = 'https://github.com/o/dawnlog'
+  const ROADMAP = '## M1\n## M2\n## M3\n'
+  const approved = idea('dawnlog', { stage: 'repo', state: { repo, ownerApproved: true }, docs: { roadmap: ROADMAP } })
+  it('covers every remaining milestone from where a single build would start', () => {
+    expect(buildMvpTarget(approved)).toEqual({ ok: true, milestones: ['M1', 'M2', 'M3'] })
+    expect(buildMvpTarget(approved, 2)).toEqual({ ok: true, milestones: ['M1', 'M2'] })
+    const afterM1 = { ...approved, stage: 'building' as const, state: { repo, milestonesDone: ['M1'], build: { milestone: 'M1', status: 'merged' } } }
+    expect(buildMvpTarget(afterM1)).toEqual({ ok: true, milestones: ['M2', 'M3'] })
+    expect(buildMvpTarget({ ...approved, state: { repo, review: { verdict: 'pass', score: 3 } } })).toMatchObject({ ok: false, reason: expect.stringMatching(/Not approved/) })
+    expect(milestoneRange(['M1', 'M2', 'M3'])).toBe('M1–M3')
+    expect(milestoneRange(['M2'])).toBe('M2')
+  })
+  it('the dialog says it runs them one after another, how long, and where it stops', () => {
+    const steps = buildMvpSteps(['M1', 'M2', 'M3'], approved, { build: { model: 'opus', effort: 'xhigh', mvp: { maxMinutes: 240 } } }, 0)
+    expect(steps[0]).toBe('On its next run (within 15 min) the pipeline builds M1, M2, M3 one after another in o/dawnlog, without waiting for the weekly build slot.')
+    expect(steps[1]).toMatch(/^Claude Code on your subscription: opus at effort xhigh\./)
+    expect(steps.join(' ')).toMatch(/One run in the sandbox, for up to 4 hours/)
+    expect(steps.join(' ')).toMatch(/stops at the first milestone whose tests fail or that falls back off Opus/)
+    expect(steps.join(' ')).toMatch(/Merging marks the completed milestones done/)
+    expect(steps[steps.length - 1]).toMatch(/Opens a draft PR/)
+  })
+  it('labels an MVP request, and approving says it builds the MVP in MVP mode', () => {
+    expect(buildRequestLabel({ status: 'running', milestone: 'MVP', result: null, engine: null })).toBe('Building the MVP now')
+    expect(buildRequestLabel({ status: 'done', milestone: 'MVP', result: 'MVP (M1, M2) PR opened, tests passing', engine: null })).toBe('MVP: MVP (M1, M2) PR opened, tests passing')
+    const free = { used: 0, max: 1, free: true, nextFreeAt: null }
+    expect(whatHappens('build', idea('x'), free, { build: { mode: 'mvp' } }, 0).join(' ')).toMatch(/Builds the MVP right after: every roadmap milestone in one run/)
+    expect(whatHappens('build', idea('x'), free, { build: { mode: 'milestone' } }, 0).join(' ')).toMatch(/Builds M1 right after/)
   })
 })

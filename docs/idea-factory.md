@@ -84,6 +84,13 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - **Self-review:** the builder checks its own diff against gstack's pre-landing checklist, fixes the CRITICAL findings and lists the rest in `BUILD.md` as `## Review`. The gstack text is read from the installed copy (`buildInput`) into a file outside the clone, so it's never committed;
   - the pipeline runs the tests itself and opens a **draft PR** (branch `m1`) that the owner merges.
 - **Start build now:** an approved idea doesn't have to wait for the weekly slot. See [Deciding: the Ideas page](#deciding-the-ideas-page).
+- **Let it rip: MVP builds** (`policy.build.mode: "mvp"`, the default since 2026-10-11).
+  - **What runs:** approving a build, and the weekly slot, build *every remaining roadmap milestone in one run* (`buildOne({ mvp })`). It's one sandbox session (the worker lives up to 8 hours), a gstack plan and tests first for each milestone, then one secret scan, one commit and one PR.
+  - **When it stops:** at the first milestone whose tests fail, at one that falls back off Opus (`policy.build.mvp.stopOnFallback`, so the rest gets the strongest model), or after `maxMinutes` (240).
+  - **The PR** lists every milestone with its result. A merge marks only the completed ones done (`build.milestones`), and the next build starts where it stopped.
+  - **Revenue context:** `REVENUE.md` goes to the builder, so checkout and legal pages land in the MVP.
+  - **On the Ideas page,** **Build the MVP (M1–M3)** sits beside **Just M1**.
+- **Merges are picked up every tick** (they used to be noticed once a day), so the next build is offered right after a merge.
 - **Infrastructure:** a milestone that needs a database or a Google API key gets it from the credential broker (`~/ai-stack/bin/provision neon db <slug>` and so on). The builder may run the broker and nothing else that touches credentials, never sees a value, and lists what it provisioned in BUILD.md under "## Infrastructure" ([provisioning](provisioning.md)).
 - **Where it runs: the factory's Docker sandbox** (`policy.build.sandbox: "docker"`, since 2026-10-11).
   - **In the sandbox:** Claude Code, `npm install` and `npm test` all run in the same hardened worker as the factory's own jobs (§14 of [autonomous-factory.md](autonomous-factory.md)). It has no mounts, no host environment and no credentials, and its network reaches only the package registries and `api.anthropic.com`, through the egress allowlist.
@@ -105,6 +112,25 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - copies its MRR into `state.json` and the Notion `MRR` column;
   - moves the idea to `live` when the owner sets the repo's lifecycle to beta, production or growing.
 - **Reporting:** the morning email's "Ideas, demand and revenue" section shows the whole pipeline.
+
+**The road to revenue** (idea-factory `lib/revenue.js`, `bin/idea-revenue.js`, `lib/launch-facts.js`):
+- **The plan:** once an idea's M1 is merged, a Claude Pro run applies gstack's startup frameworks (office-hours forcing questions, plan-ceo-review's scope challenge) to money, at most 2 a day. It writes `REVENUE.md` and `revenue.json`:
+  - who pays;
+  - the price, anchored on what they pay today;
+  - the payment method;
+  - what must exist before charging;
+  - launch channels;
+  - the first ten users;
+  - risks and kill criteria.
+
+  It's synced to the Ideas page as the **Revenue plan** tab.
+- **The checklist** (`state.launch`, refreshed every tick): plan → MVP → live → legal pages → price → Stripe → launch posted → first user → first dollar. Each step belongs to the agents or to the owner, and is checked automatically where it can be:
+  - **from RepoHQ's repo row:** homepage, Stripe product and MRR;
+  - **a live-URL probe:** the homepage, then `<repo>.vercel.app` (cached for an hour);
+  - **the repo tree:** privacy and terms pages (cached for 6 hours);
+  - **`launch-log.json`** (the launch skill) and signups.
+- **Where it shows:** a **Road to revenue** card on each idea's page, with the next step and whose it is, and a line per idea in the morning email.
+- **Build order:** build queues (the weekly slot, approved builds) are ordered by `revenueScore`, so the idea closest to its first dollar goes first, not the one approved first. Demand evidence counts most: a demand test that passed, then signups. Then a plan with a price, then checklist progress, then the review's score.
 
 The first version created a private repo every night. That would have added about 30 repos a month to a portfolio where RepoHQ already rates 35 of 47 active repos as archive candidates. Now a repo exists only after the owner says yes.
 

@@ -115,6 +115,18 @@ describe('idea lifecycle in the morning report', async () => {
     expect(lines).toContain('Passed Eps: 0 signups from 120 visitors')
     expect(ideaLines([], now)).toEqual([])
   })
+  it('lists the road to revenue, closest to the first dollar first, with whose step is next', () => {
+    const step = (id: string, owner: 'agent' | 'david', done: boolean) => ({ id, label: id, owner, done })
+    const lines = ideaLines([
+      { slug: 'f', title: 'Far — x', stage: 'building', launch: { steps: [step('plan', 'agent', false)], next: { id: 'plan', label: 'Road-to-revenue plan written', owner: 'agent' }, done: 1, total: 9 } },
+      { slug: 'n', title: 'Near — y', stage: 'live', launch: { steps: [], next: { id: 'payments', label: 'Stripe product created and mapped to the repo in RepoHQ', owner: 'david' }, done: 5, total: 9, price: '$9/month' } },
+      { slug: 'z', title: 'Done', stage: 'live', launch: { steps: [], next: null, done: 9, total: 9 } },
+    ], now).filter(l => l.startsWith('Road to revenue'))
+    expect(lines).toEqual([
+      'Road to revenue · Near: 5/9 at $9/month, next: Stripe product created and mapped to the repo in RepoHQ (yours)',
+      'Road to revenue · Far: 1/9, next: Road-to-revenue plan written (agents)',
+    ])
+  })
   it('reads ideas/<slug>/state.json, defaulting to stage "idea"', () => {
     const home = mkdtempSync(path.join(tmpdir(), 'ideas-'))
     for (const [slug, state] of [['one', { stage: 'validate' }], ['two', null]] as const) {

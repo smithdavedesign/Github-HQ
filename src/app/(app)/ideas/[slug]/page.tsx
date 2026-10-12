@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth'
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { loadIdea } from '@/lib/ideas/ideas-data'
 import {
-  DECISION_LABEL, buildNowSteps, buildNowTarget, buildRequestLabel, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
+  DECISION_LABEL, buildMvpSteps, buildMvpTarget, buildNowSteps, buildNowTarget, buildRequestLabel, milestoneRange, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
   manualStartsLast24h, pendingDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
 } from '@/lib/ideas/idea-utils'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,7 @@ import { DemandMeters, ForcingQuestions, PendingBadge, ScoreBadge, StageBadge } 
 import { IdeaMarkdown } from '@/components/ideas/markdown'
 import { DecisionPanel } from '@/components/ideas/decision-panel'
 import { BuildNow } from '@/components/ideas/build-now'
+import { RevenueCard } from '@/components/ideas/revenue-card'
 import { ReviewNav } from '@/components/ideas/review-nav'
 import { CopyButton } from '@/components/ideas/copy-button'
 import { cn, formatDistanceToNow } from '@/lib/utils'
@@ -59,7 +60,11 @@ export default async function IdeaPage({ params }: Props) {
   const launchPost = r?.launch?.post ? r.launch.post.replace(/\{url\}/g, v.state.page?.url ?? '{url}') : null
   // "Start build now": the next milestone outside the weekly slot (idea_build_requests).
   const buildTarget = buildNowTarget(v)
-  const buildSteps = buildTarget.ok ? buildNowSteps(buildTarget.milestone, v, policy, manualStartsLast24h(overview.views, now)) : []
+  const startsToday = manualStartsLast24h(overview.views, now)
+  const buildSteps = buildTarget.ok ? buildNowSteps(buildTarget.milestone, v, policy, startsToday) : []
+  // "Build the MVP": every remaining milestone in one run (policy.build.mvp).
+  const mvpTarget = buildMvpTarget(v, policy?.build?.mvp?.maxMilestones ?? 6)
+  const mvpSteps = mvpTarget.ok ? buildMvpSteps(mvpTarget.milestones, v, policy, startsToday) : []
   const lastRequest = v.buildRequests[0] ?? null
 
   const tabs = [
@@ -69,6 +74,7 @@ export default async function IdeaPage({ params }: Props) {
     { id: 'review', label: 'Full review', md: v.docs.review },
     { id: 'launch', label: 'Launch post', md: v.docs.launch },
     { id: 'build', label: 'Build notes', md: v.docs.build },
+    { id: 'revenue', label: 'Revenue plan', md: v.docs.revenue },
   ].filter((t): t is { id: string; label: string; md: string } => !!t.md?.trim())
   const sources = (v.idea.sources ?? []).map(safeUrl).filter((u): u is string => !!u)
 
@@ -179,6 +185,7 @@ export default async function IdeaPage({ params }: Props) {
               <CardContent className="text-sm space-y-1.5">
                 <p>{v.state.build?.status === 'running' ? `${v.state.build.milestone ?? 'M1'} is being built now.`
                   : v.state.build?.status === 'failed' ? `${v.state.build.milestone ?? 'M1'} failed: ${v.state.build.reason ?? 'see the record'}`
+                  : pr && v.state.build?.milestone === 'MVP' ? `MVP (${milestoneRange(v.state.build.milestones?.length ? v.state.build.milestones : v.state.build.planned ?? [])}) PR ${v.state.build.status ?? 'open'}${v.state.build.stopped ? ` — stopped: ${v.state.build.stopped}` : ''}.`
                   : pr ? `${v.state.build?.milestone ?? 'M1'} PR ${v.state.build?.status ?? 'open'}${v.state.build?.testsPassing === false ? ' — tests failing' : v.state.build?.testsPassing ? ' — tests passing' : ''}.`
                   : `M1 not started. Build slot: ${slot.free ? 'free this week' : `used, next ${slot.nextFreeAt?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? 'soon'}`}.`}</p>
                 {v.state.build?.model && v.state.build.status !== 'running' && (
@@ -193,6 +200,7 @@ export default async function IdeaPage({ params }: Props) {
                       name={shortTitle(v.title)}
                       target={buildTarget}
                       steps={buildSteps}
+                      mvp={{ target: mvpTarget, steps: mvpSteps }}
                       request={lastRequest ? { id: lastRequest.id, status: lastRequest.status, label: buildRequestLabel(lastRequest), createdAt: lastRequest.createdAt.toISOString(), prUrl: safeUrl(lastRequest.prUrl), note: lastRequest.note } : null}
                       blocked={overview.buildRequestsMissing ? 'Start build now needs the idea_build_requests table (npm run db:push).' : null}
                     />
@@ -201,6 +209,8 @@ export default async function IdeaPage({ params }: Props) {
               </CardContent>
             </Card>
           )}
+
+          {(repo || v.state.launch) && v.stage !== 'pass' && <RevenueCard launch={v.state.launch} hasRepo={!!repo} />}
 
           {v.idea.overlaps && (
             <Card>

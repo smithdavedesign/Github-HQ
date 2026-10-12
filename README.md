@@ -89,7 +89,8 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 **Ideas** (`/ideas`, owner only): the idea pipeline's ideas with their research, PRD, roadmap and gstack review.
 - Approve a build, send to a $0 demand test, or pass. Each decision is applied by idea-factory within 15 minutes.
 - Queue a new idea for research.
-- **Start build now:** an approved idea's next milestone is built on Claude Opus at extra-high effort, planned and self-reviewed with gstack, and arrives as a draft PR. At most 2 a day.
+- **Build the MVP** (or just the next milestone): the whole roadmap is built in one run on Claude Opus at extra-high effort in the factory's sandbox, planned and self-reviewed with gstack, and arrives as one draft PR. At most 2 manual starts a day. Approving a build does the same.
+- **Road to revenue:** once M1 is merged, a plan (who pays, the price, what must exist before charging) and a checklist from MVP to the first dollar, checked automatically where it can be, with your steps called out. Build queues go to the idea closest to money.
 
 **Portfolio Feed** — health drops, deployments, security alerts, dependency cascade risk, agent events
 - Milestones tab — personal changelog with auto-captured events + manual entries; annual markdown export
