@@ -27,7 +27,7 @@ export function OpenPrsCard({ result, now }: { result: OpenPrsResult; now: Date 
   const aging = prs.filter(p => prAgeDays(p, now) >= AGING_PR_DAYS).length
 
   return (
-    <Card>
+    <Card data-testid="open-prs">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold flex flex-wrap items-center gap-2">
           <GitPullRequest className="w-4 h-4" />
@@ -44,13 +44,15 @@ export function OpenPrsCard({ result, now }: { result: OpenPrsResult; now: Date 
       </CardHeader>
       {prs.length > 0 && (
         <CardContent className="p-0">
-          {/* Fixed layout: with auto layout a long title widened the table past the card on a phone. */}
+          {/* Fixed layout: with auto layout a long title widened the table past the card on a phone.
+              A fixed column's width includes its padding, so Age keeps its padding small: at w-20 with
+              px-6 it had 32px for "today" and was cut off at the card's edge. */}
           <table className="w-full text-sm table-fixed">
             <thead>
               <tr className="border-b text-xs text-muted-foreground">
                 <th className="text-left font-medium px-4 sm:px-6 py-2">PR</th>
                 <th className="text-left font-medium px-3 py-2 hidden sm:table-cell w-36">From</th>
-                <th className="text-right font-medium px-4 sm:px-6 py-2 w-16 sm:w-20">Age</th>
+                <th className="text-right font-medium pl-2 pr-4 sm:pr-6 py-2 w-20 sm:w-24">Age</th>
               </tr>
             </thead>
             <tbody>
@@ -78,7 +80,7 @@ export function OpenPrsCard({ result, now }: { result: OpenPrsResult; now: Date 
                         {value !== null && <Badge variant="outline" className="text-[10px] h-4 px-1.5">value {value}</Badge>}
                       </span>
                     </td>
-                    <td className={`px-4 sm:px-6 py-2 text-right text-xs tabular-nums whitespace-nowrap ${age >= AGING_PR_DAYS ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'}`}>
+                    <td className={`pl-2 pr-4 sm:pr-6 py-2 text-right text-xs tabular-nums whitespace-nowrap ${age >= AGING_PR_DAYS ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'}`}>
                       {age === 0 ? 'today' : `${age}d`}
                     </td>
                   </tr>

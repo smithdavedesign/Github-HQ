@@ -81,3 +81,25 @@ test.describe('Dashboard', () => {
     await context.close()
   })
 })
+
+test.describe('Open PRs card layout', () => {
+  // Fixed table layout: a column's width includes its padding. The Age column once had 32px for
+  // "today" and was cut off at the card's edge; long titles once pushed it out on a phone.
+  for (const [label, viewport] of [['desktop', { width: 1440, height: 900 }], ['phone', { width: 390, height: 844 }]] as const) {
+    test(`every PR's age fits inside the card (${label})`, async ({ page }) => {
+      await page.setViewportSize(viewport)
+      await page.goto('/')
+      const card = page.getByTestId('open-prs')
+      await expect(card).toBeVisible({ timeout: 15000 })
+      const rows = card.locator('tbody tr')
+      test.skip((await rows.count()) === 0, 'no open PRs right now')
+      const cardBox = (await card.boundingBox())!
+      for (const cell of await rows.locator('td:last-child').all()) {
+        const fits = await cell.evaluate(el => el.scrollWidth <= el.clientWidth)
+        expect(fits, `age text overflows its column: "${await cell.innerText()}"`).toBe(true)
+        const box = (await cell.boundingBox())!
+        expect(box.x + box.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1)
+      }
+    })
+  }
+})
