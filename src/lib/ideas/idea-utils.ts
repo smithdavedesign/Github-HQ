@@ -35,6 +35,10 @@ export interface IdeaStateJson {
   }
   /** The road from M1 to the first dollar (idea-factory lib/revenue.js), refreshed every tick. */
   launch?: LaunchChecklist
+  /** A built product's funnel from its beacon (docs/growth-loop-prd.md, "Measurement"). */
+  funnel?: Funnel
+  /** Set when a go-live PR merges. */
+  golive?: { mergedAt?: string; prUrl?: string }
   milestonesDone?: string[]
   revenue?: { mrr: number; updatedAt?: string }
   ownerApproved?: boolean
@@ -72,6 +76,11 @@ export function launchKitOrder(kit: string | undefined): string | null {
   return body ? body : null
 }
 
+/** Unique visitors per event; signups are distinct emails. */
+export interface FunnelCounts { visit?: number; signup?: number; activate?: number; checkout?: number }
+/** Saved by the pipeline for built products: the last 7 days, the 7 before, all time, and where visitors came from. */
+export interface Funnel { at?: string; d7?: FunnelCounts; prev7?: FunnelCounts; all?: FunnelCounts; referrers7d?: { host: string; visitors: number }[] }
+
 export interface LaunchStep { id: string; label: string; owner: 'agent' | 'david'; done: boolean; evidence?: string }
 export interface LaunchChecklist {
   steps: LaunchStep[]
@@ -90,8 +99,14 @@ export interface IdeaPolicy {
     build?: { minSignups?: number; minSignupRate?: number }
     buildEarly?: { minSignups?: number; minSignupRate?: number }
   }
-  build?: { maxPerWeek?: number; engine?: string; model?: string; effort?: string; claudeFallbackModel?: string; manualPerDay?: number; timeoutMinutes?: number; mode?: 'mvp' | 'milestone'; mvp?: { maxMilestones?: number; maxMinutes?: number; stopOnFallback?: boolean } }
+  build?: {
+    maxPerWeek?: number; engine?: string; model?: string; effort?: string; claudeFallbackModel?: string; manualPerDay?: number; timeoutMinutes?: number; mode?: 'mvp' | 'milestone'; mvp?: { maxMilestones?: number; maxMinutes?: number; stopOnFallback?: boolean }
+    /** false: ideas never built wait for their first build until a focus product has traction (newBuildsHold). */
+    startNew?: boolean
+  }
   research?: { seeded?: { maxPerDay?: number; retryMinutes?: number } }
+  /** The growth loop (docs/growth-loop-prd.md): the products it works on, and the traction bar. */
+  growth?: { focus?: string[]; minVisitorsPerWeek?: number }
 }
 
 export interface IdeaDecisionRow {
@@ -268,16 +283,34 @@ export function checkDecision(v: Pick<IdeaView, 'stage' | 'state' | 'review' | '
   }
 }
 
-export interface BuildSlot { used: number; max: number; free: boolean; nextFreeAt: Date | null }
+/** Roadmap builds (M1, M2…, MVP) move an idea along its roadmap; go-live and growth builds don't (idea-factory isRoadmapBuild). */
+export const isRoadmapBuild = (milestone: string | null | undefined) => milestone !== 'GOLIVE' && milestone !== 'GROWTH'
 
-/** policy.build.maxPerWeek over builds started in the last 7 days (idea-factory buildsThisWeek). */
-export function buildSlot(views: Pick<IdeaView, 'state'>[], policy: IdeaPolicy | null, now: Date): BuildSlot {
+/**
+ * Why ideas that have never been built wait for their first build, or null when they don't
+ * (idea-factory lib/pipeline.js newBuildsHeld): policy.build.startNew false holds them until a focus
+ * product reaches policy.growth.minVisitorsPerWeek unique visitors in its last 7 days.
+ */
+export function newBuildsHold(views: ({ slug?: string } & Pick<IdeaView, 'state'>)[], policy: IdeaPolicy | null): string | null {
+  if (policy?.build?.startNew !== false) return null
+  const focus = policy.growth?.focus ?? []
+  const bar = policy.growth?.minVisitorsPerWeek ?? 50
+  const visits = (slug: string) => views.find(v => v.slug === slug)?.state.funnel?.d7?.visit ?? 0
+  if (focus.some(slug => visits(slug) >= bar)) return null
+  return `new builds wait until ${focus.length ? focus.join(' or ') : 'a focus product'} has ${bar} visitors a week`
+}
+
+/** `held`: why ideas never built wait for their first build (newBuildsHold), else null. */
+export interface BuildSlot { used: number; max: number; free: boolean; nextFreeAt: Date | null; held: string | null }
+
+/** policy.build.maxPerWeek over roadmap builds started in the last 7 days (idea-factory buildsThisWeek). */
+export function buildSlot(views: ({ slug?: string } & Pick<IdeaView, 'state'>)[], policy: IdeaPolicy | null, now: Date): BuildSlot {
   const max = policy?.build?.maxPerWeek ?? DEFAULTS.maxPerWeek
-  // Builds started with "Start build now" have their own cap (manualPerDay), not the weekly slot.
-  const starts = views.map(v => v.state.build).filter(b => !!b?.at && !b.manual).map(b => b!.at!)
+  // Builds started with "Start build now" have their own cap (manualPerDay), and so do go-live and growth builds.
+  const starts = views.map(v => v.state.build).filter(b => !!b?.at && !b.manual && isRoadmapBuild(b.milestone)).map(b => b!.at!)
     .map(at => new Date(at).getTime()).filter(t => now.getTime() - t < 7 * DAY).sort((a, b) => a - b)
   const free = starts.length < max
-  return { used: starts.length, max, free, nextFreeAt: free ? null : new Date(starts[starts.length - max]! + 7 * DAY) }
+  return { used: starts.length, max, free, nextFreeAt: free ? null : new Date(starts[starts.length - max]! + 7 * DAY), held: newBuildsHold(views, policy) }
 }
 
 export interface DemandProgress {
@@ -331,7 +364,9 @@ export function whatHappens(decision: IdeaDecisionKind, v: Pick<IdeaView, 'slug'
   switch (decision) {
     case 'build': {
       const repo = v.state.repo ? `Uses the existing repo ${v.state.repo.replace('https://github.com/', '')}.` : `Creates the private repo ${v.slug} (topic “idea”) on the same run.`
-      const when = slot.free
+      const when = slot.held
+        ? `Its first build waits: ${slot.held}. Start build now builds it sooner, once the repo exists.`
+        : slot.free
         ? (policy?.build?.mode === 'mvp'
           ? 'Builds the MVP right after: every roadmap milestone in one run on your Claude subscription (Opus at extra-high effort), each with a gstack plan and tests first. It stops at the first milestone whose tests fail.'
           : 'Builds M1 right after, on your Claude subscription (Opus at extra-high effort; the free pool only if it’s out of capacity): a gstack plan, tests first, then code until they pass.')
@@ -445,10 +480,12 @@ export function buildNowTarget(v: Pick<IdeaView, 'stage' | 'state' | 'docs' | 'b
     if (!approved) return { ok: false, reason: 'Not approved yet: approve the build first.' }
     return { ok: true, milestone: b.status === 'failed' && b.milestone ? b.milestone : 'M1' }
   }
-  if (v.stage === 'building' && (b.status === 'merged' || b.status === 'failed' || b.status === 'closed')) {
-    if (b.status !== 'merged') return { ok: true, milestone: b.milestone ?? 'M1' }
+  // A live product can still have roadmap milestones left. A go-live or growth build isn't on the roadmap,
+  // so after one (merged or not) the next roadmap milestone is what's left to build.
+  if ((v.stage === 'building' || v.stage === 'live') && (b.status === 'merged' || b.status === 'failed' || b.status === 'closed')) {
+    if (b.status !== 'merged' && isRoadmapBuild(b.milestone)) return { ok: true, milestone: b.milestone ?? 'M1' }
     const next = roadmapMilestones(v.docs.roadmap).find(m => !(s.milestonesDone ?? []).includes(m))
-    return next ? { ok: true, milestone: next } : { ok: false, reason: 'Every roadmap milestone is merged.' }
+    return next ? { ok: true, milestone: next } : { ok: false, reason: v.stage === 'live' ? 'Already live.' : 'Every roadmap milestone is merged.' }
   }
   return { ok: false, reason: v.stage === 'live' ? 'Already live.' : 'Nothing to build yet.' }
 }

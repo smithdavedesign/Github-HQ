@@ -36,4 +36,13 @@ describe('idea landing-page signals', () => {
     expect(overLimit('signup', RATE_LIMITS.signup)).toBe(true)
     expect(RATE_LIMITS.view).toBeGreaterThan(RATE_LIMITS.signup)
   })
+  it("accepts a live product's funnel events: visit, activate and checkout, with no email", () => {
+    for (const kind of ['visit', 'activate', 'checkout'] as const) {
+      expect(parseSignal({ slug: 'tiebreak', kind, email: 'ignored@example.com' })).toEqual({ ok: true, signal: { slug: 'tiebreak', kind, email: null, referrer: null } })
+    }
+    expect(parseSignal({ slug: 'tiebreak', kind: 'buy' })).toEqual({ ok: false, error: 'kind must be one of view, signup, visit, activate, checkout' })
+    expect(RATE_LIMITS.visit).toBe(RATE_LIMITS.view)
+    expect(RATE_LIMITS.activate).toBeLessThan(RATE_LIMITS.visit)
+    expect(overLimit('checkout', RATE_LIMITS.checkout)).toBe(true)
+  })
 })

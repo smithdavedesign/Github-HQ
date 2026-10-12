@@ -198,6 +198,7 @@ export default async function IdeaPage({ params }: Props) {
                   : pr && v.state.build?.milestone === 'GOLIVE' ? `Go-live PR ${v.state.build.status ?? 'open'}: launch-ready changes, waiting for your review.`
                   : pr && v.state.build?.milestone === 'MVP' ? `MVP (${milestoneRange(v.state.build.milestones?.length ? v.state.build.milestones : v.state.build.planned ?? [])}) PR ${v.state.build.status ?? 'open'}${v.state.build.stopped ? ` — stopped: ${v.state.build.stopped}` : ''}.`
                   : pr ? `${v.state.build?.milestone ?? 'M1'} PR ${v.state.build?.status ?? 'open'}${v.state.build?.testsPassing === false ? ' — tests failing' : v.state.build?.testsPassing ? ' — tests passing' : ''}.`
+                  : slot.held ? `M1 not started: ${slot.held}. Start build now still works.`
                   : `M1 not started. Build slot: ${slot.free ? 'free this week' : `used, next ${slot.nextFreeAt?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? 'soon'}`}.`}</p>
                 {v.state.build?.model && v.state.build.status !== 'running' && (
                   <p className="text-xs text-muted-foreground">Built with {v.state.build.engine === 'free' ? `the free pool (${v.state.build.model})` : `${v.state.build.model}${v.state.build.effort ? ` · effort ${v.state.build.effort}` : ''}`}{v.state.build.manual ? ', started here' : ''}.</p>

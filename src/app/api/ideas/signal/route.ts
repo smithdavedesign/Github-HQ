@@ -5,9 +5,10 @@ import { ideaSignals } from '@/lib/db/schema'
 import { CORS_HEADERS, clientIp, hashIp, overLimit, parseSignal } from '@/lib/ideas/signals'
 
 /**
- * Public endpoint for idea landing pages: records a page view or a waitlist signup
- * (docs/idea-factory.md, "Demand test"). No auth by design; abuse is bounded by validation,
- * a honeypot and per-visitor hourly limits. Never returns stored data.
+ * Public endpoint for idea landing pages and live products: records a page view or a waitlist signup
+ * (docs/idea-factory.md, "Demand test"), or a product's visit, activation or Buy click
+ * (docs/growth-loop-prd.md). No auth by design; abuse is bounded by validation, a honeypot and
+ * per-visitor hourly limits. Never returns stored data.
  */
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })

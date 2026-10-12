@@ -40,7 +40,7 @@ export default async function IdeasPage() {
   const stats: { label: string; value: string; hint: string }[] = [
     { label: 'Needs your call', value: String(groups.decide.length), hint: 'new or recently reviewed' },
     { label: 'Demand tests', value: `${groups.testing.length}/${maxValidating}`, hint: 'running, of the cap' },
-    { label: 'Build slot', value: slot.free ? 'Free' : 'Used', hint: slot.free ? `${slot.used} of ${slot.max} this week` : `next ${slot.nextFreeAt?.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) ?? 'soon'}` },
+    { label: 'Build slot', value: slot.free ? 'Free' : 'Used', hint: `${slot.free ? `${slot.used} of ${slot.max} this week` : `next ${slot.nextFreeAt?.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) ?? 'soon'}`}${slot.held ? '; new ideas wait for traction' : ''}` },
     { label: 'Idea MRR', value: `$${mrr.toFixed(0)}`, hint: `${groups.live.length} live` },
   ]
 

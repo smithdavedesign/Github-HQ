@@ -1,11 +1,14 @@
 import { createHmac } from 'node:crypto'
 
 /**
- * Demand signals from idea landing pages (docs/idea-factory.md, "Demand test"). Pure: parsing,
- * validation, hashing and rate limits are decided here; the route only reads and writes rows.
+ * Demand signals (docs/idea-factory.md, "Demand test"; docs/growth-loop-prd.md, "Measurement"). Landing
+ * pages send `view` and `signup`. A live product's beacon sends `visit` (a page, once per session),
+ * `activate` (first use of its core action) and `checkout` (a Buy click). Pure: parsing, validation,
+ * hashing and rate limits are decided here; the route only reads and writes rows.
  */
 
-export type SignalKind = 'view' | 'signup'
+export const SIGNAL_KINDS = ['view', 'signup', 'visit', 'activate', 'checkout'] as const
+export type SignalKind = (typeof SIGNAL_KINDS)[number]
 export interface Signal { slug: string; kind: SignalKind; email: string | null; referrer: string | null }
 
 /** Same rule as idea-factory's repo names: lowercase kebab-case, 3–24 chars, at most 2 words. */
@@ -13,7 +16,7 @@ export const SLUG_RE = /^(?=.{3,24}$)[a-z][a-z0-9]*(-[a-z0-9]+)?$/
 const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/i
 
 /** Per visitor (hashed IP) and hour, across all ideas. */
-export const RATE_LIMITS: Record<SignalKind, number> = { view: 30, signup: 3 }
+export const RATE_LIMITS: Record<SignalKind, number> = { view: 30, signup: 3, visit: 30, activate: 10, checkout: 10 }
 
 export function parseSignal(body: unknown): { ok: true; signal: Signal } | { ok: false; error: string; silent?: boolean } {
   if (!body || typeof body !== 'object') return { ok: false, error: 'expected a JSON object' }
@@ -22,8 +25,8 @@ export function parseSignal(body: unknown): { ok: true; signal: Signal } | { ok:
   if (typeof b.website === 'string' && b.website.trim()) return { ok: false, error: 'honeypot', silent: true }
   const slug = typeof b.slug === 'string' ? b.slug.trim() : ''
   if (!SLUG_RE.test(slug)) return { ok: false, error: 'invalid slug' }
-  const kind = b.kind
-  if (kind !== 'view' && kind !== 'signup') return { ok: false, error: 'kind must be view or signup' }
+  const kind = SIGNAL_KINDS.find(k => k === b.kind)
+  if (!kind) return { ok: false, error: `kind must be one of ${SIGNAL_KINDS.join(', ')}` }
   let email: string | null = null
   if (kind === 'signup') {
     email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : ''
