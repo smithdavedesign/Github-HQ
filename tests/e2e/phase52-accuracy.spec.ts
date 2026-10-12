@@ -77,13 +77,13 @@ async function cleanupTestEvents(prefix: string) {
 
 test.describe('Agent Performance — Accuracy Table (Phase 52)', () => {
   test('page loads and shows Activity Log heading', async ({ page }) => {
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=log')
     await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible({ timeout: 8000 })
     await expect(page.getByText('Activity Log')).toBeVisible()
   })
 
   test('shows accuracy section heading', async ({ page }) => {
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=kpis')
     await expect(page.getByText('Advisor Accuracy by Action Type')).toBeVisible({ timeout: 8000 })
   })
 
@@ -91,7 +91,7 @@ test.describe('Agent Performance — Accuracy Table (Phase 52)', () => {
     test.skip(!DB_URL, 'DATABASE_URL not set')
 
     // Check the message when there are genuinely no high-confidence merges
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=kpis')
     // Either the empty state or the table should be visible
     await expect(page.locator('table').or(page.getByText('No completed agent runs yet')).first()).toBeVisible({ timeout: 8000 })
   })
@@ -109,7 +109,7 @@ test.describe('Agent Performance — Accuracy Table (Phase 52)', () => {
     }
     await seedAgentMergedEvent(ctx.userId, ctx.repoId, 'security', -2, `${prefix}-miss`)
 
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=kpis')
     // Table should show "Security fixes" row
     await expect(page.getByText('Security fixes')).toBeVisible({ timeout: 8000 })
 

@@ -254,7 +254,7 @@ test.describe('Settings — Scheduled Skills', () => {
 
 test.describe('Agent Performance — skill tracking', () => {
   test('page loads with activity log', async ({ page }) => {
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=log')
     await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible({ timeout: 8000 })
     await expect(page.getByText('Activity Log')).toBeVisible()
   })

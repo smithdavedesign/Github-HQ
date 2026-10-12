@@ -31,17 +31,17 @@ export function needsAttention({ failing, pipeline, claude, copilot, accuracy, n
   const items: AttentionItem[] = []
   for (const f of (failing ?? []).slice(0, MAX_FAILING)) {
     const summary = errorSummary(f.message)
-    items.push({ tone: 'fail', text: `${f.system}/${f.component}: ${summary}`, detail: summary !== f.message ? f.message : undefined, href: '#system-log' })
+    items.push({ tone: 'fail', text: `${f.system}/${f.component}: ${summary}`, detail: summary !== f.message ? f.message : undefined, href: '?tab=log#system-log' })
   }
-  if (failing && failing.length > MAX_FAILING) items.push({ tone: 'fail', text: `…and ${failing.length - MAX_FAILING} more failing checks`, href: '#system-log' })
+  if (failing && failing.length > MAX_FAILING) items.push({ tone: 'fail', text: `…and ${failing.length - MAX_FAILING} more failing checks`, href: '?tab=log#system-log' })
 
   if (pipeline) {
     if (pipeline.ok === false || pipeline.errors.length) {
-      items.push({ tone: 'fail', text: `Idea pipeline: ${pipeline.errors[0] ? errorSummary(pipeline.errors[0]) : 'last tick failed'}${pipeline.errors.length > 1 ? ` (+${pipeline.errors.length - 1} more)` : ''}`, detail: pipeline.errors.join('\n') || undefined, href: '#idea-pipeline' })
+      items.push({ tone: 'fail', text: `Idea pipeline: ${pipeline.errors[0] ? errorSummary(pipeline.errors[0]) : 'last tick failed'}${pipeline.errors.length > 1 ? ` (+${pipeline.errors.length - 1} more)` : ''}`, detail: pipeline.errors.join('\n') || undefined, href: '?tab=now#idea-pipeline' })
     }
     // It ticks every 15 minutes; an hour of silence means launchd or the Mac stopped it.
     if (!pipeline.tickAt || now.getTime() - pipeline.tickAt.getTime() > HOUR) {
-      items.push({ tone: 'warn', text: pipeline.tickAt ? `Idea pipeline hasn't ticked for ${Math.round((now.getTime() - pipeline.tickAt.getTime()) / HOUR)}h (it runs every 15 min)` : 'Idea pipeline has never reported a tick', href: '#idea-pipeline' })
+      items.push({ tone: 'warn', text: pipeline.tickAt ? `Idea pipeline hasn't ticked for ${Math.round((now.getTime() - pipeline.tickAt.getTime()) / HOUR)}h (it runs every 15 min)` : 'Idea pipeline has never reported a tick', href: '?tab=now#idea-pipeline' })
     }
   }
 
@@ -56,7 +56,7 @@ export function needsAttention({ failing, pipeline, claude, copilot, accuracy, n
   const measured = accuracy.some(s => s.dataPoints > 0)
   const failedRuns = accuracy.reduce((n, s) => n + s.executionFailures, 0)
   if (!measured && failedRuns > 0) {
-    items.push({ tone: 'info', text: `Advisor accuracy: no merged PR has a measured health change yet (${failedRuns} failed runs aren't counted against the advice)`, href: '#advisor-accuracy' })
+    items.push({ tone: 'info', text: `Advisor accuracy: no merged PR has a measured health change yet (${failedRuns} failed runs aren't counted against the advice)`, href: '?tab=kpis#advisor-accuracy' })
   }
   return items
 }

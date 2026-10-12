@@ -48,7 +48,7 @@ async function cleanup(s: Seeded | null) {
 
 test.describe('Agents page', () => {
   test('is titled Agents and shows the Agent HQ panel to the owner (or says why not)', async ({ page }) => {
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=runs')
     await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible({ timeout: 8000 })
     const panel = page.getByTestId('agent-hq')
     const unavailable = page.getByTestId('agent-hq-unavailable')
@@ -58,10 +58,24 @@ test.describe('Agents page', () => {
 
   test('the owner sees Automation (worker/queue) and Requests sections', async ({ page }) => {
     test.skip(!(await getFactoryRepo()), NOT_FACTORY_OWNER)
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=runs')
     await expect(page.getByTestId('automation')).toBeVisible({ timeout: 8000 })
     await expect(page.getByTestId('worker-status')).toBeVisible()
+    await page.getByRole('tab', { name: 'Requests' }).click()
     await expect(page.getByTestId('requests')).toBeVisible()
+    await expect(page).toHaveURL(/\?tab=requests$/)
+  })
+
+  test('is in tabs: Now by default, each tab in the URL, and a reload keeps it', async ({ page }) => {
+    await page.goto('/agent-performance')
+    await expect(page.getByRole('tablist')).toBeVisible({ timeout: 8000 })
+    for (const name of ['Now', 'Runs', 'Requests', 'KPIs', 'Log']) await expect(page.getByRole('tab', { name, exact: true })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Now', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await page.getByRole('tab', { name: 'Log', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Activity Log' })).toBeVisible()
+    await expect(page).toHaveURL(/\?tab=log$/)
+    await page.reload()
+    await expect(page.getByRole('tab', { name: 'Log', exact: true })).toHaveAttribute('aria-selected', 'true')
   })
 
   test('a reported request shows its findings and step trace', async ({ page }) => {
@@ -71,7 +85,7 @@ test.describe('Agents page', () => {
     let seeded: Seeded | null = null
     try {
       seeded = await seedReportedRequest(repo!)
-      await page.goto('/agent-performance')
+      await page.goto('/agent-performance?tab=requests')
       const row = page.getByTestId('request-row').filter({ hasText: seeded.requestId })
       await expect(row).toBeVisible({ timeout: 8000 })
       await expect(row.getByText('reported', { exact: true })).toBeVisible()

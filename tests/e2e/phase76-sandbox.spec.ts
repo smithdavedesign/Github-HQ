@@ -55,7 +55,7 @@ test.describe('Agent Performance — factory sandbox isolation (Phase 76)', () =
     const uid = await userId()
     if (!uid) { test.skip(true, 'No user'); return }
 
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=kpis')
     const before = await page.getByTestId('factory-isolation').textContent({ timeout: 8000 }).catch(() => null)
     const base = before ? await counts(before) : { sandboxed: 0, total: 0 }
 
@@ -63,7 +63,7 @@ test.describe('Agent Performance — factory sandbox isolation (Phase 76)', () =
     await seedAttempt(uid, 2, 61, 'docker')
     await seedAttempt(uid, 3, 62, 'docker')
 
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=kpis')
     const line = page.getByTestId('factory-isolation')
     await expect(line).toBeVisible({ timeout: 8000 })
     await expect(line).toContainText('Isolation: latest run sandboxed (Docker)')
@@ -78,7 +78,7 @@ test.describe('Agent Performance — factory sandbox isolation (Phase 76)', () =
     await seedAttempt(uid, 1, 60, 'docker')
     await seedAttempt(uid, 2, 61, null)
 
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=kpis')
     const line = page.getByTestId('factory-isolation')
     await expect(line).toBeVisible({ timeout: 8000 })
     await expect(line).toContainText('Isolation: latest run on the host')
@@ -90,7 +90,7 @@ test.describe('Agent Performance — factory sandbox isolation (Phase 76)', () =
     if (!uid) { test.skip(true, 'No user'); return }
 
     await seedAttempt(uid, 1, 60, 'docker')
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=kpis')
     await expect(page.getByText('Autonomous Factory by Model Tier')).toBeVisible({ timeout: 8000 })
     await expect(page.getByTestId('factory-isolation')).toBeVisible()
   })

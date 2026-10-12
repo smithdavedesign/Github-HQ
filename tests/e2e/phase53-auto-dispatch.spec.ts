@@ -136,7 +136,7 @@ test.describe('Agent performance — auto-dispatched task visibility', () => {
       )
     `
 
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=log')
     await expect(page.getByText('Auto-queued: fix the build')).toBeVisible({ timeout: 8000 })
 
     await sql`DELETE FROM portfolio_events WHERE metadata->>'taskId' = ${taskId}`

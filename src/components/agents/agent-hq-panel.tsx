@@ -41,8 +41,9 @@ const RUN_STATUS_STYLE: Record<string, string> = {
  * The Agents page's live panel (roadmap Phase 81, docs/agent-hq-migration-prd.md §9): the factory
  * worker and its BullMQ queue, the schedules that replaced the launchd calendar, every automated
  * run (factory jobs and the Vercel crons) and every request with its step-by-step trace.
+ * `section` shows one half (the Agents page's Runs and Requests tabs); both share one query.
  */
-export function AgentHqPanel({ initial }: { initial: AgentHqOverview }) {
+export function AgentHqPanel({ initial, section = 'all' }: { initial: AgentHqOverview; section?: 'runs' | 'requests' | 'all' }) {
   const { data, refetch } = useQuery<AgentHqOverview>({
     queryKey: ['agent-hq'],
     queryFn: async () => {
@@ -60,8 +61,8 @@ export function AgentHqPanel({ initial }: { initial: AgentHqOverview }) {
   const snapshotAt = new Date(data.generatedAt).getTime()
   return (
     <div className="space-y-6" data-testid="agent-hq">
-      <Automation data={data} snapshotAt={snapshotAt} onChanged={() => void refetch()} />
-      <Requests requests={data.requests} snapshotAt={snapshotAt} onChanged={() => void refetch()} />
+      {section !== 'requests' && <Automation data={data} snapshotAt={snapshotAt} onChanged={() => void refetch()} />}
+      {section !== 'runs' && <Requests requests={data.requests} snapshotAt={snapshotAt} onChanged={() => void refetch()} />}
     </div>
   )
 }

@@ -144,7 +144,7 @@ test.describe('/api/agent-task-status — ci_failing lifecycle', () => {
 
 test.describe('Agent Performance — CI failure visibility', () => {
   test('page loads correctly', async ({ page }) => {
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=log')
     await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible({ timeout: 8000 })
   })
 
@@ -161,7 +161,7 @@ test.describe('Agent Performance — CI failure visibility', () => {
       attempt: 0,
     })
 
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=log')
     // The event should appear somewhere in the activity section
     // (Phase 55 full implementation will add proper display)
     await expect(page.getByText('Activity Log')).toBeVisible({ timeout: 8000 })
