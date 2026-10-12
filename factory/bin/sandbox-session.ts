@@ -7,7 +7,8 @@
  *   npx tsx factory/bin/sandbox-session.ts      # then JSON lines on stdin, one reply per line on stdout
  *
  * Requests ({id, op, ...}) and replies ({id, ok, ...} or {id, ok: false, error}):
- *   open  {dir, allowHosts?, allowModels?}  copy the host directory (a git clone) into the worker.
+ *   open  {dir, allowHosts?, allowModels?, lifetimeMs?}  copy the host directory (a git clone) into the worker.
+ *         lifetimeMs: how long the worker lives, up to 8 hours (an MVP build runs several milestones).
  *         allowHosts are added to the factory's registries (an idea build adds api.anthropic.com);
  *         allowModels are the LiteLLM aliases the relay may serve (the free pool for a fallback).
  *         → {workdir, relayUrl, modelKey}
@@ -35,7 +36,7 @@ export interface SessionSandbox {
 }
 
 export interface SessionDeps {
-  open(o: { allowHosts: string[]; allowModels: string[] }): Promise<SessionSandbox>
+  open(o: { allowHosts: string[]; allowModels: string[]; lifetimeMs?: number }): Promise<SessionSandbox>
   tmpDir(): string
   log(m: string): void
 }
@@ -44,6 +45,8 @@ export type Request = { id?: number | string; op: string; [k: string]: unknown }
 export type Reply = { id?: number | string; ok: boolean; error?: string; [k: string]: unknown }
 
 const MAX_OUTPUT = 50_000_000
+/** The longest a session's worker may live (its PID 1 is a deadline). */
+const MAX_LIFETIME_MS = 8 * 3_600_000
 /** Never part of a build's patch. */
 const ALWAYS_EXCLUDE = ['node_modules']
 
@@ -68,7 +71,8 @@ export function createSession(deps: SessionDeps) {
           if (sb) throw new Error('a sandbox is already open in this session')
           const dir = typeof req.dir === 'string' ? req.dir : ''
           if (!path.isAbsolute(dir)) throw new Error('open needs an absolute "dir"')
-          sb = await deps.open({ allowHosts: strings(req.allowHosts), allowModels: strings(req.allowModels) })
+          const lifetimeMs = typeof req.lifetimeMs === 'number' && req.lifetimeMs > 0 ? Math.min(req.lifetimeMs, MAX_LIFETIME_MS) : undefined
+          sb = await deps.open({ allowHosts: strings(req.allowHosts), allowModels: strings(req.allowModels), ...(lifetimeMs ? { lifetimeMs } : {}) })
           await sb.copyIn(dir)
           const head = await sb.run('git', ['rev-parse', 'HEAD'], { timeoutMs: 30_000 })
           if (head.code !== 0) throw new Error(`the copied directory isn't a git clone: ${head.output.trim().slice(-200)}`)
@@ -125,13 +129,13 @@ async function main() {
   const session = createSession({
     log,
     tmpDir: () => mkdtempSync(path.join(tmpdir(), 'idea-build-')),
-    open: async ({ allowHosts, allowModels }) => {
+    open: async ({ allowHosts, allowModels, lifetimeMs }) => {
       if (cfg.sandbox.mode === 'off') throw new Error('the factory sandbox is off (FACTORY_SANDBOX=off)')
       if (!(await dockerAvailable())) throw new Error('Docker is not running')
       await sweepSandboxes(scope)
       const images = await ensureSandboxImages(cfg.sandbox, log)
       const o: SandboxOpenOptions = {
-        cfg: { ...cfg.sandbox, allowHosts: [...new Set([...cfg.sandbox.allowHosts, ...allowHosts])] },
+        cfg: { ...cfg.sandbox, allowHosts: [...new Set([...cfg.sandbox.allowHosts, ...allowHosts])], ...(lifetimeMs ? { lifetimeMs: Math.max(lifetimeMs, cfg.sandbox.lifetimeMs) } : {}) },
         litellmUrl: cfg.litellm.url, litellmKey: cfg.litellm.key, allowModels, scope, images,
       }
       return Sandbox.open(o)

@@ -42,8 +42,18 @@ async function seed(slug: string, title: string, score: number) {
 
 /** An approved idea whose repo exists and isn't built yet: what "Start build now" is for. */
 async function seedApproved(slug: string, title: string) {
-  const state = { stage: 'repo', repo: `https://github.com/smithdavedesign/${slug}`, ownerApproved: true, review: { verdict: 'pass', score: 4, at: new Date().toISOString() } }
-  const docs = { prd: '# PRD\n\nGamma.', roadmap: '# Roadmap\n\n## M1 — core\n\nExit: it works.\n\n## M2 — more\n\nExit: more works.' }
+  const step = (id: string, label: string, owner: 'agent' | 'david', done: boolean, evidence = '') => ({ id, label, owner, done, evidence })
+  const launch = {
+    steps: [
+      step('plan', 'Road-to-revenue plan written', 'agent', true, 'Indie devs · $9/month'), step('mvp', 'MVP built: every roadmap milestone merged', 'agent', false, '0/2 milestones merged'),
+      step('deployed', 'Live on a free tier', 'agent', false), step('legal', 'Privacy policy and terms pages', 'agent', true, 'privacy ✓ · terms ✓'),
+      step('price', 'Price: $9/month (from the plan)', 'david', true), step('payments', 'Stripe product created and mapped to the repo in RepoHQ', 'david', false),
+      step('launched', 'Launch posted', 'david', false), step('firstUser', 'First user or signup', 'david', false), step('firstDollar', 'First payment', 'david', false),
+    ],
+    next: { id: 'mvp', label: 'MVP built: every roadmap milestone merged', owner: 'agent' }, done: 3, total: 9, buyer: 'Indie devs running agents overnight', price: '$9/month',
+  }
+  const state = { stage: 'repo', repo: `https://github.com/smithdavedesign/${slug}`, ownerApproved: true, review: { verdict: 'pass', score: 4, at: new Date().toISOString() }, launch }
+  const docs = { prd: '# PRD\n\nGamma.', roadmap: '# Roadmap\n\n## M1 — core\n\nExit: it works.\n\n## M2 — more\n\nExit: more works.', revenue: '# Revenue plan\n\nIndie devs pay $9 a month for the digest.' }
   await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, notion_url, hash, updated_at)
     VALUES (${slug}, ${`${title} — an approved test idea`}, 'repo', ${JSON.stringify({ oneLiner: 'x' })}::jsonb, ${JSON.stringify(state)}::jsonb,
       ${JSON.stringify({ verdict: 'pass', score: 4 })}::jsonb, ${JSON.stringify(docs)}::jsonb, 'https://www.notion.so/e2e', 'e2e', now())
@@ -141,11 +151,11 @@ test.describe('Ideas page', () => {
     await expect(page.getByText('e2e: a tool that warns co-hosts')).toHaveCount(0)
   })
 
-  test('Start build now queues the next milestone for the pipeline, and it can be withdrawn', async ({ page }) => {
+  test('Just M1 queues one milestone for the pipeline, and it can be withdrawn', async ({ page }) => {
     const skip = await buildReady()
     test.skip(!!skip, skip ?? '')
     await page.goto(`/ideas/${SLUG3}`)
-    await page.getByRole('button', { name: /Start M1 build now/ }).click()
+    await page.getByRole('button', { name: 'Just M1' }).click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByRole('heading', { name: /Start M1 build now: Gamma/ })).toBeVisible()
     await expect(dialog.getByText(/builds M1 in smithdavedesign\/e2e-idea-gamma, without waiting for the weekly build slot/)).toBeVisible()
@@ -154,13 +164,13 @@ test.describe('Ideas page', () => {
     await dialog.getByRole('textbox', { name: /Note for the builder/ }).fill('e2e: CLI first')
     await dialog.getByRole('button', { name: /^Start M1 build(?! now)/ }).click()
     await expect(page.getByText('Queued: starts on the pipeline’s next run (within 15 min)')).toBeVisible()
-    await expect(page.getByRole('button', { name: /Start M1 build now/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Just M1' })).toHaveCount(0)
     const [r] = await sql()`SELECT milestone, status, note FROM idea_build_requests WHERE slug = ${SLUG3} ORDER BY id DESC LIMIT 1`
     expect(r).toMatchObject({ milestone: 'M1', status: 'pending', note: 'e2e: CLI first' })
 
     await page.getByRole('button', { name: /Withdraw/ }).click()
     await expect(page.getByText('Withdrawn')).toBeVisible()
-    await expect(page.getByRole('button', { name: /Start M1 build now/ })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Just M1' })).toBeEnabled()
     const [w] = await sql()`SELECT status FROM idea_build_requests WHERE slug = ${SLUG3} ORDER BY id DESC LIMIT 1`
     expect(w.status).toBe('cancelled')
   })
@@ -173,7 +183,7 @@ test.describe('Ideas page', () => {
       VALUES (${SLUG3}, ${u.id}, 'M1', 'running', 'claude-opus-5-5 · xhigh', now(), 'building M1')`
     await page.goto(`/ideas/${SLUG3}`)
     await expect(page.getByText('Building M1 now (claude-opus-5-5 · xhigh)')).toBeVisible()
-    await expect(page.getByRole('button', { name: /Start .*build now/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /build now|Build the MVP|Just M1/ })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /Withdraw/ })).toHaveCount(0)
     await sql()`DELETE FROM idea_build_requests WHERE slug = ${SLUG3}`
 
@@ -181,5 +191,39 @@ test.describe('Ideas page', () => {
     await page.goto(`/ideas/${SLUG2}`)
     await expect(page.getByRole('heading', { name: /Beta/ }).first()).toBeVisible()
     await expect(page.getByRole('button', { name: /build now/ })).toHaveCount(0)
+  })
+
+  test('Build the MVP queues every remaining milestone as one request', async ({ page }) => {
+    const skip = await buildReady()
+    test.skip(!!skip, skip ?? '')
+    await sql()`DELETE FROM idea_build_requests WHERE slug = ${SLUG3}`
+    await page.goto(`/ideas/${SLUG3}`)
+    await page.getByRole('button', { name: 'Build the MVP (M1–M2)' }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByRole('heading', { name: /Build the MVP \(M1–M2\): Gamma/ })).toBeVisible()
+    await expect(dialog.getByText(/builds M1, M2 one after another in smithdavedesign\/e2e-idea-gamma/)).toBeVisible()
+    await expect(dialog.getByText(/stops at the first milestone whose tests fail/)).toBeVisible()
+    await dialog.getByRole('button', { name: /^Build the MVP(?! \()/ }).click()
+    await expect(page.getByText('Queued: starts on the pipeline’s next run (within 15 min)')).toBeVisible()
+    const [r] = await sql()`SELECT milestone, status FROM idea_build_requests WHERE slug = ${SLUG3} ORDER BY id DESC LIMIT 1`
+    expect(r).toMatchObject({ milestone: 'MVP', status: 'pending' })
+    await page.getByRole('button', { name: /Withdraw/ }).click()
+    await expect(page.getByText('Withdrawn')).toBeVisible()
+  })
+
+  test('Road to revenue shows the steps to the first dollar, whose step is next, and the plan', async ({ page }) => {
+    const skip = await buildReady()
+    test.skip(!!skip, skip ?? '')
+    await page.goto(`/ideas/${SLUG3}`)
+    const card = page.getByTestId('revenue-card')
+    await expect(card.getByText('3 of 9 steps to the first dollar')).toBeVisible()
+    await expect(card.getByText('$9/month', { exact: true })).toBeVisible()
+    await expect(card.getByText('Who pays:')).toBeVisible()
+    await expect(card.getByText(/Indie devs running agents overnight/)).toBeVisible()
+    await expect(card.getByTestId('revenue-next')).toContainText('MVP built: every roadmap milestone merged')
+    await expect(card.getByTestId('revenue-next')).toContainText('agents')
+    await expect(card.getByText('Stripe product created and mapped to the repo in RepoHQ')).toBeVisible()
+    await page.getByRole('tab', { name: 'Revenue plan' }).click()
+    await expect(page.getByText('Indie devs pay $9 a month for the digest.')).toBeVisible()
   })
 })

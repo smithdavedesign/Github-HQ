@@ -6,7 +6,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { ideaBuildRequests, ideaDecisions, ideaSeeds, ideas } from '@/lib/db/schema'
 import { factoryAccess } from '@/lib/agents/factory-queue'
-import { buildNowTarget, checkDecision, cleanIdeaText, type IdeaBuildRequestRow, type IdeaDecisionKind, type IdeaView } from '@/lib/ideas/idea-utils'
+import { buildMvpTarget, buildNowTarget, checkDecision, cleanIdeaText, type IdeaBuildRequestRow, type IdeaDecisionKind, type IdeaView } from '@/lib/ideas/idea-utils'
 
 // Browser-facing actions for the Ideas page. The owner's decision becomes an `idea_decisions` row;
 // the idea pipeline on the Mac applies it on its next tick by setting the Notion Status
@@ -115,10 +115,11 @@ export async function cancelIdeaSeed(id: number): Promise<void> {
 }
 
 /**
- * "Start build now": the pipeline builds the idea's next milestone on its next tick, outside the weekly
+ * "Start build now" (one milestone) or "Build the MVP" (`mode: 'mvp'`, every remaining milestone in one
+ * run): the pipeline builds it on its next tick, outside the weekly
  * build slot (idea_build_requests; at most policy.build.manualPerDay starts in 24 hours, the rest wait).
  */
-export async function requestBuild(slug: string, note?: string): Promise<{ id: number; milestone: string }> {
+export async function requestBuild(slug: string, note?: string, mode: 'milestone' | 'mvp' = 'milestone'): Promise<{ id: number; milestone: string }> {
   const userId = await ownerId()
   if (!SLUG_RE.test(slug)) throw new Error('Unknown idea')
   const text = (note ?? '').trim().slice(0, MAX_NOTE) || null
@@ -126,12 +127,15 @@ export async function requestBuild(slug: string, note?: string): Promise<{ id: n
     const idea = await db.query.ideas.findFirst({ where: eq(ideas.slug, slug) })
     if (!idea) throw new DecisionError('Unknown idea')
     const requests = await db.select().from(ideaBuildRequests).where(eq(ideaBuildRequests.slug, slug)).orderBy(desc(ideaBuildRequests.createdAt)).limit(20)
-    const target = buildNowTarget({
+    const view = {
       stage: idea.stage as IdeaView['stage'], state: idea.state as IdeaView['state'], docs: idea.docs as IdeaView['docs'],
       buildRequests: requests as IdeaBuildRequestRow[],
-    })
+    }
+    // "MVP" on the request: idea-factory builds every remaining milestone in one run.
+    const target = mode === 'mvp' ? buildMvpTarget(view) : buildNowTarget(view)
     if (!target.ok) throw new DecisionError(target.reason)
-    const [inserted] = await db.insert(ideaBuildRequests).values({ slug, userId, milestone: target.milestone, note: text })
+    const milestone = mode === 'mvp' ? 'MVP' : (target as { milestone: string }).milestone
+    const [inserted] = await db.insert(ideaBuildRequests).values({ slug, userId, milestone, note: text })
       .returning({ id: ideaBuildRequests.id, milestone: ideaBuildRequests.milestone })
     return inserted
   })

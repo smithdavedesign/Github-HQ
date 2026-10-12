@@ -27,6 +27,11 @@ describe('sandbox session (idea builds in the factory sandbox)', () => {
     const r = await s.handle({ id: 1, op: 'open', dir: '/work/dawnlog', allowHosts: ['api.anthropic.com', 3], allowModels: ['free-agent'] })
     expect(r).toEqual({ id: 1, ok: true, workdir: '/workspace', relayUrl: 'http://egress:4000', modelKey: 'sk-repohq-sandbox' })
     expect(opened).toEqual({ allowHosts: ['api.anthropic.com'], allowModels: ['free-agent'] })
+    const g = fakeSandbox()
+    let long: unknown = null
+    const s2 = createSession({ open: async o => { long = o; return g.sb }, tmpDir: () => '/tmp/x', log: () => {} })
+    await s2.handle({ op: 'open', dir: '/w', lifetimeMs: 99 * 3_600_000 })
+    expect(long).toEqual({ allowHosts: [], allowModels: [], lifetimeMs: 8 * 3_600_000 })
     expect(f.state.copied).toBe('/work/dawnlog')
     expect((await s.handle({ id: 2, op: 'open', dir: '/work/x' })).error).toMatch(/already open/)
   })

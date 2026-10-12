@@ -43,7 +43,7 @@ const eventCols = {
 export async function loadUsageOverview(now = new Date()): Promise<UsageOverview> {
   const [events, copilotRows, beat, ideaRows, requests, seeds] = await Promise.all([
     db.select(eventCols).from(systemEvents)
-      .where(and(eq(systemEvents.system, 'idea-factory'), inArray(systemEvents.component, ['research', 'review', 'build', 'claude']), gt(systemEvents.ts, sql`now() - interval '7 days'`)))
+      .where(and(eq(systemEvents.system, 'idea-factory'), inArray(systemEvents.component, ['research', 'review', 'build', 'revenue', 'claude']), gt(systemEvents.ts, sql`now() - interval '7 days'`)))
       .orderBy(desc(systemEvents.ts)).limit(400),
     db.select(eventCols).from(systemEvents)
       .where(and(eq(systemEvents.system, 'factory'), eq(systemEvents.component, 'copilot'), eq(systemEvents.event, 'usage')))

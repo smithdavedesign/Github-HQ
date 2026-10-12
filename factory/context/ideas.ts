@@ -24,6 +24,8 @@ export interface IdeaState {
   ownerApproved?: boolean
   passReason?: string
   ownerDecision?: IdeaStateJson['ownerDecision']
+  /** The road to the first dollar (idea-factory lib/revenue.js). */
+  launch?: IdeaStateJson['launch']
 }
 
 export function readIdeaStates(ideaHome: string): IdeaState[] {
@@ -60,6 +62,9 @@ export function ideaLines(ideas: IdeaState[], now: Date): string[] {
     }),
     ...[...by('building'), ...by('repo')].map(i => `Building ${short(i.title)}: ${i.build?.prUrl ? `M1 PR ${i.build.status ?? 'open'}${i.build.testsPassing === false ? ' (tests failing)' : ''} — ${i.build.prUrl}` : 'repo created, M1 not started'}`),
     ...by('live').map(i => `Live ${short(i.title)}: $${(i.revenue?.mrr ?? 0).toFixed(2)} MRR`),
+    // The road to revenue: closest to the first dollar first, your steps called out.
+    ...ideas.filter(i => i.stage !== 'pass' && i.launch?.next).sort((a, b) => (b.launch!.done / b.launch!.total) - (a.launch!.done / a.launch!.total)).slice(0, 5)
+      .map(i => `Road to revenue · ${short(i.title)}: ${i.launch!.done}/${i.launch!.total}${i.launch!.price ? ` at ${i.launch!.price}` : ''}, next: ${i.launch!.next!.label} (${i.launch!.next!.owner === 'david' ? 'yours' : 'agents'})`),
     ...ideas.filter(i => i.stage === 'pass' && i.validation?.decision === 'pass' && i.updatedAt && now.getTime() - new Date(i.updatedAt).getTime() < 86_400_000)
       .map(i => `Passed ${short(i.title)}: ${i.validation?.reason ?? 'no demand signal'}`),
   ]

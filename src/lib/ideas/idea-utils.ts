@@ -28,7 +28,13 @@ export interface IdeaStateJson {
   signals?: { views: number; uniqueVisitors: number; signups: number; updatedAt?: string }
   validation?: { startedAt: string; decideAfter: string; extensions?: number; decision?: 'build' | 'pass' | 'extend'; reason?: string }
   repo?: string
-  build?: { milestone?: string; prUrl?: string; status?: string; testsPassing?: boolean; at?: string; reason?: string; manual?: boolean; engine?: string; model?: string | null; effort?: string | null }
+  build?: {
+    milestone?: string; prUrl?: string; status?: string; testsPassing?: boolean; at?: string; reason?: string; manual?: boolean; engine?: string; model?: string | null; effort?: string | null
+    /** An MVP run: what it set out to build, what completed (a merge marks these done), and why it stopped early. */
+    planned?: string[]; milestones?: string[]; stopped?: string | null; sandbox?: string
+  }
+  /** The road from M1 to the first dollar (idea-factory lib/revenue.js), refreshed every tick. */
+  launch?: LaunchChecklist
   milestonesDone?: string[]
   revenue?: { mrr: number; updatedAt?: string }
   ownerApproved?: boolean
@@ -52,7 +58,18 @@ export interface ReviewJson {
   launch?: { channels?: { name: string; url?: string; why?: string }[]; post?: string }
 }
 
-export interface IdeaDocs { research?: string; prd?: string; roadmap?: string; review?: string; launch?: string; build?: string }
+export interface IdeaDocs { research?: string; prd?: string; roadmap?: string; review?: string; launch?: string; build?: string; revenue?: string }
+
+export interface LaunchStep { id: string; label: string; owner: 'agent' | 'david'; done: boolean; evidence?: string }
+export interface LaunchChecklist {
+  steps: LaunchStep[]
+  next: { id: string; label: string; owner: 'agent' | 'david' } | null
+  done: number
+  total: number
+  buyer?: string
+  price?: string
+  updatedAt?: string
+}
 
 export interface IdeaPolicy {
   review?: { minScore?: number; maxPerDay?: number }
@@ -61,7 +78,7 @@ export interface IdeaPolicy {
     build?: { minSignups?: number; minSignupRate?: number }
     buildEarly?: { minSignups?: number; minSignupRate?: number }
   }
-  build?: { maxPerWeek?: number; engine?: string; model?: string; effort?: string; claudeFallbackModel?: string; manualPerDay?: number; timeoutMinutes?: number }
+  build?: { maxPerWeek?: number; engine?: string; model?: string; effort?: string; claudeFallbackModel?: string; manualPerDay?: number; timeoutMinutes?: number; mode?: 'mvp' | 'milestone'; mvp?: { maxMilestones?: number; maxMinutes?: number; stopOnFallback?: boolean } }
   research?: { seeded?: { maxPerDay?: number; retryMinutes?: number } }
 }
 
@@ -303,7 +320,9 @@ export function whatHappens(decision: IdeaDecisionKind, v: Pick<IdeaView, 'slug'
     case 'build': {
       const repo = v.state.repo ? `Uses the existing repo ${v.state.repo.replace('https://github.com/', '')}.` : `Creates the private repo ${v.slug} (topic “idea”) on the same run.`
       const when = slot.free
-        ? 'Builds M1 right after, on your Claude subscription (Opus at extra-high effort; the free pool only if it’s out of capacity): a gstack plan, tests first, then code until they pass.'
+        ? (policy?.build?.mode === 'mvp'
+          ? 'Builds the MVP right after: every roadmap milestone in one run on your Claude subscription (Opus at extra-high effort), each with a gstack plan and tests first. It stops at the first milestone whose tests fail.'
+          : 'Builds M1 right after, on your Claude subscription (Opus at extra-high effort; the free pool only if it’s out of capacity): a gstack plan, tests first, then code until they pass.')
         : `This week’s build slot is used (${slot.used} of ${slot.max}); M1 starts after ${slot.nextFreeAt ? fmtDay(slot.nextFreeAt) : 'the slot frees up'}, or sooner with Start build now once the repo exists.`
       return [
         'On its next run (within 15 min) the pipeline sets the Notion row to Build.',
@@ -445,12 +464,47 @@ export function buildNowSteps(milestone: string, v: Pick<IdeaView, 'state'>, pol
 
 /** Where a build request stands, in one line. */
 export function buildRequestLabel(r: Pick<IdeaBuildRequestRow, 'status' | 'milestone' | 'result' | 'engine'>): string {
-  const m = r.milestone ?? 'The build'
+  const m = r.milestone === 'MVP' ? 'the MVP' : r.milestone ?? 'The build'
   switch (r.status) {
     case 'pending': return r.result?.startsWith('waiting') ? `Queued, ${r.result}` : 'Queued: starts on the pipeline’s next run (within 15 min)'
     case 'running': return `Building ${m} now${r.engine ? ` (${r.engine})` : ''}`
-    case 'done': return `${m}: ${r.result ?? 'PR opened'}${r.engine ? ` · ${r.engine}` : ''}`
+    case 'done': return `${r.milestone === 'MVP' ? 'MVP' : m}: ${r.result ?? 'PR opened'}${r.engine ? ` · ${r.engine}` : ''}`
     case 'failed': return `Failed: ${r.result ?? 'see the pipeline log'}`
     case 'cancelled': return 'Withdrawn'
   }
+}
+
+export type MvpTarget = { ok: true; milestones: string[] } | { ok: false; reason: string }
+
+/**
+ * What "Build the MVP" would build: from where a single build would start, every remaining roadmap
+ * milestone (idea-factory mvpMilestones, which decides when the request runs).
+ */
+export function buildMvpTarget(v: Pick<IdeaView, 'stage' | 'state' | 'docs' | 'buildRequests'>, max = 6): MvpTarget {
+  const t = buildNowTarget(v)
+  if (!t.ok) return t
+  const all = roadmapMilestones(v.docs.roadmap)
+  if (!all.length) return { ok: true, milestones: [t.milestone] }
+  const done = new Set(v.state.milestonesDone ?? [])
+  const list = all.slice(Math.max(0, all.indexOf(t.milestone))).filter(m => !done.has(m)).slice(0, max)
+  return list.length ? { ok: true, milestones: list } : { ok: false, reason: 'Every roadmap milestone is merged.' }
+}
+
+/** "M1–M3", or "M2" alone. */
+export function milestoneRange(ms: string[]): string {
+  return ms.length > 1 ? `${ms[0]}–${ms[ms.length - 1]}` : ms[0] ?? ''
+}
+
+/** What happens after "Build the MVP", for the confirm dialog. */
+export function buildMvpSteps(milestones: string[], v: Pick<IdeaView, 'state'>, policy: IdeaPolicy | null, startsLast24h: number): string[] {
+  const minutes = policy?.build?.mvp?.maxMinutes ?? 240
+  const [first, engine, , , ...rest] = buildNowSteps(milestoneRange(milestones), v, policy, startsLast24h)
+  return [
+    first!.replace(`builds ${milestoneRange(milestones)} in`, `builds ${milestones.join(', ')} one after another in`),
+    engine!,
+    `One run in the sandbox, for up to ${Math.round(minutes / 60)} hours. Each milestone: a gstack plan, tests first, code until they pass. REVENUE.md, if there is one, tells it what must exist before charging.`,
+    `It stops at the first milestone whose tests fail${policy?.build?.mvp?.stopOnFallback === false ? '' : ' or that falls back off Opus'}, and opens a PR with what's done. Merging marks the completed milestones done, and the next build starts where it stopped.`,
+    'A long Opus run uses a lot of your Claude Pro usage, which your own sessions share.',
+    ...rest,
+  ]
 }

@@ -20,8 +20,8 @@ export interface LogEvent {
   data: Record<string, unknown> | null
 }
 
-export type IdeaRunKind = 'research' | 'review' | 'build'
-const KINDS: IdeaRunKind[] = ['research', 'review', 'build']
+export type IdeaRunKind = 'research' | 'review' | 'build' | 'revenue'
+const KINDS: IdeaRunKind[] = ['research', 'review', 'build', 'revenue']
 
 export interface IdeaRun {
   at: Date
@@ -99,7 +99,7 @@ export interface ClaudeUsage {
 }
 
 function windowOf(runs: IdeaRun[]): UsageWindow {
-  const byKind: Record<IdeaRunKind, number> = { research: 0, review: 0, build: 0 }
+  const byKind: Record<IdeaRunKind, number> = { research: 0, review: 0, build: 0, revenue: 0 }
   let ms = 0
   let partial = false
   for (const r of runs) {

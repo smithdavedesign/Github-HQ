@@ -10,6 +10,7 @@ const KIND_STYLE: Record<IdeaRun['kind'], string> = {
   research: 'bg-sky-500/10 text-sky-700 dark:text-sky-300',
   review: 'bg-violet-500/10 text-violet-700 dark:text-violet-300',
   build: 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
+  revenue: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
 }
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
@@ -106,7 +107,7 @@ function WindowLine({ w, label }: { w: UsageWindow; label: string }) {
   return (
     <p>
       <span className="font-medium">{label}:</span> {plural(w.runs, 'run')}
-      {w.runs > 0 && <> ({w.byKind.research} research · {w.byKind.review} review · {w.byKind.build} build), {w.minutesPartial ? 'at least ' : ''}{w.minutes} min</>}
+      {w.runs > 0 && <> ({w.byKind.research} research · {w.byKind.review} review · {w.byKind.build} build{w.byKind.revenue ? ` · ${w.byKind.revenue} revenue plan` : ''}), {w.minutesPartial ? 'at least ' : ''}{w.minutes} min</>}
       {w.fellBack > 0 && <span className="text-amber-600 dark:text-amber-400"> · {w.fellBack} fell back</span>}
       {w.failed > 0 && <span className="text-red-600 dark:text-red-400"> · {w.failed} failed</span>}
     </p>

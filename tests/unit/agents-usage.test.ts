@@ -50,7 +50,7 @@ describe('Agents page: the idea pipeline from the system log', () => {
       ev({ ts: ago(5), component: 'build', event: 'M1', status: 'start' }),
     ]
     const u = claudeUsage(events, NOW)
-    expect(u.day).toEqual({ runs: 3, byKind: { research: 1, review: 1, build: 1 }, minutes: 12, minutesPartial: true, fellBack: 1, failed: 1 })
+    expect(u.day).toEqual({ runs: 3, byKind: { research: 1, review: 1, build: 1, revenue: 0 }, minutes: 12, minutesPartial: true, fellBack: 1, failed: 1 })
     expect(u.week.runs).toBe(4)
     expect(u.lastCapacity).toMatchObject({ at: ago(40), message: expect.stringMatching(/usage limit reached/) })
     expect(claudeUsage([ev({ status: 'fail', message: 'Claude research failed (scout falls back to free models): exit 143' })], NOW).lastCapacity).toBeNull()
