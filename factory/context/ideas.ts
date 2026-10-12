@@ -5,7 +5,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
-import { IDEAS_PAGE_URL, needsDecision, type IdeaStateJson } from '../../src/lib/ideas/idea-utils'
+import { IDEAS_PAGE_URL, milestoneRange, needsDecision, type IdeaStateJson } from '../../src/lib/ideas/idea-utils'
 
 export type IdeaStage = 'idea' | 'validate' | 'build' | 'repo' | 'building' | 'live' | 'pass'
 
@@ -19,7 +19,9 @@ export interface IdeaState {
   signals?: { views: number; uniqueVisitors: number; signups: number; updatedAt?: string }
   validation?: { startedAt: string; decideAfter: string; decision?: 'build' | 'pass' | 'extend'; reason?: string }
   repo?: string
-  build?: { milestone?: string; prUrl?: string; status?: 'pr-open' | 'merged' | 'failed' | 'running'; testsPassing?: boolean; at?: string }
+  build?: { milestone?: string; milestones?: string[]; planned?: string[]; prUrl?: string; status?: 'pr-open' | 'merged' | 'failed' | 'running'; testsPassing?: boolean; at?: string }
+  /** Roadmap milestones whose PRs have merged. */
+  milestonesDone?: string[]
   /** An M1 built on the Mac but never pushed (e.g. a `--no-push` builder test). */
   localM1?: { path: string; branch: string; testsPassing?: boolean; note?: string }
   revenue?: { mrr: number; updatedAt?: string }
@@ -47,9 +49,28 @@ export function readIdeaStates(ideaHome: string): IdeaState[] {
 
 const short = (t: string) => t.split(' — ')[0]!.slice(0, 40)
 
-/** Where a repo-stage idea's build stands, without claiming "not started" for an M1 that exists locally. */
+/** A build's name: a milestone, the MVP's range, or the go-live. */
+function buildName(b: NonNullable<IdeaState['build']>): string {
+  if (b.milestone === 'MVP') { const m = b.milestones?.length ? b.milestones : b.planned ?? []; return m.length ? `MVP (${milestoneRange(m)})` : 'MVP' }
+  return b.milestone === 'GOLIVE' ? 'Go-live' : b.milestone ?? 'M1'
+}
+
+/**
+ * Where a repo-stage idea's build stands: the merged milestones, a PR waiting or a build running,
+ * and the live URL. It said "M1 PR merged (tests failing)" for tiebreak after M1–M4 and the go-live
+ * had merged with CI green: the test result is the PR's at the time, so it shows only while the PR is open.
+ */
 export function buildStatus(i: IdeaState): string {
-  if (i.build?.prUrl) return `M1 PR ${i.build.status ?? 'open'}${i.build.testsPassing === false ? ' (tests failing)' : ''} — ${i.build.prUrl}`
+  const parts: string[] = []
+  if (i.milestonesDone?.length) parts.push(`${milestoneRange(i.milestonesDone)} merged`)
+  const b = i.build
+  if (b?.status === 'pr-open' && b.prUrl) parts.push(`${buildName(b)} PR open${b.testsPassing === false ? ' (tests failing)' : ''} — ${b.prUrl}`)
+  else if (b?.status === 'running') parts.push(`${buildName(b)} building now`)
+  else if (b?.status === 'failed') parts.push(`${buildName(b)} failed`)
+  else if (b?.prUrl && !i.milestonesDone?.length) parts.push(`${buildName(b)} PR ${b.status ?? 'open'} — ${b.prUrl}`)
+  const live = i.launch?.steps?.find(s => s.id === 'deployed' && s.done)?.evidence
+  if (live && /^https?:\/\//.test(live)) parts.push(`live at ${live}`)
+  if (parts.length) return parts.join(' · ')
   if (i.localM1) return `M1 built locally on branch ${i.localM1.branch}${i.localM1.testsPassing === false ? ' (tests failing)' : ''}, not pushed${i.localM1.note ? ` (${i.localM1.note})` : ''}`
   return 'repo created, M1 not started'
 }

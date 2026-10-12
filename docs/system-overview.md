@@ -142,7 +142,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Every 5 min | System-events collector: ship the log, probe everything (incl. Vercel deploys), alert Slack, refresh the companion's brief; daily: prune, secrets check | launchd `com.user.system-events` |
 | 03:30 | Factory state backup (ledger, reports) → private repo | launchd `com.user.factory-backup` |
 | Every 15 min (daily steps after 09:30) | Idea pipeline tick: Ideas-page decisions, Notion sync, signals, decisions, promote, an approved idea's M1 build, revenue, a go-live once an MVP is complete (≤ 1 a day), the live audit (every 6 h per live idea), sync to RepoHQ; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |
-| Daily, weekly | RepoHQ sync, security, deployments, AI summaries, digest | GitHub Actions crons |
+| Every 6 h, daily, weekly | RepoHQ sync (with security alerts, so counts follow merges within hours), the full security scan, deployments, AI summaries, digest | GitHub Actions crons |
 
 ## What's next
 

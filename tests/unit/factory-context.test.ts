@@ -110,11 +110,21 @@ describe('idea lifecycle in the morning report', async () => {
     expect(lines[0]).toBe('1 idea needs your call: approve, demand-test or pass on the Ideas page — https://repohq.vercel.app/ideas')
     expect(lines[1]).toBe('Pipeline: 1 awaiting review · 1 validating · 1 building · 1 live · 1 passed. Idea MRR: $12.50.')
     expect(lines).toContain('Validating Beta: 31 visitors, 1 signup, decision in 5d — https://p/b')
-    expect(lines).toContain('Building Gamma: M1 PR pr-open (tests failing) — https://github.com/o/c/pull/1')
+    expect(lines).toContain('Building Gamma: M1 PR open (tests failing) — https://github.com/o/c/pull/1')
     expect(lines).toContain('Live Delta: $12.50 MRR')
     expect(lines).toContain('Passed Eps: 0 signups from 120 visitors')
     expect(ideaLines([], now)).toEqual([])
   })
+  it('a built idea shows its merged milestones, the PR waiting, and where it\'s live, not "M1 PR merged (tests failing)"', () => {
+    const tiebreak = { slug: 'tiebreak', title: 'tiebreak — polls', stage: 'building' as const, milestonesDone: ['M1', 'M2', 'M3', 'M4'],
+      build: { milestone: 'MVP', milestones: ['M1', 'M2'], prUrl: 'https://github.com/o/tiebreak/pull/1', status: 'merged' as const, testsPassing: false },
+      launch: { steps: [{ id: 'deployed', label: 'Live', owner: 'agent' as const, done: true, evidence: 'https://tiebreak-phi.vercel.app' }], next: null, done: 6, total: 10 } }
+    expect(ideaLines([tiebreak], now)).toContain('Building tiebreak: M1–M4 merged · live at https://tiebreak-phi.vercel.app')
+    const waiting = { ...tiebreak, milestonesDone: ['M1'], launch: undefined, build: { milestone: 'MVP', milestones: ['M2', 'M3'], prUrl: 'https://github.com/o/t/pull/2', status: 'pr-open' as const, testsPassing: false } }
+    expect(ideaLines([waiting], now)).toContain('Building tiebreak: M1 merged · MVP (M2–M3) PR open (tests failing) — https://github.com/o/t/pull/2')
+    expect(ideaLines([{ ...waiting, build: { milestone: 'GOLIVE', status: 'running' as const } }], now)).toContain('Building tiebreak: M1 merged · Go-live building now')
+  })
+
   it('an M1 built locally but never pushed is not "M1 not started"', () => {
     const lines = ideaLines([
       { slug: 't', title: 'Trip — x', stage: 'repo', localM1: { path: 'work/t', branch: 'm1', testsPassing: true, note: 'builder test (--no-push)' } },

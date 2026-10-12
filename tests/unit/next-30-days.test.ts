@@ -59,6 +59,16 @@ describe('next actions (decision states)', () => {
     hasProductionUrl: false, healthScore: 60, activityStatus: 'Low Activity', buildStatus: 'success', daysSincePush: 30, openPrs: 0,
     archiveScore: 0, criticalAlerts: 0, highAlerts: 0, factoryManaged: false, ...over,
   })
+  it('a repo whose fix the factory can\'t take says it\'s yours, with the reason (not "it can take this")', () => {
+    const d = decide(repo({ isFocused: true, criticalAlerts: 3, highAlerts: 74, factoryManaged: true,
+      factoryCantFix: { 'deps-audit': 'its dependency fixes failed twice: see QA for why' } }))
+    expect(d.nextAction).toBe('Patch the 77 alerts by hand: the factory can\'t take this one (its dependency fixes failed twice: see QA for why)')
+    const ci = decide(repo({ isFocused: true, buildStatus: 'failure', factoryManaged: true, factoryCantFix: { 'red-ci': 'red-CI fixes are at "report", not "pr", so it only reports' } }))
+    expect(ci.nextAction).toMatch(/^Fix the red CI by hand: the factory can't take this one \(red-CI fixes are at "report"/)
+    // A dead end on the other kind doesn't matter.
+    expect(decide(repo({ isFocused: true, highAlerts: 2, factoryManaged: true, factoryCantFix: { 'red-ci': 'x' } })).nextAction).toMatch(/so it can take this/)
+  })
+
   it('a valuable repo with red CI or alerts is blocked, and says whether the factory can fix it', () => {
     const d = decide(repo({ isFocused: true, buildStatus: 'failure', factoryManaged: true }))
     expect(d.state).toBe('blocked')

@@ -34,7 +34,15 @@ export interface RepoSignals {
   highAlerts: number
   /** On the factory's allowlist: it can fix red CI and patch dependencies itself. */
   factoryManaged: boolean
+  /**
+   * Fixes the factory can't take on this repo, and why (the morning report fills it from the ledger
+   * and capabilities). Without it, "Patch the 77 alerts — the factory can take this" was offered for
+   * repos whose dependency fixes had dead-ended twice.
+   */
+  factoryCantFix?: Partial<Record<FactoryFixKind, string>>
 }
+
+export type FactoryFixKind = 'red-ci' | 'deps-audit'
 
 export interface Decision {
   repoId: number
@@ -89,9 +97,12 @@ export function decide(r: RepoSignals): Decision {
       ...valueReasons(r),
     ]
     const fix = r.buildStatus === 'failure' ? 'Fix the red CI' : `Patch the ${plural(alerts, 'alert')}`
+    const cant = r.factoryCantFix?.[r.buildStatus === 'failure' ? 'red-ci' : 'deps-audit']
     return {
       ...base, state: 'blocked', reasons,
-      nextAction: r.factoryManaged ? `${fix} — on the factory allowlist, so it can take this` : `${fix} (not on the factory allowlist, so it's yours)`,
+      nextAction: !r.factoryManaged ? `${fix} (not on the factory allowlist, so it's yours)`
+        : cant ? `${fix} by hand: the factory can't take this one (${cant})`
+        : `${fix} — on the factory allowlist, so it can take this`,
       priority: 100 + Math.min(r.mrr, 50) + (r.isFocused ? 20 : 0) + r.criticalAlerts * 2,
     }
   }

@@ -12,7 +12,7 @@ export function NeedsAttention({ items }: { items: AttentionItem[] }) {
   if (!items.length) {
     return (
       <p className="flex items-center gap-1.5 text-xs text-emerald-600" data-testid="needs-attention-clear">
-        <CheckCircle className="w-3.5 h-3.5" />Nothing needs attention: no failing checks, the pipeline is ticking, quotas are fine.
+        <CheckCircle className="w-3.5 h-3.5" />Nothing needs attention: no failing checks, and the pipeline is ticking.
       </p>
     )
   }

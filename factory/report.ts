@@ -13,12 +13,12 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import path from 'node:path'
 import { extractJson } from '../src/lib/ai/structured'
 import { loadConfig, type FactoryConfig } from './lib/config'
-import { monthToDateUsd, readLedger, todaysUsage } from './lib/ledger'
+import { deadEnds, monthToDateUsd, readLedger, todaysUsage } from './lib/ledger'
 import { readManagedModels } from './lib/litellm-config'
 import { listAliases } from './lib/litellm-ops'
 import { run } from './lib/proc'
 import { freeQuota } from './lib/quota'
-import { buildMorningReport, cycleLogEntry, emailFailureReason, isCycleLog, toMime, type MorningReport, type RoleId, type RoleSection } from './lib/report'
+import { buildMorningReport, factoryCantFixOf, cycleLogEntry, emailFailureReason, isCycleLog, toMime, type MorningReport, type RoleId, type RoleSection } from './lib/report'
 import { factoryActivityOf, latestHealthSnapshot, recentSyncs, recordNotification, repoSignalsOf, requestOutcomes } from './lib/sink'
 import { parseGhSearchPrs, type OpenPr } from '../src/lib/agents/open-prs'
 import { nextActions } from '../src/lib/portfolio/next-actions'
@@ -73,7 +73,12 @@ async function main() {
     systemHealth: await gatherSystemHealth(cfg, now),
     openPrsAll: await openPrsAcross(cfg),
     ownerLogin: await ownerLogin(),
-    nextActions: await repoSignalsOf(cfg, now).then(rows => (rows ? nextActions(rows) : null)),
+    // The factory's dead ends and capabilities decide whether "it can take this" (factoryCantFixOf).
+    nextActions: await repoSignalsOf(cfg, now).then(rows => {
+      if (!rows) return null
+      const dead = deadEnds(entries, now)
+      return nextActions(rows.map(r => ({ ...r, factoryCantFix: factoryCantFixOf(r.fullName, dead, cfg.capabilities) })))
+    }),
     preflight: await runPreflight(cfg).catch(() => []),
     systemEvents: await systemEventsSummary(cfg).catch(() => null),
   }

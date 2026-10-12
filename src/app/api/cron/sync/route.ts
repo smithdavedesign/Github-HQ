@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { syncAllRepos } from '@/lib/github/sync'
+import { syncSecurityForUser } from '@/lib/github/security'
+import { decrypt } from '@/lib/crypto-utils'
 import { snapshotHealthScores } from '@/lib/health/history'
 import { snapshotPortfolioScore } from '@/lib/health/portfolio-snapshot'
 import { refreshGoalProgress } from '@/lib/goals-progress'
@@ -23,7 +25,7 @@ async function handle(request: Request) {
 
   const allUsers = await db.query.users.findMany({
     where: isNotNull(users.githubToken),
-    columns: { id: true },
+    columns: { id: true, githubToken: true },
   })
 
   let processed = 0
@@ -33,6 +35,12 @@ async function handle(request: Request) {
       await checkCIFailuresOnAgentPRs(user.id)
       await checkMergedAgentPRs(user.id)
       await syncAllRepos(user.id)
+      // Alerts every 6 hours, not only at the daily security scan: Open-Travel showed 20 open all day
+      // after #68 fixed them three minutes past the scan, and the morning report recommended patching them.
+      if (user.githubToken) {
+        await syncSecurityForUser(user.id, decrypt(user.githubToken)).catch(err =>
+          console.error('[cron/sync] security refresh failed', { userId: user.id, error: err instanceof Error ? err.message : String(err) }))
+      }
       await Promise.allSettled([
         snapshotHealthScores(user.id),
         snapshotPortfolioScore(user.id),

@@ -30,13 +30,12 @@ describe('needsAttention', () => {
     const claude = { day: {} as never, week: {} as never, lastCapacity: { at: minutesAgo(60), message: '5-hour limit reached' } }
     const texts = needsAttention({ ...base, copilot, claude }).map(i => i.text)
     expect(texts).toContain('Claude subscription hit its limit: 5-hour limit reached')
-    expect(texts).toContain('Copilot premium requests used up until 2026-11-01: the Copilot builder is paused and reviews fall back to the local reviewer')
+    // Nothing to do until it resets (at $0): the Subscriptions card on the Now tab shows it, not this strip.
+    expect(texts.some(t => t.startsWith('Copilot'))).toBe(false)
   })
 
-  it('accuracy note only when there are failed runs but nothing measured', () => {
-    expect(needsAttention({ ...base, accuracy: [acc({ executionFailures: 8 }), acc({ impactType: 'health', executionFailures: 2 })] })).toEqual([
-      { tone: 'info', text: "Advisor accuracy: no merged PR has a measured health change yet (10 failed runs aren't counted against the advice)", href: '?tab=kpis#advisor-accuracy' },
-    ])
+  it('"no accuracy data yet" is a state for the KPIs tab, not something that needs attention', () => {
+    expect(needsAttention({ ...base, accuracy: [acc({ executionFailures: 8 }), acc({ impactType: 'health', executionFailures: 2 })] })).toEqual([])
     expect(needsAttention({ ...base, accuracy: [acc({ executionFailures: 8, dataPoints: 3 })] })).toEqual([])
   })
 })
