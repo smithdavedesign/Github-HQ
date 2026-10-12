@@ -36,7 +36,7 @@ test.describe('Run agent', () => {
     await expect(page.getByText('Report ready ↓')).toBeVisible({ timeout: 45_000 })
     await expect(page.getByText(FLOW_FINDING_LINES[0])).toBeVisible()
 
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=requests')
     const row = requestRow(page, text)
     await expect(row.getByText('reported', { exact: true })).toBeVisible()
     await expect(row).toContainText('/health')
@@ -56,7 +56,7 @@ test.describe('Run agent', () => {
 
     await expect(page.getByText('PR Ready ✓')).toBeVisible({ timeout: 45_000 })
 
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=requests')
     const row = requestRow(page, text)
     await expect(row.getByText('pr', { exact: true })).toBeVisible()
     await expect(row.getByRole('link', { name: 'PR' })).toHaveAttribute('href', FLOW_PR_URL)
@@ -70,14 +70,14 @@ test.describe('Run agent', () => {
     const { controlsRepo } = seeded()
     const text = objective('Review the session handling', 'report')
 
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=runs')
     await page.getByRole('button', { name: 'Pause queue' }).click()
     await expect(page.getByRole('button', { name: 'Resume queue' })).toBeVisible()
     try {
       await openAgentTab(page, controlsRepo.id)
       await launch(page, '/review', text)
 
-      await page.goto('/agent-performance')
+      await page.goto('/agent-performance?tab=requests')
       const row = requestRow(page, text)
       await expect(row.getByText('queued', { exact: true })).toBeVisible()
       await row.getByRole('button', { name: 'Cancel' }).click()
@@ -90,11 +90,14 @@ test.describe('Run agent', () => {
       await expect(requestRow(page, text)).toHaveCount(2)
       await expect(requestRow(page, text).filter({ hasText: 'queued' })).toHaveCount(1)
     } finally {
+      // Pausing lives on the Runs tab, the requests on the Requests tab.
+      await page.getByRole('tab', { name: 'Runs', exact: true }).click()
       const resume = page.getByRole('button', { name: 'Resume queue' })
       if (await resume.isVisible()) await resume.click()
     }
     await expect(page.getByRole('button', { name: 'Pause queue' })).toBeVisible()
     // Resumed: the retried request runs and reports (the panel refreshes every 15 s).
+    await page.getByRole('tab', { name: 'Requests', exact: true }).click()
     await expect(requestRow(page, text).getByText('reported', { exact: true })).toBeVisible({ timeout: 45_000 })
   })
 })

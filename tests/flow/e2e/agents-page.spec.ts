@@ -7,7 +7,7 @@ import { expect, test } from '@playwright/test'
 
 test.describe('Agents page — automation', () => {
   test('shows the worker online, its schedules and the queue', async ({ page }) => {
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=runs')
     await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible()
     await expect(page.getByTestId('worker-status')).toContainText('Worker online on')
     const schedules = page.getByTestId('schedulers')
@@ -20,7 +20,7 @@ test.describe('Agents page — automation', () => {
   })
 
   test('Run cycle: the run shows up ok, and its trace opens', async ({ page }) => {
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=runs')
     await page.getByRole('button', { name: 'Run cycle' }).click()
     await expect(page.getByText('cycle queued')).toBeVisible()
     // The panel refreshes every 15 s.
@@ -33,7 +33,7 @@ test.describe('Agents page — automation', () => {
   })
 
   test('pause and resume the queue', async ({ page }) => {
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=runs')
     await page.getByRole('button', { name: 'Pause queue' }).click()
     await expect(page.getByRole('button', { name: 'Resume queue' })).toBeVisible()
     await expect(page.getByTestId('worker-status')).toContainText('queue paused')

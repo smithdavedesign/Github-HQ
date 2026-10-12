@@ -20,7 +20,7 @@ test.describe('another signed-in user', () => {
   test.use({ storageState: OTHER_STATE })
 
   test('sees no queue, schedules or traces, and cannot launch agents', async ({ page }) => {
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=runs')
     await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible()
     await expect(page.getByTestId('agent-hq-unavailable')).toContainText('The factory runs agents for its owner only.')
     await expect(page.getByTestId('agent-hq')).toHaveCount(0)
