@@ -35,7 +35,7 @@ import {
   parseWorkerStatus, requestJobOptions, scheduledJobTemplate, withinMs, workerConnection, type FactoryJobName,
   type RequestJobData, type ScheduledJobData, type ScheduledJobName, type WorkerStatus,
 } from './lib/queue'
-import { dockerAvailable } from './lib/sandbox'
+import { dockerAvailableConfirmed } from './lib/sandbox'
 import { finishRun, parseProtocolLine, pruneRuns, startRun, type RunKind, type RunResult } from './lib/trace'
 import { HEARTBEAT_TIMEOUT_MS, configProblem, heartbeatAction, pickupCheck, recentStarts } from './lib/worker-health'
 import { JOB_TIMEOUT_MS, childCommand, gateFor, needsRequeue, requestFollowUp, requestOutcomeOf, runStatusFor, type HostState } from './lib/worker-policy'
@@ -359,7 +359,7 @@ async function onAcPower(): Promise<boolean | null> {
 /** Docker's state, cached for a minute (`docker info` is slow when Docker Desktop is starting). */
 async function dockerUp(cfg: FactoryConfig): Promise<boolean | null> {
   if (cfg.sandbox.mode !== 'docker') return null
-  if (!docker || Date.now() - docker.at > 60_000) docker = { up: await dockerAvailable(), at: Date.now() }
+  if (!docker || Date.now() - docker.at > 60_000) docker = { up: await dockerAvailableConfirmed(), at: Date.now() }
   return docker.up
 }
 

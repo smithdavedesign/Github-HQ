@@ -16,3 +16,16 @@ export function lockfileOnlyRetryArgs(args: string[]): string[] | null {
   if (args[0] !== 'audit' || args[1] !== 'fix' || args.includes('--package-lock-only')) return null
   return [...args, '--package-lock-only']
 }
+
+/**
+ * `npm audit fix` without --force can only apply in-range upgrades. When every advisory left needs
+ * --force (a semver-major or out-of-range bump, e.g. Open-Travel's next@16.4.0 on 2026-10-12), it
+ * fixes nothing and exits 1. That's not a broken harness: it's a task M0 can't do by design.
+ * @returns the reason to record, or null when the output doesn't look like that
+ */
+export function onlyForceFixes(output: string): string | null {
+  if (/fixed [1-9]\d* of \d+/i.test(output)) return null
+  if (!/fix available via `npm audit fix --force`/.test(output)) return null
+  const bumps = [...new Set([...output.matchAll(/Will install (\S+@\S+), which is (?:a breaking change|outside the stated dependency range)/g)].map(m => m[1]))]
+  return `no non-breaking fix: every remaining advisory needs \`npm audit fix --force\`${bumps.length ? ` (${bumps.slice(0, 3).join(', ')})` : ''}, which the factory never runs; needs a major upgrade`
+}

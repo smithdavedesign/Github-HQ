@@ -53,7 +53,7 @@ import { isAllowlisted, isOpenRequestStatus } from '../src/lib/agents/factory-re
 import { judge, type DiffInfo, type Verdict } from './lib/verify'
 import { NEEDS_REVIEW_LABEL, adversaryAction, adversarySection, runAdversary, type AdversaryResult } from './lib/adversary'
 import { trimCheck, type JudgeInputRecord } from './lib/judge-fixture'
-import { isArboristCrash, lockfileOnlyRetryArgs } from './lib/npm-audit'
+import { isArboristCrash, lockfileOnlyRetryArgs, onlyForceFixes } from './lib/npm-audit'
 
 interface Args { dryRun: boolean; repo: string | null; maxRepos: number; report: boolean; keep: boolean; scheduled: boolean; request: string | null }
 
@@ -801,7 +801,7 @@ async function attempt(
   } : null
   const verdict = judgeInputs
     ? judge({ task, baseline, after, diff, ...judgeInputs })
-    : { ok: false, reason: h.ok ? 'no changes made' : `harness failed${h.timedOut ? ' (timeout)' : ''}` }
+    : { ok: false, reason: h.ok ? 'no changes made' : h.failure ?? `harness failed${h.timedOut ? ' (timeout)' : ''}` }
   entry.reason = verdict.reason
   if (judgeInputs) {
     // Kept so any verdict later shown wrong can become a regression fixture (npm run factory:judge-fixture).
@@ -983,9 +983,11 @@ async function npmAuditFix(ws: Workspace, cfg: FactoryConfig, subDirs: string[] 
   const lockfileOnly = (args: string[]) => args.includes('--package-lock-only')
   const fixed = (r: { code: number | null; output: string; timedOut: boolean }, args: string[]) =>
     lockfileOnly(args) ? !r.timedOut && (r.code === 0 || r.code === 1) : r.code === 0 || /fixed \d+ of \d+/i.test(r.output)
+  const ok = rs.some(x => fixed(x.r, x.args))
+  const failure = ok ? undefined : rs.map(x => onlyForceFixes(x.r.output)).find(Boolean) ?? undefined
   return {
-    requests: 0,
-    ok: rs.some(x => fixed(x.r, x.args)), harness: 'npm-audit-fix', model: 'npm',
+    requests: 0, ...(failure ? { failure } : {}),
+    ok, harness: 'npm-audit-fix', model: 'npm',
     output: rs.map(x => (x.label ? `===== ${x.label} =====\n` : '') + x.r.output).join('\n'),
     durationMs: rs.reduce((n, x) => n + x.r.durationMs, 0), inputTokens: 0, outputTokens: 0, costUsd: 0, rateLimited: false, timedOut: rs.some(x => x.r.timedOut),
   }
