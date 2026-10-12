@@ -82,6 +82,8 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - ROADMAP M1's exit criteria become failing tests first;
   - then the smallest $0 stack, implemented until the tests pass, plus `BUILD.md`;
   - **Self-review:** the builder checks its own diff against gstack's pre-landing checklist, fixes the CRITICAL findings and lists the rest in `BUILD.md` as `## Review`. The gstack text is read from the installed copy (`buildInput`) into a file outside the clone, so it's never committed;
+  - **Screenshot proof** (the owner's rule, 2026-10-11): the last milestone of a run adds `npm run screenshots`, which starts the app, drives it with Playwright on the sandbox's Chromium (`$CHROMIUM_PATH`) and captures the main flow at desktop size and on a phone. The builder looks at each PNG, then puts them under `docs/screenshots/` and at the top of README.md, under the title;
+    - the pipeline checks the README itself (local images above its first other section, at least two, present in the repo). If they're missing it gives the builder one reminder round. The PR then shows the screenshots, pinned to the commit, or says they're missing; it doesn't lose the build over it;
   - the pipeline runs the tests itself and opens a **draft PR** (branch `m1`) that the owner merges.
 - **Start build now:** an approved idea doesn't have to wait for the weekly slot. See [Deciding: the Ideas page](#deciding-the-ideas-page).
 - **Let it rip: MVP builds** (`policy.build.mode: "mvp"`, the default since 2026-10-11).
@@ -93,7 +95,7 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
 - **Merges are picked up every tick** (they used to be noticed once a day), so the next build is offered right after a merge.
 - **Infrastructure:** a milestone that needs a database or a Google API key gets it from the credential broker (`~/ai-stack/bin/provision neon db <slug>` and so on). The builder may run the broker and nothing else that touches credentials, never sees a value, and lists what it provisioned in BUILD.md under "## Infrastructure" ([provisioning](provisioning.md)).
 - **Where it runs: the factory's Docker sandbox** (`policy.build.sandbox: "docker"`, since 2026-10-11).
-  - **In the sandbox:** Claude Code, `npm install` and `npm test` all run in the same hardened worker as the factory's own jobs (§14 of [autonomous-factory.md](autonomous-factory.md)). It has no mounts, no host environment and no credentials, and its network reaches only the package registries and `api.anthropic.com`, through the egress allowlist.
+  - **In the sandbox:** Claude Code, `npm install`, `npm test` and the screenshot run (Chromium is in the image) all run in the same hardened worker as the factory's own jobs (§14 of [autonomous-factory.md](autonomous-factory.md)). It has no mounts, no host environment and no credentials, and its network reaches only the package registries and `api.anthropic.com`, through the egress allowlist.
   - **Login:** Claude logs in with a long-lived subscription token from `claude setup-token`. It's kept in the keychain as `idea-build-claude-token`, Claude Code reports it as `apiKeySource: none` (the subscription), and the free-pool fallback goes through the egress relay.
   - **On the Mac:** idea-factory drives a session through `factory/bin/sandbox-session.ts` (JSON lines: open, put, exec, patch, close). The Mac only clones, applies the patch that comes back, scans it, commits, pushes and opens the PR, so code the builder writes, installs or tests never touches the Mac.
   - **No silent fallback:** no token or no Docker fails the build with the reason; it never falls back to the host.
@@ -138,6 +140,7 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
     - a **Buy** button for the plan's price that opens `STRIPE_PAYMENT_LINK` and stays hidden while it's unset;
     - a visit beacon to RepoHQ's `/api/ideas/signal`, so live visitors count like demand-test ones;
     - `.provision` lines for its Vercel project (`vercel project <slug>`) and a payment-link request for the owner (`request "Stripe payment link …"`);
+    - fresh screenshot proof of the launch-ready site (footer and Buy button included) at the top of the README, checked like a build's;
     - tests, and `LAUNCH-READY.md`: what changed, and what's left for the owner. It's quoted in the PR.
   - **When it runs:** by itself once the MVP is complete and the site isn't launch-ready (`policy.golive.auto`), at most `policy.golive.maxPerDay` (1), closest to money first, never on a tick that already built. Or from **Get it launch-ready** on the Ideas page, once M1 is merged. A merged go-live sets `state.golive`, and isn't built again: from then on the audit says what's left.
   - **After the merge:** the tick finds the production URL with the Vercel CLI (`vercel ls <project> --prod` then `vercel inspect`, the shortest alias, in `policy.vercelScope`, cached for an hour). It sets it as the repo's GitHub homepage if none is set (never overwriting one), which RepoHQ syncs.
