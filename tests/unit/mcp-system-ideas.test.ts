@@ -108,6 +108,12 @@ describe('get_idea_pipeline: the road to revenue', () => {
     expect(t).toMatch(/- \[ \] Launch-ready: .* \(5\/9 launch checks · missing: robots\.txt\)/)
     expect(formatIdea({ ...built, build: { milestone: 'MVP', status: 'merged' } }, input({ ideas: [built] }))).toMatch(/Build: MVP merged/)
   })
+  it('says who merged a build, why one waits for the owner, or why it was reverted', () => {
+    const b = (build: NonNullable<IdeaState['build']>) => formatIdea({ ...built, build }, input({ ideas: [built] }))
+    expect(b({ milestone: 'GOLIVE', status: 'merged', prUrl: 'https://github.com/o/c/pull/4', mergedBy: 'agent', mergedAt: 'x' })).toMatch(/Build: Go-live merged https:\/\/github\.com\/o\/c\/pull\/4 \(merged by the pipeline\)/)
+    expect(b({ milestone: 'MVP', status: 'pr-open', prUrl: 'https://github.com/o/c/pull/5', testsPassing: false, held: "its tests failed in the pipeline's run" })).toMatch(/\(tests failing\) \(left for the owner: its tests failed in the pipeline's run\)$/m)
+    expect(b({ milestone: 'GOLIVE', status: 'merged', mergedBy: 'agent', reverted: { at: 'x', url: 'https://github.com/o/c/pull/6', reason: 'the live site broke' } })).toMatch(/\(merged by the pipeline, then reverted: the live site broke https:\/\/github\.com\/o\/c\/pull\/6\)/)
+  })
   it("shows a built product's funnel: this week against the last, its sources, and whether the beacon is the old one", () => {
     const funnel = { d7: { visit: 3, activate: 0, checkout: 0 }, prev7: { visit: 0 }, all: { visit: 3 }, seen: { visit: false }, referrers7d: [{ host: 'google.com', visitors: 2 }] }
     const live: IdeaState = { ...built, slug: 'tiebreak', funnel }
@@ -125,7 +131,7 @@ describe('get_idea_pipeline: the road to revenue', () => {
     const t = formatIdea(g, input({ ideas: [g] }))
     expect(t).toMatch(/Build: Growth build \(search pages\) pr-open https:\/\/github\.com\/o\/tiebreak\/pull\/9/)
     expect(t).toMatch(/Growth: Getting visitors: 3 visitors this week, under 50\. Next: yours: post the next kit channel\./)
-    expect(t).toMatch(/- Experiment tiebreak-20261013-seo: search pages · PR waiting for you · 3 visitors a week → 50 visitors a week https:\/\/github\.com\/o\/tiebreak\/pull\/9\. Pages bring visitors\./)
+    expect(t).toMatch(/- Experiment tiebreak-20261013-seo: search pages · PR open · 3 visitors a week → 50 visitors a week https:\/\/github\.com\/o\/tiebreak\/pull\/9\. Pages bring visitors\./)
     expect(formatPipeline(input({ ideas: [g] }))).toMatch(/Growth: getting visitors, next: yours: post the next kit channel\./)
   })
 })

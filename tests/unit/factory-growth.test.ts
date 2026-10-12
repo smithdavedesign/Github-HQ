@@ -45,6 +45,15 @@ describe('Today', () => {
       'Merge or close tiebreak#4 (Growth: SEO pages): https://github.com/o/tiebreak/pull/4',
     ])
   })
+  it("with autonomy on, lists only the pipeline's PRs it left for you, with why", () => {
+    const building = (prUrl: string, held?: string): IdeaState => ({ ...tiebreak, launch: undefined, build: { milestone: 'GROWTH', status: 'pr-open', prUrl, ...(held ? { held } : {}) } })
+    const prs = [pr({}), pr({ number: 5, title: 'Bump next', url: 'https://github.com/o/tiebreak/pull/5' })]
+    expect(todayLines([building('https://github.com/o/tiebreak/pull/4')], growth({ kits: {}, autonomy: true }), prs, NOW).filter(l => l.startsWith('Merge')))
+      .toEqual(['Merge or close tiebreak#5 (Bump next): https://github.com/o/tiebreak/pull/5'])
+    expect(todayLines([building('https://github.com/o/tiebreak/pull/4', 'web failed')], growth({ kits: {}, autonomy: true }), prs, NOW).filter(l => l.startsWith('Merge'))[0])
+      .toBe('Merge or close tiebreak#4 (Growth: SEO pages), left for you: web failed: https://github.com/o/tiebreak/pull/4')
+    expect(todayLines([building('https://github.com/o/tiebreak/pull/4')], growth({ kits: {} }), prs, NOW).filter(l => l.startsWith('Merge'))).toHaveLength(2)
+  })
   it('puts the demand test closest to its decision first', () => {
     const later = { ...permitly, slug: 'packpass', title: 'packpass — x', validation: { startedAt: '2026-10-12', decideAfter: '2026-10-26T00:00:00Z' } }
     const sooner = { ...permitly, validation: { startedAt: '2026-10-10', decideAfter: '2026-10-24T00:00:00Z' } }
@@ -80,14 +89,14 @@ describe('Growth section', () => {
   })
   it("reads the focus, the bar, kits and logs from idea-factory's files", () => {
     const home = mkdtempSync(path.join(tmpdir(), 'growth-'))
-    writeFileSync(path.join(home, 'policy.json'), JSON.stringify({ build: { startNew: false }, growth: { focus: ['tiebreak'], minVisitorsPerWeek: 40 } }))
+    writeFileSync(path.join(home, 'policy.json'), JSON.stringify({ build: { startNew: false }, growth: { focus: ['tiebreak'], minVisitorsPerWeek: 40 }, autonomy: { merge: true } }))
     mkdirSync(path.join(home, 'ideas', 'tiebreak'), { recursive: true })
     writeFileSync(path.join(home, 'ideas', 'tiebreak', 'LAUNCH-KIT.md'), KIT)
     writeFileSync(path.join(home, 'ideas', 'tiebreak', 'launch-log.json'), JSON.stringify({ posts: [{ channel: 'r/SideProject', postedAt: '2026-10-13T09:00:00Z' }] }))
     const g = readGrowthInput(home, [tiebreak, permitly])
-    expect(g).toMatchObject({ focus: ['tiebreak'], minVisitorsPerWeek: 40, holdNewBuilds: true, kits: { tiebreak: KIT } })
+    expect(g).toMatchObject({ focus: ['tiebreak'], minVisitorsPerWeek: 40, holdNewBuilds: true, autonomy: true, kits: { tiebreak: KIT } })
     expect(g.logs.tiebreak!.posts).toHaveLength(1)
-    expect(readGrowthInput(path.join(home, 'nope'), [])).toEqual({ focus: [], minVisitorsPerWeek: 50, holdNewBuilds: false, kits: {}, logs: {} })
+    expect(readGrowthInput(path.join(home, 'nope'), [])).toEqual({ focus: [], minVisitorsPerWeek: 50, holdNewBuilds: false, autonomy: false, kits: {}, logs: {} })
   })
 })
 
@@ -98,7 +107,7 @@ describe('Growth loop lines', () => {
         status: 'proposed', createdAt: '2026-10-13T10:00:00Z', prUrl: 'https://github.com/o/tiebreak/pull/9' }] } }
     const lines = growthLines([withGrowth], growth())
     expect(lines).toContain('Growth loop: measuring the funnel (its beacon only counts home-page views). Next: waiting for the last mission’s result.')
-    expect(lines).toContain('Experiment: funnel beacon · PR waiting for you · old beacon → beacon live — https://github.com/o/tiebreak/pull/9')
+    expect(lines).toContain('Experiment: funnel beacon · PR open · old beacon → beacon live — https://github.com/o/tiebreak/pull/9')
   })
   it('asks whether to park a product whose experiments moved nothing', () => {
     const parked: IdeaState = { ...tiebreak, launch: undefined, growth: { stage: 'park', bottleneck: 'the last 2 experiments moved nothing', next: { kind: 'park', executor: 'owner' } } }

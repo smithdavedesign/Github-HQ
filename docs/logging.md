@@ -69,6 +69,16 @@ The Agents page's **Idea pipeline** panel and **Subscriptions** cards (`src/lib/
 | `idea-factory/claude/capacity` (info) | `lib/claude.js`, when the subscription can't take the work | `model`, `fallback` |
 | `factory/copilot/usage` (info) | `factory/lib/copilot-quota.ts`: each cycle when the snapshot changed, and daily from the morning report | `installed`, `plan`, `percentRemaining`, `overagePermitted`, `resetDate`, `tasksToday`, `maxTasksPerDay`, `reviewsToday`, `maxReviewsPerDay` |
 
+Autonomy events (the owner's call, 2026-10-12; component `autonomy`) aren't read by the Agents page, but the morning report and Slack depend on them:
+
+| Event | Written by | Status |
+|---|---|---|
+| `factory/autonomy/merge` | `factory/run.ts` `automerge` | `ok` per PR merged; `fail` when GitHub refused the merge (closed by the next `ok`) |
+| `factory/autonomy/hold` | `factory/run.ts` `automerge` | `info`, once per PR and reason the gate left for the owner |
+| `factory/autonomy/revert` | `factory/run.ts` `watchMerged` | `fail` when a merge broke the base branch and was reverted (or couldn't be); `ok` once the base branch is green after the revert, which closes the alert |
+| `idea-factory/autonomy/merge` | `bin/idea-pipeline.js` step 4a0 | `info` per PR the pipeline merged |
+| `idea-factory/autonomy/revert` | `bin/idea-pipeline.js` | `fail` when a merge broke the live site's launch checks and was reverted; `ok` once the site passes them again. A revert the judge decided on is `info` |
+
 Older events without `data` still show: the page reads the model and engine from the message where it can, and treats a missing duration as unknown, not zero.
 
 ## What the collector watches by itself

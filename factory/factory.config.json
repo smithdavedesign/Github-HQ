@@ -13,7 +13,7 @@
   "allowFreeCloud": [],
   "monthlyBudgetUsd": 0,
   "maxPrsPerCycle": 1,
-  "_comment": "Allowlist of repos the factory may open draft PRs on. gitHub-cron-job-app is excluded: its README is a cron heartbeat file.",
+  "_comment": "Allowlist of repos the factory may open PRs on (and merge them, see autonomy). gitHub-cron-job-app is excluded: its README is a cron heartbeat file.",
   "smoke": {
     "enabled": true,
     "maxPerCycle": 3,
@@ -30,5 +30,15 @@
   },
   "alerts": {
     "slackChannel": "C0C85QYP4MN"
+  },
+  "autonomy": {
+    "merge": true,
+    "revert": true,
+    "protectedPaths": [
+      "factory/",
+      ".github/workflows/",
+      "src/lib/agents/model-router.ts"
+    ],
+    "_why": "The owner's call (2026-10-12): the factory merges its own PRs once every check is green and nothing objected (smoke test, adversarial reviewer, a hold label, a review asking for changes), and reverts a merge whose commit turns the base branch red. He reviews it in the morning email. PRs touching protectedPaths (the factory's own code, CI workflows, the model router) stay with him. factory/lib/automerge.ts."
   }
 }

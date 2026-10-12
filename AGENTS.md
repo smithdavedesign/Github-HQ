@@ -64,6 +64,10 @@ Anything that runs on a schedule or in the background logs to the shared system 
 - The factory (`factory/`) is the only thing that writes code (roadmap Phase 81, `docs/agent-hq-migration-prd.md`). The app never runs agents: it inserts an `agent_requests` row and adds a BullMQ job (`src/lib/agents/factory-queue.ts`); the worker (`factory/worker.ts`, on the owner's Mac) runs it.
 - Neon is the source of truth, Redis only wakes the worker. A failed enqueue leaves the row `queued` and the worker reconciles it, so never treat Redis as the record.
 - Factory code imported by the app (`factory/lib/queue.ts`, `factory/factory.config.json`) must not import `server-only` or touch Redis at module load: `next build` runs without `REDIS_URL`.
+- **Who merges** (the owner's call, 2026-10-12):
+  - The factory merges its own PRs once every check is green and nothing objected, and reverts a merge that turns the base branch red (`factory/lib/automerge.ts`, config `autonomy`, the reconcile step in `factory/run.ts`).
+  - PRs touching `factory/`, `.github/workflows/` or `src/lib/agents/model-router.ts` stay with the owner.
+  - An interactive session (you, now) still opens a draft PR and the owner merges it.
 
 ### E2E tests
 - `npm run test:e2e` runs the suite against a **throwaway Neon branch** of production (`scripts/e2e-branch.sh`): created for the run, deleted after it, app on port 3100, `REDIS_URL` empty so nothing reaches the real queue, and the signed-in e2e user owns the factory so owner-only specs run. Needs the Neon CLI logged in. Pass spec paths after `--`.

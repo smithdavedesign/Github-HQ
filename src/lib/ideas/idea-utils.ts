@@ -34,6 +34,11 @@ export interface IdeaStateJson {
     planned?: string[]; milestones?: string[]; stopped?: string | null; sandbox?: string
     /** A growth build (milestone "GROWTH"): its experiment and the kind of change. */
     experiment?: string; kind?: string
+    /**
+     * Autonomy (idea-factory lib/autonomy.js, the owner's call on 2026-10-12): the pipeline merged its own PR,
+     * left it for the owner (why), or reverted its merge because the live site broke.
+     */
+    mergedBy?: 'agent'; mergedAt?: string; held?: string; reverted?: { at: string; url?: string | null; reason?: string }
   }
   /** The road from M1 to the first dollar (idea-factory lib/revenue.js), refreshed every tick. */
   launch?: LaunchChecklist
@@ -98,7 +103,14 @@ export interface GrowthExperiment {
   status: 'proposed' | 'running' | 'measuring' | 'decided' | 'abandoned'
   createdAt: string; updatedAt?: string; startedAt?: string; endsAt?: string
   prUrl?: string; reason?: string; channels?: number; artifact?: string
-  decision?: 'keep' | 'iterate' | 'revert' | 'park'; result?: { lift?: boolean }
+  /** abandoned because its build or PR failed: the mission is tried again the next day. */
+  failed?: boolean
+  extensions?: number
+  /** The judge's verdict (idea-factory lib/growth.js judge): the metric before and after, and what else ran alongside. */
+  decision?: 'keep' | 'iterate' | 'revert' | 'park'; decidedAt?: string
+  result?: { lift?: boolean | null; value?: number | null; before?: number | null; sample?: number; note?: string; ranWith?: string[] }
+  /** A revert decision the pipeline carried out: its revert PR. */
+  reverted?: { at: string; url?: string | null }
 }
 
 /** A focus product's growth record, refreshed every pipeline tick (idea-factory step 5d). */
@@ -138,13 +150,24 @@ export function nextMissionText(next: GrowthState['next']): string {
 
 const shortDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 
-/** One line per experiment: "search pages · running until Nov 10 · 3 visitors a week → 50 visitors a week". */
+/**
+ * One line per experiment: "search pages · running until Nov 10 · 3 visitors a week → 50 visitors a week"
+ * (baseline → target). A judged one shows what happened instead: "· decided: keep · 3 visitors a week →
+ * 60 visitors a week (target 50 visitors a week)". A growth PR merges itself once its checks pass, so an open
+ * one is just "PR open".
+ */
 export function experimentLine(e: GrowthExperiment): string {
+  const label = growthKindLabel(e.kind)
+  if (e.status === 'decided' && typeof e.result?.value === 'number') {
+    const before = e.result.before ?? e.baseline
+    return `${label} · decided: ${e.decision ?? '?'}${e.reverted ? ' (reverted)' : ''} · ${growthValue(e.metric, before)} → ${growthValue(e.metric, e.result.value)} (target ${growthValue(e.metric, e.target)})`
+  }
   const when = e.status === 'running' && e.endsAt ? `running until ${shortDay(e.endsAt)}`
-    : e.status === 'proposed' ? (e.executor === 'build' ? (e.prUrl ? 'PR waiting for you' : 'being built') : 'kit ready, waiting for your first post')
+    : e.status === 'measuring' && e.endsAt ? `extended until ${shortDay(e.endsAt)} for more visitors`
+    : e.status === 'proposed' ? (e.executor === 'build' ? (e.prUrl ? 'PR open' : 'being built') : 'kit ready, waiting for your first post')
     : e.status === 'abandoned' ? `abandoned${e.reason ? `: ${e.reason}` : ''}`
-    : e.status === 'decided' ? `decided: ${e.decision ?? '?'}` : e.status
-  return `${growthKindLabel(e.kind)} · ${when} · ${growthValue(e.metric, e.baseline)} → ${growthValue(e.metric, e.target)}`
+    : e.status === 'decided' ? `decided: ${e.decision ?? '?'}${e.result?.note ? ` (${e.result.note})` : ''}` : e.status
+  return `${label} · ${when} · ${growthValue(e.metric, e.baseline)} → ${growthValue(e.metric, e.target)}`
 }
 
 /**
@@ -189,6 +212,22 @@ export interface IdeaPolicy {
   research?: { seeded?: { maxPerDay?: number; retryMinutes?: number } }
   /** The growth loop (docs/growth-loop-prd.md): the products it works on, and the traction bar. */
   growth?: { focus?: string[]; minVisitorsPerWeek?: number }
+  /** Autonomy (idea-factory lib/autonomy.js): the pipeline merges its own green PRs and reverts what breaks. */
+  autonomy?: { merge?: boolean; revert?: boolean }
+}
+
+/**
+ * Who a build's PR waits for, and what happened to it (pure): "left for you: <why>" when the pipeline held
+ * it, "merged by the pipeline" (then reverted, and why), or, with autonomy on, that it merges itself once
+ * its checks pass. null when there's nothing to say.
+ */
+export function buildAutonomyNote(build: IdeaStateJson['build'], policy: IdeaPolicy | null): string | null {
+  if (!build) return null
+  if (build.reverted) return `Merged by the pipeline, then reverted: ${build.reverted.reason ?? 'it broke the live site'}.`
+  if (build.mergedBy === 'agent') return 'Merged by the pipeline once its checks passed.'
+  if (build.status !== 'pr-open' || !build.prUrl) return null
+  if (build.held) return `Left for you: ${build.held}.`
+  return policy?.autonomy?.merge ? 'The pipeline merges it once its checks pass.' : null
 }
 
 export interface IdeaDecisionRow {

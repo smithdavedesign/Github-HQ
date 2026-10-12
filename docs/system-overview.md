@@ -12,8 +12,8 @@
 
 A local AI stack knows the owner's repos, interests and ideas. It researches product ideas, reviews
 them, cheaply tests demand, builds the ones that show signal, keeps every repo healthy, and tracks
-what actually earns money. The owner's job shrinks to deciding: merge or close a PR, Build or Pass
-an idea.
+what actually earns money. The owner's job shrinks to deciding (Build or Pass an idea, a PR the agents
+left for him) and posting; each morning he reviews what the agents merged and reverted on their own.
 
 ## The loop
 
@@ -21,7 +21,7 @@ an idea.
              ┌──────────────────── context index (repos · ideas · bookmarks · docs) ────────────────────┐
              ▼                                                                                          │
   research (daily) ─▶ gstack review ─▶ demand test ($0 landing page) ─▶ build M1 (tests first) ─▶ live ─┼─▶ revenue (MRR)
-     Claude Pro          validate/pass      14 days, visitors+signups        draft PR, owner merges       │      tracked in RepoHQ
+     Claude Pro          validate/pass      14 days, visitors+signups        PR, merged once green        │      tracked in RepoHQ
      → free models                                                                                        │
              ▲                                                                                          │
              └──── RepoHQ health + factory: keep every repo working (lint, types, tests, deps, docs) ◀───┘
@@ -32,13 +32,14 @@ an idea.
 | Research | One idea a day, sourced (no URL, no claim), checked against the owner's portfolio and interests | the pipeline | $0 (Claude Pro subscription, free models as fallback) |
 | Review | gstack office-hours Six Forcing Questions, premise challenge, alternatives; CEO scope reduction; eng feasibility of M1 | the pipeline, policy on top; **the owner can override on RepoHQ's Ideas page or in Notion** | $0 |
 | Demand test | A public landing page with a waitlist and a launch post the owner may share; 14 days | the numbers (`policy.json`) | $0 (Vercel Hobby) |
-| Build | M1's exit criteria become tests first, then the code; a draft PR in the idea's private repo | **the owner merges** | $0 |
+| Build | M1's exit criteria become tests first, then the code; a PR in the idea's private repo | the pipeline merges it once its tests and every check pass; **the owner reviews it in the morning email** | $0 |
 | Live and earning | RepoHQ tracks lifecycle, health and MRR; the factory keeps it healthy | the owner | free tiers until it earns |
 
 **After launch: the growth loop** ([growth-loop-prd.md](growth-loop-prd.md), step 5d of the idea pipeline, since 2026-10-12).
 - **Each tick:** for each focus product (`policy.growth.focus` in idea-factory; tiebreak first), the pipeline reads the funnel and picks the bottleneck by rule: launch → instrument → acquire → activate → monetize → retain, or park.
-- **Once a day per product:** it starts one mission. That's a growth build (one change, as a draft PR, on Sonnet), a launch kit of posts the owner publishes, or an item in the morning email's Today block.
-- **Each mission is an experiment** with a baseline, a target and a window. A merged growth PR starts it; closing the PR abandons it.
+- **Once a day per product:** it starts one mission. That's a growth build (one change, as a PR, on Sonnet), a launch kit of posts the owner publishes, or an item in the morning email's Today block.
+- **Each mission is an experiment** with a baseline, a target and a window. Merging the growth PR starts it; a growth PR whose checks fail is closed, and the mission is tried again the next day.
+- **When the window ends,** the judge compares it with the window before: keep, iterate, or revert one that made things clearly worse. Each result is a line in the product's `LEARNINGS.md`; a kept one is proposed for the portfolio's `PLAYBOOK.md`.
 - **Where it shows:** the Ideas page's Growth card, the email's Growth section, and MCP.
 - **Until a focus product reaches 50 visitors a week,** the weekly build slot only finishes MVPs it has started.
 
@@ -47,7 +48,7 @@ an idea.
 | Part | Where | What it is |
 |---|---|---|
 | **RepoHQ** | `smithdavedesign/Github-HQ` (public), https://repohq.vercel.app | Portfolio dashboard: health, lifecycle, revenue, decision states. Hosts the idea signal endpoint and the MCP server. [Architecture](architecture.md) |
-| **Factory** | `factory/` in this repo; runs on the owner's Mac (launchd worker, BullMQ via Render Redis) | Free-model-first maintenance: sandboxed fixes judged by checks, build and preview smoke; draft PRs the owner merges. [Design](autonomous-factory.md), [operator guide](../factory/README.md) |
+| **Factory** | `factory/` in this repo; runs on the owner's Mac (launchd worker, BullMQ via Render Redis) | Free-model-first maintenance: sandboxed fixes judged by checks, build and preview smoke; PRs it merges itself once every check is green, and reverts if they break `main`. [Design](autonomous-factory.md), [operator guide](../factory/README.md) |
 | **Idea pipeline** | private repo `idea-factory` (`~/idea-factory`), Notion **Idea Board**, public landing pages on the `idea-pages` Vercel project | Research → review → demand test → build → go live → revenue; git holds every idea in full. [Idea factory](idea-factory.md) |
 | **Context index** | `factory/context/`, built daily into `~/.repohq-factory/context/index.json` | One searchable view of repos, ideas, bookmarks and docs, tagged by data class |
 | **Resource Center** | private repo `resource-center` (`my-bookmarks-hub` on Vercel, behind Vercel auth) + the Bridge Chrome extension | The owner's bookmarks as a knowledge source; feeds interests into the context index |
@@ -78,8 +79,13 @@ an idea.
   - **work** (employer-confidential) stays on local models only;
   - **financial** is never ingested.
 - **Show it working:** a built or deployed MVP proves itself with screenshots from real browser automation (Playwright, desktop and phone), at the top of its README. The idea builder does it in every build and go-live PR ([idea-factory.md](idea-factory.md)); a person or agent shipping an MVP by hand does the same against the live URL.
-- **Humans merge:** the factory and the idea builder open draft PRs. Nothing merges, force-pushes or
-  deletes on its own.
+- **Agents merge their own PRs and revert what breaks** (the owner's call, 2026-10-12):
+  - the factory and the idea pipeline merge a PR once its tests and every check are green and nothing objected (the preview smoke test, the adversarial reviewer, a `hold` label, a review asking for changes);
+  - a merge that turns the base branch red, or breaks a live site's launch checks, is undone by a revert PR the agent merges, and Slack is told;
+  - PRs touching the agents' own rules (factory code, CI workflows, the model router) wait for the owner;
+  - interactive Claude sessions still open draft PRs and ask before merging;
+  - nothing force-pushes or deletes.
+  Code: `factory/lib/automerge.ts` (config `autonomy`), idea-factory `lib/autonomy.js` (`policy.autonomy`).
 - **Agents never see secrets:** databases and API keys come from the credential broker `~/ai-stack/bin/provision`, which writes values straight to the keychain, Vercel env or GitHub secrets. It works on idea repos only and in agent accounts with no card. Anything it can't do is a Slack request to the owner ([provisioning](provisioning.md)).
 - **The owner's choice wins:** a decision on RepoHQ's Ideas page, or a Notion status the owner sets, overrides any pipeline verdict.
 
@@ -89,7 +95,7 @@ an idea.
 |---|---|
 | **Slack #team-agents** | Real-time: system alerts (🔴 failing, 🟠 still failing every 6h, 🟢 recovered), and conversations with the companion |
 | **WhatsApp** | Personal: companion morning and evening messages, the AI briefing, the daily idea report |
-| **Morning email** (06:45) | The daily digest. It opens with **Today**: at most five things for the owner, money first: a focus product's checklist step, the next post from a launch kit, idea PRs to merge ([growth loop](growth-loop-prd.md)). Then the review queue, ideas and revenue, the focus products' funnels (**Growth**), the factory's roles, and what's failing now across every system |
+| **Morning email** (06:45) | The daily digest. It opens with **Done overnight**: what the agents merged, reverted and judged on their own. Then **Today**: at most five things for the owner, money first: a focus product's checklist step, the next post from a launch kit, idea PRs the pipeline left for him ([growth loop](growth-loop-prd.md)). Then the review queue, ideas and revenue, the focus products' funnels (**Growth**), the factory's roles, and what's failing now across every system |
 | **RepoHQ Agents page** | **Needs attention** on top, then tabs (`?tab=`): **Now** (the idea pipeline: building now, queued, caps, latest runs; Subscriptions: Claude Pro and Copilot use), **Runs** (the factory's worker, queue, schedules, runs and traces; data syncs), **Requests** (every request with its trace; 90-day figures), **KPIs** (factory KPIs, advisor accuracy, tiers, cost), **Log** (the **System log**: failing now plus the latest events; the Activity Log) |
 | **RepoHQ Ideas page** | Review ideas and decide: approve a build, demand-test or pass (applied through the Notion Idea Board within 15 min) |
 | **Notion Idea Board** | The board the idea pipeline follows; decisions can still be made here |
@@ -119,7 +125,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 
 | Layer | Was | Now | What changed / what's still weak |
 |---|---|---|---|
-| Safety and governance | Strong | Strong | Docker sandbox, judge, human merge, capability ladder, data classes, $0 policy |
+| Safety and governance | Strong | Strong | Docker sandbox, judge, capability ladder, data classes, $0 policy. Since 2026-10-12 agents merge their own green PRs: the human merge is traded for gates (every check, the preview smoke test, the adversarial reviewer, protected paths) and automatic reverts, with the owner reviewing each morning. |
 | Maintenance factory | Works, narrow | Works, narrow | 78% acceptance at $0, but it fixes lint, deps, docs and tests and has never built a feature. Average PR value is 1.6/5. |
 | Verification | Weak | Fair | Every code change is judged on the build, and each PR's Vercel preview is smoke-tested in a browser next to production. Pages behind a login aren't checked yet. |
 | Routing | Rules + history | Rules + history + **tier advisor** (report) | A local model rates each task 1–3. It's scored against outcomes and promoted on evidence. |
@@ -153,6 +159,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 
 ## What's next
 
+- CI on pull requests for the factory repos that have none (7 of 9). Their PRs merge on the factory's own sandboxed checks, the Vercel preview build where there is one, and the smoke test.
 - Smoke-test logged-in pages (a test account per app).
 - Vercel runtime errors into the system log (the last unwatched surface).
 - A stronger demand signal than signups: a "what would you pay" step on landing pages.

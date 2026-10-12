@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { launchKitOrder,
   buildSlot, checkDecision, cleanIdeaText, decisionLabel, seedStatusLabel, demandProgress, groupIdeas, needsDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline,
   whatHappens, buildNowTarget, buildNowSteps, buildRequestLabel, manualStartsLast24h, roadmapMilestones, buildMvpTarget, buildMvpSteps, milestoneRange, goLiveTarget, goLiveSteps,
-  experimentLine, nextMissionText, growthKindLabel, GROWTH_STAGE_LABEL, beaconLive, type GrowthExperiment,
+  experimentLine, buildAutonomyNote, nextMissionText, growthKindLabel, GROWTH_STAGE_LABEL, beaconLive, type GrowthExperiment,
   type IdeaBuildRequestRow, type IdeaDecisionRow, type IdeaView,
 } from '../../src/lib/ideas/idea-utils'
 
@@ -274,11 +274,31 @@ describe('Growth loop on the Ideas page', () => {
     baseline: 3, target: 50, windowDays: 28, status: 'running', createdAt: '2026-10-13T10:00:00Z', startedAt: '2026-10-13T12:00:00Z', endsAt: '2026-11-10T12:00:00Z', ...over })
   it('says each experiment in one line: its kind, where it stands, baseline → target', () => {
     expect(experimentLine(exp())).toBe('search pages · running until Nov 10 · 3 visitors a week → 50 visitors a week')
-    expect(experimentLine(exp({ status: 'proposed', prUrl: 'https://github.com/o/t/pull/9' }))).toBe('search pages · PR waiting for you · 3 visitors a week → 50 visitors a week')
+    expect(experimentLine(exp({ status: 'proposed', prUrl: 'https://github.com/o/t/pull/9' }))).toBe('search pages · PR open · 3 visitors a week → 50 visitors a week')
+    expect(experimentLine(exp({ status: 'measuring', endsAt: '2026-11-24T12:00:00Z', extensions: 1 }))).toBe('search pages · extended until Nov 24 for more visitors · 3 visitors a week → 50 visitors a week')
     expect(experimentLine(exp({ kind: 'kit', executor: 'claude', status: 'proposed' }))).toMatch(/^launch kit · kit ready, waiting for your first post/)
     expect(experimentLine(exp({ kind: 'landing', metric: 'activate', baseline: 0, target: 0.1, status: 'abandoned', reason: 'the PR was closed without merging' })))
       .toBe('first screen · abandoned: the PR was closed without merging · 0.0% of visitors → 10.0% of visitors')
     expect(experimentLine(exp({ kind: 'instrumentation', metric: 'beacon', baseline: 0, target: 1, status: 'decided', decision: 'keep' }))).toBe('funnel beacon · decided: keep · old beacon → beacon live')
+  })
+  it('a judged experiment shows what happened: the metric before and after, against its target', () => {
+    expect(experimentLine(exp({ status: 'decided', decision: 'keep', result: { lift: true, value: 60, before: 3, sample: 240 } })))
+      .toBe('search pages · decided: keep · 3 visitors a week → 60 visitors a week (target 50 visitors a week)')
+    expect(experimentLine(exp({ kind: 'paywall', metric: 'checkout', baseline: 0.02, target: 0.05, status: 'decided', decision: 'revert', result: { lift: false, value: 0.01, before: 0.04, sample: 80 }, reverted: { at: 'x', url: 'u' } })))
+      .toBe('paid offer placement · decided: revert (reverted) · 4.0% of visitors → 1.0% of visitors (target 5.0% of visitors)')
+    expect(experimentLine(exp({ status: 'decided', decision: 'iterate', result: { lift: null, value: null, before: null, sample: 12, note: 'only 12 visitors in its window: not enough to judge' } })))
+      .toBe('search pages · decided: iterate (only 12 visitors in its window: not enough to judge) · 3 visitors a week → 50 visitors a week')
+  })
+  it("says who a build's PR waits for: left for you (why), merged by the pipeline, or merging itself", () => {
+    const pr = { milestone: 'GROWTH', status: 'pr-open', prUrl: 'https://github.com/o/t/pull/9' }
+    const on = { autonomy: { merge: true } }
+    expect(buildAutonomyNote({ ...pr, held: 'web failed' }, on)).toBe('Left for you: web failed.')
+    expect(buildAutonomyNote(pr, on)).toBe('The pipeline merges it once its checks pass.')
+    expect(buildAutonomyNote(pr, {})).toBeNull()
+    expect(buildAutonomyNote({ ...pr, status: 'merged', mergedBy: 'agent', mergedAt: 'x' }, on)).toBe('Merged by the pipeline once its checks passed.')
+    expect(buildAutonomyNote({ ...pr, status: 'merged', mergedBy: 'agent', reverted: { at: 'x', reason: "the live site's launch checks failed after it merged" } }, on))
+      .toBe("Merged by the pipeline, then reverted: the live site's launch checks failed after it merged.")
+    expect(buildAutonomyNote(undefined, on)).toBeNull()
   })
   it('names the next mission and who does it', () => {
     expect(nextMissionText({ kind: 'seo', executor: 'build' })).toBe('search pages (a growth build, as a draft PR)')

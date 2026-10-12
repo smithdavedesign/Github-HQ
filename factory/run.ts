@@ -23,7 +23,7 @@ import {
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
 import { buildCheck, judgesBuild, collectPackageInfo, confirmFailures, detectPackageManager, installCommand, withoutScripts, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runAuditIn, lockfileDirs, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
-import { addPrLabel, ensureValueLabels, prLabels, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
+import { addPrLabel, ensureValueLabels, humanCommitsOn, prLabels, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { commentOnPr, loadGstackChecklist, localReviewComment, runLocalReview, type LocalReview } from './lib/local-review'
 import { copilotHasQuota, copilotQuota, copilotUsageData, publishCopilotUsage } from './lib/copilot-quota'
@@ -31,6 +31,7 @@ import { harnessFor, runHarness, type HarnessResult } from './lib/harness'
 import { SMOKE_FAIL_LABEL, pendingSmokes, smokeComment, smokePr } from './lib/smoke'
 import { advisedTier, rateTask } from './lib/tier-advisor'
 import { appendEntry, deadEnds, latestSignals, monthToDateUsd, openPrAttempts, pendingCiOracles, pendingReviews, pendingValues, redCiInvestigated, readLedger, summarizeByTier, toAttemptRecords, todaysUsage, type AttemptEntry, type SignalsEntry } from './lib/ledger'
+import { automerge, watchMerged, type AutonomyDeps } from './lib/automerge'
 import { listAliases } from './lib/litellm-ops'
 import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
 
@@ -163,7 +164,7 @@ async function main(): Promise<RunResult> {
   if (!copilotQuotaLeft) log(`Copilot premium requests used up (resets ${quota?.resetDate ?? 'next month'}) — Copilot builder and reviews paused`)
   // For the Agents page's Copilot card: only when something changed since the last snapshot.
   publishCopilotUsage(cfg.home, copilotUsageData(quota, todaysUsage(readLedger(cfg.home), new Date()), cfg.copilot, copilotInstalled))
-  await tracer.span('reconcile', () => reconcile(cfg))
+  await tracer.span('reconcile', () => reconcile(cfg, args.dryRun))
 
   const aliases = await listAliases(cfg).catch((): string[] => [])
   for (const t of ['M0', 'M1'] as const) {
@@ -303,12 +304,6 @@ async function openTrace(cfg: FactoryConfig, args: Args): Promise<void> {
   tracer = new Tracer(cfg, id, args.request)
 }
 
-async function humanCommitsOn(prUrl: string): Promise<number | null> {
-  const r = await run('gh', ['pr', 'view', prUrl, '--json', 'commits', '--jq', '.commits | length'], { timeoutMs: 60_000 })
-  const n = Number(r.output.trim())
-  return r.code === 0 && Number.isFinite(n) && n > 0 ? n - 1 : null
-}
-
 /** The `value:N` labels exist once per repo (marker file per repo, so it's one `gh` round per repo ever). */
 async function ensureRatingLabels(cfg: FactoryConfig, repos: string[]) {
   const dir = path.join(cfg.home, 'value-labels')
@@ -320,8 +315,11 @@ async function ensureRatingLabels(cfg: FactoryConfig, repos: string[]) {
   }
 }
 
-/** Learn step: merged/closed factory PRs become resolutions the router reads; Copilot reviews are recorded. */
-async function reconcile(cfg: FactoryConfig) {
+/**
+ * Learn step: merged/closed factory PRs become resolutions the router reads; Copilot reviews are recorded.
+ * Then autonomy: green factory PRs are merged, and merges that turn the base branch red are reverted.
+ */
+async function reconcile(cfg: FactoryConfig, dryRun = false) {
   for (const a of pendingReviews(readLedger(cfg.home))) {
     const r = await copilotReview(a.prUrl!)
     if (r.reviewed) {
@@ -384,6 +382,15 @@ async function reconcile(cfg: FactoryConfig) {
       if (result.verdict === 'fail') await addPrLabel(a.prUrl!, a.repo, SMOKE_FAIL_LABEL, 'RepoHQ factory: the preview breaks pages that work on production')
     }
   }
+  // Autonomy (lib/automerge.ts; the owner's call on 2026-10-12): after the smoke tests, so their verdicts count.
+  if (dryRun) return
+  const deps: AutonomyDeps = {
+    log, workDir: path.join(cfg.home, 'work', runId),
+    trace: (status, detail, data) => tracer.step('autonomy', status, detail, data),
+    recordResolution: (attemptId, outcome, humanCommits) => recordResolution(cfg, attemptId, outcome, humanCommits),
+  }
+  if (cfg.autonomy.merge) await automerge(cfg, deps)
+  await watchMerged(cfg, deps)
 }
 
 /** Returns the number of PRs opened (0 or 1). */

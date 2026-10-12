@@ -1,6 +1,6 @@
 # RepoHQ Factory
 
-The local self-improvement loop from [docs/autonomous-factory.md](../docs/autonomous-factory.md). It runs on this Mac against the local AI stack (`~/ai-stack`: Ollama → LiteLLM; documented in [docs/ai-stack](../docs/ai-stack/README.md)), finds verifiable problems in allowlisted repos, fixes them with the cheapest model that has proven it can, and opens **draft** PRs. Merging is always yours, and each merge or close teaches the router.
+The local self-improvement loop from [docs/autonomous-factory.md](../docs/autonomous-factory.md). It runs on this Mac against the local AI stack (`~/ai-stack`: Ollama → LiteLLM; documented in [docs/ai-stack](../docs/ai-stack/README.md)), finds verifiable problems in allowlisted repos, fixes them with the cheapest model that has proven it can, and opens PRs. Since 2026-10-12 it **merges its own PRs** once every check is green and nothing objected, and reverts a merge that turns the base branch red (see "Autonomy"); you review it in the morning email. Each merge or close teaches the router.
 
 It is also RepoHQ's only agent executor (roadmap Phase 81, [PRD](../docs/agent-hq-migration-prd.md)): "Run agent", the skill launcher, Monday auto-dispatch and the MCP `queue_gstack_skill` tool all become requests the worker runs (see "Worker").
 
@@ -23,14 +23,17 @@ Verify   (host) the sandbox's result comes back as a patch, applied to the host 
          lib/verify.ts judge (Judge v2 rules in lib/judge-rules.ts, then an advisory adversarial review): target check passes, nothing regresses, no check-silencing,
          no forbidden paths, size cap; README edits additive with real scripts/tools only
 Gate     draft PR on a feature/bot/factory-… branch against the default branch (or
-         `integrationBranch` if a repo still has one); you merge
+         `integrationBranch` if a repo still has one)
 Review   GitHub Copilot code review requested on every PR (independent Reviewer, ≤ 8/day).
          When Copilot can't (premium requests spent, review off, daily limit): the local AI
          stack reviews the diff with gstack's /review checklist and comments on the PR
          (lib/local-review.ts; reviewer = a different model family from the builder)
+Merge    (reconcile, next cycles) every check green, smoke test / adversarial reviewer / hold label /
+         changes requested didn't object, no protected path → ready, squash-merged (lib/automerge.ts);
+         the merge commit's runs on the base branch red where its parent's were green → revert PR, merged
 Learn    PR merged → success, closed → failure → ledger → router (per difficulty) → agent_jobs → KPIs
-Report   06:45 email: one update per gstack role (PM → Architect plan, Builder, QA, Reviewer,
-         Security, Ops, Retro), built from the ledger; headlines by the local model
+Report   06:45 email: Done overnight (merges, reverts), then one update per gstack role (PM →
+         Architect plan, Builder, QA, Reviewer, Security, Ops, Retro), built from the ledger
 ```
 
 ## Commands
@@ -38,7 +41,7 @@ Report   06:45 email: one update per gstack role (PM → Architect plan, Builder
 ```bash
 npm run factory -- --dry-run            # one cycle, no push/PR
 npm run factory -- --repo=owner/name    # one repo (must be allowlisted)
-npm run factory                         # real cycle: may open one draft PR
+npm run factory                         # real cycle: may open one PR, merge green ones, revert what broke main
 npm run factory -- --request=<id>       # run one Agent HQ request (what the worker does for a request job)
 npm run factory:worker                  # the BullMQ worker in the foreground (REDIS_URL + FACTORY_USER_ID set)
 npm run factory:report                  # per-tier attempts / verified / merged / cost
@@ -196,6 +199,20 @@ The judge's checks (typecheck, lint, tests) don't run the app. Two checks added 
 
   The result is a PR comment, a `smoke:fail` label on failure, and a line in the morning report's QA section. Vercel protection is passed with each project's automation-bypass secret (created once, cached in `~/.repohq-factory/vercel-bypass.json`).
 
+## Autonomy
+
+The owner's call on 2026-10-12: the factory merges its own work and carries on, and he reviews what it did in the morning email. `autonomy` in `factory.config.json` (`merge`, `revert`, `protectedPaths`; merging is off unless the config turns it on). The reconcile step of each cycle, after the smoke tests (`lib/automerge.ts`, `automerge` and `watchMerged` in `run.ts`):
+
+- **Merge.** An open factory PR is marked ready and squash-merged when:
+  - every GitHub check is green (CI, GitGuardian, the Vercel preview, and on RepoHQ the Autonomous PR Policy check);
+  - nothing objected: no failed preview smoke test (it waits up to 6 hours for one), no `needs-careful-review`, `smoke:fail`, `hold` or `do-not-merge` label, no review asking for changes;
+  - it doesn't conflict and touches none of `protectedPaths` (`factory/`, `.github/workflows/`, `src/lib/agents/model-router.ts`).
+
+  Anything else stays open. The reason is recorded once per reason (an `automerge` ledger entry with `action: 'held'`) and shown in the morning report's review queue ("not merged: …"). A PR is looked at again every cycle, so a re-run check or a pushed fix lets it merge. Put a `hold` label on a PR to keep it.
+- **Watch.** For two days after a merge, the merge commit's own runs on the base branch are compared with its parent's: push-triggered workflow runs and commit statuses such as the Vercel production deploy. Scheduled runs don't count (they run on whatever commit is newest), and neither do runs a newer push cancelled. A check that fails on the merge commit and passed on its parent blames the merge; one that failed on both doesn't.
+- **Revert.** A blamed merge is undone: a clone of the base branch, `git revert` of the merge commit on `factory/revert-<n>`, a PR that says why, merged (as the factory's GitHub App). The revert's own commit is then watched: the base branch green again logs `ok` and closes the Slack alert; still red logs a `fail` that needs you. A revert is never reverted.
+- **Logged** (component `autonomy` in the system log): `merge` (`ok`, or `fail` when GitHub refused the merge), `hold` (`info`), `revert` (`fail` on a revert, so Slack hears of it, then `ok` once the base branch is green again). The morning report opens with **Done overnight**.
+
 ## Judge v2
 
 Rules run before anything model-based, and each exists because a weak model can turn a check green without fixing anything (`lib/judge-rules.ts`):
@@ -220,7 +237,7 @@ Each capability has a stage under `capabilities` in `factory.config.json`:
 |---|---|
 | `observe` | Sensed and logged only |
 | `report` | Runs and is judged; no PR. Results appear in the morning report ("Held back"; red-CI root causes under Ops) |
-| `pr` | Opens draft PRs (for `adversarial-veto`: a FAIL rejects instead of only labelling) |
+| `pr` | Opens PRs, which merge once green (see "Autonomy"; for `adversarial-veto`: a FAIL rejects instead of only labelling) |
 
 Defaults: the six proven task kinds at `pr`; `red-ci`, `security-alerts`, `adversarial-veto` at `report`. The morning report's **Director** section shows each capability's evidence and says when one has earned promotion (e.g. 5 verified at ≥ 80%) or should drop back (you close most of its PRs). Only you change stages.
 

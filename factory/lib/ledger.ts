@@ -171,8 +171,44 @@ export interface OwnerResultEntry {
   reason?: string
 }
 
+/**
+ * The autonomy gate's call on an open factory PR (lib/automerge.ts, config `autonomy.merge`): it
+ * merged it, or held it for the owner (once per reason, so the morning report can say why).
+ */
+export interface AutomergeEntry {
+  type: 'automerge'
+  attemptId: string
+  at: string
+  action: 'merged' | 'held'
+  reason: string
+  /** merged: the merge commit, whose runs on the base branch decide whether it stays. */
+  sha?: string | null
+  base?: string
+}
+
+/**
+ * A merge commit's runs on the base branch, once they finished: green, or red and reverted. Keyed
+ * by `sha`: the revert's own commit gets an entry too, when main is green (or still red) after it.
+ */
+export interface PostmergeEntry {
+  type: 'postmerge'
+  attemptId: string
+  at: string
+  sha: string
+  passed: boolean
+  reason: string
+  /** This verdict is on a revert's own commit (main green again, or still red), not on a factory merge. */
+  revert?: boolean
+  /** Set when red: the revert PR (null when it couldn't be opened). */
+  revertUrl?: string | null
+  /** Set when red and the revert didn't go through (or reverts are off): why. Main stays red for the owner. */
+  revertError?: string
+  /** The revert's merge commit, watched until main is green again. */
+  revertSha?: string | null
+}
+
 export type { SmokeEntry, TierAdviceEntry }
-export type LedgerEntry = AttemptEntry | ResolutionEntry | ScanEntry | ScoutEntry | ApprovalEntry | ReviewEntry | SignalsEntry | CiOracleEntry | OwnerResultEntry | ValueEntry | SmokeEntry | TierAdviceEntry
+export type LedgerEntry = AttemptEntry | ResolutionEntry | ScanEntry | ScoutEntry | ApprovalEntry | ReviewEntry | SignalsEntry | CiOracleEntry | OwnerResultEntry | ValueEntry | SmokeEntry | TierAdviceEntry | AutomergeEntry | PostmergeEntry
 
 export function ledgerPath(home: string): string {
   return path.join(home, 'ledger.jsonl')
@@ -212,6 +248,8 @@ const resolutionsOf = (e: LedgerEntry[]) => new Map(e.filter((x): x is Resolutio
  */
 export function toAttemptRecords(entries: LedgerEntry[]): AttemptRecord[] {
   const res = resolutionsOf(entries)
+  // Since the factory merges its own PRs (lib/automerge.ts), a merge it had to revert is a failure, not a success.
+  const reverted = new Set(entries.filter((e): e is PostmergeEntry => e.type === 'postmerge' && !e.passed && !e.revert).map(e => e.attemptId))
   return attemptsOf(entries)
     // Deterministic fixes and read-only investigations say nothing about a model's skill as a
     // builder; counting them would credit M0 with npm audit fix's near-100% success. Agent HQ
@@ -219,7 +257,7 @@ export function toAttemptRecords(entries: LedgerEntry[]): AttemptRecord[] {
     .filter(a => a.outcome !== 'rate_limited' && a.harness !== 'npm-audit-fix' && a.harness !== 'lint-autofix' && !(a.kind === 'red-ci' && a.findings !== undefined && !a.prUrl) && a.kind !== 'owner-report')
     .map(a => {
       const r = res.get(a.id)
-      const outcome = r ? (r.outcome === 'merged' ? 'success' : 'failed') : a.outcome === 'verified' ? 'success' : 'failed'
+      const outcome = reverted.has(a.id) ? 'failed' : r ? (r.outcome === 'merged' ? 'success' : 'failed') : a.outcome === 'verified' ? 'success' : 'failed'
       return { taskKind: a.kind, tier: a.tier, outcome, at: new Date(a.at) } satisfies AttemptRecord
     })
 }

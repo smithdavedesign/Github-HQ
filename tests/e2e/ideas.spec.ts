@@ -100,12 +100,12 @@ async function seedGrowth(slug: string, title: string) {
 /** The heartbeat's policy before the growth tests changed it (restored after). */
 let savedPolicy: unknown = undefined
 
-/** The growth loop's settings as the pipeline publishes them: Epsilon in focus, first builds held until it has traction. */
+/** The growth loop's settings as the pipeline publishes them: Epsilon in focus, first builds held until it has traction, autonomy on. */
 async function setGrowthPolicy() {
   const [p] = await sql()`SELECT policy FROM idea_pipeline WHERE id = 'main'`
   savedPolicy = p ? p.policy : null
   const base = (p?.policy ?? {}) as { build?: Record<string, unknown> }
-  const policy = { ...base, build: { ...(base.build ?? {}), startNew: false }, growth: { focus: [SLUG5], minVisitorsPerWeek: 50 } }
+  const policy = { ...base, build: { ...(base.build ?? {}), startNew: false }, growth: { focus: [SLUG5], minVisitorsPerWeek: 50 }, autonomy: { merge: true, revert: true } }
   await sql()`INSERT INTO idea_pipeline (id, tick_at, ok, errors, policy) VALUES ('main', now(), true, '[]'::jsonb, ${JSON.stringify(policy)}::jsonb)
     ON CONFLICT (id) DO UPDATE SET policy = EXCLUDED.policy`
 }
@@ -326,11 +326,12 @@ test.describe('Ideas page', () => {
     await expect(card.getByText(/^Old beacon: only home-page views/), 'its beacon sends visits').toHaveCount(0)
     await expect(card.getByText(/Getting visitors:/)).toBeVisible()
     await expect(card.getByTestId('growth-next')).toContainText('yours: post the next kit channel')
-    await expect(card.getByText('search pages · PR waiting for you · 12 visitors a week → 50 visitors a week')).toBeVisible()
+    await expect(card.getByText('search pages · PR open · 12 visitors a week → 50 visitors a week')).toBeVisible()
     await expect(card.getByText(/funnel beacon · decided: keep · old beacon → beacon live/)).toBeVisible()
     await expect(card.getByRole('link', { name: 'PR' })).toHaveAttribute('href', `https://github.com/smithdavedesign/${SLUG5}/pull/4`)
     // The Build card names the growth PR; a live product offers no milestone builds.
     await expect(page.getByText('Growth PR pr-open: search pages, one change to test one idea.')).toBeVisible()
+    await expect(page.getByText('The pipeline merges it once its checks pass.'), 'autonomy: nothing for the owner to do').toBeVisible()
     await expect(page.getByRole('button', { name: /build now|Build the MVP|Just M1/ })).toHaveCount(0)
     // A product with a funnel that isn't a focus product is measured, not worked on.
     await page.goto(`/ideas/${SLUG4}`)

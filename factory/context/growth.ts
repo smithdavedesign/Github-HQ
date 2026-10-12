@@ -17,6 +17,8 @@ export interface GrowthInput {
   minVisitorsPerWeek: number
   /** policy.build.startNew false: ideas never built wait until a focus product reaches the bar. */
   holdNewBuilds: boolean
+  /** policy.autonomy.merge: the pipeline merges its own green PRs, so only the ones it left are the owner's. */
+  autonomy?: boolean
   /** LAUNCH-KIT.md, per idea that has one (focus products and demand tests). */
   kits: Record<string, string>
   /** launch-log.json, per idea that has one. */
@@ -31,7 +33,7 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
 /** What the report needs from idea-factory: policy.json's growth settings, launch kits and launch logs. */
 export function readGrowthInput(ideaHome: string, ideas: IdeaState[]): GrowthInput {
-  let policy: { growth?: { focus?: unknown; minVisitorsPerWeek?: unknown }; build?: { startNew?: unknown } } = {}
+  let policy: { growth?: { focus?: unknown; minVisitorsPerWeek?: unknown }; build?: { startNew?: unknown }; autonomy?: { merge?: unknown } } = {}
   try { policy = JSON.parse(readFileSync(path.join(ideaHome, 'policy.json'), 'utf8')) } catch { /* no policy: no focus */ }
   const rawFocus = policy.growth?.focus
   const focus = Array.isArray(rawFocus) ? rawFocus.filter((s): s is string => typeof s === 'string') : []
@@ -44,7 +46,7 @@ export function readGrowthInput(ideaHome: string, ideas: IdeaState[]): GrowthInp
     const log = readLaunchLog(ideaHome, i.slug)
     if (log) logs[i.slug] = log
   }
-  return { focus, minVisitorsPerWeek: typeof bar === 'number' ? bar : 50, holdNewBuilds: policy.build?.startNew === false, kits, logs }
+  return { focus, minVisitorsPerWeek: typeof bar === 'number' ? bar : 50, holdNewBuilds: policy.build?.startNew === false, autonomy: policy.autonomy?.merge === true, kits, logs }
 }
 
 /**
@@ -83,7 +85,8 @@ const ACTION_STEPS = new Set(['price', 'payments'])
 /**
  * The Today block: what the growth loop needs from the owner this morning, money first, at most TODAY_MAX
  * lines. Focus products' checklist steps, then the next post from a launch kit (focus products, then demand
- * tests, which are judged on visitors), then PRs on idea repos waiting for a merge.
+ * tests, which are judged on visitors), then PRs on idea repos waiting for a merge. With autonomy on, the
+ * pipeline merges its own green PRs: only the ones it left for the owner are listed, with why.
  */
 export function todayLines(ideas: IdeaState[], g: GrowthInput, openPrs: OpenPr[] | null | undefined, now: Date): string[] {
   const bySlug = new Map(ideas.map(i => [i.slug, i]))
@@ -105,7 +108,12 @@ export function todayLines(ideas: IdeaState[], g: GrowthInput, openPrs: OpenPr[]
   }
   const repos = new Map(ideas.filter(i => i.repo).map(i => [i.repo!.replace('https://github.com/', '').toLowerCase(), i]))
   const prs = (openPrs ?? []).filter(p => repos.has(p.repo.toLowerCase())).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-  for (const p of prs) items.push(`Merge or close ${short(repos.get(p.repo.toLowerCase())!.title)}#${p.number} (${p.title}): ${p.url}`)
+  for (const p of prs) {
+    const i = repos.get(p.repo.toLowerCase())!
+    const mine = i.build?.prUrl === p.url
+    if (g.autonomy && mine && !i.build?.held) continue // merges itself once its checks pass
+    items.push(`Merge or close ${short(i.title)}#${p.number} (${p.title})${mine && i.build?.held ? `, left for you: ${i.build.held}` : ''}: ${p.url}`)
+  }
   if (!items.length) return ['Nothing for you in the growth loop today.']
   return [...items.slice(0, TODAY_MAX), ...(items.length > TODAY_MAX ? [`…and ${items.length - TODAY_MAX} more: ${IDEAS_PAGE_URL}`] : [])]
 }

@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth'
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { loadIdea } from '@/lib/ideas/ideas-data'
 import {
-  DECISION_LABEL, launchKitOrder, buildMvpSteps, buildMvpTarget, goLiveSteps, goLiveTarget, buildNowSteps, buildNowTarget, buildRequestLabel, milestoneRange, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
+  DECISION_LABEL, buildAutonomyNote, launchKitOrder, buildMvpSteps, buildMvpTarget, goLiveSteps, goLiveTarget, buildNowSteps, buildNowTarget, buildRequestLabel, milestoneRange, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
   beaconLive, growthKindLabel, manualStartsLast24h, pendingDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
 } from '@/lib/ideas/idea-utils'
 import { Badge } from '@/components/ui/badge'
@@ -71,6 +71,7 @@ export default async function IdeaPage({ params }: Props) {
   const liveTarget = goLiveTarget(v)
   const liveSteps = liveTarget.ok ? goLiveSteps(v, policy, startsToday) : []
   const lastRequest = v.buildRequests[0] ?? null
+  const autonomyNote = buildAutonomyNote(v.state.build, policy)
 
   const tabs = [
     { id: 'prd', label: 'PRD', md: v.docs.prd },
@@ -197,12 +198,13 @@ export default async function IdeaPage({ params }: Props) {
               <CardContent className="text-sm space-y-1.5">
                 <p>{v.state.build?.status === 'running' ? `${v.state.build.milestone ?? 'M1'} is being built now.`
                   : v.state.build?.status === 'failed' ? `${v.state.build.milestone ?? 'M1'} failed: ${errorSummary(v.state.build.reason ?? 'see the record', 200)}`
-                  : pr && v.state.build?.milestone === 'GOLIVE' ? `Go-live PR ${v.state.build.status ?? 'open'}: launch-ready changes, waiting for your review.`
+                  : pr && v.state.build?.milestone === 'GOLIVE' ? `Go-live PR ${v.state.build.status ?? 'open'}: launch-ready changes.`
                   : pr && v.state.build?.milestone === 'GROWTH' ? `Growth PR ${v.state.build.status ?? 'open'}: ${growthKindLabel(v.state.build.kind ?? 'one change')}, one change to test one idea.`
                   : pr && v.state.build?.milestone === 'MVP' ? `MVP (${milestoneRange(v.state.build.milestones?.length ? v.state.build.milestones : v.state.build.planned ?? [])}) PR ${v.state.build.status ?? 'open'}${v.state.build.stopped ? ` — stopped: ${v.state.build.stopped}` : ''}.`
                   : pr ? `${v.state.build?.milestone ?? 'M1'} PR ${v.state.build?.status ?? 'open'}${v.state.build?.testsPassing === false ? ' — tests failing' : v.state.build?.testsPassing ? ' — tests passing' : ''}.`
                   : slot.held ? `M1 not started: ${slot.held}. Start build now still works.`
                   : `M1 not started. Build slot: ${slot.free ? 'free this week' : `used, next ${slot.nextFreeAt?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? 'soon'}`}.`}</p>
+                {autonomyNote && <p className={v.state.build?.held && v.state.build.status === 'pr-open' ? 'text-xs text-amber-700 dark:text-amber-300' : 'text-xs text-muted-foreground'}>{autonomyNote}</p>}
                 {v.state.build?.model && v.state.build.status !== 'running' && (
                   <p className="text-xs text-muted-foreground">Built with {v.state.build.engine === 'free' ? `the free pool (${v.state.build.model})` : `${v.state.build.model}${v.state.build.effort ? ` · effort ${v.state.build.effort}` : ''}`}{v.state.build.manual ? ', started here' : ''}.</p>
                 )}
