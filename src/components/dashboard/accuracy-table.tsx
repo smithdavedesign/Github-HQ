@@ -46,7 +46,7 @@ function SignalBadge({ stats }: { stats: AccuracyStats }) {
 }
 
 export function AccuracyTable({ stats }: { stats: AccuracyStats[] }) {
-  const hasAnyData = stats.some(s => s.dataPoints > 0)
+  const hasAnyData = stats.some(s => s.dataPoints > 0 || s.executionFailures > 0)
 
   if (!hasAnyData) {
     return (
@@ -55,6 +55,7 @@ export function AccuracyTable({ stats }: { stats: AccuracyStats[] }) {
       </p>
     )
   }
+  const noMeasured = stats.every(s => s.dataPoints === 0)
 
   return (
     <div className="rounded-md border border-border/50 overflow-hidden">
@@ -63,9 +64,10 @@ export function AccuracyTable({ stats }: { stats: AccuracyStats[] }) {
           <tr>
             <th className="text-left font-medium text-muted-foreground px-4 py-2">Type</th>
             <th className="text-left font-medium text-muted-foreground px-3 py-2">Success</th>
-            <th className="text-left font-medium text-muted-foreground px-3 py-2">Runs</th>
+            <th className="text-left font-medium text-muted-foreground px-3 py-2" title="Merged PRs with a measured health change">Measured</th>
             <th className="text-left font-medium text-muted-foreground px-3 py-2">Avg Δ</th>
             <th className="text-left font-medium text-muted-foreground px-3 py-2">Signal</th>
+            <th className="text-left font-medium text-muted-foreground px-3 py-2" title="Runs that failed before opening a PR: not counted against the advice">Failed runs</th>
           </tr>
         </thead>
         <tbody>
@@ -115,13 +117,22 @@ export function AccuracyTable({ stats }: { stats: AccuracyStats[] }) {
                   )}
                 </td>
                 <td className="px-3 py-2.5">
-                  <SignalBadge stats={s} />
+                  {s.dataPoints > 0 ? <SignalBadge stats={s} /> : <span className="text-muted-foreground">—</span>}
+                </td>
+                <td className="px-3 py-2.5 tabular-nums text-muted-foreground" data-testid={`accuracy-failed-${s.impactType}`}>
+                  {s.executionFailures > 0 ? s.executionFailures : '—'}
                 </td>
               </tr>
             )
           })}
         </tbody>
       </table>
+      {noMeasured && (
+        <p className="text-[10px] text-muted-foreground px-4 py-2 border-t border-border/40 bg-muted/20" data-testid="accuracy-no-measured">
+          No merged PR has a measured health change yet, so there is no accuracy to show. Failed runs are execution problems
+          (the agent never opened a PR) and don&apos;t count against the advice.
+        </p>
+      )}
       {stats.some(s => s.dataPoints > 0 && !s.hasSignal) && (
         <p className="text-[10px] text-muted-foreground px-4 py-2 border-t border-border/40 bg-muted/20">
           * = insufficient data for confident signal. Success rate shown is preliminary.

@@ -9,7 +9,7 @@ export interface SystemLogRow { ts: Date; system: string; component: string; eve
  */
 export function SystemLogCard({ failing, recent }: { failing: SystemLogRow[]; recent: SystemLogRow[] }) {
   return (
-    <section className="space-y-2" data-testid="system-log">
+    <section id="system-log" className="space-y-2 scroll-mt-4" data-testid="system-log">
       <h2 className="text-sm font-semibold flex items-center gap-2">
         <ScrollText className="w-3.5 h-3.5 text-indigo-500" />
         System log

@@ -34,6 +34,7 @@ import { OPEN_REQUEST_STATUSES, isAllowlisted, modeForSkill, newRequestRow, queu
 import { requestJobOptions, withQueue } from '../factory/lib/queue.js'
 import { isGstackSkill, isSkillAllowedForRepo, parseEnvSkillAllowlistMap, parseRepoSkillAllowlist } from '../src/lib/skills/skill-policy.js'
 import { closedPrTaskIds } from '../src/lib/agents/lifecycle-utils.js'
+import { IMPACT_TYPES, computeAccuracy, type AccuracyStat } from '../src/lib/actions/advisor-accuracy-utils.js'
 import factoryConfig from '../factory/factory.config.json'
 import { formatSystemStatus, systemStatus } from '../factory/system/status.js'
 import { readIdeaStates } from '../factory/context/ideas.js'
@@ -1074,21 +1075,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const lines = ['# Advisor Accuracy Report', '']
 
-        const withData = accuracyStats.filter(s => s.dataPoints > 0)
+        const withData = accuracyStats.filter(s => s.dataPoints > 0 || s.executionFailures > 0)
         if (withData.length === 0) {
           lines.push('No completed agent runs yet. Queue advisor actions to start building accuracy data.')
           return { content: [{ type: 'text', text: lines.join('\n') }] }
         }
 
         lines.push('## Accuracy by Action Type', '')
-        lines.push('| Type | Success Rate | Runs | Avg Δ | Signal |')
-        lines.push('|------|-------------|------|-------|--------|')
+        lines.push('| Type | Success Rate | Measured merges | Avg Δ | Signal | Failed runs |')
+        lines.push('|------|-------------|-----------------|-------|--------|-------------|')
         for (const s of accuracyStats) {
           const emoji = !s.dataPoints ? '⚪' : s.hasSignal && s.successRate >= 75 ? '🟢' : s.hasSignal && s.successRate >= 50 ? '🟡' : s.hasSignal ? '🔴' : '⚪'
           const rate = s.dataPoints > 0 ? `${s.successRate}%` : '—'
           const avg = s.avgActualDelta !== 0 ? `${s.avgActualDelta > 0 ? '+' : ''}${s.avgActualDelta} pts` : '—'
-          const signal = !s.dataPoints ? 'No data' : s.hasSignal ? 'Strong' : `Building (${s.dataPoints}/${MIN_DATA_POINTS_MAP[s.impactType] ?? 3})`
-          lines.push(`| ${emoji} ${s.impactType.padEnd(10)} | ${rate.padEnd(11)} | ${String(s.dataPoints || '—').padEnd(4)} | ${avg.padEnd(5)} | ${signal} |`)
+          const signal = !s.dataPoints ? 'No measured merges' : s.hasSignal ? 'Enough data' : `Building (${s.dataPoints}/${MIN_DATA_POINTS_MAP[s.impactType] ?? 3})`
+          lines.push(`| ${emoji} ${s.impactType.padEnd(10)} | ${rate.padEnd(11)} | ${String(s.dataPoints || '—').padEnd(15)} | ${avg.padEnd(5)} | ${signal} | ${s.executionFailures || '—'} |`)
         }
 
         // Find downgraded repos
@@ -1225,17 +1226,8 @@ const MIN_DATA_POINTS_MAP: Record<string, number> = {
   security: 5, health: 3, opportunity: 3, revenue: 8,
 }
 
-interface MCPAccuracyStat {
-  impactType: string
-  successRate: number
-  dataPoints: number
-  avgActualDelta: number
-  hasSignal: boolean
-  timeDecayedRate: number
-}
-
-/** Compute accuracy stats directly from portfolio_events (no server action import needed) */
-async function getAccuracyStatsMCP(): Promise<MCPAccuracyStat[]> {
+/** Accuracy stats from portfolio_events, computed by the same pure function the app uses. */
+async function getAccuracyStatsMCP(): Promise<AccuracyStat[]> {
   const events = await db.query.portfolioEvents.findMany({
     where: and(
       eq(schema.portfolioEvents.userId, USER_ID!),
@@ -1244,29 +1236,7 @@ async function getAccuracyStatsMCP(): Promise<MCPAccuracyStat[]> {
     columns: { eventType: true, metadata: true, occurredAt: true },
   })
 
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000)
-  const impactTypes = ['opportunity', 'revenue', 'security', 'health']
-  return impactTypes.map(impactType => {
-    const relevant = events.filter(e => (e.metadata as { impactType?: string } | null)?.impactType === impactType)
-    const merges = relevant.filter(e => e.eventType === 'agent_pr_merged')
-    const failures = relevant.filter(e => e.eventType === 'agent_execution_failed')
-    const highConf = merges.filter(e => {
-      const m = e.metadata as { deltaConfidence?: string; actualDelta?: number; actualDeltaPending?: boolean } | null
-      return m?.deltaConfidence !== 'low' && !m?.actualDeltaPending && m?.actualDelta != null
-    })
-    const dataPoints = highConf.length + failures.length
-    const successes = highConf.filter(e => ((e.metadata as { actualDelta?: number } | null)?.actualDelta ?? 0) > 0)
-    const successRate = dataPoints > 0 ? Math.round((successes.length / dataPoints) * 100) : 0
-    const avgActualDelta = highConf.length > 0
-      ? Math.round(highConf.reduce((s, e) => s + ((e.metadata as { actualDelta?: number } | null)?.actualDelta ?? 0), 0) / highConf.length)
-      : 0
-    const recentSuccesses = successes.filter(e => e.occurredAt >= thirtyDaysAgo).length
-    const recentTotal = relevant.filter(e => e.occurredAt >= thirtyDaysAgo).length
-    const weightedSuccesses = recentSuccesses * 2 + (successes.length - recentSuccesses)
-    const weightedTotal = recentTotal * 2 + (dataPoints - recentTotal)
-    const timeDecayedRate = weightedTotal > 0 ? Math.round((weightedSuccesses / weightedTotal) * 100) : 0
-    return { impactType, successRate, dataPoints, avgActualDelta, hasSignal: dataPoints >= (MIN_DATA_POINTS_MAP[impactType] ?? 3), timeDecayedRate }
-  })
+  return IMPACT_TYPES.map(t => computeAccuracy(events, t))
 }
 
 /** Returns a map of repoId → { prUrl, taskId, queuedAt } for repos with open agent PRs */

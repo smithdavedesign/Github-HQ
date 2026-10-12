@@ -53,6 +53,7 @@ import { isAllowlisted, isOpenRequestStatus } from '../src/lib/agents/factory-re
 import { judge, type DiffInfo, type Verdict } from './lib/verify'
 import { NEEDS_REVIEW_LABEL, adversaryAction, adversarySection, runAdversary, type AdversaryResult } from './lib/adversary'
 import { trimCheck, type JudgeInputRecord } from './lib/judge-fixture'
+import { isArboristCrash, lockfileOnlyRetryArgs } from './lib/npm-audit'
 
 interface Args { dryRun: boolean; repo: string | null; maxRepos: number; report: boolean; keep: boolean; scheduled: boolean; request: string | null }
 
@@ -965,13 +966,26 @@ async function npmAuditFix(ws: Workspace, cfg: FactoryConfig, subDirs: string[] 
   // Sub-packages (no root package.json) are fixed lockfile-only: nothing is installed or run.
   const targets = subDirs.length ? subDirs.map(d => ({ cwd: path.join(ws.dir, d), args: ['audit', 'fix', '--package-lock-only', '--no-fund'], label: d })) : [{ cwd: ws.dir, args: ['audit', 'fix', '--no-fund'], label: '' }]
   const rs = []
-  for (const t of targets) rs.push({ ...t, r: await ws.run('npm', t.args, { cwd: t.cwd, timeoutMs: cfg.checkTimeoutMs }) })
+  for (const t of targets) {
+    let r = await ws.run('npm', t.args, { cwd: t.cwd, timeoutMs: cfg.checkTimeoutMs })
+    // npm's own crash on a tree it can't model: plan from the lockfile instead (factory/lib/npm-audit.ts).
+    const retry = !r.timedOut && isArboristCrash(r.output) ? lockfileOnlyRetryArgs(t.args) : null
+    if (retry) {
+      const again = await ws.run('npm', retry, { cwd: t.cwd, timeoutMs: cfg.checkTimeoutMs })
+      r = { ...again, output: `${r.output}\n===== npm crashed on the install tree; retried with --package-lock-only =====\n${again.output}`, durationMs: r.durationMs + again.durationMs }
+      rs.push({ ...t, args: retry, r })
+      continue
+    }
+    rs.push({ ...t, r })
+  }
   // Lockfile-only mode prints no "fixed N of M" and exits 1 while any advisory remains; the judge's
   // before/after audit decides whether it helped.
-  const fixed = (r: { code: number | null; output: string; timedOut: boolean }) => subDirs.length ? !r.timedOut && (r.code === 0 || r.code === 1) : r.code === 0 || /fixed \d+ of \d+/i.test(r.output)
+  const lockfileOnly = (args: string[]) => args.includes('--package-lock-only')
+  const fixed = (r: { code: number | null; output: string; timedOut: boolean }, args: string[]) =>
+    lockfileOnly(args) ? !r.timedOut && (r.code === 0 || r.code === 1) : r.code === 0 || /fixed \d+ of \d+/i.test(r.output)
   return {
     requests: 0,
-    ok: rs.some(x => fixed(x.r)), harness: 'npm-audit-fix', model: 'npm',
+    ok: rs.some(x => fixed(x.r, x.args)), harness: 'npm-audit-fix', model: 'npm',
     output: rs.map(x => (x.label ? `===== ${x.label} =====\n` : '') + x.r.output).join('\n'),
     durationMs: rs.reduce((n, x) => n + x.r.durationMs, 0), inputTokens: 0, outputTokens: 0, costUsd: 0, rateLimited: false, timedOut: rs.some(x => x.r.timedOut),
   }

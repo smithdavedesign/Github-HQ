@@ -5,19 +5,14 @@ import { db } from '@/lib/db'
 import { portfolioEvents } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import {
-  MIN_DATA_POINTS,
+  IMPACT_TYPES,
   SUPPRESS_THRESHOLDS,
+  computeAccuracy,
+  type AccuracyStat,
   type ImpactType,
 } from './advisor-accuracy-utils'
 
-export interface AccuracyStats {
-  impactType: ImpactType
-  successRate: number        // 0-100 (directional: actualDelta > 0)
-  dataPoints: number         // high-confidence merges with this impactType
-  avgActualDelta: number     // average health pts gained on successful merges
-  hasSignal: boolean         // enough data to trust this number
-  timeDecayedRate: number    // last-30d weighted 2x (0-100)
-}
+export type AccuracyStats = AccuracyStat
 
 /**
  * Returns accuracy stats broken down by impactType.
@@ -39,72 +34,7 @@ export async function getAccuracyByImpactType(userId: string): Promise<AccuracyS
     return []
   }
 
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000)
-  const impactTypes: ImpactType[] = ['opportunity', 'revenue', 'security', 'health']
-  const stats: AccuracyStats[] = []
-
-  for (const impactType of impactTypes) {
-    const relevant = mergedEvents.filter(e => {
-      const m = e.metadata as { impactType?: string; deltaConfidence?: string } | null
-      return m?.impactType === impactType
-    })
-
-    if (relevant.length === 0) {
-      stats.push({ impactType, successRate: 0, dataPoints: 0, avgActualDelta: 0, hasSignal: false, timeDecayedRate: 0 })
-      continue
-    }
-
-    // Split merged (has outcome) vs failed
-    const merges = relevant.filter(e => e.eventType === 'agent_pr_merged')
-    const failures = relevant.filter(e => e.eventType === 'agent_execution_failed')
-
-    // Only include high-confidence merges in the rate
-    const highConfMerges = merges.filter(e => {
-      const m = e.metadata as { deltaConfidence?: string; actualDelta?: number; actualDeltaPending?: boolean } | null
-      return m?.deltaConfidence !== 'low' && !m?.actualDeltaPending && m?.actualDelta != null
-    })
-
-    const dataPoints = highConfMerges.length + failures.length
-
-    // Successes: actualDelta > 0 (directional)
-    const successes = highConfMerges.filter(e => {
-      const m = e.metadata as { actualDelta?: number } | null
-      return (m?.actualDelta ?? 0) > 0
-    })
-
-    const successRate = dataPoints > 0
-      ? Math.round(((successes.length) / dataPoints) * 100)
-      : 0
-
-    const avgActualDelta = highConfMerges.length > 0
-      ? Math.round(highConfMerges.reduce((sum, e) => {
-          const m = e.metadata as { actualDelta?: number } | null
-          return sum + (m?.actualDelta ?? 0)
-        }, 0) / highConfMerges.length)
-      : 0
-
-    // Time-decayed rate: last 30d events count 2x
-    const recentSuccesses = successes.filter(e => e.occurredAt >= thirtyDaysAgo).length
-    const recentTotal = relevant.filter(e => e.occurredAt >= thirtyDaysAgo).length
-    const olderSuccesses = successes.length - recentSuccesses
-    const olderTotal = dataPoints - recentTotal
-    const weightedSuccesses = recentSuccesses * 2 + olderSuccesses
-    const weightedTotal = recentTotal * 2 + olderTotal
-    const timeDecayedRate = weightedTotal > 0
-      ? Math.round((weightedSuccesses / weightedTotal) * 100)
-      : 0
-
-    stats.push({
-      impactType,
-      successRate,
-      dataPoints,
-      avgActualDelta,
-      hasSignal: dataPoints >= MIN_DATA_POINTS[impactType],
-      timeDecayedRate,
-    })
-  }
-
-  return stats
+  return IMPACT_TYPES.map(t => computeAccuracy(mergedEvents, t))
 }
 
 /**
@@ -125,44 +55,10 @@ async function getRepoAccuracy(
     columns: { eventType: true, metadata: true, occurredAt: true },
   })
 
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000)
-  const impactTypes: ImpactType[] = ['opportunity', 'revenue', 'security', 'health']
-  const stats: AccuracyStats[] = []
-
-  for (const impactType of impactTypes) {
-    const relevant = repoEvents.filter(e => {
-      const m = e.metadata as { impactType?: string } | null
-      return m?.impactType === impactType
-    })
-    if (relevant.length < 3) continue  // not enough repo-specific data
-
-    const merges = relevant.filter(e => e.eventType === 'agent_pr_merged')
-    const failures = relevant.filter(e => e.eventType === 'agent_execution_failed')
-    const highConfMerges = merges.filter(e => {
-      const m = e.metadata as { deltaConfidence?: string; actualDelta?: number; actualDeltaPending?: boolean } | null
-      return m?.deltaConfidence !== 'low' && !m?.actualDeltaPending && m?.actualDelta != null
-    })
-    const dataPoints = highConfMerges.length + failures.length
-    const successes = highConfMerges.filter(e => ((e.metadata as { actualDelta?: number } | null)?.actualDelta ?? 0) > 0)
-    const recentEvents = relevant.filter(e => e.occurredAt >= thirtyDaysAgo)
-    const recentSuccesses = successes.filter(e => e.occurredAt >= thirtyDaysAgo).length
-    const olderSuccesses = successes.length - recentSuccesses
-    const weightedSuccesses = recentSuccesses * 2 + olderSuccesses
-    const weightedTotal = recentEvents.length * 2 + (dataPoints - recentEvents.length)
-
-    stats.push({
-      impactType,
-      successRate: dataPoints > 0 ? Math.round((successes.length / dataPoints) * 100) : 0,
-      dataPoints,
-      avgActualDelta: highConfMerges.length > 0
-        ? Math.round(highConfMerges.reduce((s, e) => s + ((e.metadata as { actualDelta?: number } | null)?.actualDelta ?? 0), 0) / highConfMerges.length)
-        : 0,
-      hasSignal: dataPoints >= MIN_DATA_POINTS[impactType],
-      timeDecayedRate: weightedTotal > 0 ? Math.round((weightedSuccesses / weightedTotal) * 100) : 0,
-    })
-  }
-
-  return stats
+  // Repo-specific only where the repo has ≥ 3 events of that type; the caller falls back to global.
+  return IMPACT_TYPES
+    .filter(t => repoEvents.filter(e => (e.metadata as { impactType?: string } | null)?.impactType === t).length >= 3)
+    .map(t => computeAccuracy(repoEvents, t))
 }
 
 /**

@@ -184,3 +184,40 @@ describe('suppress thresholds (risk-adjusted)', () => {
     expect(THRESHOLDS.security.maxFailureRate).toBeGreaterThan(THRESHOLDS.health.maxFailureRate)
   })
 })
+
+// ─── computeAccuracy (the one implementation behind the page, the advisor prompt and the MCP) ──
+
+import { computeAccuracy } from '../../src/lib/actions/advisor-accuracy-utils'
+
+describe('computeAccuracy', () => {
+  const now = new Date('2026-10-11T12:00:00Z')
+  const daysAgo = (d: number) => new Date(now.getTime() - d * 86_400_000)
+  const merged = (impactType: string, actualDelta: number | null, d = 1, extra: object = {}) =>
+    ({ eventType: 'agent_pr_merged', occurredAt: daysAgo(d), metadata: { impactType, actualDelta, ...extra } })
+  const failed = (impactType: string, d = 1) => ({ eventType: 'agent_execution_failed', occurredAt: daysAgo(d), metadata: { impactType } })
+
+  it('failed executions are not accuracy misses: reported separately, rate stays empty', () => {
+    const s = computeAccuracy(Array.from({ length: 8 }, () => failed('revenue', 60)), 'revenue', now)
+    expect(s).toEqual({ impactType: 'revenue', successRate: 0, dataPoints: 0, avgActualDelta: 0, hasSignal: false, timeDecayedRate: 0, executionFailures: 8 })
+  })
+
+  it('rate over measured merges only; pending, low-confidence and unmeasured merges are left out', () => {
+    const s = computeAccuracy([
+      merged('health', 4), merged('health', 2), merged('health', -1),
+      merged('health', 9, 1, { actualDeltaPending: true }), merged('health', 30, 1, { deltaConfidence: 'low' }), merged('health', null),
+      failed('health'), merged('security', 5),
+    ], 'health', now)
+    expect(s.dataPoints).toBe(3)
+    expect(s.successRate).toBe(67)
+    expect(s.avgActualDelta).toBe(2)
+    expect(s.hasSignal).toBe(true)
+    expect(s.executionFailures).toBe(1)
+  })
+
+  it('time decay weights the last 30 days 2x over the same merges as the rate (never negative totals)', () => {
+    // one recent success, one old miss, plus recent failures that must not skew the weights
+    const s = computeAccuracy([merged('opportunity', 3, 2), merged('opportunity', 0, 90), failed('opportunity', 1), failed('opportunity', 1)], 'opportunity', now)
+    expect(s.successRate).toBe(50)
+    expect(s.timeDecayedRate).toBe(67) // 2 / (2 + 1)
+  })
+})
