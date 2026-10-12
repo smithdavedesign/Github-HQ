@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth'
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { loadIdea } from '@/lib/ideas/ideas-data'
 import {
-  DECISION_LABEL, buildMvpSteps, buildMvpTarget, buildNowSteps, buildNowTarget, buildRequestLabel, milestoneRange, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
+  DECISION_LABEL, buildMvpSteps, buildMvpTarget, goLiveSteps, goLiveTarget, buildNowSteps, buildNowTarget, buildRequestLabel, milestoneRange, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
   manualStartsLast24h, pendingDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
 } from '@/lib/ideas/idea-utils'
 import { Badge } from '@/components/ui/badge'
@@ -65,6 +65,9 @@ export default async function IdeaPage({ params }: Props) {
   // "Build the MVP": every remaining milestone in one run (policy.build.mvp).
   const mvpTarget = buildMvpTarget(v, policy?.build?.mvp?.maxMilestones ?? 6)
   const mvpSteps = mvpTarget.ok ? buildMvpSteps(mvpTarget.milestones, v, policy, startsToday) : []
+  // "Get it launch-ready" (idea-factory go-live): any time after M1 is merged.
+  const liveTarget = goLiveTarget(v)
+  const liveSteps = liveTarget.ok ? goLiveSteps(v, policy, startsToday) : []
   const lastRequest = v.buildRequests[0] ?? null
 
   const tabs = [
@@ -185,6 +188,7 @@ export default async function IdeaPage({ params }: Props) {
               <CardContent className="text-sm space-y-1.5">
                 <p>{v.state.build?.status === 'running' ? `${v.state.build.milestone ?? 'M1'} is being built now.`
                   : v.state.build?.status === 'failed' ? `${v.state.build.milestone ?? 'M1'} failed: ${v.state.build.reason ?? 'see the record'}`
+                  : pr && v.state.build?.milestone === 'GOLIVE' ? `Go-live PR ${v.state.build.status ?? 'open'}: launch-ready changes, waiting for your review.`
                   : pr && v.state.build?.milestone === 'MVP' ? `MVP (${milestoneRange(v.state.build.milestones?.length ? v.state.build.milestones : v.state.build.planned ?? [])}) PR ${v.state.build.status ?? 'open'}${v.state.build.stopped ? ` — stopped: ${v.state.build.stopped}` : ''}.`
                   : pr ? `${v.state.build?.milestone ?? 'M1'} PR ${v.state.build?.status ?? 'open'}${v.state.build?.testsPassing === false ? ' — tests failing' : v.state.build?.testsPassing ? ' — tests passing' : ''}.`
                   : `M1 not started. Build slot: ${slot.free ? 'free this week' : `used, next ${slot.nextFreeAt?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? 'soon'}`}.`}</p>
@@ -201,6 +205,7 @@ export default async function IdeaPage({ params }: Props) {
                       target={buildTarget}
                       steps={buildSteps}
                       mvp={{ target: mvpTarget, steps: mvpSteps }}
+                      golive={{ target: liveTarget, steps: liveSteps }}
                       request={lastRequest ? { id: lastRequest.id, status: lastRequest.status, label: buildRequestLabel(lastRequest), createdAt: lastRequest.createdAt.toISOString(), prUrl: safeUrl(lastRequest.prUrl), note: lastRequest.note } : null}
                       blocked={overview.buildRequestsMissing ? 'Start build now needs the idea_build_requests table (npm run db:push).' : null}
                     />

@@ -124,12 +124,25 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - risks and kill criteria.
 
   It's synced to the Ideas page as the **Revenue plan** tab.
-- **The checklist** (`state.launch`, refreshed every tick): plan → MVP → live → legal pages → price → Stripe → launch posted → first user → first dollar. Each step belongs to the agents or to the owner, and is checked automatically where it can be:
+- **The checklist** (`state.launch`, refreshed every tick): plan → MVP → live → legal pages → launch-ready → price → Stripe → launch posted → first user → first dollar. Each step belongs to the agents or to the owner, and is checked automatically where it can be:
   - **from RepoHQ's repo row:** homepage, Stripe product and MRR;
-  - **a live-URL probe:** the homepage, then `<repo>.vercel.app` (cached for an hour);
-  - **the repo tree:** privacy and terms pages (cached for 6 hours);
+  - **a live-URL probe:** the Vercel production URL, the homepage, then `<repo>.vercel.app` if the owner's team owns it (cached for an hour);
+  - **the repo tree:** privacy and terms pages (cached for 6 hours), or the same pages answering on the live site;
+  - **the live audit** (go live, below) for launch-ready;
   - **`launch-log.json`** (the launch skill) and signups.
 - **Where it shows:** a **Road to revenue** card on each idea's page, with the next step and whose it is, and a line per idea in the morning email.
+- **Go live** (idea-factory `lib/golive.js`): once the MVP is merged, one build makes the product launch-ready, and the live site is audited from then on. gstack has no marketing or SEO skill, so this is the pipeline's own step.
+  - **The build** (`buildOne({ golive })`, branch `go-live`, one draft PR "Go live: <slug> (launch-ready)") adds what a public launch needs:
+    - title, meta description, Open Graph and Twitter tags, a share image, a canonical URL, `sitemap.xml`, `robots.txt` and JSON-LD;
+    - privacy and terms pages written for what the app actually collects;
+    - a **Buy** button for the plan's price that opens `STRIPE_PAYMENT_LINK` and stays hidden while it's unset;
+    - a visit beacon to RepoHQ's `/api/ideas/signal`, so live visitors count like demand-test ones;
+    - `.provision` lines for its Vercel project (`vercel project <slug>`) and a payment-link request for the owner (`request "Stripe payment link …"`);
+    - tests, and `LAUNCH-READY.md`: what changed, and what's left for the owner. It's quoted in the PR.
+  - **When it runs:** by itself once the MVP is complete and the site isn't launch-ready (`policy.golive.auto`), at most `policy.golive.maxPerDay` (1), closest to money first, never on a tick that already built. Or from **Get it launch-ready** on the Ideas page, once M1 is merged. A merged go-live sets `state.golive`, and isn't built again: from then on the audit says what's left.
+  - **After the merge:** the tick finds the production URL with the Vercel CLI (`vercel ls <project> --prod` then `vercel inspect`, the shortest alias, in `policy.vercelScope`, cached for an hour). It sets it as the repo's GitHub homepage if none is set (never overwriting one), which RepoHQ syncs.
+  - **The live audit** (`auditLaunch`, every 6 hours, or when the URL changes) checks 9 things: HTTPS, the home page answering, a title, a meta description, `og:image`, `robots.txt`, `sitemap.xml`, `/privacy` and `/terms`. Speed under 2 s and JSON-LD are reported but don't count. All 9 passing ticks **Launch-ready**, and its evidence lists what's missing ("5/9 launch checks · missing: …"). Becoming launch-ready, and a check that used to pass failing, are logged with the tick.
+  - **What stays the owner's:** the price, creating the Stripe payment link (it's money, so the broker only files the request), and posting the launch.
 - **Build order:** build queues (the weekly slot, approved builds) are ordered by `revenueScore`, so the idea closest to its first dollar goes first, not the one approved first. Demand evidence counts most: a demand test that passed, then signups. Then a plan with a price, then checklist progress, then the review's score.
 
 The first version created a private repo every night. That would have added about 30 repos a month to a portfolio where RepoHQ already rates 35 of 47 active repos as archive candidates. Now a repo exists only after the owner says yes.
@@ -155,6 +168,8 @@ How a decision travels, with Notion staying the board the pipeline follows:
   - at most `policy.build.manualPerDay` (2) manual starts in any 24 hours, because an Opus build at xhigh can use most of a usage window the owner's own sessions share. Over the cap a request waits, and the reason shows on the page;
   - manual builds don't use the weekly slot.
 - **Result:** the row moves `pending → running → done | failed`, with the PR link and the engine, and the PR is posted in Slack (#team-agents). A queued request can be withdrawn. If the weekly slot builds the same idea first, the waiting request is settled with that PR.
+
+**Build the MVP** (one request for every remaining milestone, `milestone: "MVP"`) and **Get it launch-ready** (`milestone: "GOLIVE"`, see [go live](#5-revenue)) sit beside it. They use the same table, cap and queue, so neither needs a schema change. Get it launch-ready appears once M1 is merged and no build or PR is open.
 
 The morning email links to the page when ideas need a call. The tables are in `src/lib/db/schema.ts`; idea-factory's side is `lib/repohq.js`. A table added later (`idea_seeds`, `idea_build_requests`) only needs `npm run db:push`, and the page works without it until then.
 
