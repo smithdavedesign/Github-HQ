@@ -51,6 +51,19 @@ async function main() {
     await sb.close()
     const left = (await run('docker', ['ps', '-aq', '--filter', `name=${sb.names.worker}`])).output.trim()
     check('container removed after the job', left === '')
+  }
+  // As an idea growth build opens it: no models at all (subscription only, no free-pool fallback).
+  try {
+    const none = await Sandbox.open({ cfg: DEFAULT_SANDBOX, litellmUrl: 'http://localhost:4000', litellmKey: '', allowModels: [], scope: path.join(tmp, 'no-models'), images })
+    try {
+      const refused = await none.run('sh', ['-c', `node -e "fetch('${none.litellmUrl}/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:'local-agent',messages:[]})}).then(r=>process.exit(r.status===403?0:1),()=>process.exit(2))"`], { timeoutMs: 60_000 })
+      check('opens with no models allowed, and the relay refuses every model', refused.code === 0)
+    } finally {
+      await none.close()
+    }
+  } catch (err) {
+    check('opens with no models allowed, and the relay refuses every model', false, err instanceof Error ? err.message : String(err))
+  } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
   if (failed > 0) { console.error(`${failed} check(s) failed`); process.exit(1) }
