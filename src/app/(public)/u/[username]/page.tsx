@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import { db } from '@/lib/db'
 import { users, repositories, repositoryMetrics, techStack, deployments } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { HealthBadge, ActivityBadge } from '@/components/repos/health-badge'
+import { ActivityBadge } from '@/components/repos/health-badge'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Card, CardContent } from '@/components/ui/card'
@@ -59,10 +59,6 @@ export default async function PublicPortfolioPage({ params }: Props) {
   const others = byHealth.filter(r => !featured(r))
 
   const total = publicRepos.length
-  const avgHealth = sorted.length > 0
-    ? Math.round(sorted.reduce((sum, r) => sum + (r.metrics?.healthScore ?? 0), 0) / sorted.length)
-    : 0
-  const healthy = sorted.filter(r => (r.metrics?.healthScore ?? 0) >= 75).length
 
   // Language breakdown (top 4)
   const langCounts: Record<string, number> = {}
@@ -146,10 +142,6 @@ export default async function PublicPortfolioPage({ params }: Props) {
               </div>
             </div>
 
-            {/* Health badge */}
-            {repo.metrics?.healthScore != null && (
-              <HealthBadge score={repo.metrics.healthScore} />
-            )}
           </div>
         </CardContent>
       </Card>
@@ -183,17 +175,6 @@ export default async function PublicPortfolioPage({ params }: Props) {
               <span className="flex items-center gap-1.5">
                 <GitFork className="w-4 h-4 text-muted-foreground" />
                 <strong>{sorted.length}</strong> featured · {total} public repos
-              </span>
-              {sorted.length > 0 && (
-                <span className="flex items-center gap-1.5">
-                  Avg health <HealthBadge score={avgHealth} />
-                  <span className="text-xs text-muted-foreground">
-                    ({avgHealth >= 80 ? 'good' : avgHealth >= 55 ? 'fair' : 'developing'})
-                  </span>
-                </span>
-              )}
-              <span className="text-muted-foreground">
-                {healthy} healthy
               </span>
               {topLangs.length > 0 && (
                 <div className="flex gap-1 flex-wrap">

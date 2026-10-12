@@ -2,7 +2,6 @@ import { notFound } from 'next/navigation'
 import { db } from '@/lib/db'
 import { users, repositories } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { HealthBadge } from '@/components/repos/health-badge'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { GitBranch, Globe, Star, ExternalLink, CheckCircle } from 'lucide-react'
@@ -48,9 +47,6 @@ export default async function PortfolioResumePage({ params }: Props) {
     }))
     .sort((a, b) => (b.metrics?.healthScore ?? 0) - (a.metrics?.healthScore ?? 0))
 
-  const avgHealth = active.length > 0
-    ? Math.round(active.reduce((s, r) => s + (r.metrics?.healthScore ?? 0), 0) / active.length)
-    : 0
 
   const inProduction = active.filter(r =>
     r.deployments.some(d => d.status === 'healthy' || d.status === 'slow')
@@ -98,11 +94,6 @@ export default async function PortfolioResumePage({ params }: Props) {
               <div className="text-center">
                 <p className="text-2xl font-bold tabular-nums">{active.length}</p>
                 <p className="text-xs text-muted-foreground">Featured of {publicRepos.length} public</p>
-              </div>
-              <div className="w-px h-8 bg-border" />
-              <div className="text-center">
-                <p className="text-2xl font-bold tabular-nums">{avgHealth}</p>
-                <p className="text-xs text-muted-foreground">Avg health</p>
               </div>
               <div className="w-px h-8 bg-border" />
               <div className="text-center">
@@ -220,9 +211,6 @@ export default async function PortfolioResumePage({ params }: Props) {
                           </div>
                         )}
                       </div>
-                      {repo.metrics?.healthScore != null && (
-                        <HealthBadge score={Math.round(repo.metrics.healthScore)} />
-                      )}
                     </div>
                   </div>
                 </div>

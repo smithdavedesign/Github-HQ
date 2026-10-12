@@ -63,10 +63,10 @@ export function healthColor(score: number): 'green' | 'yellow' | 'red' {
   return 'red'
 }
 
-export function healthLabel(score: number): 'Healthy' | 'At Risk' | 'Dead' {
+export function healthLabel(score: number): 'Healthy' | 'At Risk' | 'Low health' {
   if (score >= HEALTH_THRESHOLD_HEALTHY) return 'Healthy'
   if (score >= HEALTH_THRESHOLD_AT_RISK) return 'At Risk'
-  return 'Dead'
+  return 'Low health'
 }
 
 // ─── Opportunity Score (Phase 4) ─────────────────────────────────────────────

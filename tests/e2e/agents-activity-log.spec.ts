@@ -20,7 +20,7 @@ test('Activity Log lists the newest factory attempt with its outcome', async ({ 
   `
   test.skip(!latest, 'no factory attempts recorded for this user')
 
-  await page.goto('/agent-performance')
+  await page.goto('/agent-performance?tab=log')
   await expect(page.getByRole('heading', { name: 'Activity Log' })).toBeVisible({ timeout: 10_000 })
   const badge = latest.outcome === 'success' ? (latest.pr_url ? 'PR Opened' : 'Verified') : 'Rejected'
   // The row is the smallest element holding both the attempt's title and its outcome badge.

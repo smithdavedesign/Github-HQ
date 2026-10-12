@@ -19,7 +19,8 @@ export function HealthBadge({ score, showScore = true, trend, className }: Healt
     red: 'bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-400',
   }
 
-  const label = score >= HEALTH_THRESHOLD_HEALTHY ? 'Healthy' : score >= HEALTH_THRESHOLD_AT_RISK ? 'At Risk' : 'Dead'
+  // "Low health", not "Dead": most of these repos are active, just scoring under 55.
+  const label = score >= HEALTH_THRESHOLD_HEALTHY ? 'Healthy' : score >= HEALTH_THRESHOLD_AT_RISK ? 'At Risk' : 'Low health'
 
   const trendSymbol = trend
     ? trend.direction === 'up' ? '↑'
@@ -37,7 +38,7 @@ export function HealthBadge({ score, showScore = true, trend, className }: Healt
     <Badge
       variant="outline"
       className={cn('gap-1.5 font-mono text-xs', colorClasses[color], className)}
-      title={trend ? `${trend.direction === 'up' ? '+' : ''}${trend.delta} pts over ${trend.days}d` : undefined}
+      title={`Health ${score}: ${label}${trend ? ` (${trend.direction === 'up' ? '+' : ''}${trend.delta} pts over ${trend.days}d)` : ''}`}
     >
       <span
         className={cn(

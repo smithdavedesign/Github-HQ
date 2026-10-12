@@ -93,7 +93,7 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 - **Get it launch-ready:** once M1 is merged, one build adds the launch basics (SEO tags and share image, sitemap and robots, privacy and terms, a Buy button for the plan's price, the visit beacon, a Vercel project) as one draft PR. It starts by itself when the MVP is complete. After the merge, the live site is audited every 6 hours.
 - **Road to revenue:** once M1 is merged, a plan (who pays, the price, what must exist before charging) and a checklist from MVP to the first dollar, checked automatically where it can be, with your steps called out. Build queues go to the idea closest to money.
 
-**Portfolio Feed** — health drops, deployments, security alerts, dependency cascade risk, agent events
+**Portfolio Feed** — what happened, newest first: health changes, deployments, new security alerts (the standing count links to Security), dependency cascade risk, agent events
 - Milestones tab — personal changelog with auto-captured events + manual entries; annual markdown export
 
 **Portfolio Intelligence**

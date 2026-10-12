@@ -78,3 +78,11 @@ describe('computeOpportunityCost', () => {
     expect(result.topMissed).toHaveLength(0)
   })
 })
+
+describe('machineWrittenRepos', () => {
+  it('is the idea repos and the factory backup, matched case-insensitively', async () => {
+    const { machineWrittenRepos } = await import('../../src/lib/health/opportunity-cost')
+    const set = machineWrittenRepos(['https://github.com/smithdavedesign/Tiebreak', 'https://github.com/o/pr-split.git', null, 'not a url'])
+    expect([...set].sort()).toEqual(['o/pr-split', 'smithdavedesign/repohq-factory-state', 'smithdavedesign/tiebreak'])
+  })
+})

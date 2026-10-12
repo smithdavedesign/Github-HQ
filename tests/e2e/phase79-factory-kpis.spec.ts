@@ -59,10 +59,10 @@ test.describe('Agent Performance — factory KPIs (Phase 79)', () => {
     const uid = await userId()
     if (!uid) { test.skip(true, 'No user'); return }
 
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=kpis')
     // Wait for the page before reading the baseline: an immediate isVisible() saw no KPIs yet,
     // took a zero baseline and then miscounted the owner's real merged/closed PRs.
-    await expect(page.getByText(/Activity Log|No agent activity yet/).first()).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('tab', { name: 'KPIs', exact: true })).toHaveAttribute('aria-selected', 'true', { timeout: 8000 })
     const hadKpis = await page.getByTestId('factory-kpis').isVisible()
     const before = hadKpis ? await counts(page) : { merged: 0, closed: 0 }
 
@@ -71,7 +71,7 @@ test.describe('Agent Performance — factory KPIs (Phase 79)', () => {
     await seedJob(uid, 3, { outcome: 'rejected', hoursAgo: 5 })
     await seedJob(uid, 4, { outcome: null, hoursAgo: 4 })
 
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=kpis')
     const kpis = page.getByTestId('factory-kpis')
     await expect(kpis).toBeVisible({ timeout: 8000 })
     for (const label of ['Overnight yield', 'Acceptance', 'Per 100 free requests', 'Review time', 'Autonomy']) {
@@ -88,7 +88,7 @@ test.describe('Agent Performance — factory KPIs (Phase 79)', () => {
     if (!uid) { test.skip(true, 'No user'); return }
 
     await seedJob(uid, 1, { outcome: 'merged', hoursAgo: 10 })
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=kpis')
     await expect(page.getByText(/Factory KPIs \(last 30 days\)/)).toBeVisible({ timeout: 8000 })
     await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible()
   })

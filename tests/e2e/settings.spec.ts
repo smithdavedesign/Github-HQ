@@ -33,7 +33,7 @@ test.describe('Settings page', () => {
   test('sync history and scheduled jobs live on the Agents page now', async ({ page }) => {
     await page.goto('/settings')
     await expect(page.getByText('Sync History')).toHaveCount(0)
-    await page.goto('/agent-performance')
+    await page.goto('/agent-performance?tab=runs')
     await expect(page.getByText('Data sync', { exact: true })).toBeVisible({ timeout: 8000 })
     await expect(page.getByText('GitHub sync', { exact: true })).toBeVisible()
     await expect(page.getByText('Security scan', { exact: true })).toBeVisible()

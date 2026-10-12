@@ -22,19 +22,17 @@ interface OpportunityPanelProps {
   highPotentialDormant: RepoSummary[] // high opportunity, low/no activity
 }
 
+/** The opportunity score, named. It used to read "43 · Low" under a heading promising "high opportunity". */
 function OpportunityBadge({ score }: { score: number }) {
-  const label = opportunityLabel(score)
-  const styles = {
-    High: 'bg-violet-500/10 text-violet-600 border-violet-500/20',
-    Medium: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-    Low: 'bg-slate-500/10 text-slate-500 border-slate-500/20',
-  }
   return (
-    <Badge variant="outline" className={`text-xs ${styles[label as keyof typeof styles]}`}>
-      {score} · {label}
+    <Badge variant="outline" className="text-xs bg-violet-500/10 text-violet-600 border-violet-500/20 dark:text-violet-400"
+      title={`Opportunity ${score}/100: what working on this repo could add (${opportunityLabel(score).toLowerCase()} on the absolute scale)`}>
+      opp {score}
     </Badge>
   )
 }
+
+const LEGEND = 'opp: opportunity score (0–100, what working on it could add) · dot: health score'
 
 function RepoRow({ repo }: { repo: RepoSummary }) {
   return (
@@ -79,8 +77,9 @@ export function OpportunityPanel({ needsAttention, highPotentialDormant }: Oppor
               Needs Attention
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              High opportunity score, health below 70 — worth investing in
+              Top quarter of your repos by opportunity, health under 75: worth investing in
             </p>
+            <p className="text-[11px] text-muted-foreground">{LEGEND}</p>
           </CardHeader>
           <CardContent className="p-0 px-6 pb-4">
             {needsAttention.map(repo => (
@@ -99,8 +98,9 @@ export function OpportunityPanel({ needsAttention, highPotentialDormant }: Oppor
               Dormant but Promising
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              High opportunity score, low or no recent activity — candidate for revival
+              Top quarter of your repos by opportunity, little or no recent activity: candidates for revival
             </p>
+            <p className="text-[11px] text-muted-foreground">{LEGEND}</p>
           </CardHeader>
           <CardContent className="p-0 px-6 pb-4">
             {highPotentialDormant.map(repo => (

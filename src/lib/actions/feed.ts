@@ -2,12 +2,13 @@
 
 import { auth } from '@/lib/auth'
 import { collapseRepeats, repeatKey } from '@/lib/feed/collapse'
+import { newAlertsEntry, newestFirst } from '@/lib/feed/events'
 import { db } from '@/lib/db'
 import {
   repositories, repositoryMetrics, deployments,
   securityFindings, healthScoreHistory,
 } from '@/lib/db/schema'
-import { eq, and, lt, gte, inArray, desc } from 'drizzle-orm'
+import { eq, and, lt, gte, inArray, desc, sql } from 'drizzle-orm'
 import { portfolioEvents } from '@/lib/db/schema'
 
 export type FeedEventSeverity = 'critical' | 'warning' | 'info' | 'positive'
@@ -121,34 +122,12 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
     }
   }
 
-  // ── Security findings ──────────────────────────────────────────────────────
+  // ── New security alerts ────────────────────────────────────────────────────
+  // The feed says what happened: alerts that appeared in the last two weeks, one entry per repo.
+  // The standing count lives on the Security page (it used to sit here as 18 pinned "critical" rows).
   for (const repo of userRepos) {
-    const critical = repo.securityFindings.filter(f => f.severity === 'critical')
-    const high = repo.securityFindings.filter(f => f.severity === 'high')
-
-    if (critical.length > 0) {
-      events.push({
-        id: `sec_critical_${repo.id}`,
-        type: 'security_critical',
-        repoId: repo.id,
-        repoName: repo.name,
-        description: `${critical.length} critical security alert${critical.length > 1 ? 's' : ''}`,
-        detail: critical[0].title,
-        severity: 'critical',
-        date: critical[0].createdAt ?? new Date(),
-      })
-    } else if (high.length > 0) {
-      events.push({
-        id: `sec_high_${repo.id}`,
-        type: 'security_high',
-        repoId: repo.id,
-        repoName: repo.name,
-        description: `${high.length} high-severity alert${high.length > 1 ? 's' : ''}`,
-        detail: high[0].title,
-        severity: 'warning',
-        date: high[0].createdAt ?? new Date(),
-      })
-    }
+    const entry = newAlertsEntry(repo.securityFindings)
+    if (entry) events.push({ id: `sec_new_${repo.id}`, repoId: repo.id, repoName: repo.name, ...entry })
   }
 
   // ── Dormant repos ──────────────────────────────────────────────────────────
@@ -293,15 +272,17 @@ export async function getPortfolioFeed(): Promise<FeedEvent[]> {
     }
   }
 
-  // Sort: critical first, then by date descending
-  const severityOrder: Record<FeedEventSeverity, number> = {
-    critical: 0, warning: 1, info: 2, positive: 3,
-  }
-  events.sort((a, b) => {
-    const sev = severityOrder[a.severity] - severityOrder[b.severity]
-    if (sev !== 0) return sev
-    return b.date.getTime() - a.date.getTime()
-  })
+  return newestFirst(events)
+}
 
-  return events
+/** Open critical and high alerts and how many repos have them: the Feed's one-line link to Security. */
+export async function getOpenAlertSummary(): Promise<{ alerts: number; repos: number }> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+  const [row] = await db
+    .select({ alerts: sql<number>`count(*)`.mapWith(Number), repos: sql<number>`count(distinct ${securityFindings.repoId})`.mapWith(Number) })
+    .from(securityFindings)
+    .innerJoin(repositories, eq(securityFindings.repoId, repositories.id))
+    .where(and(eq(repositories.userId, session.user.id), eq(securityFindings.state, 'open'), inArray(securityFindings.severity, ['critical', 'high'])))
+  return { alerts: row?.alerts ?? 0, repos: row?.repos ?? 0 }
 }

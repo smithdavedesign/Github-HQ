@@ -16,7 +16,7 @@ describe('needsAttention', () => {
     const failing = Array.from({ length: 7 }, (_, i) => ({ system: 'ai-stack', component: `c${i}`, event: 'check', message: `m${i}` }))
     const items = needsAttention({ ...base, failing })
     expect(items).toHaveLength(6)
-    expect(items[0]).toEqual({ tone: 'fail', text: 'ai-stack/c0: m0', href: '#system-log' })
+    expect(items[0]).toEqual({ tone: 'fail', text: 'ai-stack/c0: m0', href: '?tab=log#system-log' })
     expect(items[5].text).toBe('…and 2 more failing checks')
   })
 
@@ -35,7 +35,7 @@ describe('needsAttention', () => {
 
   it('accuracy note only when there are failed runs but nothing measured', () => {
     expect(needsAttention({ ...base, accuracy: [acc({ executionFailures: 8 }), acc({ impactType: 'health', executionFailures: 2 })] })).toEqual([
-      { tone: 'info', text: "Advisor accuracy: no merged PR has a measured health change yet (10 failed runs aren't counted against the advice)", href: '#advisor-accuracy' },
+      { tone: 'info', text: "Advisor accuracy: no merged PR has a measured health change yet (10 failed runs aren't counted against the advice)", href: '?tab=kpis#advisor-accuracy' },
     ])
     expect(needsAttention({ ...base, accuracy: [acc({ executionFailures: 8, dataPoints: 3 })] })).toEqual([])
   })
