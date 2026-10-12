@@ -78,8 +78,8 @@ export default async function AgentPerformancePage({ searchParams }: { searchPar
     ? needsAttention({ failing: systemLog?.failing ?? null, pipeline: usage?.pipeline ?? null, claude: usage?.claude ?? null, copilot: usage?.copilot ?? null, accuracy: accuracyStats, now })
     : null
 
-  // One per task by its outcome, last 90 days (counting events counted every retry's failure).
-  const { queued, merged, failed, created: prsOpen, successRate, windowDays } = requestStats(events, now)
+  // One per task by its outcome, last 30 days, report-only requests apart (counting events counted every retry's failure).
+  const { queued, reports, merged, failed, created: prsOpen, successRate, windowDays } = requestStats(events, now)
 
   // Accuracy: compare predictedDelta vs actualDelta for merged events
   const mergedWithDeltas = events
@@ -142,9 +142,9 @@ export default async function AgentPerformancePage({ searchParams }: { searchPar
           requests: (
             <>
               {overview ? <AgentHqPanel initial={overview} section="requests" /> : null}
-            {/* Requests from RepoHQ, one per task, last 90 days; factory numbers are under Factory KPIs */}
+            {/* Requests from RepoHQ, one per task, last 30 days; factory numbers are under Factory KPIs */}
             <h2 className="text-sm font-semibold" data-testid="request-stats-heading">
-              Requests <span className="font-normal text-muted-foreground">· last {windowDays} days, one per task · factory results are under Factory KPIs</span>
+              Requests <span className="font-normal text-muted-foreground">· last {windowDays} days, one per task{reports > 0 ? ` · ${reports} report-only not counted` : ''} · factory results are under Factory KPIs</span>
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <StatCard label="Requests"      value={queued}  icon={Clock}       color="text-indigo-500" />
