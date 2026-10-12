@@ -5,7 +5,7 @@ import { syncAllRepos } from '@/lib/github/sync'
 import { snapshotHealthScores } from '@/lib/health/history'
 import { snapshotPortfolioScore } from '@/lib/health/portfolio-snapshot'
 import { refreshGoalProgress } from '@/lib/goals-progress'
-import { syncStripeMrr } from '@/lib/actions/stripe'
+import { syncStripeMrrForUser } from '@/lib/stripe/mrr'
 import { checkMergedAgentPRs, resolveActualDeltas } from '@/lib/agents/pr-merge-checker'
 import { checkCIFailuresOnAgentPRs } from '@/lib/agents/ci-checker'
 import { checkHealthThresholdAlerts } from '@/lib/notifications/dispatcher'
@@ -37,7 +37,7 @@ async function handle(request: Request) {
         snapshotHealthScores(user.id),
         snapshotPortfolioScore(user.id),
         refreshGoalProgress(user.id),
-        syncStripeMrr(user.id),
+        syncStripeMrrForUser(user.id),
         resolveActualDeltas(user.id),
         checkHealthThresholdAlerts(user.id),
       ])
