@@ -15,7 +15,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'RepoHQ — GitHub Portfolio Health Dashboard',
+  // Each page names itself ("Security · RepoHQ"), so tabs and history are tellable apart.
+  title: { default: 'RepoHQ — GitHub Portfolio Health Dashboard', template: '%s · RepoHQ' },
   description: 'Monitor, score, and prioritize all your GitHub repositories in one place.',
   openGraph: {
     title: 'RepoHQ — GitHub Portfolio Health Dashboard',

@@ -23,6 +23,9 @@ import { IdeaPipelineCard, UsageCards } from '@/components/agents/usage-cards'
 import { loadUsageOverview } from '@/lib/agents/usage-data'
 import { needsAttention } from '@/lib/agents/needs-attention'
 import { NeedsAttention } from '@/components/agents/needs-attention'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = { title: 'Agents' }
 
 export default async function AgentPerformancePage() {
   const session = await auth()

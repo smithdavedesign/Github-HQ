@@ -7,6 +7,7 @@ import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, techStack, deployments, securityFindings } from '@/lib/db/schema'
 import { eq, and, sql, inArray, desc, gte } from 'drizzle-orm'
 import { requestStats, REQUEST_EVENT_TYPES } from '@/lib/agents/request-stats'
+import { skillRuns, type SkillRunRecord } from '@/lib/skills/skill-runs'
 import { agentRequests, portfolioEvents } from '@/lib/db/schema'
 import { closedPrTaskIds } from '@/lib/agents/lifecycle-utils'
 import { decrypt } from '@/lib/crypto-utils'
@@ -988,46 +989,37 @@ export async function getActiveAgentSummary() {
   }
 }
 
-export interface SkillRunRecord {
-  daysAgo: number
-  findingCount: number
-  taskId: string
-  summary?: string
-  topFindings: string[]
-}
+export type { SkillRunRecord } from '@/lib/skills/skill-runs'
 
-/** Returns the most recent agent_skill_report per skill for a repo. Used by GstackSkillLauncher. */
+/** When each gstack skill last ran on a repo (a skill report, or a finished factory request). Used by GstackSkillLauncher. */
 export async function getSkillRunHistory(repoId: number): Promise<Record<string, SkillRunRecord>> {
   const session = await auth()
   if (!session?.user?.id) return {}
 
   try {
-    const events = await db.query.portfolioEvents.findMany({
-      where: and(
-        eq(portfolioEvents.userId, session.user.id),
-        eq(portfolioEvents.repoId, repoId),
-        eq(portfolioEvents.eventType, 'agent_skill_report'),
-      ),
-      columns: { metadata: true, occurredAt: true },
-      orderBy: [desc(portfolioEvents.occurredAt)],
-      limit: 50,
-    })
-
-    const result: Record<string, SkillRunRecord> = {}
-    for (const e of events) {
-      const meta = e.metadata as { skillName?: string; findings?: string[]; taskId?: string; summary?: string } | null
-      if (!meta?.skillName || result[meta.skillName]) continue
-      const msAgo = Date.now() - new Date(e.occurredAt).getTime()
-      const findings = Array.isArray(meta.findings) ? meta.findings.filter(f => f && f.trim()) : []
-      result[meta.skillName] = {
-        daysAgo:      Math.floor(msAgo / (1000 * 60 * 60 * 24)),
-        findingCount: findings.length,
-        taskId:       meta.taskId ?? '',
-        summary:      meta.summary,
-        topFindings:  findings.slice(0, 3),
-      }
-    }
-    return result
+    const [events, requests] = await Promise.all([
+      db.query.portfolioEvents.findMany({
+        where: and(
+          eq(portfolioEvents.userId, session.user.id),
+          eq(portfolioEvents.repoId, repoId),
+          eq(portfolioEvents.eventType, 'agent_skill_report'),
+        ),
+        columns: { metadata: true, occurredAt: true },
+        orderBy: [desc(portfolioEvents.occurredAt)],
+        limit: 50,
+      }),
+      db.query.agentRequests.findMany({
+        where: and(
+          eq(agentRequests.userId, session.user.id),
+          eq(agentRequests.repoId, repoId),
+          inArray(agentRequests.status, ['verified', 'reported', 'pr']),
+        ),
+        columns: { id: true, skill: true, objective: true, findings: true, resolvedAt: true, updatedAt: true },
+        orderBy: [desc(agentRequests.updatedAt)],
+        limit: 50,
+      }),
+    ])
+    return Object.fromEntries(Object.entries(skillRuns(events, requests)).map(([k, { at: _at, ...r }]) => [k, r]))
   } catch {
     return {}
   }

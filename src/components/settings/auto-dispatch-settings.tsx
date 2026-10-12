@@ -69,7 +69,7 @@ export function AutoDispatchSettings({
             On Monday, the advisor queues eligible actions for the factory. Results land on the Agents page: draft PRs once fix requests are promoted to open them (owner-requested at stage pr), verified changes held for review until then.
           </p>
         </div>
-        <Switch checked={enabled} onCheckedChange={setEnabled} />
+        <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Enable auto-dispatch" />
       </div>
 
       {enabled && (
@@ -101,9 +101,10 @@ export function AutoDispatchSettings({
 
           {/* Max per run */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">Max tasks per Monday</label>
+            <label htmlFor="max-tasks-per-run" className="text-sm font-medium">Max tasks per Monday</label>
             <div className="flex items-center gap-2">
               <Input
+                id="max-tasks-per-run"
                 type="number"
                 min={1}
                 max={10}
@@ -126,7 +127,7 @@ export function AutoDispatchSettings({
                 Security fixes can have unintended side-effects. Recommended: keep this on and queue security tasks manually.
               </p>
             </div>
-            <Switch checked={skipSecurity} onCheckedChange={setSkipSecurity} />
+            <Switch checked={skipSecurity} onCheckedChange={setSkipSecurity} aria-label="Skip security tasks" />
           </div>
 
           {/* Accuracy threshold */}

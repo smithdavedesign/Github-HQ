@@ -10,6 +10,9 @@ import { formatDistanceToNow } from '@/lib/utils'
 import { Skull, ExternalLink, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 import { ArchiveOnGitHubButton } from '@/components/repos/archive-on-github-button'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = { title: 'Graveyard' }
 
 export default async function GraveyardPage() {
   const session = await auth()

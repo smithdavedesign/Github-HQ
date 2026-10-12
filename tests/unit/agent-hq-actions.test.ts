@@ -164,6 +164,13 @@ describe('retry', () => {
     expect(enqueue.mock.calls.map(c => (c[0] as { skill: string }).skill)).toEqual(['investigate', 'ship'])
   })
 
+  it('an OpenClaw request that names a skill ("Run /health skill") retries as that skill, not a /ship fix', async () => {
+    enqueue.mockResolvedValue({ ok: true, taskId: 'new', inRedis: true })
+    found = old({ skill: null, mode: 'fix', source: 'openclaw', objective: 'Run /health skill' })
+    await retryRequest('old')
+    expect((enqueue.mock.calls[0][0] as { skill: string }).skill).toBe('health')
+  })
+
   it('refuses unknown, still-open and orphaned requests, and passes the queue\'s reason through', async () => {
     await expect(retryRequest('old')).rejects.toThrow('Request not found')
     found = old({ status: 'running' })

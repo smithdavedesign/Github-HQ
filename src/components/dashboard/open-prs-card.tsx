@@ -44,12 +44,13 @@ export function OpenPrsCard({ result, now }: { result: OpenPrsResult; now: Date 
       </CardHeader>
       {prs.length > 0 && (
         <CardContent className="p-0">
-          <table className="w-full text-sm">
+          {/* Fixed layout: with auto layout a long title widened the table past the card on a phone. */}
+          <table className="w-full text-sm table-fixed">
             <thead>
               <tr className="border-b text-xs text-muted-foreground">
                 <th className="text-left font-medium px-4 sm:px-6 py-2">PR</th>
-                <th className="text-left font-medium px-3 py-2 hidden sm:table-cell">From</th>
-                <th className="text-right font-medium px-4 sm:px-6 py-2">Age</th>
+                <th className="text-left font-medium px-3 py-2 hidden sm:table-cell w-36">From</th>
+                <th className="text-right font-medium px-4 sm:px-6 py-2 w-16 sm:w-20">Age</th>
               </tr>
             </thead>
             <tbody>
@@ -62,7 +63,7 @@ export function OpenPrsCard({ result, now }: { result: OpenPrsResult; now: Date 
                       <a href={p.url} target="_blank" rel="noopener noreferrer" className="group block min-w-0">
                         <span className="text-xs text-muted-foreground">{p.repo.split('/')[1] ?? p.repo}#{p.number}</span>
                         <span className="flex items-center gap-1 font-medium group-hover:underline">
-                          <span className="truncate">{p.title}</span>
+                          <span className="line-clamp-2 sm:line-clamp-1 break-words" title={p.title}>{p.title}</span>
                           <ExternalLink className="w-3 h-3 shrink-0 opacity-50" />
                         </span>
                       </a>

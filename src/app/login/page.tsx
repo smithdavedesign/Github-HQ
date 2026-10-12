@@ -3,6 +3,9 @@ import { Button } from '@/components/ui/button'
 import { GitBranch } from 'lucide-react'
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = { title: 'Sign in' }
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const session = await auth()

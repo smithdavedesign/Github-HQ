@@ -32,7 +32,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { username, quarter } = await params
   const parsed = parseQuarter(quarter)
   return {
-    title: `${username} — ${parsed?.label ?? quarter} Portfolio Report`,
+    title: { absolute: `${username} — ${parsed?.label ?? quarter} Portfolio Report` },
     description: `Quarterly engineering portfolio report for @${username}`,
   }
 }

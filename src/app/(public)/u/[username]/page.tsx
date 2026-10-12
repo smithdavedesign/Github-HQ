@@ -18,7 +18,7 @@ type Props = { params: Promise<{ username: string }> }
 export async function generateMetadata({ params }: Props) {
   const { username } = await params
   return {
-    title: `${username}'s Portfolio — RepoHQ`,
+    title: { absolute: `${username}'s Portfolio — RepoHQ` },
     description: `GitHub portfolio health dashboard for @${username}`,
   }
 }

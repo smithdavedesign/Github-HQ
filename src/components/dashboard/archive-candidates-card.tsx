@@ -91,10 +91,8 @@ export function ArchiveCandidatesCard({ candidates: initial }: ArchiveCandidates
               >
                 Sunset
               </Button>
-              <Link href={`/repos/${c.id}`}>
-                <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </Button>
+              <Link href={`/repos/${c.id}`} aria-label={`Open ${c.name}`} className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-muted">
+                <ChevronRight className="w-3.5 h-3.5" aria-hidden />
               </Link>
             </div>
           </div>

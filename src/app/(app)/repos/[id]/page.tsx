@@ -10,7 +10,8 @@ import type { GstackSkill } from '@/lib/skills/skill-policy'
 import { auth } from '@/lib/auth'
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { db } from '@/lib/db'
-import { portfolioEvents } from '@/lib/db/schema'
+import { portfolioEvents, repositories } from '@/lib/db/schema'
+import type { Metadata } from 'next'
 import { and, eq, inArray, desc } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import { HealthBadge, ActivityBadge } from '@/components/repos/health-badge'
@@ -37,6 +38,16 @@ import type { ClaudeAnalysis } from '@/lib/ai/analysis'
 import type { CostItem } from '@/lib/db/schema'
 
 type Props = { params: Promise<{ id: string }> }
+
+/** The tab says which repo ("Github-HQ · RepoHQ"). */
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params
+  const session = await auth()
+  const repo = session?.user?.id && /^\d+$/.test(id)
+    ? await db.query.repositories.findFirst({ where: and(eq(repositories.id, Number(id)), eq(repositories.userId, session.user.id)), columns: { name: true } })
+    : null
+  return { title: repo?.name ?? 'Repository' }
+}
 
 export default async function RepoDetailPage({ params }: Props) {
   const { id } = await params
