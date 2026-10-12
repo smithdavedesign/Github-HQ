@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { launchKitOrder,
   buildSlot, checkDecision, cleanIdeaText, decisionLabel, seedStatusLabel, demandProgress, groupIdeas, needsDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline,
   whatHappens, buildNowTarget, buildNowSteps, buildRequestLabel, manualStartsLast24h, roadmapMilestones, buildMvpTarget, buildMvpSteps, milestoneRange, goLiveTarget, goLiveSteps,
+  experimentLine, nextMissionText, growthKindLabel, GROWTH_STAGE_LABEL, type GrowthExperiment,
   type IdeaBuildRequestRow, type IdeaDecisionRow, type IdeaView,
 } from '../../src/lib/ideas/idea-utils'
 
@@ -265,5 +266,26 @@ describe('Get it launch-ready (go-live)', () => {
   it('labels a go-live request', () => {
     expect(buildRequestLabel({ status: 'running', milestone: 'GOLIVE', result: null, engine: null })).toBe('Making it launch-ready now')
     expect(buildRequestLabel({ status: 'done', milestone: 'GOLIVE', result: 'Go-live PR opened, tests passing', engine: null })).toBe('Go-live: Go-live PR opened, tests passing')
+  })
+})
+
+describe('Growth loop on the Ideas page', () => {
+  const exp = (over: Partial<GrowthExperiment> = {}): GrowthExperiment => ({ id: 'tiebreak-20261013-seo', kind: 'seo', executor: 'build', hypothesis: 'Pages bring visitors.', metric: 'visit',
+    baseline: 3, target: 50, windowDays: 28, status: 'running', createdAt: '2026-10-13T10:00:00Z', startedAt: '2026-10-13T12:00:00Z', endsAt: '2026-11-10T12:00:00Z', ...over })
+  it('says each experiment in one line: its kind, where it stands, baseline → target', () => {
+    expect(experimentLine(exp())).toBe('search pages · running until Nov 10 · 3 visitors a week → 50 visitors a week')
+    expect(experimentLine(exp({ status: 'proposed', prUrl: 'https://github.com/o/t/pull/9' }))).toBe('search pages · PR waiting for you · 3 visitors a week → 50 visitors a week')
+    expect(experimentLine(exp({ kind: 'kit', executor: 'claude', status: 'proposed' }))).toMatch(/^launch kit · kit ready, waiting for your first post/)
+    expect(experimentLine(exp({ kind: 'landing', metric: 'activate', baseline: 0, target: 0.1, status: 'abandoned', reason: 'the PR was closed without merging' })))
+      .toBe('first screen · abandoned: the PR was closed without merging · 0.0% of visitors → 10.0% of visitors')
+    expect(experimentLine(exp({ kind: 'instrumentation', metric: 'beacon', baseline: 0, target: 1, status: 'decided', decision: 'keep' }))).toBe('funnel beacon · decided: keep · old beacon → beacon live')
+  })
+  it('names the next mission and who does it', () => {
+    expect(nextMissionText({ kind: 'seo', executor: 'build' })).toBe('search pages (a growth build, as a draft PR)')
+    expect(nextMissionText({ kind: 'kit', executor: 'claude' })).toBe('launch kit (posts drafted for you)')
+    expect(nextMissionText({ kind: 'post', executor: 'owner' })).toBe('yours: post the next kit channel')
+    expect(nextMissionText(null)).toMatch(/waiting for the last mission/)
+    expect(GROWTH_STAGE_LABEL.instrument).toBe('Measuring the funnel')
+    expect(growthKindLabel('mystery')).toBe('mystery')
   })
 })

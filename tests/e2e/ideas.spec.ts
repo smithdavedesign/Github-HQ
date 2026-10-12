@@ -4,7 +4,8 @@
  * "Start build now" on an approved idea queues an idea_build_requests row the same way.
  *
  * Disposable branch only (npm run test:e2e pushes the schema there): it seeds `e2e-` ideas and
- * removes them and their decisions afterwards.
+ * removes them and their decisions afterwards. It also sets the pipeline heartbeat's growth policy
+ * (policy.growth.focus, policy.build.startNew) for the growth-loop tests, and puts the original back.
  */
 import { test, expect } from '@playwright/test'
 import { neon } from '@neondatabase/serverless'
@@ -17,6 +18,8 @@ const SLUG = 'e2e-idea-alpha'
 const SLUG2 = 'e2e-idea-beta'
 const SLUG3 = 'e2e-idea-gamma'
 const SLUG4 = 'e2e-idea-delta'
+const SLUG5 = 'e2e-idea-epsilon'
+const ALL = [SLUG, SLUG2, SLUG3, SLUG4, SLUG5]
 
 async function ready(): Promise<string | null> {
   if (!DISPOSABLE_DB) return DISPOSABLE_DB_REASON
@@ -64,12 +67,47 @@ async function seedApproved(slug: string, title: string) {
 /** A built idea: M1 merged, M2 left, priced by its plan. "Get it launch-ready" and "Build the MVP (M2)" apply. */
 async function seedBuilt(slug: string, title: string) {
   const state = { stage: 'building', repo: `https://github.com/smithdavedesign/${slug}`, milestonesDone: ['M1'], build: { milestone: 'M1', status: 'merged' },
+    funnel: { d7: { visit: 2, signup: 0, activate: 0, checkout: 0 }, prev7: { visit: 0 }, all: { visit: 2 }, seen: { visit: true } },
     launch: { steps: [], next: { id: 'mvp', label: 'MVP built: every roadmap milestone merged', owner: 'agent' }, done: 2, total: 10, price: '$12 once' } }
   const docs = { prd: '# PRD', roadmap: '# Roadmap\n\n## M1 — core\n\n## M2 — more' }
   await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, notion_url, hash, updated_at)
     VALUES (${slug}, ${`${title} — a built test idea`}, 'building', ${JSON.stringify({ oneLiner: 'x' })}::jsonb, ${JSON.stringify(state)}::jsonb,
       ${JSON.stringify({ verdict: 'pass', score: 4 })}::jsonb, ${JSON.stringify(docs)}::jsonb, 'https://www.notion.so/e2e', 'e2e', now())
     ON CONFLICT (slug) DO NOTHING`
+}
+
+/** A live focus product in the growth loop: a funnel, an experiment decided, a growth PR waiting, a lesson learned. */
+async function seedGrowth(slug: string, title: string) {
+  const funnel = { at: new Date().toISOString(), d7: { visit: 12, signup: 0, activate: 1, checkout: 0 }, prev7: { visit: 3, signup: 0, activate: 0, checkout: 0 }, all: { visit: 15, signup: 0, activate: 1, checkout: 0 },
+    seen: { visit: true, activate: true, checkout: false }, referrers7d: [{ host: 'google.com', visitors: 7 }, { host: 'direct', visitors: 5 }] }
+  const pr = `https://github.com/smithdavedesign/${slug}/pull/4`
+  const growth = { stage: 'acquire', bottleneck: '12 visitors this week, under 50', next: { kind: 'post', executor: 'owner' }, experiments: [
+    { id: `${slug}-20261013-instrumentation`, kind: 'instrumentation', executor: 'build', hypothesis: 'Counting visits on every page, first uses and Buy clicks shows where visitors drop off.',
+      metric: 'beacon', baseline: 0, target: 1, windowDays: 7, status: 'decided', decision: 'keep', createdAt: '2026-10-13T10:00:00Z' },
+    { id: `${slug}-20261020-seo`, kind: 'seo', executor: 'build', hypothesis: 'Pages that answer what the buyer searches bring visitors from search.',
+      metric: 'visit', baseline: 12, target: 50, windowDays: 28, status: 'proposed', createdAt: '2026-10-20T10:00:00Z', prUrl: pr },
+  ] }
+  const state = { stage: 'live', repo: `https://github.com/smithdavedesign/${slug}`, milestonesDone: ['M1', 'M2'], funnel, growth,
+    build: { milestone: 'GROWTH', kind: 'seo', experiment: `${slug}-20261020-seo`, milestones: [], status: 'pr-open', prUrl: pr },
+    launch: { steps: [], next: { id: 'payments', label: 'Stripe product created and mapped to the repo in RepoHQ', owner: 'david' }, done: 6, total: 10, price: '$5 once' } }
+  const docs = { prd: '# PRD', roadmap: '# Roadmap\n\n## M1 — core\n\n## M2 — more', learnings: '# Learnings\n\n- 2026-10-20 · funnel beacon · keep: the beacon went live, and 1 visitor in 12 used the core action.' }
+  await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, notion_url, hash, updated_at)
+    VALUES (${slug}, ${`${title} — a live test product`}, 'live', ${JSON.stringify({ oneLiner: 'x' })}::jsonb, ${JSON.stringify(state)}::jsonb,
+      ${JSON.stringify({ verdict: 'pass', score: 4 })}::jsonb, ${JSON.stringify(docs)}::jsonb, 'https://www.notion.so/e2e', 'e2e', now())
+    ON CONFLICT (slug) DO NOTHING`
+}
+
+/** The heartbeat's policy before the growth tests changed it (restored after). */
+let savedPolicy: unknown = undefined
+
+/** The growth loop's settings as the pipeline publishes them: Epsilon in focus, first builds held until it has traction. */
+async function setGrowthPolicy() {
+  const [p] = await sql()`SELECT policy FROM idea_pipeline WHERE id = 'main'`
+  savedPolicy = p ? p.policy : null
+  const base = (p?.policy ?? {}) as { build?: Record<string, unknown> }
+  const policy = { ...base, build: { ...(base.build ?? {}), startNew: false }, growth: { focus: [SLUG5], minVisitorsPerWeek: 50 } }
+  await sql()`INSERT INTO idea_pipeline (id, tick_at, ok, errors, policy) VALUES ('main', now(), true, '[]'::jsonb, ${JSON.stringify(policy)}::jsonb)
+    ON CONFLICT (id) DO UPDATE SET policy = EXCLUDED.policy`
 }
 
 async function buildReady(): Promise<string | null> {
@@ -81,9 +119,14 @@ async function buildReady(): Promise<string | null> {
 
 async function cleanup() {
   if (!DB_URL) return
-  await sql()`DELETE FROM idea_build_requests WHERE slug IN (${SLUG}, ${SLUG2}, ${SLUG3}, ${SLUG4})`.catch(() => {})
-  await sql()`DELETE FROM idea_decisions WHERE slug IN (${SLUG}, ${SLUG2}, ${SLUG3}, ${SLUG4})`.catch(() => {})
-  await sql()`DELETE FROM ideas WHERE slug IN (${SLUG}, ${SLUG2}, ${SLUG3}, ${SLUG4})`.catch(() => {})
+  await sql()`DELETE FROM idea_build_requests WHERE slug = ANY(${ALL})`.catch(() => {})
+  await sql()`DELETE FROM idea_decisions WHERE slug = ANY(${ALL})`.catch(() => {})
+  await sql()`DELETE FROM ideas WHERE slug = ANY(${ALL})`.catch(() => {})
+  if (savedPolicy !== undefined) {
+    if (savedPolicy === null) await sql()`DELETE FROM idea_pipeline WHERE id = 'main'`.catch(() => {})
+    else await sql()`UPDATE idea_pipeline SET policy = ${JSON.stringify(savedPolicy)}::jsonb WHERE id = 'main'`.catch(() => {})
+    savedPolicy = undefined
+  }
   await sql()`DELETE FROM idea_seeds WHERE text LIKE 'e2e:%'`.catch(() => {})
 }
 
@@ -97,6 +140,8 @@ test.describe('Ideas page', () => {
     await seed(SLUG2, 'Beta', 5)
     await seedApproved(SLUG3, 'Gamma')
     await seedBuilt(SLUG4, 'Delta')
+    await seedGrowth(SLUG5, 'Epsilon')
+    await setGrowthPolicy()
   })
   test.afterAll(cleanup)
 
@@ -259,5 +304,48 @@ test.describe('Ideas page', () => {
     await expect(page.getByRole('button', { name: 'Get it launch-ready' })).toHaveCount(0)
     await page.getByRole('button', { name: /Withdraw/ }).click()
     await expect(page.getByText('Withdrawn')).toBeVisible()
+  })
+
+  test('the new-build hold: an approved idea that was never built says its first build waits for traction', async ({ page }) => {
+    const skip = await buildReady()
+    test.skip(!!skip, skip ?? '')
+    await page.goto(`/ideas/${SLUG3}`)
+    await expect(page.getByText(`M1 not started: new builds wait until ${SLUG5} has 50 visitors a week. Start build now still works.`)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Just M1' })).toBeVisible()
+    await page.goto('/ideas')
+    await expect(page.getByText(/new ideas wait for traction/)).toBeVisible()
+  })
+
+  test("the Growth card shows a focus product's funnel, the loop's stage and next mission, and its experiments", async ({ page }) => {
+    const skip = await ready()
+    test.skip(!!skip, skip ?? '')
+    await page.goto(`/ideas/${SLUG5}`)
+    const card = page.getByTestId('growth-card')
+    await expect(card.getByTestId('growth-funnel')).toHaveText('12 visitors this week (3 the week before), 1 activation, 0 Buy clicks')
+    await expect(card.getByText('Sources this week: google.com 7, direct 5')).toBeVisible()
+    await expect(card.getByText(/^Old beacon: only home-page views/), 'its beacon sends visits').toHaveCount(0)
+    await expect(card.getByText(/Getting visitors:/)).toBeVisible()
+    await expect(card.getByTestId('growth-next')).toContainText('yours: post the next kit channel')
+    await expect(card.getByText('search pages · PR waiting for you · 12 visitors a week → 50 visitors a week')).toBeVisible()
+    await expect(card.getByText(/funnel beacon · decided: keep · old beacon → beacon live/)).toBeVisible()
+    await expect(card.getByRole('link', { name: 'PR' })).toHaveAttribute('href', `https://github.com/smithdavedesign/${SLUG5}/pull/4`)
+    // The Build card names the growth PR; a live product offers no milestone builds.
+    await expect(page.getByText('Growth PR pr-open: search pages, one change to test one idea.')).toBeVisible()
+    await expect(page.getByRole('button', { name: /build now|Build the MVP|Just M1/ })).toHaveCount(0)
+    // A product with a funnel that isn't a focus product is measured, not worked on.
+    await page.goto(`/ideas/${SLUG4}`)
+    await expect(page.getByTestId('growth-card').getByTestId('growth-funnel')).toHaveText('2 visitors this week (0 the week before), 0 activations, 0 Buy clicks')
+    await expect(page.getByTestId('growth-card').getByText(/Not a focus product/)).toBeVisible()
+  })
+
+  test('the Learnings tab shows what a product learned from its experiments', async ({ page }) => {
+    const skip = await ready()
+    test.skip(!!skip, skip ?? '')
+    await page.goto(`/ideas/${SLUG5}`)
+    await page.getByRole('tab', { name: 'Learnings' }).click()
+    await expect(page.getByText(/the beacon went live, and 1 visitor in 12 used the core action/)).toBeVisible()
+    // An idea without lessons has no Learnings tab.
+    await page.goto(`/ideas/${SLUG4}`)
+    await expect(page.getByRole('tab', { name: 'Learnings' })).toHaveCount(0)
   })
 })

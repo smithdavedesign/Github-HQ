@@ -167,6 +167,42 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - **What stays the owner's:** the price, creating the Stripe payment link (it's money, so the broker only files the request), and posting the launch.
 - **Build order:** build queues (the weekly slot, approved builds) are ordered by `revenueScore`, so the idea closest to its first dollar goes first, not the one approved first. Demand evidence counts most: a demand test that passed, then signups. Then a plan with a price, then checklist progress, then the review's score.
 
+**The growth loop** (step 5d; idea-factory `lib/growth.js`, `bin/idea-growth.js`, `policy.growth`; [growth-loop-prd.md](growth-loop-prd.md)):
+- **The record, every tick:** each focus product's `state.growth` holds:
+  - its **stage**: launch, instrument, acquire, activate, monetize, retain or park;
+  - the **bottleneck**, in words;
+  - the **next mission**;
+  - its **experiments**.
+
+  The rules, first match wins:
+  1. **Not launch-ready:** nothing; the go-live covers it.
+  2. **The last two experiments moved nothing:** the owner decides whether to park it.
+  3. **The old one-view beacon:** a funnel-beacon build.
+  4. **Under 50 visitors a week:** a launch kit if there's none, then search pages, then "post the next channel". A fresh kit once every channel is posted.
+  5. **Visitors but no first use:** a first-screen build.
+  6. **Active users but no Buy clicks:** a paid-offer build.
+  7. **Buy clicks or MRR:** no missions.
+
+  A tried mission isn't repeated. An abandoned one can come back after a week.
+- **One mission a day per product,** from 10:00, at most `maxMissionsPerDay` (2) a day and `maxBuildsPerWeek` (2) growth builds a week. Never on a tick that already built or wrote a revenue plan. Never while something waits for the owner: an open growth PR, or a kit nobody has posted from. `policy.growth.auto: false` stops new missions; `tick --growth` ignores the 10:00 start in tests.
+- **The missions:**
+  - **A growth build** (`buildOne({growth})`, branch `growth-<experiment id>`, one draft PR "Growth: <slug> (<kind>)"):
+    - one change, on Sonnet at high effort, in the sandbox, with no free-pool fallback;
+    - the brief goes in the build-input file: the mission, the funnel, `LEARNINGS.md`, `PLAYBOOK.md`'s Rules, and how the same kind of experiment went on other products;
+    - the builder keeps the beacon, adds tests, appends to `GROWTH.md` and writes honest copy only;
+    - it may only file broker requests;
+    - the PR states the hypothesis, the metric now, the target and the window.
+  - **A launch kit** (`bin/idea-growth.js`): Claude on the subscription follows the launch skill and can write only `LAUNCH-KIT.md`: no shell, no MCP, no posting.
+  - **An owner item:** a line in the morning email's Today block.
+- **Experiments:**
+  - **When one starts:** recorded as `proposed` before it starts, with the baseline from this week's funnel and the target (50 visitors a week; or half as much again as a share of visitors, at least 10% for activations and 2% for Buy clicks).
+  - **Windows:** 14 days by default, 28 for search pages, 7 for the beacon.
+  - **What moves them on:**
+    - a merged growth PR starts the window, and closing the PR abandons the experiment (step 4a);
+    - a kit runs from its first logged post after it was written, and is abandoned after 7 days unposted;
+    - a build that never opened a PR is abandoned after a day.
+  - **Judging** at the window's end comes in Phase 3.
+
 The first version created a private repo every night. That would have added about 30 repos a month to a portfolio where RepoHQ already rates 35 of 47 active repos as archive candidates. Now a repo exists only after the owner says yes.
 
 ## Deciding: the Ideas page

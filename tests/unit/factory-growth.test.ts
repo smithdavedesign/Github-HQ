@@ -90,3 +90,18 @@ describe('Growth section', () => {
     expect(readGrowthInput(path.join(home, 'nope'), [])).toEqual({ focus: [], minVisitorsPerWeek: 50, holdNewBuilds: false, kits: {}, logs: {} })
   })
 })
+
+describe('Growth loop lines', () => {
+  it("shows the loop's stage, next mission and live experiments for a focus product", () => {
+    const withGrowth: IdeaState = { ...tiebreak, growth: { stage: 'instrument', bottleneck: 'its beacon only counts home-page views', next: null,
+      experiments: [{ id: 'tiebreak-20261013-instrumentation', kind: 'instrumentation', executor: 'build', hypothesis: 'h', metric: 'beacon', baseline: 0, target: 1, windowDays: 7,
+        status: 'proposed', createdAt: '2026-10-13T10:00:00Z', prUrl: 'https://github.com/o/tiebreak/pull/9' }] } }
+    const lines = growthLines([withGrowth], growth())
+    expect(lines).toContain('Growth loop: measuring the funnel (its beacon only counts home-page views). Next: waiting for the last mission’s result.')
+    expect(lines).toContain('Experiment: funnel beacon · PR waiting for you · old beacon → beacon live — https://github.com/o/tiebreak/pull/9')
+  })
+  it('asks whether to park a product whose experiments moved nothing', () => {
+    const parked: IdeaState = { ...tiebreak, launch: undefined, growth: { stage: 'park', bottleneck: 'the last 2 experiments moved nothing', next: { kind: 'park', executor: 'owner' } } }
+    expect(todayLines([parked], growth({ kits: {} }), [], NOW)[0]).toBe('tiebreak: the last 2 experiments moved nothing. Park it or keep going? (https://repohq.vercel.app/ideas/tiebreak)')
+  })
+})

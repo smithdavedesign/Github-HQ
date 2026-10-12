@@ -133,9 +133,13 @@ Everything else the system does stays out of the block.
 - **Honest distribution:** posts say a builder is asking. Each community's rules decide whether a link
   goes in. No fake accounts, votes or paid placement.
 - **Privacy:** prompts and reports carry counts and site names, never emails or visitor hashes.
-- **Caps:** at most 2 missions a day and 2 growth builds a week; one mission in flight per product; never
-  on a tick that already built; nothing before 10:00. Growth builds use Sonnet, which leaves Opus for
-  MVP builds.
+- **Caps:** at most 2 missions a day and 2 growth builds a week, one per product a day; never on a tick
+  that already built; nothing before 10:00. Growth builds use Sonnet, which leaves Opus for MVP builds.
+- **One mission in flight per product.** In flight means being built or waiting for David: an open growth
+  PR, or a kit nobody has posted from. An experiment being measured doesn't block the next mission, so a
+  product can have a kit and search pages running at once. Holding each 14–28-day window alone would take
+  about 50 days to get through the beacon, a kit and search pages. Overlapping windows are noted when an
+  experiment is judged.
 
 ## Kept and cut from v1
 
@@ -157,16 +161,17 @@ v1 would have built.
 
 Each phase ships as draft PRs to RepoHQ and idea-factory, and David merges them.
 
-1. **Day 0, no code:** tiebreak's first launch kit; David creates its Stripe payment link.
-2. **Phase 0, fixes:** a bug that can rerun the daily steps; go-live builds closing unrelated build
-   requests; merges on live products going untracked. Also the new-build hold, and the four funnel
-   events in RepoHQ and in future go-live builds.
-3. **Phase 1, measurement:** the funnel saved for every live product; the experiment record,
-   `LEARNINGS.md` and `PLAYBOOK.md`; funnel lines in MCP; the Today block.
-4. **Phase 2, the growth step:** the rules, growth builds, kit runs and caps. tiebreak's first missions:
-   its funnel events, then SEO pages for searches such as "PickFu alternative".
+1. **Day 0, no code (done 2026-10-12):** tiebreak's first launch kit; David creates its Stripe payment link.
+2. **Phase 0, fixes (live 2026-10-12):** a bug that can rerun the daily steps; merges on live products
+   going untracked; Start build now after a go-live. Also the new-build hold, and the four funnel events
+   in RepoHQ and in future go-live builds.
+3. **Phase 1, measurement (live 2026-10-12):** the funnel saved for every live product; `LEARNINGS.md`
+   and `PLAYBOOK.md`; funnel lines in MCP; the Today block.
+4. **Phase 2, the growth step:** the rules, the experiment record, growth builds, kit runs and caps,
+   and the Growth card on the Ideas page. tiebreak's first missions: its funnel beacon, then SEO pages
+   for searches such as "PickFu alternative".
 5. **Phase 3, outcomes:** experiments judged when their window ends, lessons appended, playbook rules
-   proposed; the Growth card on the Ideas page.
+   proposed.
 6. **Later:** Search Console, a "mark posted" button, one-time Stripe payments counted as revenue,
    research missions.
 
