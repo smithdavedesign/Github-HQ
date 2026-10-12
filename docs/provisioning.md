@@ -52,6 +52,6 @@ Set 2026-10-11. Progress is tracked here.
 - [x] **2. The broker:** `~/ai-stack/bin/provision`, unit tests in `~/ai-stack/bin/tests/test_provision.py` (keychain and APIs stubbed; the main test is that values are never printed).
 - [x] **3. Hooked into the builder:** idea-factory `bin/idea-build.js` (allowed tool and prompt). OpenClaw uses it through exec and the `ai-stack` skill.
 - [ ] **4. Browser-only checklist:** collect, per new service, the one-time steps with no API as they come up (the first `provision request`s show which).
-- [ ] **5. Google web-search key into the keychain.** It's registered in `bin/secrets` as `google-websearch` (keychain service `openclaw-google-websearch-key`, copy in `~/.openclaw/openclaw.json`). The owner stores it once, then `bin/secrets check` keeps the copy honest. Consider rotating it, since it has sat in plain text.
+- [x] **5. Google web-search key into the keychain.** Stored by the owner on 2026-10-11 (keychain service `openclaw-google-websearch-key`). `bin/secrets check` passes: every copy matches the keychain and no backup holds a live secret.
 
 **Not yet:** Supabase, Render, Stripe and other providers are added as verbs when a build first asks for them (`provision request` shows which).
