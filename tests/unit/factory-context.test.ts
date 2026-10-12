@@ -69,6 +69,16 @@ describe('sources', () => {
     expect(entries[0]).toMatchObject({ id: 'idea:tripsplit', dataClass: 'personal', tags: ['stage:validate', 'travel'] })
     expect(entries[0]!.text).toMatch(/Roaming kills apps\..*Trip organizers\..*Review: validate \(7\/10\)/)
   })
+  it("indexes the growth playbook by section, as personal context that isn't counted as an idea", () => {
+    const home = mkdtempSync(path.join(tmpdir(), 'ideas-'))
+    mkdirSync(path.join(home, 'ideas'))
+    writeFileSync(path.join(home, 'PLAYBOOK.md'), '# Playbook\nintro\n## Rules\n- **Distribution before conversion.** Until 50 visitors a week…\n## Proposed\nNone yet.\n')
+    const { entries } = loadIdeas(home)
+    expect(entries.map(e => e.id)).toEqual(['playbook:rules', 'playbook:proposed'])
+    expect(entries[0]).toMatchObject({ source: 'idea', dataClass: 'personal', title: 'Growth playbook: Rules', tags: ['playbook', 'growth'] })
+    expect(entries[0]!.text).toMatch(/Distribution before conversion/)
+    expect(overview(buildIndex(entries))).toMatch(/Ideas: 0\./)
+  })
   it('splits docs into sections so agents find the exact part', () => {
     const root = mkdtempSync(path.join(tmpdir(), 'docs-'))
     mkdirSync(path.join(root, 'docs'))

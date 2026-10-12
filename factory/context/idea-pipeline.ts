@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
+import { funnelSummary } from '../../src/lib/ideas/idea-utils'
 import type { IdeaState } from './ideas'
 
 export interface ValidationPolicy {
@@ -14,7 +15,7 @@ export interface ValidationPolicy {
   buildEarly?: { minSignups: number; minSignupRate: number }
 }
 
-/** Unique visitors per referring host, from `idea_signals` views (signups carry no referrer). */
+/** Unique visitors per referring host, from `idea_signals` views and product visits (signups carry no referrer). */
 export interface ReferrerCount { slug: string; host: string; visitors: number }
 
 export interface LaunchPost { channel: string; url?: string; postUrl?: string; postedAt: string; note?: string }
@@ -89,7 +90,8 @@ export function formatPipeline(p: PipelineInput): string {
       } else {
         const extra = i.build?.prUrl ? ` ${buildName(i.build.milestone)} PR ${i.build.status ?? 'open'}: ${i.build.prUrl}` : i.revenue ? ` $${i.revenue.mrr.toFixed(2)} MRR` : i.review ? ` review ${i.review.score}/10` : ''
         const road = i.launch?.total ? ` Road to revenue ${i.launch.done}/${i.launch.total}${i.launch.next ? `, next: ${i.launch.next.label} (${i.launch.next.owner === 'david' ? 'yours' : 'agents'})` : ', done'}.` : ''
-        lines.push(`- ${i.slug}: ${i.title.split(' — ')[0]}.${extra}${road}`)
+        const funnel = i.funnel ? ` Funnel: ${funnelSummary(i.funnel)}.` : ''
+        lines.push(`- ${i.slug}: ${i.title.split(' — ')[0]}.${extra}${road}${funnel}`)
       }
     }
   }
@@ -110,6 +112,11 @@ export function formatIdea(i: IdeaState, p: PipelineInput): string {
     ? `Launch posts:\n${posts.map(x => `- ${day(x.postedAt)} ${x.channel}${x.postUrl ? `: ${x.postUrl}` : ''}${x.note ? ` (${x.note})` : ''}`).join('\n')}`
     : i.stage === 'validate' ? 'Launch posts: none logged yet. The `launch` skill drafts them from LAUNCH.md.' : 'Launch posts: none logged.')
   if (i.build) lines.push(`Build: ${buildName(i.build.milestone)} ${i.build.status ?? '?'}${i.build.prUrl ? ` ${i.build.prUrl}` : ''}${i.build.testsPassing === false ? ' (tests failing)' : ''}`)
+  // A built product's funnel (idea-factory lib/growth.js): this week against the last, and its sources.
+  if (i.funnel) {
+    const f = i.funnel
+    lines.push(`Funnel: ${funnelSummary(f)}${f.referrers7d?.length ? `; this week's sources: ${f.referrers7d.map(r => `${r.host} ${r.visitors}`).join(', ')}` : ''}.${f.seen?.visit ? '' : ' It still runs the old beacon (one view from the home page): activations and Buy clicks aren\'t counted yet.'}`)
+  }
   // The road to the first dollar (idea-factory lib/revenue.js), with whose step is next.
   if (i.launch?.total) {
     lines.push(`Road to revenue: ${i.launch.done}/${i.launch.total} steps${i.launch.price ? ` at ${i.launch.price}` : ''}${i.launch.buyer ? `; who pays: ${i.launch.buyer}` : ''}`)

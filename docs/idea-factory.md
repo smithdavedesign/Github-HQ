@@ -56,6 +56,14 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
 
 - **Landing page:** each `validate` idea gets one, rendered deterministically from the review (escaped, honest: "not built yet") at `https://idea-pages-livid.vercel.app/<slug>/` (Vercel Hobby, public).
 - **Signals:** the page posts a view on load and a signup on submit to RepoHQ's public `POST /api/ideas/signal`. Live products post `visit`, `activate` and `checkout` to the same endpoint (Go live, below). Inputs are validated, a honeypot catches bots, IPs are stored only as an HMAC, and each visitor has hourly limits per kind. Rows go to the `idea_signals` table.
+- **Counted every tick** (`lib/repohq.js` `funnelBySlug`, one query):
+  - **A demand test** gets `state.signals`: views, unique visitors and signups.
+  - **A built product that is deployed or has had a visitor** gets `state.funnel` (`lib/growth.js`):
+    - unique visitors, activations and Buy clicks for the last 7 days, the 7 before and all time;
+    - the week's top sources, without the product's own pages;
+    - which events its beacon has ever sent.
+
+    For products launched before 2026-10-12, home-page views count as visits. The funnel feeds the Ideas page, the morning email's Growth section, MCP, the launch skill, and the checklist's **First user** step (an activation counts).
 - **Launch post:** `LAUNCH.md` in the idea's record has a ready-to-paste post and where to share it. **Distribution is the owner's only job here, and the weakest link**: a page nobody visits proves nothing.
   - The `launch` skill (idea-factory `skills/launch/`) makes it a short task. `/launch <slug>` checks that each channel exists and allows the post, adds better ones from the research, and writes a post per channel to `LAUNCH-KIT.md`. The owner posts by hand, then `/launch <slug> posted` appends to `launch-log.json`.
   - `/launch <slug> status` and the MCP tool `get_idea_pipeline` show visitors by referring site next to the posts logged.

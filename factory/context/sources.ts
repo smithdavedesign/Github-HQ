@@ -76,6 +76,20 @@ export function loadIdeas(ideaHome: string): LoadResult {
       // A malformed record is skipped, not fatal.
     }
   }
+  // The growth loop's playbook (idea-factory PLAYBOOK.md, docs/growth-loop-prd.md): one entry per section,
+  // so a search for "landing page" or "pricing" finds what worked on another product.
+  const playbook = path.join(ideaHome, 'PLAYBOOK.md')
+  if (existsSync(playbook)) {
+    const updatedAt = statSync(playbook).mtime.toISOString()
+    for (const part of readFileSync(playbook, 'utf8').split(/^## /m).slice(1)) {
+      const [head = '', ...body] = part.split('\n')
+      entries.push({
+        id: `playbook:${head.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, source: 'idea', dataClass: 'personal',
+        title: `Growth playbook: ${clip(head, 120)}`, text: clip(body.join(' ')),
+        url: 'https://github.com/smithdavedesign/idea-factory/blob/main/PLAYBOOK.md', tags: ['playbook', 'growth'], updatedAt,
+      })
+    }
+  }
   return { entries, errors: [] }
 }
 

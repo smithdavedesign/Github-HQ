@@ -84,7 +84,7 @@ an idea.
 |---|---|
 | **Slack #team-agents** | Real-time: system alerts (🔴 failing, 🟠 still failing every 6h, 🟢 recovered), and conversations with the companion |
 | **WhatsApp** | Personal: companion morning and evening messages, the AI briefing, the daily idea report |
-| **Morning email** (06:45) | The daily digest: review queue, ideas and revenue, the factory's roles, what's failing now across every system |
+| **Morning email** (06:45) | The daily digest. It opens with **Today**: at most five things for the owner, money first: a focus product's checklist step, the next post from a launch kit, idea PRs to merge ([growth loop](growth-loop-prd.md)). Then the review queue, ideas and revenue, the focus products' funnels (**Growth**), the factory's roles, and what's failing now across every system |
 | **RepoHQ Agents page** | **Needs attention** on top, then tabs (`?tab=`): **Now** (the idea pipeline: building now, queued, caps, latest runs; Subscriptions: Claude Pro and Copilot use), **Runs** (the factory's worker, queue, schedules, runs and traces; data syncs), **Requests** (every request with its trace; 90-day figures), **KPIs** (factory KPIs, advisor accuracy, tiers, cost), **Log** (the **System log**: failing now plus the latest events; the Activity Log) |
 | **RepoHQ Ideas page** | Review ideas and decide: approve a build, demand-test or pass (applied through the Notion Idea Board within 15 min) |
 | **Notion Idea Board** | The board the idea pipeline follows; decisions can still be made here |
@@ -95,9 +95,9 @@ an idea.
    `~/.claude/skills` by `bash skills/install.sh`.
 2. **MCP server `repohq`**, registered at user scope:
    - `get_system_overview` gives this doc plus live counts;
-   - `search_context` searches repos, ideas, bookmarks and docs (public and personal only);
+   - `search_context` searches repos, ideas (with the growth playbook, idea-factory `PLAYBOOK.md`), bookmarks and docs (public and personal only);
    - `get_system_status` gives what's failing now and counts per system (the same as `~/ai-stack/bin/system-status`);
-   - `get_idea_pipeline` gives each idea's stage and demand test against the decision rules, and with a slug, visitors by source and the launch posts logged;
+   - `get_idea_pipeline` gives each idea's stage and demand test against the decision rules, a built product's funnel (visits, activations, Buy clicks, this week against the last), and with a slug, visitors by source and the launch posts logged;
    - `get_portfolio_summary`, `get_repo_context` and `get_next_action` cover portfolio state.
 3. **CLI:** `npm run context -- search "<query>" | interests | overview` in RepoHQ, or
    `~/idea-factory/bin/context` (cloud-safe classes only).
