@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { launchKitOrder,
   buildSlot, checkDecision, cleanIdeaText, decisionLabel, seedStatusLabel, demandProgress, groupIdeas, needsDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline,
   whatHappens, buildNowTarget, buildNowSteps, buildRequestLabel, manualStartsLast24h, roadmapMilestones, buildMvpTarget, buildMvpSteps, milestoneRange, goLiveTarget, goLiveSteps,
-  experimentLine, nextMissionText, growthKindLabel, GROWTH_STAGE_LABEL, type GrowthExperiment,
+  experimentLine, nextMissionText, growthKindLabel, GROWTH_STAGE_LABEL, beaconLive, type GrowthExperiment,
   type IdeaBuildRequestRow, type IdeaDecisionRow, type IdeaView,
 } from '../../src/lib/ideas/idea-utils'
 
@@ -287,5 +287,18 @@ describe('Growth loop on the Ideas page', () => {
     expect(nextMissionText(null)).toMatch(/waiting for the last mission/)
     expect(GROWTH_STAGE_LABEL.instrument).toBe('Measuring the funnel')
     expect(growthKindLabel('mystery')).toBe('mystery')
+  })
+})
+
+describe('the funnel beacon', () => {
+  it("counts as live once it sent a visit, or once a go-live or beacon build with it merged, before the first visit", () => {
+    const quiet = { d7: { visit: 0 }, seen: { visit: false } }
+    expect(beaconLive({ funnel: quiet })).toBe(false)
+    expect(beaconLive({ funnel: { ...quiet, seen: { visit: true } } })).toBe(true)
+    expect(beaconLive({ funnel: quiet, golive: { mergedAt: 'x', beacon: 'funnel' } })).toBe(true)
+    expect(beaconLive({ funnel: quiet, golive: { mergedAt: 'x' } }), 'a go-live from before the funnel beacon').toBe(false)
+    const exp = (status: GrowthExperiment['status']): GrowthExperiment => ({ id: 'x', kind: 'instrumentation', executor: 'build', hypothesis: 'h', metric: 'beacon', baseline: 0, target: 1, windowDays: 7, status, createdAt: 'x' })
+    expect(beaconLive({ funnel: quiet, growth: { experiments: [exp('running')] } })).toBe(true)
+    expect(beaconLive({ funnel: quiet, growth: { experiments: [exp('proposed')] } }), 'its PR is still open').toBe(false)
   })
 })

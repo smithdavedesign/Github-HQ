@@ -6,7 +6,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { OpenPr } from '../../src/lib/agents/open-prs'
-import { GROWTH_STAGE_LABEL, IDEAS_PAGE_URL, experimentLine, funnelSummary, launchKitOrder, nextMissionText } from '../../src/lib/ideas/idea-utils'
+import { GROWTH_STAGE_LABEL, IDEAS_PAGE_URL, beaconLive, experimentLine, funnelSummary, launchKitOrder, nextMissionText } from '../../src/lib/ideas/idea-utils'
 import type { IdeaState } from './ideas'
 import { readLaunchLog, type LaunchLog } from './idea-pipeline'
 
@@ -126,7 +126,7 @@ export function growthLines(ideas: IdeaState[], g: GrowthInput): string[] {
     const f = i.funnel
     const sources = f?.referrers7d?.length ? `; sources: ${f.referrers7d.map(r => `${r.host} ${r.visitors}`).join(', ')}` : ''
     lines.push(`${name}: ${f ? `${funnelSummary(f)}${sources}` : 'no funnel yet (the pipeline saves one once the product is deployed or has a visitor)'}.`)
-    if (f && !f.seen?.visit) lines.push(`${name} still runs the old beacon (one view from the home page), so activations and Buy clicks aren't counted yet; its next growth build adds them.`)
+    if (f && !beaconLive(i)) lines.push(`${name} still runs the old beacon (one view from the home page), so activations and Buy clicks aren't counted yet; its next growth build adds them.`)
     const gr = i.growth
     if (gr?.stage) {
       lines.push(`Growth loop: ${GROWTH_STAGE_LABEL[gr.stage].toLowerCase()} (${gr.bottleneck ?? ''}). Next: ${nextMissionText(gr.next)}.`)

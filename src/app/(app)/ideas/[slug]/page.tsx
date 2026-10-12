@@ -6,7 +6,7 @@ import { factoryAccess } from '@/lib/agents/factory-queue'
 import { loadIdea } from '@/lib/ideas/ideas-data'
 import {
   DECISION_LABEL, launchKitOrder, buildMvpSteps, buildMvpTarget, goLiveSteps, goLiveTarget, buildNowSteps, buildNowTarget, buildRequestLabel, milestoneRange, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
-  growthKindLabel, manualStartsLast24h, pendingDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
+  beaconLive, growthKindLabel, manualStartsLast24h, pendingDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
 } from '@/lib/ideas/idea-utils'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -228,7 +228,7 @@ export default async function IdeaPage({ params }: Props) {
 
           {(repo || v.state.launch) && v.stage !== 'pass' && <RevenueCard launch={v.state.launch} hasRepo={!!repo} />}
 
-          {(v.state.funnel || v.state.growth) && v.stage !== 'pass' && <GrowthCard funnel={v.state.funnel} growth={v.state.growth} focus={!!policy?.growth?.focus?.includes(v.slug)} />}
+          {(v.state.funnel || v.state.growth) && v.stage !== 'pass' && <GrowthCard funnel={v.state.funnel} growth={v.state.growth} focus={!!policy?.growth?.focus?.includes(v.slug)} beacon={beaconLive(v.state)} />}
 
           {v.idea.overlaps && (
             <Card>

@@ -105,3 +105,11 @@ describe('Growth loop lines', () => {
     expect(todayLines([parked], growth({ kits: {} }), [], NOW)[0]).toBe('tiebreak: the last 2 experiments moved nothing. Park it or keep going? (https://repohq.vercel.app/ideas/tiebreak)')
   })
 })
+
+describe('Growth section and the funnel beacon', () => {
+  it("doesn't call a fresh funnel beacon the old one just because no visit came yet", () => {
+    const fresh: IdeaState = { ...tiebreak, golive: { mergedAt: '2026-10-13T00:00:00Z', beacon: 'funnel' } }
+    expect(growthLines([fresh], growth()).some(l => /old beacon/.test(l))).toBe(false)
+    expect(growthLines([tiebreak], growth()).some(l => /old beacon/.test(l))).toBe(true)
+  })
+})
