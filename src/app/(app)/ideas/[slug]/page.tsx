@@ -80,6 +80,7 @@ export default async function IdeaPage({ params }: Props) {
     { id: 'launchKit', label: 'Launch kit', md: v.docs.launchKit },
     { id: 'build', label: 'Build notes', md: v.docs.build },
     { id: 'revenue', label: 'Revenue plan', md: v.docs.revenue },
+    { id: 'learnings', label: 'Learnings', md: v.docs.learnings },
   ].filter((t): t is { id: string; label: string; md: string } => !!t.md?.trim())
   const sources = (v.idea.sources ?? []).map(safeUrl).filter((u): u is string => !!u)
 

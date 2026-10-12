@@ -27,6 +27,7 @@ import { copilotQuota, copilotUsageData, publishCopilotUsage } from './lib/copil
 import { inactivityDisabled, type SystemHealth } from './lib/system-health'
 import { buildContextIndex } from './bin/context'
 import { readIdeaStates } from './context/ideas'
+import { readGrowthInput } from './context/growth'
 import { refreshOpenClawBrief } from './context/brief'
 import { systemStatus } from './system/status'
 
@@ -56,9 +57,11 @@ async function main() {
   const quota = await copilotQuota()
   // A daily Copilot snapshot for the Agents page, even on days no cycle changes it.
   publishCopilotUsage(cfg.home, copilotUsageData(quota, usage, cfg.copilot, cfg.copilot.enabled), { force: true })
+  const ideas = readIdeaStates(ideaHome)
   const input = {
     now,
-    ideas: readIdeaStates(ideaHome),
+    ideas,
+    growth: readGrowthInput(ideaHome, ideas),
     entries,
     repos: cfg.repos,
     pool: existsSync(cfg.litellm.configPath) ? readManagedModels(readFileSync(cfg.litellm.configPath, 'utf8')) : {},

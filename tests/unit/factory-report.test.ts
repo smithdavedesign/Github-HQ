@@ -131,6 +131,15 @@ describe('buildMorningReport', () => {
     expect(r.html).toContain('<a href="https://github.com/o/app/pull/7">o/app/pull/7</a>')
     expect(r.html).not.toMatch(/<script/i)
   })
+  it('opens with Today when the growth loop has focus products, and puts Growth after Founder', () => {
+    const ideas = [{ slug: 'tiebreak', title: 'tiebreak — polls', stage: 'building' as const, repo: 'https://github.com/o/tiebreak',
+      launch: { steps: [], next: { id: 'payments', label: 'Stripe product created and mapped to the repo in RepoHQ', owner: 'david' as const }, done: 6, total: 10 } }]
+    const growth = { focus: ['tiebreak'], minVisitorsPerWeek: 50, holdNewBuilds: true, kits: {}, logs: {} }
+    const g = buildMorningReport(input(entries, { ideas, growth, openPrsAll: [] }))
+    expect(g.sections.map(s => s.id).slice(0, 4)).toEqual(['today', 'inbox', 'ideas', 'growth'])
+    expect(g.sections[0]!.lines[0]).toMatch(/^tiebreak, your step on the road to revenue: Stripe product/)
+    expect(g.text).toMatch(/^RepoHQ factory .*\n\nTODAY \(growth loop\) — Your ten minutes, money first/)
+  })
 })
 
 describe('toMime', () => {

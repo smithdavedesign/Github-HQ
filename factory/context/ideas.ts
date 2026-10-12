@@ -5,7 +5,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
-import { IDEAS_PAGE_URL, milestoneRange, needsDecision, type IdeaStateJson } from '../../src/lib/ideas/idea-utils'
+import { IDEAS_PAGE_URL, funnelSummary, milestoneRange, needsDecision, type IdeaStateJson } from '../../src/lib/ideas/idea-utils'
 
 export type IdeaStage = 'idea' | 'validate' | 'build' | 'repo' | 'building' | 'live' | 'pass'
 
@@ -30,6 +30,8 @@ export interface IdeaState {
   ownerDecision?: IdeaStateJson['ownerDecision']
   /** The road to the first dollar (idea-factory lib/revenue.js). */
   launch?: IdeaStateJson['launch']
+  /** A built product's funnel from its beacon (idea-factory lib/growth.js). */
+  funnel?: IdeaStateJson['funnel']
 }
 
 export function readIdeaStates(ideaHome: string): IdeaState[] {
@@ -90,8 +92,8 @@ export function ideaLines(ideas: IdeaState[], now: Date): string[] {
       const left = days(i.validation?.decideAfter)
       return `Validating ${short(i.title)}: ${s.uniqueVisitors} visitors, ${s.signups} signup${s.signups === 1 ? '' : 's'}${left !== null ? `, decision in ${Math.max(left, 0)}d` : ''}${i.page ? ` — ${i.page.url}` : ''}`
     }),
-    ...[...by('building'), ...by('repo')].map(i => `Building ${short(i.title)}: ${buildStatus(i)}`),
-    ...by('live').map(i => `Live ${short(i.title)}: $${(i.revenue?.mrr ?? 0).toFixed(2)} MRR`),
+    ...[...by('building'), ...by('repo')].map(i => `Building ${short(i.title)}: ${buildStatus(i)}${i.funnel ? ` · ${funnelSummary(i.funnel)}` : ''}`),
+    ...by('live').map(i => `Live ${short(i.title)}: $${(i.revenue?.mrr ?? 0).toFixed(2)} MRR${i.funnel ? ` · ${funnelSummary(i.funnel)}` : ''}`),
     // The road to revenue: closest to the first dollar first, your steps called out.
     ...ideas.filter(i => i.stage !== 'pass' && i.launch?.next).sort((a, b) => (b.launch!.done / b.launch!.total) - (a.launch!.done / a.launch!.total)).slice(0, 5)
       .map(i => `Road to revenue · ${short(i.title)}: ${i.launch!.done}/${i.launch!.total}${i.launch!.price ? ` at ${i.launch!.price}` : ''}, next: ${i.launch!.next!.label} (${i.launch!.next!.owner === 'david' ? 'yours' : 'agents'})`),

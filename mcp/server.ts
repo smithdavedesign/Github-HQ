@@ -307,7 +307,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (slug && !idea) return { content: [{ type: 'text', text: `No idea "${slug}". Known: ${ideas.map(i => i.slug).join(', ')}` }] }
         const referrers = idea
           ? await sql`SELECT slug, coalesce(substring(referrer from '^https?://(?:www\.)?([^/:?#]+)'), 'direct') AS host, count(DISTINCT coalesce(ip_hash, id::text))::int AS visitors
-              FROM idea_signals WHERE slug = ${idea.slug} AND kind = 'view' GROUP BY 1, 2` as ReferrerCount[]
+              FROM idea_signals WHERE slug = ${idea.slug} AND kind IN ('view', 'visit') GROUP BY 1, 2` as ReferrerCount[]
           : []
         const launchLogs = new Map<string, LaunchLog>()
         for (const i of idea ? [idea] : ideas) {

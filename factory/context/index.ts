@@ -121,7 +121,8 @@ export function interests(index: ContextIndex, recent = 15): { topics: Array<{ t
 /** A short plain-text brief of the whole system for an agent starting cold. */
 export function overview(index: ContextIndex): string {
   const repos = index.entries.filter(e => e.source === 'repo')
-  const ideas = index.entries.filter(e => e.source === 'idea')
+  // The growth playbook's sections are indexed with the ideas (factory/context/sources.ts) but aren't ideas.
+  const ideas = index.entries.filter(e => e.source === 'idea' && !e.tags.includes('playbook'))
   const tag = (e: ContextEntry, prefix: string) => e.tags.find(t => t.startsWith(prefix))?.slice(prefix.length)
   const mrr = repos.reduce((n, r) => n + Number(tag(r, 'mrr:') ?? 0), 0)
   const focus = repos.filter(r => r.tags.includes('focus')).map(r => r.title)

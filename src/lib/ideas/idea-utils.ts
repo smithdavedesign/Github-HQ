@@ -62,7 +62,7 @@ export interface ReviewJson {
   launch?: { channels?: { name: string; url?: string; why?: string }[]; post?: string }
 }
 
-export interface IdeaDocs { research?: string; prd?: string; roadmap?: string; review?: string; launch?: string; build?: string; revenue?: string; launchKit?: string }
+export interface IdeaDocs { research?: string; prd?: string; roadmap?: string; review?: string; launch?: string; build?: string; revenue?: string; launchKit?: string; learnings?: string }
 
 /**
  * The "## Order" section of an idea's launch kit (LAUNCH-KIT.md, written by the launch skill): the
@@ -79,7 +79,17 @@ export function launchKitOrder(kit: string | undefined): string | null {
 /** Unique visitors per event; signups are distinct emails. */
 export interface FunnelCounts { visit?: number; signup?: number; activate?: number; checkout?: number }
 /** Saved by the pipeline for built products: the last 7 days, the 7 before, all time, and where visitors came from. */
-export interface Funnel { at?: string; d7?: FunnelCounts; prev7?: FunnelCounts; all?: FunnelCounts; referrers7d?: { host: string; visitors: number }[] }
+export interface Funnel {
+  at?: string; d7?: FunnelCounts; prev7?: FunnelCounts; all?: FunnelCounts; referrers7d?: { host: string; visitors: number }[]
+  /** Which events the product's beacon has ever sent: no `visit` means it still runs the old one-view beacon. */
+  seen?: { visit?: boolean; activate?: boolean; checkout?: boolean }
+}
+
+/** "3 visitors this week (0 the week before), 0 activations, 0 Buy clicks", as idea-factory's funnelText says it. */
+export function funnelSummary(f: Funnel): string {
+  const n = (x: number | undefined, w: string) => `${x ?? 0} ${w}${x === 1 ? '' : 's'}`
+  return `${n(f.d7?.visit, 'visitor')} this week (${f.prev7?.visit ?? 0} the week before), ${n(f.d7?.activate, 'activation')}, ${n(f.d7?.checkout, 'Buy click')}`
+}
 
 export interface LaunchStep { id: string; label: string; owner: 'agent' | 'david'; done: boolean; evidence?: string }
 export interface LaunchChecklist {

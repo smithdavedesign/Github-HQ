@@ -10,6 +10,7 @@ import { ladderStatus } from './ladder'
 import type { AttemptEntry, CiOracleEntry, LedgerEntry, ResolutionEntry, ReviewEntry, ScanEntry, SignalsEntry, SmokeEntry } from './ledger'
 import { NOTHING_WORKABLE, STALE_PR_DAYS, rankOpportunities, type Opportunity } from './sensors'
 import { ideaLines, type IdeaState } from '../context/ideas'
+import { growthLines, todayLines, type GrowthInput } from '../context/growth'
 import { computeFactoryKpis, kpiHeadline } from '../../src/lib/agents/factory-kpis'
 import { deadEndKey, deadEnds, latestSignals, toJobRecords } from './ledger'
 import { kpiTrend, nightShiftReadiness, readinessLine } from './night-shift'
@@ -51,11 +52,13 @@ export interface ReportInput {
   preflight?: PreflightCheck[]
   /** Idea pipeline lifecycle records (idea-factory ideas/<slug>/state.json): stage, demand signal, revenue. */
   ideas?: IdeaState[]
+  /** The growth loop's focus, launch kits and logs (factory/context/growth.ts): the Today and Growth sections. */
+  growth?: GrowthInput
   /** The system log (factory/system): failing-now and 24h counts across every system. */
   systemEvents?: SystemEventsSummary | null
 }
 
-export type RoleId = 'ideas' | 'inbox' | 'next' | 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro' | 'ladder'
+export type RoleId = 'today' | 'ideas' | 'growth' | 'inbox' | 'next' | 'pm' | 'architect' | 'builder' | 'qa' | 'reviewer' | 'security' | 'ops' | 'retro' | 'ladder'
 
 export interface RoleSection {
   id: RoleId
@@ -217,6 +220,11 @@ export function buildMorningReport(input: ReportInput): MorningReport {
 
   const sections: RoleSection[] = []
 
+  // ── Today: the growth loop's ten minutes for you, first (docs/growth-loop-prd.md) ──
+  if (input.growth && input.ideas?.length) {
+    sections.push({ id: 'today', role: 'Today', skill: 'growth loop', title: 'Your ten minutes, money first', lines: todayLines(input.ideas, input.growth, input.openPrsAll, now) })
+  }
+
   // ── Inbox: every open PR waiting for you, so none get lost ──────────────────
   if (input.openPrsAll !== undefined) {
     sections.push({ id: 'inbox', role: 'Your review queue', skill: 'open PRs across your repos', title: 'Waiting for you, oldest first', lines: inboxLines(input.openPrsAll, attempts, reviews, now, input.ownerLogin) })
@@ -231,6 +239,10 @@ export function buildMorningReport(input: ReportInput): MorningReport {
   if (input.ideas?.length) {
     sections.push({ id: 'ideas', role: 'Founder', skill: 'idea pipeline (gstack idea review → demand test → build)', title: 'Ideas, demand and revenue', lines: ideaLines(input.ideas, input.now) })
   }
+
+  // ── Growth: the focus products' funnels and distribution ────────────────────
+  const growth = input.growth && input.ideas?.length ? growthLines(input.ideas, input.growth) : []
+  if (growth.length) sections.push({ id: 'growth', role: 'Growth', skill: 'growth loop (docs/growth-loop-prd.md)', title: 'Focus products: funnel and distribution', lines: growth })
 
   // ── PM: what goes to the Architect next ─────────────────────────────────────
   const inTarget = openPrs.length >= input.prTarget.min

@@ -108,4 +108,12 @@ describe('get_idea_pipeline: the road to revenue', () => {
     expect(t).toMatch(/- \[ \] Launch-ready: .* \(5\/9 launch checks · missing: robots\.txt\)/)
     expect(formatIdea({ ...built, build: { milestone: 'MVP', status: 'merged' } }, input({ ideas: [built] }))).toMatch(/Build: MVP merged/)
   })
+  it("shows a built product's funnel: this week against the last, its sources, and whether the beacon is the old one", () => {
+    const funnel = { d7: { visit: 3, activate: 0, checkout: 0 }, prev7: { visit: 0 }, all: { visit: 3 }, seen: { visit: false }, referrers7d: [{ host: 'google.com', visitors: 2 }] }
+    const live: IdeaState = { ...built, slug: 'tiebreak', funnel }
+    const t = formatIdea(live, input({ ideas: [live] }))
+    expect(t).toMatch(/Funnel: 3 visitors this week \(0 the week before\), 0 activations, 0 Buy clicks; this week's sources: google\.com 2\. It still runs the old beacon/)
+    expect(formatIdea({ ...live, funnel: { ...funnel, seen: { visit: true } } }, input({ ideas: [live] }))).not.toMatch(/old beacon/)
+    expect(formatPipeline(input({ ideas: [live] }))).toMatch(/- tiebreak: CodeSpend\..* Funnel: 3 visitors this week/)
+  })
 })
