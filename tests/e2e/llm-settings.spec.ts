@@ -18,9 +18,10 @@ test.describe('Settings — AI Provider', () => {
     }
   })
 
-  // One of three key states is always shown; wait for it (an immediate isVisible() ran before
-  // the card rendered and read every state as absent).
-  const keyStatus = /Your key active|App key active|No key/
+  // One of the key states is always shown, or, when the chosen provider is paid and off, the line
+  // saying which provider AI calls use instead. Wait for it (an immediate isVisible() ran before the
+  // card rendered and read every state as absent).
+  const keyStatus = /Your key active|App key active|No key|AI features use|AI features are off/
 
   test('shows key status badge', async ({ page }) => {
     await page.goto('/settings')
@@ -31,7 +32,8 @@ test.describe('Settings — AI Provider', () => {
     await page.goto('/settings')
     await expect(page.getByText(keyStatus).first()).toBeVisible({ timeout: 8000 })
     const hasUserKey = await page.getByText('Your key active').isVisible()
-    if (!hasUserKey) {
+    const locked = await page.getByText(/is a paid API, and RepoHQ runs at \$0/).isVisible()
+    if (!hasUserKey && !locked) {
       // Should show the key input and save button
       await expect(page.getByRole('button', { name: /Save & verify/i })).toBeVisible()
     }
@@ -41,7 +43,8 @@ test.describe('Settings — AI Provider', () => {
     await page.goto('/settings')
     await expect(page.getByText(keyStatus).first()).toBeVisible({ timeout: 8000 })
     const hasUserKey = await page.getByText('Your key active').isVisible()
-    if (!hasUserKey) {
+    const locked = await page.getByText(/is a paid API, and RepoHQ runs at \$0/).isVisible()
+    if (!hasUserKey && !locked) {
       const input = page.locator('input[type="password"]').first()
       await expect(input).toBeVisible()
       await expect(page.getByRole('button', { name: /Save & verify/i })).toBeVisible()

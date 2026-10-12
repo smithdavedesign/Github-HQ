@@ -53,6 +53,8 @@ export function LLMSettings({ initialProvider, keySource, savedProviders: initia
   const [isPending, startTransition] = useTransition()
 
   const providerMeta = PROVIDERS.find(p => p.value === provider)!
+  // A paid provider chosen before the $0 rule: no key form, since it can't be saved or used.
+  const locked = isPaidProvider(provider) && !paidAllowed
 
   // Sync server-provided state when navigating back to this page
   useEffect(() => { setCurrentKeySource(keySource) }, [keySource])
@@ -137,13 +139,13 @@ export function LLMSettings({ initialProvider, keySource, savedProviders: initia
           <p className="text-xs text-amber-600 dark:text-amber-400">
             {effectiveProvider
               ? `AI features use ${PROVIDER_LABELS[effectiveProvider]}: ${providerMeta.label} is ${isPaidProvider(provider) && !paidAllowed ? 'a paid API, and RepoHQ runs at $0' : 'missing a key'}.`
-              : 'AI features are off: no free provider has a key. Add an OpenRouter or Gemini key above.'}
+              : 'AI features are off: no free provider has a key. Pick OpenRouter or Gemini above and add its key.'}
           </p>
         )}
       </div>
 
       {/* Key status */}
-      <div className="flex items-center justify-between">
+      {!locked && <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {currentKeySource === 'user' ? (
             <>
@@ -168,10 +170,10 @@ export function LLMSettings({ initialProvider, keySource, savedProviders: initia
             <Trash2 className="w-3.5 h-3.5" />
           </Button>
         )}
-      </div>
+      </div>}
 
       {/* Key input — shown when no user key set */}
-      {currentKeySource !== 'user' && (
+      {!locked && currentKeySource !== 'user' && (
         <form onSubmit={handleSave} className="space-y-2">
           <Input
             type="password"
