@@ -16,7 +16,7 @@ import { kpiTrend, nightShiftReadiness, readinessLine } from './night-shift'
 import { preflightLines, type PreflightCheck } from './preflight'
 import { AGING_PR_DAYS, PR_SOURCE_LABEL, prAgeDays, prSource, sortForReview, type OpenPr } from '../../src/lib/agents/open-prs'
 import { prValueFromLabels } from '../../src/lib/agents/pr-value'
-import { nextActionLines, type NextActions } from '../../src/lib/portfolio/next-actions'
+import { nextActionLines, type FactoryFixKind, type NextActions } from '../../src/lib/portfolio/next-actions'
 
 export interface ReportInput {
   now: Date
@@ -94,6 +94,19 @@ const KIND_PRIORITY = ['red-ci', 'fix-types', 'lint-autofix', 'fix-lint', 'fix-t
 const KIND_LABEL: Record<string, string> = {
   'fix-types': 'fix type errors', 'lint-autofix': 'apply lint autofix', 'fix-lint': 'fix lint errors', 'fix-tests': 'fix failing tests',
   'deps-audit': 'patch vulnerable dependencies', 'docs-readme': 'fill README gaps', 'red-ci': 'fix red CI',
+}
+
+/**
+ * What the factory can't fix on a repo, for the Chief of Staff's "deserve attention" list: a fix kind
+ * that dead-ended in the ledger, or one whose capability isn't at "pr" yet. Pure.
+ */
+export function factoryCantFixOf(repo: string, dead: Set<string>, capabilities: Record<string, string> | undefined): Partial<Record<FactoryFixKind, string>> {
+  const out: Partial<Record<FactoryFixKind, string>> = {}
+  for (const kind of ['deps-audit', 'red-ci'] as const) {
+    if (dead.has(deadEndKey(repo, kind))) out[kind] = kind === 'deps-audit' ? 'its dependency fixes failed twice: see QA for why' : 'its red-CI fixes failed twice: see QA for why'
+    else if (capabilities && capabilities[kind] !== 'pr') out[kind] = `${kind === 'red-ci' ? 'red-CI fixes are' : 'dependency fixes are'} at "${capabilities[kind] ?? 'off'}", not "pr", so it only reports`
+  }
+  return out
 }
 
 /**
@@ -226,7 +239,8 @@ export function buildMorningReport(input: ReportInput): MorningReport {
     lines: [
       `${plural(openPrs.length, 'factory PR')} open (overnight target ${input.prTarget.min}–${input.prTarget.max})${inTarget ? '' : ' — below target'}.`,
       todo.length === 0
-        ? 'Backlog is empty: every scanned repo is green or already has a PR open. Next lever: add repos to the allowlist.'
+        // Not "every repo is green": red checks and advisories can remain as dead ends (QA lists them).
+        ? 'Nothing left the factory can do: every open problem has a PR waiting for you or hit a dead end (see QA). Next lever: fix a dead end by hand, or add repos to the allowlist.'
         : `Next up (${plural(todo.length, 'task')}, highest value first):`,
       ...todo.slice(0, 8).map((t, i) => `${i + 1}. ${short(t.repo)} — ${t.kind === 'red-ci' && input.capabilities?.['red-ci'] !== 'pr' ? 'investigate red CI (report only, no PR)' : KIND_LABEL[t.kind] ?? t.kind}`),
       ...(todo.length > 8 ? [`…and ${todo.length - 8} more.`] : []),

@@ -173,3 +173,15 @@ describe('report wording', () => {
     expect(text).not.toMatch(/Copilot reviews today/)
   })
 })
+
+describe('factoryCantFixOf', () => {
+  it('names dead-ended fixes and capabilities that only report', async () => {
+    const { factoryCantFixOf } = await import('../../factory/lib/report')
+    const dead = new Set(['o/family-tree:deps-audit'])
+    expect(factoryCantFixOf('o/family-tree', dead, { 'deps-audit': 'pr', 'red-ci': 'report' })).toEqual({
+      'deps-audit': 'its dependency fixes failed twice: see QA for why',
+      'red-ci': 'red-CI fixes are at "report", not "pr", so it only reports',
+    })
+    expect(factoryCantFixOf('o/app', dead, { 'deps-audit': 'pr', 'red-ci': 'pr' })).toEqual({})
+  })
+})

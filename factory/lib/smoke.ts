@@ -54,9 +54,11 @@ const ok = (p: PageResult) => p.status !== null && p.status < 400 && !p.error
 
 /**
  * Third-party chatter that comes and goes between loads (seen 2026-10-10: Google sign-in's FedCM
- * prompt logged an error on one load and not the next). Never the app's own problem.
+ * prompt logged an error on one load and not the next). Never the app's own problem. Also Vercel's
+ * own toolbar, which only previews load: a strict Content-Security-Policy blocks its
+ * vercel.live/_next-live/feedback script (go-adventure#5 "failed" smoke on that, 2026-10-12).
  */
-export const NOISE = /GSI_LOGGER|FedCM|Provider's accounts list is empty|chrome-extension:\/\/|Download the React DevTools/i
+export const NOISE = /GSI_LOGGER|FedCM|Provider's accounts list is empty|chrome-extension:\/\/|Download the React DevTools|vercel\.live\//i
 
 /**
  * Pure comparison of the same paths on production and on the preview. Each side is loaded more than

@@ -73,3 +73,11 @@ describe('morning report smoke lines', () => {
     ])
   })
 })
+
+describe('smoke noise: Vercel\'s preview toolbar', () => {
+  it('a CSP block of vercel.live\'s feedback script is not the app\'s error; the app\'s own CSP errors still count', async () => {
+    const { NOISE } = await import('../../factory/lib/smoke')
+    expect(NOISE.test("Loading the script 'https://vercel.live/_next-live/feedback/feedback.js' violates the following Content Security Policy directive: \"script-src 'self' 'unsafe-inline'\"")).toBe(true)
+    expect(NOISE.test("Loading the script 'https://cdn.example.com/app.js' violates the following Content Security Policy directive")).toBe(false)
+  })
+})

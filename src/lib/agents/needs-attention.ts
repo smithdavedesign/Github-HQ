@@ -27,7 +27,11 @@ export interface AttentionInput {
 const HOUR = 3_600_000
 const MAX_FAILING = 5
 
-export function needsAttention({ failing, pipeline, claude, copilot, accuracy, now }: AttentionInput): AttentionItem[] {
+/**
+ * Only what wants a decision or a fix now. A used-up Copilot quota (nothing to do until it resets,
+ * at $0) and "advisor accuracy: no data yet" are states, shown on the Now and KPIs tabs instead.
+ */
+export function needsAttention({ failing, pipeline, claude, now }: AttentionInput): AttentionItem[] {
   const items: AttentionItem[] = []
   for (const f of (failing ?? []).slice(0, MAX_FAILING)) {
     const summary = errorSummary(f.message)
@@ -49,14 +53,5 @@ export function needsAttention({ failing, pipeline, claude, copilot, accuracy, n
     items.push({ tone: 'warn', text: `Claude subscription hit its limit: ${claude.lastCapacity.message}` })
   }
 
-  if (copilot?.installed && copilot.percentRemaining === 0 && !copilot.overagePermitted) {
-    items.push({ tone: 'warn', text: `Copilot premium requests used up${copilot.resetDate ? ` until ${copilot.resetDate}` : ''}: the Copilot builder is paused and reviews fall back to the local reviewer` })
-  }
-
-  const measured = accuracy.some(s => s.dataPoints > 0)
-  const failedRuns = accuracy.reduce((n, s) => n + s.executionFailures, 0)
-  if (!measured && failedRuns > 0) {
-    items.push({ tone: 'info', text: `Advisor accuracy: no merged PR has a measured health change yet (${failedRuns} failed runs aren't counted against the advice)`, href: '?tab=kpis#advisor-accuracy' })
-  }
   return items
 }
