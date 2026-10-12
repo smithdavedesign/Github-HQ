@@ -1,4 +1,4 @@
-import { getPortfolioFeed } from '@/lib/actions/feed'
+import { getOpenAlertSummary, getPortfolioFeed } from '@/lib/actions/feed'
 import { getPortfolioEvents } from '@/lib/actions/changelog'
 import { getOpportunityCost } from '@/lib/actions/repositories'
 import { OpportunityCostCard } from '@/components/dashboard/opportunity-cost-card'
@@ -61,10 +61,11 @@ export default async function FeedPage({ searchParams }: PageProps) {
   const activeTab = tab === 'milestones' ? 'milestones' : 'feed'
   const currentYear = new Date().getFullYear()
 
-  const [events, milestones, opportunityCost] = await Promise.all([
+  const [events, milestones, opportunityCost, openAlerts] = await Promise.all([
     getPortfolioFeed(),
     getPortfolioEvents(),
     getOpportunityCost(),
+    getOpenAlertSummary(),
   ])
 
   return (
@@ -72,7 +73,7 @@ export default async function FeedPage({ searchParams }: PageProps) {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Portfolio Feed</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Portfolio events, alerts, and milestones
+          What happened across your repos, newest first, and your milestones
         </p>
       </div>
 
@@ -81,12 +82,21 @@ export default async function FeedPage({ searchParams }: PageProps) {
       {/* Opportunity Cost — weekly retrospective belongs here, not the main dashboard */}
       {activeTab === 'feed' && <OpportunityCostCard result={opportunityCost} />}
 
+      {/* Standing alerts are a state, not an event: one line to the Security page instead of a row per repo. */}
+      {activeTab === 'feed' && openAlerts.alerts > 0 && (
+        <Link href="/security" className="flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm hover:bg-muted/50" data-testid="feed-open-alerts">
+          <ShieldAlert className="w-4 h-4 text-red-500 shrink-0" aria-hidden />
+          <span><span className="font-medium tabular-nums">{openAlerts.alerts}</span> open critical and high alerts in {openAlerts.repos} repo{openAlerts.repos === 1 ? '' : 's'}</span>
+          <span className="ml-auto text-xs text-muted-foreground">Security →</span>
+        </Link>
+      )}
+
       {activeTab === 'feed' ? (
         events.length === 0 ? (
           <div className="py-16 text-center text-muted-foreground text-sm">
             <Activity className="w-8 h-8 mx-auto mb-3 opacity-30" />
-            <p className="font-medium">All clear — no issues detected</p>
-            <p className="text-xs mt-1">Run a sync to check your latest repo health</p>
+            <p className="font-medium">Nothing new</p>
+            <p className="text-xs mt-1">Merges, health changes, new alerts and agent results show up here as they happen</p>
           </div>
         ) : (
           <div className="space-y-2">
