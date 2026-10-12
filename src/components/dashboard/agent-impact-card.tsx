@@ -4,7 +4,7 @@ import Link from 'next/link'
 
 interface AgentImpactCardProps {
   /** Requests from RepoHQ (Run agent, skills, auto-dispatch), one per task, last `windowDays` (requestStats). */
-  requests: { merged: number; queued: number; successRate: number | null; totalScoreGained: number; recentMergeCount: number; windowDays: number } | null
+  requests: { merged: number; queued: number; created: number; successRate: number | null; totalScoreGained: number; recentMergeCount: number; windowDays: number } | null
   /** The factory's PRs (sensed work and requests), last 30 days, from agent_jobs. */
   factory: { merged: number; closed: number; prsOpened: number; acceptance: number | null } | null
 }
@@ -47,7 +47,7 @@ export function AgentImpactCard({ requests, factory }: AgentImpactCardProps) {
             <GitMerge className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
             <span>
               <span className="font-medium">Requests ({requests.windowDays} days):</span>{' '}
-              <span className="tabular-nums">{requests.merged} merged of {requests.queued}</span>
+              <span className="tabular-nums">{requests.created} opened a PR · {requests.merged} merged of {requests.queued}</span>
               {requests.successRate != null && (
                 <span className={requests.successRate >= 50 ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}> ({requests.successRate}%)</span>
               )}

@@ -6,7 +6,7 @@ import { toNum } from '@/lib/utils'
 import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, techStack, deployments, securityFindings } from '@/lib/db/schema'
 import { eq, and, sql, inArray, desc, gte } from 'drizzle-orm'
-import { requestStats, REQUEST_EVENT_TYPES } from '@/lib/agents/request-stats'
+import { requestStats, REQUEST_EVENT_TYPES, REQUEST_WINDOW_DAYS } from '@/lib/agents/request-stats'
 import { skillRuns, type SkillRunRecord } from '@/lib/skills/skill-runs'
 import { agentRequests, ideas, portfolioEvents } from '@/lib/db/schema'
 import { closedPrTaskIds } from '@/lib/agents/lifecycle-utils'
@@ -906,7 +906,7 @@ export async function getAgentStats() {
   const session = await auth()
   if (!session?.user?.id) return null
 
-  const windowDays = 90
+  const windowDays = REQUEST_WINDOW_DAYS
   const events = await db.query.portfolioEvents.findMany({
     where: and(
       eq(portfolioEvents.userId, session.user.id),
