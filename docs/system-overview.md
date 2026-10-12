@@ -35,6 +35,8 @@ an idea.
 | Build | M1's exit criteria become tests first, then the code; a draft PR in the idea's private repo | **the owner merges** | $0 |
 | Live and earning | RepoHQ tracks lifecycle, health and MRR; the factory keeps it healthy | the owner | free tiers until it earns |
 
+**After launch: the growth loop** ([growth-loop-prd.md](growth-loop-prd.md), being built from 2026-10-12). Once a day, for each focus product (`policy.growth.focus` in idea-factory; tiebreak first), the pipeline reads the funnel and picks the bottleneck by rule. It then starts at most one mission: a growth build as a draft PR, a launch kit of posts the owner publishes, or an item in the morning email's Today block. Each mission is an experiment with a baseline, judged when its window ends, and the lesson is kept. Until a focus product reaches 50 visitors a week, the weekly build slot only finishes MVPs it has started.
+
 ## Where everything lives
 
 | Part | Where | What it is |
@@ -126,7 +128,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Operations | Fragile, visible | Fragile, **watched** | One system log across every part. Probes cover services, launchd jobs, OpenClaw crons, GitHub crons and provider errors, with alerts to Slack. Still one Mac. |
 
 **Weakest links now, in order:**
-1. **Distribution.** A landing page nobody sees proves nothing; posting the launch post is on the owner (permitly's is ready).
+1. **Distribution.** A landing page nobody sees proves nothing. tiebreak, the one live product, has had 3 visitors. Posting stays the owner's job; the growth loop ([growth-loop-prd.md](growth-loop-prd.md)) makes it one item a day, with posts drafted and measured.
 2. **The first real build.** M1 building is proven by a test run (tripsplit, 19 tests); the first real one follows a Build decision.
 3. **Local model quality**, which is a hardware problem.
 4. **Single-Mac operations.**

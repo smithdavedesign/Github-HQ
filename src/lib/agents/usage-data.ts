@@ -68,7 +68,7 @@ export async function loadUsageOverview(now = new Date()): Promise<UsageOverview
     if (q.status === 'running' && !building.has(q.slug)) building.set(q.slug, { idea: q.slug, milestone: q.milestone, since: q.startedAt ?? q.createdAt, manual: true, model: null })
   }
 
-  const states = ideaRows.map(r => ({ stage: r.stage, state: (r.state ?? {}) as IdeaStateJson }))
+  const states = ideaRows.map(r => ({ slug: r.slug, stage: r.stage, state: (r.state ?? {}) as IdeaStateJson }))
   return {
     pipeline: { tickAt: p?.tickAt ?? null, ok: p?.ok ?? null, errors: (p?.errors as string[] | null) ?? [], policy },
     runs,

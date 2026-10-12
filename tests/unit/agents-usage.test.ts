@@ -63,7 +63,7 @@ describe('Agents page: the idea pipeline from the system log', () => {
       ev({ ts: ago(30 * 60), message: 'recorded b on claude-sonnet-5-5 (seeded)' }),
       ev({ ts: ago(20), message: 'recorded c on claude-sonnet-5-5' }),
     ])
-    const slot = { used: 1, max: 1, free: false, nextFreeAt: new Date('2026-10-18T00:00:00Z') }
+    const slot = { used: 1, max: 1, free: false, nextFreeAt: new Date('2026-10-18T00:00:00Z'), held: null }
     const l = ideaLimits({ manualStarts: [ago(5), ago(25 * 60)], weekly: slot, runs, policy: { build: { manualPerDay: 2 }, research: { seeded: { maxPerDay: 3 } } }, now: NOW })
     expect(l).toEqual({ manual: { used: 1, cap: 2 }, weekly: slot, seeded: { used: 1, cap: 3 } })
     expect(ideaLimits({ manualStarts: [], weekly: slot, runs: [], policy: null, now: NOW })).toMatchObject({ manual: { cap: 2 }, seeded: { cap: 3 } })

@@ -70,7 +70,7 @@ describe('Ideas page: what each decision may do', () => {
   })
   it('explains what happens next, including a used build slot', () => {
     const free = buildSlot([], POLICY, NOW)
-    expect(free).toEqual({ used: 0, max: 1, free: true, nextFreeAt: null })
+    expect(free).toEqual({ used: 0, max: 1, free: true, nextFreeAt: null, held: null })
     const usedAt = daysAgo(2)
     const used = buildSlot([idea('x', { state: { build: { at: usedAt } } }), idea('y', { state: { build: { at: daysAgo(9) } } })], POLICY, NOW)
     expect(used).toMatchObject({ used: 1, free: false })
@@ -80,6 +80,15 @@ describe('Ideas page: what each decision may do', () => {
     expect(whatHappens('validate', idea('p'), free, POLICY, 5).join(' ')).toMatch(/5 demand tests are already running/)
     expect(whatHappens('pass', idea('p', { stage: 'validate' }), free, POLICY, 0).join(' ')).toMatch(/demand test stops/)
     expect(whatHappens('pass', idea('p', { stage: 'pass' }), free, POLICY, 0).join(' ')).toMatch(/agree with the review/)
+  })
+  it('holds first builds until a focus product has traction (policy.build.startNew false)', () => {
+    const policy = { ...POLICY, build: { maxPerWeek: 1, startNew: false }, growth: { focus: ['tiebreak'], minVisitorsPerWeek: 50 } }
+    const quiet = idea('tiebreak', { stage: 'live', state: { funnel: { d7: { visit: 3 } } } })
+    const slot = buildSlot([quiet], policy, NOW)
+    expect(slot.held).toBe('new builds wait until tiebreak has 50 visitors a week')
+    expect(whatHappens('build', idea('permitly'), slot, policy, 0).join(' ')).toMatch(/Its first build waits: new builds wait until tiebreak has 50 visitors a week\. Start build now builds it sooner/)
+    expect(buildSlot([idea('tiebreak', { state: { funnel: { d7: { visit: 50 } } } })], policy, NOW).held).toBeNull()
+    expect(buildSlot([quiet], POLICY, NOW).held, 'no startNew setting: nothing held').toBeNull()
   })
 })
 
@@ -151,6 +160,11 @@ describe('Start build now (idea_build_requests)', () => {
     expect(buildNowTarget({ ...building, state: { repo, build: { milestone: 'M1', status: 'pr-open' } } })).toMatchObject({ ok: false, reason: expect.stringMatching(/waiting for your review/) })
     expect(buildNowTarget({ ...building, state: { repo, milestonesDone: ['M1'], build: { milestone: 'M1', status: 'merged' } } })).toEqual({ ok: true, milestone: 'M2' })
     expect(buildNowTarget({ ...building, state: { repo, milestonesDone: ['M1', 'M2'], build: { milestone: 'M2', status: 'merged' } } })).toMatchObject({ ok: false, reason: expect.stringMatching(/Every roadmap milestone/) })
+    // A go-live isn't on the roadmap: after one, Start build now goes back to the roadmap, live products too (idea-factory manualBuildTarget).
+    const live = { ...approved, stage: 'live' as const }
+    expect(buildNowTarget({ ...live, state: { repo, milestonesDone: ['M1'], build: { milestone: 'GOLIVE', status: 'failed' } } })).toEqual({ ok: true, milestone: 'M2' })
+    expect(buildNowTarget({ ...live, state: { repo, milestonesDone: ['M1', 'M2'], build: { milestone: 'GOLIVE', status: 'merged' } } })).toEqual({ ok: false, reason: 'Already live.' })
+    expect(buildNowTarget({ ...building, state: { repo, milestonesDone: ['M1', 'M2'], build: { milestone: 'GOLIVE', status: 'closed' } } })).toMatchObject({ ok: false, reason: expect.stringMatching(/Every roadmap milestone/) })
   })
   it('one request at a time per idea', () => {
     expect(buildNowTarget({ ...approved, buildRequests: [request()] })).toEqual({ ok: false, reason: 'A build request is already queued.' })
@@ -183,6 +197,7 @@ describe('Start build now (idea_build_requests)', () => {
     const at = new Date(NOW.getTime() - 86_400_000).toISOString()
     expect(buildSlot([{ state: { build: { at, manual: true } } }], POLICY, NOW)).toMatchObject({ used: 0, free: true })
     expect(buildSlot([{ state: { build: { at } } }], POLICY, NOW)).toMatchObject({ used: 1, free: false })
+    expect(buildSlot([{ state: { build: { at, milestone: 'GOLIVE' } } }], POLICY, NOW), 'nor go-lives: they have their own cap').toMatchObject({ used: 0, free: true })
   })
 })
 
@@ -211,7 +226,7 @@ describe('Build the MVP ("let it rip")', () => {
   it('labels an MVP request, and approving says it builds the MVP in MVP mode', () => {
     expect(buildRequestLabel({ status: 'running', milestone: 'MVP', result: null, engine: null })).toBe('Building the MVP now')
     expect(buildRequestLabel({ status: 'done', milestone: 'MVP', result: 'MVP (M1, M2) PR opened, tests passing', engine: null })).toBe('MVP: MVP (M1, M2) PR opened, tests passing')
-    const free = { used: 0, max: 1, free: true, nextFreeAt: null }
+    const free = { used: 0, max: 1, free: true, nextFreeAt: null, held: null }
     expect(whatHappens('build', idea('x'), free, { build: { mode: 'mvp' } }, 0).join(' ')).toMatch(/Builds the MVP right after: every roadmap milestone in one run/)
     expect(whatHappens('build', idea('x'), free, { build: { mode: 'milestone' } }, 0).join(' ')).toMatch(/Builds M1 right after/)
   })

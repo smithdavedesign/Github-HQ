@@ -55,7 +55,7 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
 ### 3. Demand test (14 days, $0)
 
 - **Landing page:** each `validate` idea gets one, rendered deterministically from the review (escaped, honest: "not built yet") at `https://idea-pages-livid.vercel.app/<slug>/` (Vercel Hobby, public).
-- **Signals:** the page posts a view on load and a signup on submit to RepoHQ's public `POST /api/ideas/signal`. Inputs are validated, a honeypot catches bots, IPs are stored only as an HMAC, and each visitor has hourly limits. Rows go to the `idea_signals` table.
+- **Signals:** the page posts a view on load and a signup on submit to RepoHQ's public `POST /api/ideas/signal`. Live products post `visit`, `activate` and `checkout` to the same endpoint (Go live, below). Inputs are validated, a honeypot catches bots, IPs are stored only as an HMAC, and each visitor has hourly limits per kind. Rows go to the `idea_signals` table.
 - **Launch post:** `LAUNCH.md` in the idea's record has a ready-to-paste post and where to share it. **Distribution is the owner's only job here, and the weakest link**: a page nobody visits proves nothing.
   - The `launch` skill (idea-factory `skills/launch/`) makes it a short task. `/launch <slug>` checks that each channel exists and allows the post, adds better ones from the research, and writes a post per channel to `LAUNCH-KIT.md`. The owner posts by hand, then `/launch <slug> posted` appends to `launch-log.json`.
   - `/launch <slug> status` and the MCP tool `get_idea_pipeline` show visitors by referring site next to the posts logged.
@@ -86,6 +86,12 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
     - the pipeline checks the README itself (local images above its first other section, at least two, present in the repo). If they're missing it gives the builder one reminder round. The PR then shows the screenshots, pinned to the commit, or says they're missing; it doesn't lose the build over it;
   - the pipeline runs the tests itself and opens a **draft PR** (branch `m1`) that the owner merges.
 - **Start build now:** an approved idea doesn't have to wait for the weekly slot. See [Deciding: the Ideas page](#deciding-the-ideas-page).
+- **New-build hold** (`policy.build.startNew: false`, the owner's call on 2026-10-12: distribution before more MVPs).
+  - **What waits:** an idea that has never been built waits for its first build, from both the weekly slot and an approval (`newBuildsHeld` in `lib/pipeline.js`).
+  - **What carries on:** ideas already being built (codespend and dawnlog's next milestones), and their go-lives. **Start build now** still works.
+  - **When it lifts:** by itself, once a focus product (`policy.growth.focus`) has `policy.growth.minVisitorsPerWeek` (50) unique visitors in 7 days ([growth loop](growth-loop-prd.md)).
+  - **On the Ideas page:** the Build card and the approval dialog say so.
+  - **Weekly cap:** go-live builds, and later growth builds, don't count toward `maxPerWeek`; each has its own cap.
 - **Let it rip: MVP builds** (`policy.build.mode: "mvp"`, the default since 2026-10-11).
   - **What runs:** approving a build, and the weekly slot, build *every remaining roadmap milestone in one run* (`buildOne({ mvp })`). It's one sandbox session (the worker lives up to 8 hours), a gstack plan and tests first for each milestone, then one secret scan, one commit and one PR.
   - **When it stops:** at the first milestone whose tests fail, at one that falls back off Opus (`policy.build.mvp.stopOnFallback`, so the rest gets the strongest model), or after `maxMinutes` (240).
@@ -138,7 +144,12 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
     - title, meta description, Open Graph and Twitter tags, a share image, a canonical URL, `sitemap.xml`, `robots.txt` and JSON-LD;
     - privacy and terms pages written for what the app actually collects;
     - a **Buy** button for the plan's price that opens `STRIPE_PAYMENT_LINK` and stays hidden while it's unset;
-    - a visit beacon to RepoHQ's `/api/ideas/signal`, so live visitors count like demand-test ones;
+    - a beacon to RepoHQ's `/api/ideas/signal`, with no cookies, sending three events:
+      - `visit`: any public page, once per session;
+      - `activate`: the first use of the product's core action, named in LAUNCH-READY.md;
+      - `checkout`: a Buy click.
+
+      The referrer is sent only when it comes from another site. Nothing is sent from bots (`navigator.webdriver`), from previews, or from a browser with `localStorage['repohq:notrack']` set (the owner's). Products launched before 2026-10-12 send one `view` from the home page; the growth loop's first mission for them adds the rest;
     - `.provision` lines for its Vercel project (`vercel project <slug>`) and a payment-link request for the owner (`request "Stripe payment link …"`);
     - fresh screenshot proof of the launch-ready site (footer and Buy button included) at the top of the README, checked like a build's;
     - tests, and `LAUNCH-READY.md`: what changed, and what's left for the owner. It's quoted in the PR.
