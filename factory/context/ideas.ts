@@ -34,6 +34,8 @@ export interface IdeaState {
   funnel?: IdeaStateJson['funnel']
   /** A focus product's growth record (idea-factory step 5d). */
   growth?: IdeaStateJson['growth']
+  /** Set when its go-live merged; `beacon: 'funnel'` when that go-live installed the funnel beacon. */
+  golive?: IdeaStateJson['golive']
 }
 
 export function readIdeaStates(ideaHome: string): IdeaState[] {

@@ -114,6 +114,7 @@ describe('get_idea_pipeline: the road to revenue', () => {
     const t = formatIdea(live, input({ ideas: [live] }))
     expect(t).toMatch(/Funnel: 3 visitors this week \(0 the week before\), 0 activations, 0 Buy clicks; this week's sources: google\.com 2\. It still runs the old beacon/)
     expect(formatIdea({ ...live, funnel: { ...funnel, seen: { visit: true } } }, input({ ideas: [live] }))).not.toMatch(/old beacon/)
+    expect(formatIdea({ ...live, golive: { mergedAt: 'x', beacon: 'funnel' } }, input({ ideas: [live] })), 'a go-live with the funnel beacon, before its first visit').not.toMatch(/old beacon/)
     expect(formatPipeline(input({ ideas: [live] }))).toMatch(/- tiebreak: CodeSpend\..* Funnel: 3 visitors this week/)
   })
   it('shows the growth loop on a focus product (stage, next mission, experiments) and names a growth build', () => {

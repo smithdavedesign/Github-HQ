@@ -42,7 +42,7 @@ export interface IdeaStateJson {
   /** A focus product's growth record: stage, bottleneck, next mission, experiments (idea-factory step 5d). */
   growth?: GrowthState
   /** Set when a go-live PR merges. */
-  golive?: { mergedAt?: string; prUrl?: string }
+  golive?: { mergedAt?: string; prUrl?: string; beacon?: 'funnel' }
   milestonesDone?: string[]
   revenue?: { mrr: number; updatedAt?: string }
   ownerApproved?: boolean
@@ -145,6 +145,16 @@ export function experimentLine(e: GrowthExperiment): string {
     : e.status === 'abandoned' ? `abandoned${e.reason ? `: ${e.reason}` : ''}`
     : e.status === 'decided' ? `decided: ${e.decision ?? '?'}` : e.status
   return `${growthKindLabel(e.kind)} · ${when} · ${growthValue(e.metric, e.baseline)} → ${growthValue(e.metric, e.target)}`
+}
+
+/**
+ * Whether the product runs the funnel beacon (idea-factory lib/growth.js beaconLive): it has sent a visit,
+ * its go-live was built with the funnel beacon, or a funnel-beacon growth build merged. A product with a
+ * handful of visitors can go days between the merge and its first visit.
+ */
+export function beaconLive(s: Pick<IdeaStateJson, 'funnel' | 'golive' | 'growth'>): boolean {
+  if (s.funnel?.seen?.visit || s.golive?.beacon === 'funnel') return true
+  return (s.growth?.experiments ?? []).some(e => e.kind === 'instrumentation' && (e.status === 'running' || e.status === 'measuring' || e.status === 'decided'))
 }
 
 /** "3 visitors this week (0 the week before), 0 activations, 0 Buy clicks", as idea-factory's funnelText says it. */

@@ -17,7 +17,8 @@ const STATUS_CLASS: Record<GrowthExperiment['status'], string> = {
  * against the last and where visitors came from, then, for a focus product, the stage and bottleneck the
  * loop sees, the next mission, and its experiments, newest first.
  */
-export function GrowthCard({ funnel, growth, focus }: { funnel?: Funnel; growth?: GrowthState; focus: boolean }) {
+/** `beacon`: whether it runs the funnel beacon (idea-utils beaconLive), even before its first visit. */
+export function GrowthCard({ funnel, growth, focus, beacon }: { funnel?: Funnel; growth?: GrowthState; focus: boolean; beacon: boolean }) {
   const experiments = [...(growth?.experiments ?? [])].reverse()
   return (
     <Card data-testid="growth-card">
@@ -29,7 +30,9 @@ export function GrowthCard({ funnel, growth, focus }: { funnel?: Funnel; growth?
           <div className="space-y-1">
             <p className="text-xs" data-testid="growth-funnel">{funnelSummary(funnel)}</p>
             {funnel.referrers7d?.length ? <p className="text-[11px] text-muted-foreground">Sources this week: {funnel.referrers7d.map(r => `${r.host} ${r.visitors}`).join(', ')}</p> : null}
-            {!funnel.seen?.visit && <p className="text-[11px] text-amber-700 dark:text-amber-300">Old beacon: only home-page views are counted, not activations or Buy clicks.</p>}
+            {!funnel.seen?.visit && (beacon
+              ? <p className="text-[11px] text-muted-foreground">Funnel beacon in place; no visit counted since it went live.</p>
+              : <p className="text-[11px] text-amber-700 dark:text-amber-300">Old beacon: only home-page views are counted, not activations or Buy clicks.</p>)}
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">No funnel yet: it starts once the product is deployed or has a visitor.</p>

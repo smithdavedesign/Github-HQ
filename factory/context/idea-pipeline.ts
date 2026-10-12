@@ -5,7 +5,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { GROWTH_STAGE_LABEL, experimentLine, funnelSummary, growthKindLabel, nextMissionText } from '../../src/lib/ideas/idea-utils'
+import { GROWTH_STAGE_LABEL, beaconLive, experimentLine, funnelSummary, growthKindLabel, nextMissionText } from '../../src/lib/ideas/idea-utils'
 import type { IdeaState } from './ideas'
 
 export interface ValidationPolicy {
@@ -116,7 +116,7 @@ export function formatIdea(i: IdeaState, p: PipelineInput): string {
   // A built product's funnel (idea-factory lib/growth.js): this week against the last, and its sources.
   if (i.funnel) {
     const f = i.funnel
-    lines.push(`Funnel: ${funnelSummary(f)}${f.referrers7d?.length ? `; this week's sources: ${f.referrers7d.map(r => `${r.host} ${r.visitors}`).join(', ')}` : ''}.${f.seen?.visit ? '' : ' It still runs the old beacon (one view from the home page): activations and Buy clicks aren\'t counted yet.'}`)
+    lines.push(`Funnel: ${funnelSummary(f)}${f.referrers7d?.length ? `; this week's sources: ${f.referrers7d.map(r => `${r.host} ${r.visitors}`).join(', ')}` : ''}.${beaconLive(i) ? '' : ' It still runs the old beacon (one view from the home page): activations and Buy clicks aren\'t counted yet.'}`)
   }
   // The growth loop on a focus product (idea-factory step 5d): what it sees, what's next, its experiments.
   if (i.growth?.stage) {
