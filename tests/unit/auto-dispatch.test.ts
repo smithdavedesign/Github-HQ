@@ -59,6 +59,7 @@ const mockAccuracy = (impactType: string, successRate: number, dataPoints: numbe
   avgActualDelta: 5,
   hasSignal: dataPoints >= (MIN_DATA_POINTS[impactType as ImpactType] ?? 3),
   timeDecayedRate: successRate,
+  executionFailures: 0,
 })
 
 // ─── Effort gate tests ────────────────────────────────────────────────────────

@@ -115,6 +115,14 @@ describe('idea lifecycle in the morning report', async () => {
     expect(lines).toContain('Passed Eps: 0 signups from 120 visitors')
     expect(ideaLines([], now)).toEqual([])
   })
+  it('an M1 built locally but never pushed is not "M1 not started"', () => {
+    const lines = ideaLines([
+      { slug: 't', title: 'Trip — x', stage: 'repo', localM1: { path: 'work/t', branch: 'm1', testsPassing: true, note: 'builder test (--no-push)' } },
+      { slug: 'u', title: 'Untouched', stage: 'repo' },
+    ], now)
+    expect(lines).toContain('Building Trip: M1 built locally on branch m1, not pushed (builder test (--no-push))')
+    expect(lines).toContain('Building Untouched: repo created, M1 not started')
+  })
   it('lists the road to revenue, closest to the first dollar first, with whose step is next', () => {
     const step = (id: string, owner: 'agent' | 'david', done: boolean) => ({ id, label: id, owner, done })
     const lines = ideaLines([

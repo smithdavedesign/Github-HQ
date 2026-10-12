@@ -20,6 +20,8 @@ export interface IdeaState {
   validation?: { startedAt: string; decideAfter: string; decision?: 'build' | 'pass' | 'extend'; reason?: string }
   repo?: string
   build?: { prUrl?: string; status?: 'pr-open' | 'merged' | 'failed'; testsPassing?: boolean; at?: string }
+  /** An M1 built on the Mac but never pushed (e.g. a `--no-push` builder test). */
+  localM1?: { path: string; branch: string; testsPassing?: boolean; note?: string }
   revenue?: { mrr: number; updatedAt?: string }
   ownerApproved?: boolean
   passReason?: string
@@ -45,6 +47,13 @@ export function readIdeaStates(ideaHome: string): IdeaState[] {
 
 const short = (t: string) => t.split(' — ')[0]!.slice(0, 40)
 
+/** Where a repo-stage idea's build stands, without claiming "not started" for an M1 that exists locally. */
+export function buildStatus(i: IdeaState): string {
+  if (i.build?.prUrl) return `M1 PR ${i.build.status ?? 'open'}${i.build.testsPassing === false ? ' (tests failing)' : ''} — ${i.build.prUrl}`
+  if (i.localM1) return `M1 built locally on branch ${i.localM1.branch}${i.localM1.testsPassing === false ? ' (tests failing)' : ''}, not pushed${i.localM1.note ? ` (${i.localM1.note})` : ''}`
+  return 'repo created, M1 not started'
+}
+
 /** Morning report lines: where each idea is, its demand signal, and revenue from built ones. */
 export function ideaLines(ideas: IdeaState[], now: Date): string[] {
   if (!ideas.length) return []
@@ -60,7 +69,7 @@ export function ideaLines(ideas: IdeaState[], now: Date): string[] {
       const left = days(i.validation?.decideAfter)
       return `Validating ${short(i.title)}: ${s.uniqueVisitors} visitors, ${s.signups} signup${s.signups === 1 ? '' : 's'}${left !== null ? `, decision in ${Math.max(left, 0)}d` : ''}${i.page ? ` — ${i.page.url}` : ''}`
     }),
-    ...[...by('building'), ...by('repo')].map(i => `Building ${short(i.title)}: ${i.build?.prUrl ? `M1 PR ${i.build.status ?? 'open'}${i.build.testsPassing === false ? ' (tests failing)' : ''} — ${i.build.prUrl}` : 'repo created, M1 not started'}`),
+    ...[...by('building'), ...by('repo')].map(i => `Building ${short(i.title)}: ${buildStatus(i)}`),
     ...by('live').map(i => `Live ${short(i.title)}: $${(i.revenue?.mrr ?? 0).toFixed(2)} MRR`),
     // The road to revenue: closest to the first dollar first, your steps called out.
     ...ideas.filter(i => i.stage !== 'pass' && i.launch?.next).sort((a, b) => (b.launch!.done / b.launch!.total) - (a.launch!.done / a.launch!.total)).slice(0, 5)

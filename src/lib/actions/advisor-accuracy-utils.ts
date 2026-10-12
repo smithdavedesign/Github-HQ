@@ -33,3 +33,62 @@ export const SUPPRESS_THRESHOLDS: Record<ImpactType, { maxFailureRate: number; m
   health:      { maxFailureRate: 0.60, minAttempts: 3 },
   opportunity: { maxFailureRate: 0.60, minAttempts: 3 },
 }
+
+/** One portfolio event as the accuracy computation needs it. */
+export interface AccuracyEvent {
+  eventType: string
+  metadata: unknown
+  occurredAt: Date
+}
+
+export interface AccuracyStat {
+  impactType: ImpactType
+  /** 0-100: measured merges whose health score went up (directional). */
+  successRate: number
+  /** Merges with a measured, high-confidence health delta: the rate's denominator. */
+  dataPoints: number
+  /** Average health points across those merges. */
+  avgActualDelta: number
+  /** Enough measured merges to trust the rate (MIN_DATA_POINTS). */
+  hasSignal: boolean
+  /** The same rate with the last 30 days weighted 2x. */
+  timeDecayedRate: number
+  /** Runs that failed before producing a PR. An execution problem, not a wrong recommendation. */
+  executionFailures: number
+}
+
+type AccuracyMeta = { impactType?: string; deltaConfidence?: string; actualDelta?: number | null; actualDeltaPending?: boolean } | null
+
+/**
+ * Advisor accuracy per impact type: did the health score go up after a merged recommendation?
+ * Only merges with a measured, high-confidence delta count. A run that failed before opening a PR
+ * says nothing about whether the advice was right, so it's reported as `executionFailures` instead
+ * of counting as a miss. (Counting failures as misses made every type read 0% on 2026-10-11:
+ * all 14 data points were failed Nexus-era executions, and the advisor's prompt was told its
+ * revenue advice never works.)
+ */
+export function computeAccuracy(events: AccuracyEvent[], impactType: ImpactType, now = new Date()): AccuracyStat {
+  const relevant = events.filter(e => (e.metadata as AccuracyMeta)?.impactType === impactType)
+  const measured = relevant.filter(e => {
+    const m = e.metadata as AccuracyMeta
+    return e.eventType === 'agent_pr_merged' && m?.deltaConfidence !== 'low' && !m?.actualDeltaPending && m?.actualDelta != null
+  })
+  const delta = (e: AccuracyEvent) => (e.metadata as AccuracyMeta)?.actualDelta ?? 0
+  const successes = measured.filter(e => delta(e) > 0)
+  const recentCutoff = now.getTime() - 30 * 86_400_000
+  const weight = (e: AccuracyEvent) => (e.occurredAt.getTime() >= recentCutoff ? 2 : 1)
+  const weightedTotal = measured.reduce((n, e) => n + weight(e), 0)
+  const weightedSuccesses = successes.reduce((n, e) => n + weight(e), 0)
+  const dataPoints = measured.length
+  return {
+    impactType,
+    successRate: dataPoints ? Math.round((successes.length / dataPoints) * 100) : 0,
+    dataPoints,
+    avgActualDelta: dataPoints ? Math.round(measured.reduce((n, e) => n + delta(e), 0) / dataPoints) : 0,
+    hasSignal: dataPoints >= MIN_DATA_POINTS[impactType],
+    timeDecayedRate: weightedTotal ? Math.round((weightedSuccesses / weightedTotal) * 100) : 0,
+    executionFailures: relevant.filter(e => e.eventType === 'agent_execution_failed').length,
+  }
+}
+
+export const IMPACT_TYPES: ImpactType[] = ['opportunity', 'revenue', 'security', 'health']

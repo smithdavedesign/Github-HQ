@@ -20,6 +20,8 @@ import { DataSyncCard } from '@/components/agents/data-sync-card'
 import { SystemLogCard, type SystemLogRow } from '@/components/agents/system-log-card'
 import { IdeaPipelineCard, UsageCards } from '@/components/agents/usage-cards'
 import { loadUsageOverview } from '@/lib/agents/usage-data'
+import { needsAttention } from '@/lib/agents/needs-attention'
+import { NeedsAttention } from '@/components/agents/needs-attention'
 
 export default async function AgentPerformancePage() {
   const session = await auth()
@@ -64,6 +66,10 @@ export default async function AgentPerformancePage() {
   const now = new Date()
   const factory = summarizeFactoryEvents(factoryEvents)
   const pctOf = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`)
+  // Owner-only data feeds it, so other users get no strip rather than a misleading "all clear".
+  const attention = access.ok
+    ? needsAttention({ failing: systemLog?.failing ?? null, pipeline: usage?.pipeline ?? null, claude: usage?.claude ?? null, copilot: usage?.copilot ?? null, accuracy: accuracyStats, now })
+    : null
 
   // Compute stats
   const queued  = events.filter(e => e.eventType === 'agent_task_queued').length
@@ -106,6 +112,8 @@ export default async function AgentPerformancePage() {
         </div>
       </div>
 
+      {attention && <NeedsAttention items={attention} />}
+
       {overview ? (
         <AgentHqPanel initial={overview} />
       ) : (
@@ -116,6 +124,8 @@ export default async function AgentPerformancePage() {
 
       {usage && <IdeaPipelineCard o={usage} now={now} />}
       {usage && <UsageCards o={usage} now={now} />}
+
+      {systemLog && <SystemLogCard failing={systemLog.failing} recent={systemLog.recent} />}
 
       {/* Requests from RepoHQ, all time (Nexus-era tasks included); factory numbers are under Factory KPIs */}
       <h2 className="text-sm font-semibold" data-testid="request-stats-heading">
@@ -134,8 +144,8 @@ export default async function AgentPerformancePage() {
       </div>
 
       {/* Accuracy — only shown once there is data to show */}
-      {accuracyStats.some(s => s.dataPoints > 0) ? (
-        <div className="space-y-2">
+      {accuracyStats.some(s => s.dataPoints > 0 || s.executionFailures > 0) ? (
+        <div id="advisor-accuracy" className="space-y-2 scroll-mt-4">
           <div className="flex items-start justify-between gap-2 flex-wrap">
             <h2 className="text-sm font-semibold flex items-center gap-2">
               <BarChart2 className="w-3.5 h-3.5 text-indigo-500" />
@@ -254,8 +264,6 @@ export default async function AgentPerformancePage() {
       )}
 
       <DataSyncCard scans={recentScans} />
-
-      {systemLog && <SystemLogCard failing={systemLog.failing} recent={systemLog.recent} />}
 
       {/* Event log */}
       <div className="space-y-2">

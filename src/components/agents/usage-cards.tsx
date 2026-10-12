@@ -39,7 +39,7 @@ export function IdeaPipelineCard({ o, now }: { o: UsageOverview; now: Date }) {
     prsToReview && `${plural(prsToReview, 'milestone PR')} waiting for your review`,
   ].filter(Boolean) as string[]
   return (
-    <section className="space-y-2" data-testid="idea-pipeline">
+    <section id="idea-pipeline" className="space-y-2 scroll-mt-4" data-testid="idea-pipeline">
       <h2 className="text-sm font-semibold flex items-center gap-2">
         <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
         Idea pipeline
