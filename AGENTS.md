@@ -27,7 +27,7 @@ Anything that runs on a schedule or in the background logs to the shared system 
 - **Database**: Neon Postgres via Drizzle ORM. Schema in `src/lib/db/schema.ts`.
 - **Auth**: Auth.js v5 (NextAuth) with DrizzleAdapter. Session strategy is `database` — no JWTs.
 - **Styling**: Tailwind + shadcn/ui (`src/components/ui/`). Do NOT import from `shadcn/tailwind.css` — it does not exist.
-- **AI**: Multi-provider LLM adapter in `src/lib/ai/adapter.ts`. Always go through `getLLMAdapter(userId)`.
+- **AI**: Multi-provider LLM adapter in `src/lib/ai/adapter.ts`. Always go through `getLLMAdapter(userId)`. It's $0 by default: OpenRouter's free models or Gemini's free tier; Claude and GPT-4o (billed per call) only with `LLM_ALLOW_PAID=1` (`src/lib/ai/providers.ts`).
 
 ## Critical conventions
 
@@ -36,7 +36,7 @@ Anything that runs on a schedule or in the background logs to the shared system 
 - All exports from `'use server'` files must be async functions.
 
 ### Encryption
-- `githubToken` and `llmKeys` are AES-256-GCM encrypted via `src/lib/crypto-utils.ts`.
+- `githubToken`, `llmKeys` and `stripeApiKey` are AES-256-GCM encrypted via `src/lib/crypto-utils.ts`.
 - **Always** call `encrypt()` before writing these to the DB.
 - **Always** call `decrypt()` before passing to external clients (Octokit, Anthropic SDK, etc.).
 - `ENCRYPTION_KEY` must be a 64-char hex string. Generate: `openssl rand -hex 32`.

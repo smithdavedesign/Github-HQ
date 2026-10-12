@@ -4,9 +4,10 @@ import { eq, and, gte, sql } from 'drizzle-orm'
 
 export interface HealthTrendPoint {
   date: string        // YYYY-MM-DD
-  avgHealth: number
-  avgSecurity: number
-  avgActivity: number
+  /** null: no snapshot that day, drawn as a gap (a 0 drew a fake collapse and recovery). */
+  avgHealth: number | null
+  avgSecurity: number | null
+  avgActivity: number | null
 }
 
 export interface PortfolioHealthTrend {
@@ -56,14 +57,14 @@ export function buildHealthTrendSeries(
     const dateKey = date.toISOString().slice(0, 10)
     const bucket = byDate.get(dateKey)
     if (!bucket || bucket.count === 0) {
-      series.push({ date: dateKey, avgHealth: 0, avgSecurity: 0, avgActivity: 0 })
+      series.push({ date: dateKey, avgHealth: null, avgSecurity: null, avgActivity: null })
       continue
     }
 
     series.push({
       date: dateKey,
       avgHealth: Number((bucket.health / bucket.count).toFixed(1)),
-      avgSecurity: bucket.securityCount ? Number((bucket.security / bucket.securityCount).toFixed(1)) : 0,
+      avgSecurity: bucket.securityCount ? Number((bucket.security / bucket.securityCount).toFixed(1)) : null,
       avgActivity: Number((bucket.activity / bucket.count).toFixed(1)),
     })
   }
@@ -96,6 +97,8 @@ export async function getPortfolioHealthTrend(userId: string, days = 30): Promis
     .where(and(
       eq(repositories.userId, userId),
       gte(healthScoreHistory.recordedAt, since),
+      // Active repos, as the dashboard's average counts them (getPortfolioStats).
+      sql`coalesce(${repositories.isArchived}, false) = false and coalesce(${repositories.lifecycleStatus}, '') <> 'archived'`,
     ))
     .groupBy(healthScoreHistory.recordedDate)
     .orderBy(healthScoreHistory.recordedDate)

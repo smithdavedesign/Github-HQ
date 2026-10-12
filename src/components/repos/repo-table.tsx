@@ -36,12 +36,23 @@ import { LifecycleBadge } from './lifecycle-badge'
 import { LIFECYCLE_META, type LifecycleStage } from '@/lib/lifecycle'
 import { formatValuation, type ValuationConfidence } from '@/lib/health/valuation'
 
-type RepoRow = Repository & {
-  metrics: RepositoryMetrics | null
+type RepoRow = Omit<Repository, 'aiSummary' | 'cachedBrief' | 'attemptSummary'> & {
+  metrics: Omit<RepositoryMetrics, 'weeklyCommitData' | 'internalDeps' | 'externalDeps'> | null
   techStack: TechStack | null
   deployments: Deployment[]
-  securityFindings: { severity: string }[]
+  /** Open critical and high alerts (getRepositories counts them; the alerts stay on the server). */
+  seriousAlerts: number
 }
+
+/** Column names for the Columns menu (the ids are code names: healthScore, aiDetected). */
+const COLUMN_LABELS: Record<string, string> = {
+  name: 'Repository', healthScore: 'Health', visibility: 'Visibility', opportunityScore: 'Opportunity', activityScore: 'Activity',
+  securityScore: 'Security', buildStatus: 'Build', lastPush: 'Last push', productionUrl: 'Production URL', openIssues: 'Issues',
+  openPrs: 'PRs', framework: 'Framework', database: 'Database', hosting: 'Hosting', aiDetected: 'AI detected', mrr: 'MRR',
+  revenue: 'Revenue', valuation: 'Valuation', purpose: 'Purpose', focus: 'Focus', isFocused: 'Focus', archiveScore: 'Archive risk',
+  lifecycle: 'Lifecycle', techDebt: 'Tech debt', tags: 'Tags',
+}
+const columnLabel = (id: string) => COLUMN_LABELS[id] ?? id.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase())
 
 const SAVED_VIEWS_KEY = 'repohq:saved-views'
 const ACTIVE_VIEW_KEY = 'repohq:active-view'
@@ -109,8 +120,7 @@ function applyNLFilters(rows: RepoRow[], filters: NLQueryFilters): RepoRow[] {
     if (filters.isRevenueGenerating != null && row.isRevenueGenerating !== filters.isRevenueGenerating) return false
 
     if (filters.hasSecurityIssues === true) {
-      const serious = row.securityFindings.filter(f => f.severity === 'critical' || f.severity === 'high')
-      if (serious.length === 0) return false
+      if (row.seriousAlerts === 0) return false
     }
 
     if (filters.starsMin != null && (row.stars ?? 0) < filters.starsMin) return false
@@ -566,6 +576,7 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
       <div className="flex items-center gap-2 flex-wrap">
         <Input
           placeholder="Search repositories…"
+          aria-label="Search repositories"
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
           className="h-8 w-full sm:w-64 text-sm"
@@ -582,11 +593,11 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
             {table.getAllColumns().filter((col) => col.getCanHide()).map((col) => (
               <DropdownMenuCheckboxItem
                 key={col.id}
-                className="capitalize text-sm"
+                className="text-sm"
                 checked={col.getIsVisible()}
                 onCheckedChange={(value) => col.toggleVisibility(!!value)}
               >
-                {col.id}
+                {columnLabel(col.id)}
               </DropdownMenuCheckboxItem>
             ))}
           </DropdownMenuContent>
@@ -653,7 +664,9 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
             {table.getRowModel().rows.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="text-center py-12 text-muted-foreground text-sm">
-                  No repositories found. Click <strong>Sync</strong> to import from GitHub.
+                  {data.length === 0
+                    ? <>No repositories yet. Click <strong>Sync</strong> to import them from GitHub.</>
+                    : <>No repositories match {globalFilter.trim() ? <>&ldquo;{globalFilter.trim()}&rdquo;</> : 'these filters'}.</>}
                 </td>
               </tr>
             ) : (
@@ -682,6 +695,7 @@ export function RepoTable({ data, nlFilters, nlExplanation, openAgentPRs }: {
           <div className="flex items-center gap-1.5">
             <span className="text-xs">Rows</span>
             <select
+              aria-label="Rows per page"
               value={table.getState().pagination.pageSize}
               onChange={e => table.setPageSize(Number(e.target.value))}
               className="h-7 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"

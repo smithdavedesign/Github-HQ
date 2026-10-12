@@ -19,10 +19,12 @@ description: |
    - `search_context` (MCP) or `npm run context -- search "<query>"` in RepoHQ searches repos, ideas,
      bookmarks and docs. Public and personal only; work data is for local models.
    - `get_repo_context` / `get_next_action` (MCP) give one repo's health and the next useful step.
-   - `get_idea_pipeline` (MCP) gives every idea's stage and demand test; with a slug, visitors by source and launch posts.
+   - `get_idea_pipeline` (MCP) gives every idea's stage and demand test; with a slug, visitors by source, launch posts and its **road to revenue**.
+   - **From idea to money** (docs/idea-factory.md): approving a build builds the whole MVP in one sandbox run. When M1 merges, a revenue plan is written (`REVENUE.md`: who pays, the price). Once the MVP is complete, a go-live build makes it launch-ready (SEO basics, privacy and terms, payment link, visit beacon, Vercel project), and the live site is audited every 6 hours.
+   - **Every built idea has a checklist** to the first dollar (`state.launch`, the Road to revenue card): the next step says whose it is. The owner's steps are the Stripe product, posting (the `launch` skill drafts the posts) and a price decision.
    - Each idea is in full in `~/idea-factory/ideas/<slug>/` (research, PRD, roadmap, review, state).
 3. **Follow the rules:**
-   - **$0:** free tiers only; nothing paid before it earns.
+   - **No spending:** free tiers only; nothing paid before it earns. (Written without the dollar sign: skill loading would replace it with the first argument.)
    - **Claude work on the Pro subscription, never API credit.** Strip `ANTHROPIC_API_KEY`; the
      reference is `idea-factory/lib/claude.js`.
    - **Data classes:** never send employer work data to a cloud model; never touch financial data.

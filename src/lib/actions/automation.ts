@@ -5,6 +5,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { agentRequests } from '@/lib/db/schema'
 import { enqueueRequest, factoryAccess } from '@/lib/agents/factory-queue'
+import { skillFromObjective } from '@/lib/skills/skill-runs'
 import { isGstackSkill } from '@/lib/skills/skill-policy'
 import type { RequestSource } from '@/lib/agents/factory-request-utils'
 import { cancelKey, manualJobOptions, withQueue, type ScheduledJobName } from '../../../factory/lib/queue'
@@ -75,7 +76,8 @@ export async function retryRequest(requestId: string): Promise<{ taskId: string 
   if (!old) throw new Error('Request not found')
   if (old.status === 'queued' || old.status === 'running') throw new Error('This request is still open.')
   if (!old.repoId) throw new Error('The repo is no longer synced to RepoHQ.')
-  const skill = old.skill && isGstackSkill(old.skill) ? old.skill : old.mode === 'report' ? 'investigate' : 'ship'
+  // A request from OpenClaw has no skill, only text: "Run /health skill" retries as /health, not a /ship fix.
+  const skill = old.skill && isGstackSkill(old.skill) ? old.skill : skillFromObjective(old.objective) ?? (old.mode === 'report' ? 'investigate' : 'ship')
   const source: RequestSource = old.source === 'ui-advisor' ? 'ui-advisor' : 'ui-skill'
   const r = await enqueueRequest({
     userId, repoId: old.repoId, skill, objective: old.objective, source,

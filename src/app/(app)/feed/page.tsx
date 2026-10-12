@@ -14,6 +14,9 @@ import { formatDistanceToNow } from '@/lib/utils'
 import type { FeedEvent, FeedEventSeverity } from '@/lib/actions/feed'
 import { MilestonesTab } from '@/components/feed/milestones-tab'
 import { FeedTabSwitcher } from '@/components/feed/feed-tab-switcher'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = { title: 'Feed' }
 
 const SEVERITY_STYLES: Record<FeedEventSeverity, string> = {
   critical: 'border-l-red-500 bg-red-500/5',

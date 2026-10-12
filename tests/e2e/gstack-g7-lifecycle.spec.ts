@@ -130,19 +130,22 @@ test.describe('SkillReportFindings — full expansion', () => {
   })
 
   test('Findings within preview limit show no toggle', async ({ page }) => {
+    // The launcher (and so the section toggles) shows on factory-allowlisted repos only: the first
+    // repo in the table often isn't one.
     const ctx = await getContext()
-    if (!ctx?.repoId) { test.skip(true, 'No repo'); return }
+    const repo = await getFactoryRepo()
+    if (!ctx?.userId || !repo) { test.skip(true, NOT_FACTORY_OWNER); return }
 
     // The repo's real reports may have toggles of their own: count them before seeding.
     const toggles = page.getByText(/Show \d+ more finding/)
-    await page.goto(`/repos/${ctx.repoId}`)
+    await page.goto(`/repos/${repo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
     await expect(page.getByRole('button', { name: /^(Expand|Collapse) Understand skills/ })).toBeVisible({ timeout: 8000 })
     const before = await toggles.count()
 
     const taskId = `findings-short-${Date.now()}`
     const findings = ['Finding 1: TypeScript error', 'Finding 2: Dead code', 'Finding 3: Missing test']
-    await seedSkillReport(ctx.userId, ctx.repoId, 'health', findings, taskId)
+    await seedSkillReport(ctx.userId, repo.id, 'health', findings, taskId)
     try {
       await page.reload()
       await page.getByRole('tab', { name: /Agent/i }).click()
@@ -151,7 +154,7 @@ test.describe('SkillReportFindings — full expansion', () => {
       // No expand toggle for this report since 3 < 4 preview threshold
       expect(await toggles.count()).toBe(before)
     } finally {
-      await cleanup(ctx.repoId)
+      await cleanup(repo.id)
     }
   })
 })

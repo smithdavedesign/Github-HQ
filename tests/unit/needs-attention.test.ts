@@ -40,3 +40,12 @@ describe('needsAttention', () => {
     expect(needsAttention({ ...base, accuracy: [acc({ executionFailures: 8, dataPoints: 3 })] })).toEqual([])
   })
 })
+
+describe('needsAttention: long failures', () => {
+  it('shows a one-line summary and keeps the full message for hover', () => {
+    const message = 'build tiebreak MVP: sandbox patch: git add failed: ignored paths:\nnode_modules\nhint: Use -f if you really want to add them.'
+    const [item] = needsAttention({ failing: [{ system: 'idea-factory', component: 'pipeline', event: 'tick', message }], pipeline: null, claude: null, copilot: null, accuracy: [], now: new Date() })
+    expect(item.text).toBe('idea-factory/pipeline: build tiebreak MVP: sandbox patch: git add failed: ignored paths: node_modules')
+    expect(item.detail).toBe(message)
+  })
+})

@@ -30,6 +30,23 @@ test.describe('Repositories table', () => {
     await expect(page.getByRole('menu')).toBeVisible()
   })
 
+  test('the columns menu uses names, and a search with no match says so', async ({ page }) => {
+    await page.goto('/repos')
+    await page.getByRole('button', { name: 'Columns' }).click()
+    const menu = page.getByRole('menu')
+    await expect(menu.getByText('Health', { exact: true })).toBeVisible()
+    await expect(menu.getByText('healthScore')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await page.getByRole('textbox', { name: 'Search repositories' }).fill('zz-no-such-repo-zz')
+    await expect(page.getByText('No repositories match “zz-no-such-repo-zz”.')).toBeVisible()
+  })
+
+  test('the page sends counts, not every alert (it was 8 MB)', async ({ request }) => {
+    const html = await (await request.get('/repos')).text()
+    expect(html).not.toContain('githubAlertId')
+    expect(html.length).toBeLessThan(1_500_000)
+  })
+
   test('CSV export button is present', async ({ page }) => {
     await page.goto('/repos')
     await expect(page.getByRole('button', { name: /Export CSV/i })).toBeVisible()

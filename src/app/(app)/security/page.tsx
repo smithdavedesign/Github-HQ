@@ -1,128 +1,141 @@
+import type { Metadata } from 'next'
+import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { securityFindings, repositories } from '@/lib/db/schema'
+import { securityFindings, repositories, repositoryMetrics } from '@/lib/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
 import { MetricCard } from '@/components/dashboard/metric-card'
-import { Shield, AlertTriangle, Info } from 'lucide-react'
+import { Shield, AlertTriangle, Info, ExternalLink, ChevronRight } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDistanceToNow } from '@/lib/utils'
 import { redirect } from 'next/navigation'
+import { summarizeFindings, type RepoSecurity, type Severity } from '@/lib/security/summary'
 
-async function getSecurityData(userId: string) {
-  const findings = await db
+export const metadata: Metadata = { title: 'Security' }
+
+/** Open findings grouped by repo, package and severity: a few hundred rows instead of every alert. */
+async function getFindingGroups(userId: string) {
+  const noPackageTitle = sql`case when ${securityFindings.packageName} is null then ${securityFindings.title} end`
+  return db
     .select({
-      id: securityFindings.id,
+      repoId: repositories.id,
+      repoName: repositories.name,
+      fullName: repositories.fullName,
+      isArchived: repositories.isArchived,
+      lifecycleStatus: repositories.lifecycleStatus,
+      activityStatus: repositoryMetrics.activityStatus,
+      packageName: securityFindings.packageName,
       type: securityFindings.type,
       severity: securityFindings.severity,
-      title: securityFindings.title,
-      packageName: securityFindings.packageName,
-      state: securityFindings.state,
-      createdAt: securityFindings.createdAt,
-      repoName: repositories.name,
-      repoId: repositories.id,
+      count: sql<number>`count(*)`.mapWith(Number),
+      newest: sql<Date | null>`max(${securityFindings.createdAt})`.mapWith(securityFindings.createdAt),
+      title: sql<string>`min(${securityFindings.title})`,
     })
     .from(securityFindings)
     .innerJoin(repositories, eq(securityFindings.repoId, repositories.id))
-    .where(
-      and(
-        eq(repositories.userId, userId),
-        eq(securityFindings.state, 'open'),
-      ),
-    )
-    .orderBy(
-      sql`case ${securityFindings.severity}
-        when 'critical' then 1
-        when 'high' then 2
-        when 'medium' then 3
-        when 'low' then 4
-        else 5 end`
-    )
+    .leftJoin(repositoryMetrics, eq(repositoryMetrics.repoId, repositories.id))
+    .where(and(eq(repositories.userId, userId), eq(securityFindings.state, 'open')))
+    .groupBy(repositories.id, repositories.name, repositories.fullName, repositories.isArchived, repositories.lifecycleStatus,
+      repositoryMetrics.activityStatus, securityFindings.packageName, noPackageTitle, securityFindings.type, securityFindings.severity)
+}
 
-  return findings
+const SEVERITY_STYLE: Record<Severity, string> = {
+  critical: 'bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-400',
+  high: 'bg-orange-500/10 text-orange-600 border-orange-500/20 dark:text-orange-400',
+  medium: 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400',
+  low: 'bg-slate-500/10 text-slate-600 border-slate-500/20 dark:text-slate-400',
+}
+
+function RepoRow({ r }: { r: RepoSecurity }) {
+  return (
+    <li className="px-4 py-3 border-t first:border-t-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Link href={`/repos/${r.repoId}`} className="font-medium hover:underline">{r.repoName}</Link>
+        <span className="flex flex-wrap gap-1">
+          {(['critical', 'high', 'medium', 'low'] as const).filter(s => r.counts[s] > 0).map(s => (
+            <Badge key={s} variant="outline" className={`text-xs tabular-nums ${SEVERITY_STYLE[s]}`}>{r.counts[s]} {s}</Badge>
+          ))}
+        </span>
+        {r.quietReason && <span className="text-xs text-muted-foreground">{r.quietReason}</span>}
+        <span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+          {r.newest && <span>newest {formatDistanceToNow(r.newest)}</span>}
+          <a href={`https://github.com/${r.fullName}/security/dependabot`} target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 hover:text-foreground">
+            On GitHub <ExternalLink className="w-3 h-3" aria-hidden />
+          </a>
+        </span>
+      </div>
+      <ul className="mt-2 flex flex-wrap gap-1.5" aria-label={`Packages with alerts in ${r.repoName}`}>
+        {r.packages.map(p => (
+          <li key={p.name} title={p.title}
+            className={`rounded border px-1.5 py-0.5 text-xs ${SEVERITY_STYLE[p.severity]}`}>
+            {p.name}{p.count > 1 ? <span className="tabular-nums"> ×{p.count}</span> : null}
+          </li>
+        ))}
+        {r.morePackages > 0 && <li className="px-1.5 py-0.5 text-xs text-muted-foreground">+{r.morePackages} more</li>}
+      </ul>
+    </li>
+  )
 }
 
 export default async function SecurityPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const findings = await getSecurityData(session.user.id)
-
-  const critical = findings.filter((f) => f.severity === 'critical').length
-  const high = findings.filter((f) => f.severity === 'high').length
-  const medium = findings.filter((f) => f.severity === 'medium').length
-  const low = findings.filter((f) => f.severity === 'low').length
-
-  const severityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical': return 'bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-400'
-      case 'high': return 'bg-orange-500/10 text-orange-600 border-orange-500/20 dark:text-orange-400'
-      case 'medium': return 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400'
-      default: return 'bg-slate-500/10 text-slate-600 border-slate-500/20 dark:text-slate-400'
-    }
-  }
+  const { totals, active, quiet } = summarizeFindings(await getFindingGroups(session.user.id))
+  const quietAlerts = quiet.reduce((n, r) => n + r.total, 0)
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Security</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Dependabot alerts and secret scanning across all repositories
+          Open Dependabot and secret-scanning alerts, by repo. Hover a package for its advisory; each repo links to the full list on GitHub.
         </p>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <MetricCard title="Critical" value={critical} icon={Shield} variant={critical > 0 ? 'danger' : 'default'} />
-        <MetricCard title="High" value={high} icon={AlertTriangle} variant={high > 0 ? 'danger' : 'default'} />
-        <MetricCard title="Medium" value={medium} icon={AlertTriangle} variant={medium > 0 ? 'warning' : 'default'} />
-        <MetricCard title="Low" value={low} icon={Info} variant="default" />
+        <MetricCard title="Critical" value={totals.critical} icon={Shield} variant={totals.critical > 0 ? 'danger' : 'default'} />
+        <MetricCard title="High" value={totals.high} icon={AlertTriangle} variant={totals.high > 0 ? 'danger' : 'default'} />
+        <MetricCard title="Medium" value={totals.medium} icon={AlertTriangle} variant={totals.medium > 0 ? 'warning' : 'default'} />
+        <MetricCard title="Low" value={totals.low} icon={Info} variant="default" />
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          {findings.length === 0 ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              No open security findings. 🎉
-            </div>
-          ) : (
-            <div className="overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="text-left font-medium text-muted-foreground px-4 py-3">Severity</th>
-                    <th className="text-left font-medium text-muted-foreground px-4 py-3">Repository</th>
-                    <th className="text-left font-medium text-muted-foreground px-4 py-3">Type</th>
-                    <th className="text-left font-medium text-muted-foreground px-4 py-3">Title</th>
-                    <th className="text-left font-medium text-muted-foreground px-4 py-3">Age</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {findings.map((f) => (
-                    <tr key={f.id} className="border-t hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <Badge variant="outline" className={`capitalize text-xs ${severityColor(f.severity)}`}>
-                          {f.severity}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 font-medium">{f.repoName}</td>
-                      <td className="px-4 py-3 text-muted-foreground capitalize">{f.type}</td>
-                      <td className="px-4 py-3 max-w-sm">
-                        <p className="truncate">{f.title}</p>
-                        {f.packageName && (
-                          <p className="text-xs text-muted-foreground">{f.packageName}</p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">
-                        {formatDistanceToNow(f.createdAt)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      {active.length + quiet.length === 0 ? (
+        <Card><CardContent className="py-12 text-center text-sm text-muted-foreground">No open security alerts.</CardContent></Card>
+      ) : (
+        <>
+          <section aria-labelledby="sec-active">
+            <h2 id="sec-active" className="text-sm font-semibold mb-2">
+              Repos in use <span className="text-muted-foreground font-normal">· {active.length}</span>
+            </h2>
+            <Card>
+              <CardContent className="p-0">
+                {active.length
+                  ? <ul>{active.map(r => <RepoRow key={r.repoId} r={r} />)}</ul>
+                  : <p className="px-4 py-6 text-sm text-muted-foreground">No alerts in repos you&apos;re working on.</p>}
+              </CardContent>
+            </Card>
+          </section>
+
+          {quiet.length > 0 && (
+            <details className="group">
+              <summary className="cursor-pointer list-none text-sm font-semibold flex items-center gap-1.5">
+                <ChevronRight className="w-4 h-4 transition-transform group-open:rotate-90" aria-hidden />
+                Dormant, sunsetting or archived
+                <span className="text-muted-foreground font-normal">· {quiet.length} repos, {quietAlerts} alerts</span>
+              </summary>
+              <p className="text-xs text-muted-foreground mt-1 mb-2 ml-5.5">
+                Nobody works on these, so their alerts can wait. Decide what to keep in <Link href="/repos/triage" className="underline">Triage</Link>.
+              </p>
+              <Card>
+                <CardContent className="p-0"><ul>{quiet.map(r => <RepoRow key={r.repoId} r={r} />)}</ul></CardContent>
+              </Card>
+            </details>
           )}
-        </CardContent>
-      </Card>
+        </>
+      )}
     </div>
   )
 }

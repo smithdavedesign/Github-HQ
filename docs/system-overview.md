@@ -41,7 +41,7 @@ an idea.
 |---|---|---|
 | **RepoHQ** | `smithdavedesign/Github-HQ` (public), https://repohq.vercel.app | Portfolio dashboard: health, lifecycle, revenue, decision states. Hosts the idea signal endpoint and the MCP server. [Architecture](architecture.md) |
 | **Factory** | `factory/` in this repo; runs on the owner's Mac (launchd worker, BullMQ via Render Redis) | Free-model-first maintenance: sandboxed fixes judged by checks, build and preview smoke; draft PRs the owner merges. [Design](autonomous-factory.md), [operator guide](../factory/README.md) |
-| **Idea pipeline** | private repo `idea-factory` (`~/idea-factory`), Notion **Idea Board**, public landing pages on the `idea-pages` Vercel project | Research → review → demand test → build → revenue; git holds every idea in full. [Idea factory](idea-factory.md) |
+| **Idea pipeline** | private repo `idea-factory` (`~/idea-factory`), Notion **Idea Board**, public landing pages on the `idea-pages` Vercel project | Research → review → demand test → build → go live → revenue; git holds every idea in full. [Idea factory](idea-factory.md) |
 | **Context index** | `factory/context/`, built daily into `~/.repohq-factory/context/index.json` | One searchable view of repos, ideas, bookmarks and docs, tagged by data class |
 | **Resource Center** | private repo `resource-center` (`my-bookmarks-hub` on Vercel, behind Vercel auth) + the Bridge Chrome extension | The owner's bookmarks as a knowledge source; feeds interests into the context index |
 | **Local AI stack** | `~/ai-stack`, private repo `smithdavedesign/ai-stack` | Ollama, LiteLLM (model aliases and the free pool), Headroom, coding agents. [AI stack docs](ai-stack/README.md) |
@@ -64,6 +64,7 @@ an idea.
     pool only as backup when the subscription is out of capacity. Product building needs the strongest
     model, so this is the reverse of the factory's free-first routing (owner, 2026-10-10).
   - The factory runs free-model-first, and its paid tier has a $0 budget.
+  - RepoHQ's own AI features (repo summaries, the Advisor, plain-English search) use OpenRouter's free models or Gemini's free tier. Claude and GPT-4o need `LLM_ALLOW_PAID=1` (until 2026-10-12 they ran on an Anthropic API key).
   - Private repos never go to free cloud models.
 - **Data classes** ([personal-context.md](personal-context.md)):
   - **public** and **personal** may go to cloud models;
@@ -120,7 +121,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Demand test | Missing | **Live** | permitly's page went up automatically (https://idea-pages-livid.vercel.app/permitly/, decision on 2026-10-24). Signals, decision rules and the launch post (`LAUNCH.md`) all work. Distribution is still on the owner. |
 | Building ideas | Missing | Built, first runs under way | Milestones tests first on Claude Opus at extra-high effort (Sonnet, then the free pool, as fallbacks), planned and self-reviewed with gstack, draft PR. Approving builds the whole MVP in one run (stopping at failing tests); one a week automatically, plus up to 2 a day started from the Ideas page. Runs in the factory's Docker sandbox (subscription token; network only to registries and Anthropic), and every patch passes a secret scan before it's committed. |
 | Context | Fragmented | Works | One index (44 repos, ideas, 258 bookmarks, 183 doc sections), MCP tools, a skill. Keyword search, no embeddings. |
-| Revenue loop | Missing | Wired, tracked per idea | Idea MRR from RepoHQ in each idea's state, the Notion board and the morning email. Each idea now has a road to revenue: a plan once M1 merges, and a checklist to the first dollar checked every tick, with the owner's steps in the morning email. Build queues go to the idea closest to money. Total portfolio MRR is $4.99. |
+| Revenue loop | Missing | Wired, tracked per idea | Idea MRR from RepoHQ in each idea's state, the Notion board and the morning email. Each idea now has a road to revenue: a plan once M1 merges, and a checklist to the first dollar checked every tick, with the owner's steps in the morning email. A completed MVP gets a go-live build (SEO basics, legal pages, a Buy button, the visit beacon, a Vercel project), and the live site is audited every 6 hours. Build queues go to the idea closest to money. Total portfolio MRR is $4.99. |
 | Operations | Fragile, visible | Fragile, **watched** | One system log across every part. Probes cover services, launchd jobs, OpenClaw crons, GitHub crons and provider errors, with alerts to Slack. Still one Mac. |
 
 **Weakest links now, in order:**
@@ -139,7 +140,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Within 15 min of sending | Research + review of an idea the owner sent, verdict back on Slack or WhatsApp (≤ 3 a day) | idea pipeline tick |
 | Every 5 min | System-events collector: ship the log, probe everything (incl. Vercel deploys), alert Slack, refresh the companion's brief; daily: prune, secrets check | launchd `com.user.system-events` |
 | 03:30 | Factory state backup (ledger, reports) → private repo | launchd `com.user.factory-backup` |
-| Every 15 min (daily steps after 09:30) | Idea pipeline tick: Ideas-page decisions, Notion sync, signals, decisions, promote, an approved idea's M1 build, revenue, sync to RepoHQ; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |
+| Every 15 min (daily steps after 09:30) | Idea pipeline tick: Ideas-page decisions, Notion sync, signals, decisions, promote, an approved idea's M1 build, revenue, a go-live once an MVP is complete (≤ 1 a day), the live audit (every 6 h per live idea), sync to RepoHQ; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |
 | Daily, weekly | RepoHQ sync, security, deployments, AI summaries, digest | GitHub Actions crons |
 
 ## What's next

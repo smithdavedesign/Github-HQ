@@ -3,15 +3,14 @@ import { Bot, Factory, GitMerge, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 
 interface AgentImpactCardProps {
-  /** Requests queued from RepoHQ (Run agent, skills, auto-dispatch), all time, from portfolio_events.
-   *  Includes the Nexus-era tasks from before the factory became the only executor (Phase 81). */
-  requests: { merged: number; queued: number; successRate: number | null; totalScoreGained: number; recentMergeCount: number } | null
+  /** Requests from RepoHQ (Run agent, skills, auto-dispatch), one per task, last `windowDays` (requestStats). */
+  requests: { merged: number; queued: number; successRate: number | null; totalScoreGained: number; recentMergeCount: number; windowDays: number } | null
   /** The factory's PRs (sensed work and requests), last 30 days, from agent_jobs. */
   factory: { merged: number; closed: number; prsOpened: number; acceptance: number | null } | null
 }
 
-// Reported separately: the request line carries the Nexus-era history (2 merged of 306 queued
-// in the 2026-10 audit), which would hide the factory's acceptance if blended into one rate.
+// Reported separately: requests and the factory's own PRs are different populations, and one
+// blended rate would hide the factory's acceptance.
 export function AgentImpactCard({ requests, factory }: AgentImpactCardProps) {
   if (!(requests && requests.merged > 0) && !(factory && factory.prsOpened > 0)) return null
 
@@ -47,8 +46,8 @@ export function AgentImpactCard({ requests, factory }: AgentImpactCardProps) {
           <div className="flex items-center gap-2">
             <GitMerge className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
             <span>
-              <span className="font-medium">Requests (all time):</span>{' '}
-              <span className="tabular-nums">{requests.merged} merged of {requests.queued} queued</span>
+              <span className="font-medium">Requests ({requests.windowDays} days):</span>{' '}
+              <span className="tabular-nums">{requests.merged} merged of {requests.queued}</span>
               {requests.successRate != null && (
                 <span className={requests.successRate >= 50 ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}> ({requests.successRate}%)</span>
               )}

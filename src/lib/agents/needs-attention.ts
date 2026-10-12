@@ -4,10 +4,13 @@
  */
 import type { AccuracyStat } from '@/lib/actions/advisor-accuracy-utils'
 import type { ClaudeUsage, CopilotUsage } from './usage-utils'
+import { errorSummary } from '@/lib/utils'
 
 export interface AttentionItem {
   tone: 'fail' | 'warn' | 'info'
   text: string
+  /** The full message when `text` is a summary (shown on hover). */
+  detail?: string
   /** In-page anchor or URL for the detail. */
   href?: string
 }
@@ -27,13 +30,14 @@ const MAX_FAILING = 5
 export function needsAttention({ failing, pipeline, claude, copilot, accuracy, now }: AttentionInput): AttentionItem[] {
   const items: AttentionItem[] = []
   for (const f of (failing ?? []).slice(0, MAX_FAILING)) {
-    items.push({ tone: 'fail', text: `${f.system}/${f.component}: ${f.message}`, href: '#system-log' })
+    const summary = errorSummary(f.message)
+    items.push({ tone: 'fail', text: `${f.system}/${f.component}: ${summary}`, detail: summary !== f.message ? f.message : undefined, href: '#system-log' })
   }
   if (failing && failing.length > MAX_FAILING) items.push({ tone: 'fail', text: `…and ${failing.length - MAX_FAILING} more failing checks`, href: '#system-log' })
 
   if (pipeline) {
     if (pipeline.ok === false || pipeline.errors.length) {
-      items.push({ tone: 'fail', text: `Idea pipeline: ${pipeline.errors[0] ?? 'last tick failed'}${pipeline.errors.length > 1 ? ` (+${pipeline.errors.length - 1} more)` : ''}`, href: '#idea-pipeline' })
+      items.push({ tone: 'fail', text: `Idea pipeline: ${pipeline.errors[0] ? errorSummary(pipeline.errors[0]) : 'last tick failed'}${pipeline.errors.length > 1 ? ` (+${pipeline.errors.length - 1} more)` : ''}`, detail: pipeline.errors.join('\n') || undefined, href: '#idea-pipeline' })
     }
     // It ticks every 15 minutes; an hour of silence means launchd or the Mac stopped it.
     if (!pipeline.tickAt || now.getTime() - pipeline.tickAt.getTime() > HOUR) {

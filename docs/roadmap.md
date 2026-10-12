@@ -294,6 +294,7 @@ The owner decides on ideas and starts builds from RepoHQ, and idea-factory does 
 - [x] Builds in the factory's Docker sandbox with a subscription token, instead of on the host (`factory/bin/sandbox-session.ts`, idea-factory `lib/sandbox.js`); a secret scan with one repair round before any commit; the credential broker through `.provision`
 - [x] Road to revenue: a plan once M1 is merged (gstack startup frameworks), the launch checklist checked every tick, a card on the idea page and morning-email lines; build queues ordered by how close each idea is to its first dollar
 - [x] Let it rip: MVP builds, the whole roadmap in one sandbox run and one PR, stopping at failing tests, an Opus fallback or the time budget (the default when the owner approves); merged PRs picked up every tick
+- [x] Go live: once the MVP is merged, one build makes it launch-ready (SEO basics, share image, sitemap and robots, privacy and terms, a Buy button on a Stripe payment link, the visit beacon, a Vercel project via the broker). After the merge, the production URL becomes the repo's homepage, and a live audit every 6 hours checks the 9 launch basics (checklist step Launch-ready). Starts by itself at most once a day, or from **Get it launch-ready** on the Ideas page. The launch skill also drafts posts for live products.
 - [ ] Preview smoke for idea repos' milestone PRs, as the factory does for its own PRs
 - [ ] A money gate: no builds past M1 without a stated buyer and price, ideally with demand-test signups
 

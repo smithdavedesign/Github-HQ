@@ -57,8 +57,8 @@ function RepoRow({ repo }: { repo: RepoSummary }) {
       <div className="flex items-center gap-2 shrink-0">
         <OpportunityBadge score={repo.opportunityScore} />
         <HealthBadge score={repo.healthScore} />
-        <Link href={`/repos/${repo.id}`} className="text-muted-foreground hover:text-foreground">
-          <ArrowRight className="w-3.5 h-3.5" />
+        <Link href={`/repos/${repo.id}`} className="text-muted-foreground hover:text-foreground" aria-label={`Open ${repo.name}`}>
+          <ArrowRight className="w-3.5 h-3.5" aria-hidden />
         </Link>
       </div>
     </div>

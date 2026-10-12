@@ -6,7 +6,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { ideaBuildRequests, ideaDecisions, ideaSeeds, ideas } from '@/lib/db/schema'
 import { factoryAccess } from '@/lib/agents/factory-queue'
-import { buildMvpTarget, buildNowTarget, checkDecision, cleanIdeaText, type IdeaBuildRequestRow, type IdeaDecisionKind, type IdeaView } from '@/lib/ideas/idea-utils'
+import { buildMvpTarget, buildNowTarget, checkDecision, goLiveTarget, cleanIdeaText, type IdeaBuildRequestRow, type IdeaDecisionKind, type IdeaView } from '@/lib/ideas/idea-utils'
 
 // Browser-facing actions for the Ideas page. The owner's decision becomes an `idea_decisions` row;
 // the idea pipeline on the Mac applies it on its next tick by setting the Notion Status
@@ -119,7 +119,7 @@ export async function cancelIdeaSeed(id: number): Promise<void> {
  * run): the pipeline builds it on its next tick, outside the weekly
  * build slot (idea_build_requests; at most policy.build.manualPerDay starts in 24 hours, the rest wait).
  */
-export async function requestBuild(slug: string, note?: string, mode: 'milestone' | 'mvp' = 'milestone'): Promise<{ id: number; milestone: string }> {
+export async function requestBuild(slug: string, note?: string, mode: 'milestone' | 'mvp' | 'golive' = 'milestone'): Promise<{ id: number; milestone: string }> {
   const userId = await ownerId()
   if (!SLUG_RE.test(slug)) throw new Error('Unknown idea')
   const text = (note ?? '').trim().slice(0, MAX_NOTE) || null
@@ -132,9 +132,21 @@ export async function requestBuild(slug: string, note?: string, mode: 'milestone
       buildRequests: requests as IdeaBuildRequestRow[],
     }
     // "MVP" on the request: idea-factory builds every remaining milestone in one run.
-    const target = mode === 'mvp' ? buildMvpTarget(view) : buildNowTarget(view)
-    if (!target.ok) throw new DecisionError(target.reason)
-    const milestone = mode === 'mvp' ? 'MVP' : (target as { milestone: string }).milestone
+    // "MVP": every remaining milestone; "GOLIVE": make it launch-ready (SEO basics, legal pages, payment link, beacon, Vercel project).
+    let milestone: string
+    if (mode === 'mvp') {
+      const t = buildMvpTarget(view)
+      if (!t.ok) throw new DecisionError(t.reason)
+      milestone = 'MVP'
+    } else if (mode === 'golive') {
+      const t = goLiveTarget(view)
+      if (!t.ok) throw new DecisionError(t.reason)
+      milestone = 'GOLIVE'
+    } else {
+      const t = buildNowTarget(view)
+      if (!t.ok) throw new DecisionError(t.reason)
+      milestone = t.milestone
+    }
     const [inserted] = await db.insert(ideaBuildRequests).values({ slug, userId, milestone, note: text })
       .returning({ id: ideaBuildRequests.id, milestone: ideaBuildRequests.milestone })
     return inserted

@@ -40,6 +40,9 @@ import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = { title: 'Dashboard' }
 
 function SectionLabel({ label }: { label: string }) {
   return (

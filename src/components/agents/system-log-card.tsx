@@ -1,5 +1,5 @@
 import { CheckCircle, XCircle, ScrollText } from 'lucide-react'
-import { formatDistanceToNow } from '@/lib/utils'
+import { errorSummary, formatDistanceToNow } from '@/lib/utils'
 
 export interface SystemLogRow { ts: Date; system: string; component: string; event: string; status: string; message: string }
 
@@ -24,7 +24,7 @@ export function SystemLogCard({ failing, recent }: { failing: SystemLogRow[]; re
             {failing.map(f => (
               <p key={`${f.system}:${f.component}:${f.event}`} className="flex items-start gap-1.5">
                 <XCircle className="w-3 h-3 mt-0.5 shrink-0 text-red-500" />
-                <span><span className="font-mono">{f.system}/{f.component}</span> — {f.message} <span className="text-muted-foreground">({formatDistanceToNow(f.ts)})</span></span>
+                <span title={f.message}><span className="font-mono">{f.system}/{f.component}</span> — {errorSummary(f.message, 200)} <span className="text-muted-foreground">({formatDistanceToNow(f.ts)})</span></span>
               </p>
             ))}
           </div>

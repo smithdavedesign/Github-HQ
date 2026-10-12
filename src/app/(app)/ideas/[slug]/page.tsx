@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth'
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { loadIdea } from '@/lib/ideas/ideas-data'
 import {
-  DECISION_LABEL, buildMvpSteps, buildMvpTarget, buildNowSteps, buildNowTarget, buildRequestLabel, milestoneRange, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
+  DECISION_LABEL, launchKitOrder, buildMvpSteps, buildMvpTarget, goLiveSteps, goLiveTarget, buildNowSteps, buildNowTarget, buildRequestLabel, milestoneRange, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
   manualStartsLast24h, pendingDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
 } from '@/lib/ideas/idea-utils'
 import { Badge } from '@/components/ui/badge'
@@ -18,7 +18,7 @@ import { BuildNow } from '@/components/ideas/build-now'
 import { RevenueCard } from '@/components/ideas/revenue-card'
 import { ReviewNav } from '@/components/ideas/review-nav'
 import { CopyButton } from '@/components/ideas/copy-button'
-import { cn, formatDistanceToNow } from '@/lib/utils'
+import { cn, errorSummary, formatDistanceToNow } from '@/lib/utils'
 
 type Props = { params: Promise<{ slug: string }> }
 
@@ -58,6 +58,7 @@ export default async function IdeaPage({ params }: Props) {
   const pr = safeUrl(v.state.build?.prUrl)
   const notion = safeUrl(v.notionUrl)
   const launchPost = r?.launch?.post ? r.launch.post.replace(/\{url\}/g, v.state.page?.url ?? '{url}') : null
+  const kitOrder = launchKitOrder(v.docs.launchKit)
   // "Start build now": the next milestone outside the weekly slot (idea_build_requests).
   const buildTarget = buildNowTarget(v)
   const startsToday = manualStartsLast24h(overview.views, now)
@@ -65,6 +66,9 @@ export default async function IdeaPage({ params }: Props) {
   // "Build the MVP": every remaining milestone in one run (policy.build.mvp).
   const mvpTarget = buildMvpTarget(v, policy?.build?.mvp?.maxMilestones ?? 6)
   const mvpSteps = mvpTarget.ok ? buildMvpSteps(mvpTarget.milestones, v, policy, startsToday) : []
+  // "Get it launch-ready" (idea-factory go-live): any time after M1 is merged.
+  const liveTarget = goLiveTarget(v)
+  const liveSteps = liveTarget.ok ? goLiveSteps(v, policy, startsToday) : []
   const lastRequest = v.buildRequests[0] ?? null
 
   const tabs = [
@@ -73,6 +77,7 @@ export default async function IdeaPage({ params }: Props) {
     { id: 'roadmap', label: 'Roadmap', md: v.docs.roadmap },
     { id: 'review', label: 'Full review', md: v.docs.review },
     { id: 'launch', label: 'Launch post', md: v.docs.launch },
+    { id: 'launchKit', label: 'Launch kit', md: v.docs.launchKit },
     { id: 'build', label: 'Build notes', md: v.docs.build },
     { id: 'revenue', label: 'Revenue plan', md: v.docs.revenue },
   ].filter((t): t is { id: string; label: string; md: string } => !!t.md?.trim())
@@ -167,7 +172,12 @@ export default async function IdeaPage({ params }: Props) {
                 <DemandMeters d={demandProgress(v.signals, v.state, policy, now)} />
                 {v.state.validation?.reason && <p className="text-xs text-muted-foreground">Last decision: {v.state.validation.reason}</p>}
                 {launchPost && <CopyButton text={launchPost} label="Copy launch post" />}
-                {(r?.launch?.channels ?? []).length > 0 && (
+                {kitOrder ? (
+                  <div className="text-xs space-y-1">
+                    <p className="font-medium">Where to post, in order <span className="font-normal text-muted-foreground">(launch kit: channels checked; posts in the Launch kit tab)</span></p>
+                    <IdeaMarkdown>{kitOrder}</IdeaMarkdown>
+                  </div>
+                ) : (r?.launch?.channels ?? []).length > 0 && (
                   <ul className="text-xs space-y-1">
                     {r!.launch!.channels!.slice(0, 5).map(c => {
                       const u = safeUrl(c.url)
@@ -184,7 +194,8 @@ export default async function IdeaPage({ params }: Props) {
               <CardHeader className="pb-2"><CardTitle className="text-base">Build</CardTitle></CardHeader>
               <CardContent className="text-sm space-y-1.5">
                 <p>{v.state.build?.status === 'running' ? `${v.state.build.milestone ?? 'M1'} is being built now.`
-                  : v.state.build?.status === 'failed' ? `${v.state.build.milestone ?? 'M1'} failed: ${v.state.build.reason ?? 'see the record'}`
+                  : v.state.build?.status === 'failed' ? `${v.state.build.milestone ?? 'M1'} failed: ${errorSummary(v.state.build.reason ?? 'see the record', 200)}`
+                  : pr && v.state.build?.milestone === 'GOLIVE' ? `Go-live PR ${v.state.build.status ?? 'open'}: launch-ready changes, waiting for your review.`
                   : pr && v.state.build?.milestone === 'MVP' ? `MVP (${milestoneRange(v.state.build.milestones?.length ? v.state.build.milestones : v.state.build.planned ?? [])}) PR ${v.state.build.status ?? 'open'}${v.state.build.stopped ? ` — stopped: ${v.state.build.stopped}` : ''}.`
                   : pr ? `${v.state.build?.milestone ?? 'M1'} PR ${v.state.build?.status ?? 'open'}${v.state.build?.testsPassing === false ? ' — tests failing' : v.state.build?.testsPassing ? ' — tests passing' : ''}.`
                   : `M1 not started. Build slot: ${slot.free ? 'free this week' : `used, next ${slot.nextFreeAt?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? 'soon'}`}.`}</p>
@@ -201,6 +212,7 @@ export default async function IdeaPage({ params }: Props) {
                       target={buildTarget}
                       steps={buildSteps}
                       mvp={{ target: mvpTarget, steps: mvpSteps }}
+                      golive={{ target: liveTarget, steps: liveSteps }}
                       request={lastRequest ? { id: lastRequest.id, status: lastRequest.status, label: buildRequestLabel(lastRequest), createdAt: lastRequest.createdAt.toISOString(), prUrl: safeUrl(lastRequest.prUrl), note: lastRequest.note } : null}
                       blocked={overview.buildRequestsMissing ? 'Start build now needs the idea_build_requests table (npm run db:push).' : null}
                     />

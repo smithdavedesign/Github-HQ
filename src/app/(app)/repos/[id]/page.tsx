@@ -10,7 +10,8 @@ import type { GstackSkill } from '@/lib/skills/skill-policy'
 import { auth } from '@/lib/auth'
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { db } from '@/lib/db'
-import { portfolioEvents } from '@/lib/db/schema'
+import { portfolioEvents, repositories } from '@/lib/db/schema'
+import type { Metadata } from 'next'
 import { and, eq, inArray, desc } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import { HealthBadge, ActivityBadge } from '@/components/repos/health-badge'
@@ -19,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExternalLink, GitFork, Star, AlertTriangle, Lock, Globe, CheckCircle, XCircle, Clock, Bot, GitPullRequest, GitMerge } from 'lucide-react'
 // ExternalLink used in header homepage link
-import { formatDistanceToNow } from '@/lib/utils'
+import { formatDistanceToNow, errorSummary } from '@/lib/utils'
 import { CommitActivityChart } from '@/components/repos/commit-activity-chart'
 import { TagEditor } from '@/components/repos/tag-editor'
 import { RevenueEditor } from '@/components/repos/revenue-editor'
@@ -38,6 +39,16 @@ import type { CostItem } from '@/lib/db/schema'
 
 type Props = { params: Promise<{ id: string }> }
 
+/** The tab says which repo ("Github-HQ · RepoHQ"). */
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params
+  const session = await auth()
+  const repo = session?.user?.id && /^\d+$/.test(id)
+    ? await db.query.repositories.findFirst({ where: and(eq(repositories.id, Number(id)), eq(repositories.userId, session.user.id)), columns: { name: true } })
+    : null
+  return { title: repo?.name ?? 'Repository' }
+}
+
 export default async function RepoDetailPage({ params }: Props) {
   const { id } = await params
   const repoId = Number(id)
@@ -46,7 +57,7 @@ export default async function RepoDetailPage({ params }: Props) {
     db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.repoId, repoId),
-        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected', 'agent_execution_failed', 'agent_attempt', 'agent_skill_report']),
+        inArray(portfolioEvents.eventType, ['agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_pr_rejected', 'agent_execution_failed', 'agent_ci_failed', 'agent_attempt', 'agent_skill_report']),
       ),
       orderBy: [desc(portfolioEvents.occurredAt)],
       limit: 30,
@@ -141,7 +152,7 @@ export default async function RepoDetailPage({ params }: Props) {
             repoId={repo.id}
             hasExistingAnalysis={!!claudeAnalysis}
             isStale={analysisIsStale}
-            providerName={PROVIDER_SHORT_NAME[llmSettings.provider as keyof typeof PROVIDER_SHORT_NAME] ?? 'Claude'}
+            providerName={llmSettings.effectiveProvider ? PROVIDER_SHORT_NAME[llmSettings.effectiveProvider] : 'AI'}
           />
           <ResyncButton repoId={repo.id} />
         </div>
@@ -465,7 +476,8 @@ export default async function RepoDetailPage({ params }: Props) {
                 const isCreated  = event.eventType === 'agent_pr_created'
                 const isMerged   = event.eventType === 'agent_pr_merged'
                 const isRejected = event.eventType === 'agent_pr_rejected'
-                const isFailed   = event.eventType === 'agent_execution_failed'
+                const isCiFailed = event.eventType === 'agent_ci_failed'
+                const isFailed   = event.eventType === 'agent_execution_failed' || isCiFailed
                 const isAttempt  = event.eventType === 'agent_attempt'
                 const isReport   = event.eventType === 'agent_skill_report'
                 const attemptOutcome = isAttempt ? (meta?.outcome as string | undefined) : undefined
@@ -486,6 +498,7 @@ export default async function RepoDetailPage({ params }: Props) {
                   : isRejected ? 'PR Closed — Not Merged'
                   : isReport ? `/${(meta?.skillName as string) ?? 'skill'} Report`
                   : isAttempt ? `Attempt: ${attemptOutcome ?? '?'}`
+                  : isCiFailed ? `CI failed${meta?.checkName ? `: ${meta.checkName as string}` : ''}`
                   : 'Failed'
                 const labelColor = isMerged
                   ? 'bg-emerald-500/10 text-emerald-600 border-emerald-200'
@@ -518,11 +531,20 @@ export default async function RepoDetailPage({ params }: Props) {
                         )}
                         <p className="text-sm font-medium truncate">{event.title}</p>
                       </div>
+                      {isCiFailed && !event.description && typeof meta?.errorSummary === 'string' && (
+                        <p className="mt-1 text-xs text-red-600 dark:text-red-400 break-words">{errorSummary(meta.errorSummary, 200)}</p>
+                      )}
                       {event.description && (
                         isFailed ? (
-                          <pre className="text-[10px] text-red-500/80 mt-1 bg-red-500/5 border border-red-500/10 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
-                            {event.description}
-                          </pre>
+                          <div className="mt-1 text-xs">
+                            <p className="text-red-600 dark:text-red-400 break-words">{errorSummary(event.description, 200)}</p>
+                            {event.description.length > 200 || event.description.includes('\n') ? (
+                              <details className="mt-1">
+                                <summary className="cursor-pointer text-[10px] text-muted-foreground">Full log</summary>
+                                <pre className="text-[10px] text-red-500/80 mt-1 bg-red-500/5 border border-red-500/10 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-48 overflow-y-auto">{event.description}</pre>
+                              </details>
+                            ) : null}
+                          </div>
                         ) : (
                           <p className="text-xs text-muted-foreground mt-0.5 break-words">{event.description}</p>
                         )

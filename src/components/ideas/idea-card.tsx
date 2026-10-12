@@ -3,15 +3,16 @@ import { ArrowRight, ExternalLink, GitPullRequest } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { DemandMeters, PendingBadge, ScoreBadge, StageBadge } from './idea-bits'
 import {
-  demandProgress, pendingDecision, safeUrl, shortTitle, tagline, type IdeaGroup, type IdeaPolicy, type IdeaView,
+  buildRequestLabel, demandProgress, pendingDecision, safeUrl, shortTitle, tagline, type IdeaGroup, type IdeaPolicy, type IdeaView,
 } from '@/lib/ideas/idea-utils'
-import { formatDistanceToNow } from '@/lib/utils'
+import { errorSummary, formatDistanceToNow } from '@/lib/utils'
 
 /** One idea in the list: enough to decide whether to open it, and the one number that matters for its stage. */
 export function IdeaCard({ v, group, policy, now }: { v: IdeaView; group: IdeaGroup; policy: IdeaPolicy | null; now: Date }) {
   const pending = pendingDecision(v)
   const pr = safeUrl(v.state.build?.prUrl)
   const page = safeUrl(v.state.page?.url)
+  const request = v.buildRequests?.[0] ?? null
   const reviewedAt = v.state.review?.at ? new Date(v.state.review.at) : null
   const demand = group === 'testing' ? demandProgress(v.signals, v.state, policy, now) : null
   return (
@@ -50,9 +51,11 @@ export function IdeaCard({ v, group, policy, now }: { v: IdeaView; group: IdeaGr
 
       {group === 'building' && (
         <p className="text-xs text-muted-foreground mt-3">
+          {/* A newer request (running or queued) outranks an older failure in the state. */}
           {v.state.build?.status === 'running' ? `${v.state.build.milestone ?? 'M1'} is being built now.`
+            : request && (request.status === 'running' || request.status === 'pending') ? buildRequestLabel(request)
             : pr ? `${v.state.build?.milestone ?? 'M1'} PR ${v.state.build?.status ?? 'open'}${v.state.build?.testsPassing === false ? ' (tests failing)' : ''}.`
-            : v.state.build?.status === 'failed' ? `Last build failed: ${v.state.build.reason ?? 'see the record'}.`
+            : v.state.build?.status === 'failed' ? <span title={v.state.build.reason ?? undefined}>Last build failed: {errorSummary(v.state.build.reason ?? 'see the record', 140)}</span>
             : v.state.repo ? 'Repo created; M1 waits for its build slot.' : 'Approved; the repo is created on the next run.'}
         </p>
       )}

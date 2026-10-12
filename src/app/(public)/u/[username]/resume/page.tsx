@@ -17,7 +17,7 @@ type Props = { params: Promise<{ username: string }> }
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { username } = await params
   return {
-    title: `${username} — Engineering Portfolio`,
+    title: { absolute: `${username} — Engineering Portfolio` },
     description: `Software engineering portfolio for @${username}, powered by RepoHQ`,
   }
 }
@@ -199,8 +199,8 @@ export default async function PortfolioResumePage({ params }: Props) {
                           </a>
                           {isLive && <span title="In production"><CheckCircle className="w-3.5 h-3.5 text-emerald-500" /></span>}
                           {repo.homepage && (
-                            <a href={repo.homepage} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
-                              <ExternalLink className="w-3 h-3" />
+                            <a href={repo.homepage} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground" aria-label={`${repo.name}, live site`}>
+                              <ExternalLink className="w-3 h-3" aria-hidden />
                             </a>
                           )}
                           {(repo.stars ?? 0) > 0 && (

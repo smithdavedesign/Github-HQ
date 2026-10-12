@@ -4,6 +4,9 @@ import { Rocket, CheckCircle, AlertTriangle, XCircle } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDistanceToNow } from '@/lib/utils'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = { title: 'Deployments' }
 
 export default async function DeploymentsPage() {
   const deployments = await getDeployments()

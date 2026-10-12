@@ -5,7 +5,9 @@ import { auth } from '@/lib/auth'
 import { toNum } from '@/lib/utils'
 import { db } from '@/lib/db'
 import { repositories, repositoryMetrics, techStack, deployments, securityFindings } from '@/lib/db/schema'
-import { eq, and, sql, inArray, desc } from 'drizzle-orm'
+import { eq, and, sql, inArray, desc, gte } from 'drizzle-orm'
+import { requestStats, REQUEST_EVENT_TYPES } from '@/lib/agents/request-stats'
+import { skillRuns, type SkillRunRecord } from '@/lib/skills/skill-runs'
 import { agentRequests, portfolioEvents } from '@/lib/db/schema'
 import { closedPrTaskIds } from '@/lib/agents/lifecycle-utils'
 import { decrypt } from '@/lib/crypto-utils'
@@ -32,16 +34,32 @@ export const getRepositories = cache(async function getRepositories() {
   if (!session?.user?.id) throw new Error('Unauthorized')
 
   return dbOp('load repositories', async () => {
-    const rows = await db.query.repositories.findMany({
-      where: eq(repositories.userId, session.user.id),
-      with: {
-        metrics: true,
-        techStack: true,
-        deployments: true,
-        securityFindings: { where: eq(securityFindings.state, 'open') },
-      },
-    })
-    return rows.sort((a, b) => (b.metrics?.healthScore ?? -1) - (a.metrics?.healthScore ?? -1))
+    // The table is a client component, so everything returned here is sent to the browser. It needs
+    // a count of serious alerts, not the alerts (3,000 advisories made the page 8 MB), and none of
+    // the summaries, briefs or commit weeks: those stay on the server.
+    const [rows, serious] = await Promise.all([
+      db.query.repositories.findMany({
+        where: eq(repositories.userId, session.user.id),
+        columns: { aiSummary: false, cachedBrief: false, attemptSummary: false },
+        with: {
+          metrics: { columns: { weeklyCommitData: false, internalDeps: false, externalDeps: false } },
+          techStack: true,
+          deployments: true,
+        },
+      }),
+      db.select({ repoId: securityFindings.repoId, n: sql<number>`count(*)`.mapWith(Number) })
+        .from(securityFindings)
+        .innerJoin(repositories, eq(securityFindings.repoId, repositories.id))
+        .where(and(eq(repositories.userId, session.user.id), eq(securityFindings.state, 'open'), inArray(securityFindings.severity, ['critical', 'high'])))
+        .groupBy(securityFindings.repoId),
+    ])
+    const seriousByRepo = new Map(serious.map(s => [s.repoId, s.n]))
+    return rows
+      .map(r => {
+        const techDebt = (r.claudeAnalysis as { techDebt?: { level?: string } } | null)?.techDebt?.level
+        return { ...r, claudeAnalysis: techDebt ? { techDebt: { level: techDebt } } : null, seriousAlerts: seriousByRepo.get(r.id) ?? 0 }
+      })
+      .sort((a, b) => (b.metrics?.healthScore ?? -1) - (a.metrics?.healthScore ?? -1))
   })
 })
 
@@ -882,35 +900,17 @@ export async function getAgentStats() {
   const session = await auth()
   if (!session?.user?.id) return null
 
+  const windowDays = 90
   const events = await db.query.portfolioEvents.findMany({
     where: and(
       eq(portfolioEvents.userId, session.user.id),
-      inArray(portfolioEvents.eventType, [
-        'agent_task_queued', 'agent_pr_created', 'agent_pr_merged', 'agent_execution_failed',
-      ]),
+      inArray(portfolioEvents.eventType, [...REQUEST_EVENT_TYPES]),
+      gte(portfolioEvents.occurredAt, new Date(Date.now() - windowDays * 86_400_000)),
     ),
     columns: { eventType: true, metadata: true, occurredAt: true },
     orderBy: [desc(portfolioEvents.occurredAt)],
   })
-
-  const queued  = events.filter(e => e.eventType === 'agent_task_queued').length
-  const created = events.filter(e => e.eventType === 'agent_pr_created').length
-  const merged  = events.filter(e => e.eventType === 'agent_pr_merged').length
-  const failed  = events.filter(e => e.eventType === 'agent_execution_failed').length
-  const successRate = queued > 0 ? Math.round((merged / queued) * 100) : null
-
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000)
-  const recentMerges = events.filter(
-    e => e.eventType === 'agent_pr_merged' && e.occurredAt >= thirtyDaysAgo
-  )
-
-  // Sum actual deltas from merged events (written by webhook handler after resync)
-  const totalScoreGained = recentMerges.reduce((sum, e) => {
-    const meta = e.metadata as { actualDelta?: number } | null
-    return sum + (meta?.actualDelta ?? 0)
-  }, 0)
-
-  return { queued, created, merged, failed, successRate, totalScoreGained, recentMergeCount: recentMerges.length }
+  return requestStats(events, new Date(), windowDays)
 }
 
 /** Returns repos with active (non-terminal) agent tasks — used by the Active Agents dashboard card */
@@ -989,46 +989,37 @@ export async function getActiveAgentSummary() {
   }
 }
 
-export interface SkillRunRecord {
-  daysAgo: number
-  findingCount: number
-  taskId: string
-  summary?: string
-  topFindings: string[]
-}
+export type { SkillRunRecord } from '@/lib/skills/skill-runs'
 
-/** Returns the most recent agent_skill_report per skill for a repo. Used by GstackSkillLauncher. */
+/** When each gstack skill last ran on a repo (a skill report, or a finished factory request). Used by GstackSkillLauncher. */
 export async function getSkillRunHistory(repoId: number): Promise<Record<string, SkillRunRecord>> {
   const session = await auth()
   if (!session?.user?.id) return {}
 
   try {
-    const events = await db.query.portfolioEvents.findMany({
-      where: and(
-        eq(portfolioEvents.userId, session.user.id),
-        eq(portfolioEvents.repoId, repoId),
-        eq(portfolioEvents.eventType, 'agent_skill_report'),
-      ),
-      columns: { metadata: true, occurredAt: true },
-      orderBy: [desc(portfolioEvents.occurredAt)],
-      limit: 50,
-    })
-
-    const result: Record<string, SkillRunRecord> = {}
-    for (const e of events) {
-      const meta = e.metadata as { skillName?: string; findings?: string[]; taskId?: string; summary?: string } | null
-      if (!meta?.skillName || result[meta.skillName]) continue
-      const msAgo = Date.now() - new Date(e.occurredAt).getTime()
-      const findings = Array.isArray(meta.findings) ? meta.findings.filter(f => f && f.trim()) : []
-      result[meta.skillName] = {
-        daysAgo:      Math.floor(msAgo / (1000 * 60 * 60 * 24)),
-        findingCount: findings.length,
-        taskId:       meta.taskId ?? '',
-        summary:      meta.summary,
-        topFindings:  findings.slice(0, 3),
-      }
-    }
-    return result
+    const [events, requests] = await Promise.all([
+      db.query.portfolioEvents.findMany({
+        where: and(
+          eq(portfolioEvents.userId, session.user.id),
+          eq(portfolioEvents.repoId, repoId),
+          eq(portfolioEvents.eventType, 'agent_skill_report'),
+        ),
+        columns: { metadata: true, occurredAt: true },
+        orderBy: [desc(portfolioEvents.occurredAt)],
+        limit: 50,
+      }),
+      db.query.agentRequests.findMany({
+        where: and(
+          eq(agentRequests.userId, session.user.id),
+          eq(agentRequests.repoId, repoId),
+          inArray(agentRequests.status, ['verified', 'reported', 'pr']),
+        ),
+        columns: { id: true, skill: true, objective: true, findings: true, resolvedAt: true, updatedAt: true },
+        orderBy: [desc(agentRequests.updatedAt)],
+        limit: 50,
+      }),
+    ])
+    return Object.fromEntries(Object.entries(skillRuns(events, requests)).map(([k, { at: _at, ...r }]) => [k, r]))
   } catch {
     return {}
   }

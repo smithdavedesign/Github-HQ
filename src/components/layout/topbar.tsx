@@ -99,6 +99,8 @@ export function Topbar({ user, lastSyncedAt, renderedAt }: TopbarProps) {
           size="icon"
           onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}
           className="w-8 h-8 text-muted-foreground hover:text-foreground"
+          aria-label={`Theme: ${theme ?? 'system'} (switch)`}
+          title={`Theme: ${theme ?? 'system'}`}
         >
           <Sun className="w-3.5 h-3.5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
           <Moon className="absolute w-3.5 h-3.5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
@@ -106,7 +108,7 @@ export function Topbar({ user, lastSyncedAt, renderedAt }: TopbarProps) {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="rounded-full w-8 h-8 p-0">
+            <Button variant="ghost" size="icon" className="rounded-full w-8 h-8 p-0" aria-label="Account menu">
               <Avatar className="w-7 h-7 ring-1 ring-border">
                 <AvatarImage src={user.image ?? undefined} alt={user.name ?? 'User'} />
                 <AvatarFallback className="text-[10px] font-semibold bg-primary text-primary-foreground">

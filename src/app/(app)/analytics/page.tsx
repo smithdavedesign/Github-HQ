@@ -11,6 +11,9 @@ import type { DepNode, DepEdge } from '@/components/dashboard/dep-graph'
 import { getPortfolioHealthTrend } from '@/lib/health/history'
 import { getAgentStats } from '@/lib/actions/repositories'
 import { AgentStatsBlock } from '@/components/dashboard/agent-stats-block'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = { title: 'Analytics' }
 
 export default async function AnalyticsPage() {
   const session = await auth()

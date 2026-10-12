@@ -68,6 +68,9 @@ export interface PipelineInput {
 const STAGE_ORDER = ['validate', 'building', 'repo', 'build', 'live', 'idea', 'pass'] as const
 
 /** All ideas by stage, with validating ones in detail. Pure. */
+/** A build's name: a milestone, the whole MVP, or the go-live (idea-factory's "MVP" and "GOLIVE"). */
+const buildName = (m?: string) => (m === 'GOLIVE' ? 'Go-live' : m ?? 'M1')
+
 export function formatPipeline(p: PipelineInput): string {
   const by = new Map<string, IdeaState[]>()
   for (const i of p.ideas) by.set(i.stage, [...(by.get(i.stage) ?? []), i])
@@ -84,8 +87,9 @@ export function formatPipeline(p: PipelineInput): string {
       } else if (stage === 'pass') {
         lines.push(`- ${i.slug}: ${i.validation?.reason ?? (i.review?.summary ? clip(i.review.summary, 160) : undefined) ?? 'passed'}`)
       } else {
-        const extra = i.build?.prUrl ? ` M1 PR ${i.build.status ?? 'open'}: ${i.build.prUrl}` : i.revenue ? ` $${i.revenue.mrr.toFixed(2)} MRR` : i.review ? ` review ${i.review.score}/10` : ''
-        lines.push(`- ${i.slug}: ${i.title.split(' — ')[0]}.${extra}`)
+        const extra = i.build?.prUrl ? ` ${buildName(i.build.milestone)} PR ${i.build.status ?? 'open'}: ${i.build.prUrl}` : i.revenue ? ` $${i.revenue.mrr.toFixed(2)} MRR` : i.review ? ` review ${i.review.score}/10` : ''
+        const road = i.launch?.total ? ` Road to revenue ${i.launch.done}/${i.launch.total}${i.launch.next ? `, next: ${i.launch.next.label} (${i.launch.next.owner === 'david' ? 'yours' : 'agents'})` : ', done'}.` : ''
+        lines.push(`- ${i.slug}: ${i.title.split(' — ')[0]}.${extra}${road}`)
       }
     }
   }
@@ -105,7 +109,13 @@ export function formatIdea(i: IdeaState, p: PipelineInput): string {
   lines.push(posts.length
     ? `Launch posts:\n${posts.map(x => `- ${day(x.postedAt)} ${x.channel}${x.postUrl ? `: ${x.postUrl}` : ''}${x.note ? ` (${x.note})` : ''}`).join('\n')}`
     : i.stage === 'validate' ? 'Launch posts: none logged yet. The `launch` skill drafts them from LAUNCH.md.' : 'Launch posts: none logged.')
-  if (i.build) lines.push(`Build: ${i.build.status ?? '?'}${i.build.prUrl ? ` ${i.build.prUrl}` : ''}${i.build.testsPassing === false ? ' (tests failing)' : ''}`)
+  if (i.build) lines.push(`Build: ${buildName(i.build.milestone)} ${i.build.status ?? '?'}${i.build.prUrl ? ` ${i.build.prUrl}` : ''}${i.build.testsPassing === false ? ' (tests failing)' : ''}`)
+  // The road to the first dollar (idea-factory lib/revenue.js), with whose step is next.
+  if (i.launch?.total) {
+    lines.push(`Road to revenue: ${i.launch.done}/${i.launch.total} steps${i.launch.price ? ` at ${i.launch.price}` : ''}${i.launch.buyer ? `; who pays: ${i.launch.buyer}` : ''}`)
+    lines.push(i.launch.next ? `Next: ${i.launch.next.label} (${i.launch.next.owner === 'david' ? 'yours' : 'the agents\''})` : 'Every step is done.')
+    for (const s of i.launch.steps) lines.push(`- [${s.done ? 'x' : ' '}] ${s.label}${s.evidence ? ` (${s.evidence})` : ''}`)
+  }
   if (i.revenue) lines.push(`Revenue: $${i.revenue.mrr.toFixed(2)} MRR`)
   lines.push(`Full record: ${path.join(p.ideaHome, 'ideas', i.slug)}/`)
   return lines.join('\n')

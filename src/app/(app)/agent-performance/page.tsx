@@ -2,6 +2,7 @@ import { auth } from '@/lib/auth'
 import { collapseRepeats, repeatKey } from '@/lib/feed/collapse'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
+import { requestStats } from '@/lib/agents/request-stats'
 import { portfolioEvents, scans, systemEvents } from '@/lib/db/schema'
 import { eq, and, inArray, desc, gt, sql } from 'drizzle-orm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,6 +23,9 @@ import { IdeaPipelineCard, UsageCards } from '@/components/agents/usage-cards'
 import { loadUsageOverview } from '@/lib/agents/usage-data'
 import { needsAttention } from '@/lib/agents/needs-attention'
 import { NeedsAttention } from '@/components/agents/needs-attention'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = { title: 'Agents' }
 
 export default async function AgentPerformancePage() {
   const session = await auth()
@@ -71,13 +75,8 @@ export default async function AgentPerformancePage() {
     ? needsAttention({ failing: systemLog?.failing ?? null, pipeline: usage?.pipeline ?? null, claude: usage?.claude ?? null, copilot: usage?.copilot ?? null, accuracy: accuracyStats, now })
     : null
 
-  // Compute stats
-  const queued  = events.filter(e => e.eventType === 'agent_task_queued').length
-  const merged  = events.filter(e => e.eventType === 'agent_pr_merged').length
-  const failed  = events.filter(e => e.eventType === 'agent_execution_failed').length
-  const prsOpen = events.filter(e => e.eventType === 'agent_pr_created').length
-
-  const successRate = queued > 0 ? Math.round((merged / queued) * 100) : null
+  // One per task by its outcome, last 90 days (counting events counted every retry's failure).
+  const { queued, merged, failed, created: prsOpen, successRate, windowDays } = requestStats(events, now)
 
   // Accuracy: compare predictedDelta vs actualDelta for merged events
   const mergedWithDeltas = events
@@ -127,12 +126,12 @@ export default async function AgentPerformancePage() {
 
       {systemLog && <SystemLogCard failing={systemLog.failing} recent={systemLog.recent} />}
 
-      {/* Requests from RepoHQ, all time (Nexus-era tasks included); factory numbers are under Factory KPIs */}
+      {/* Requests from RepoHQ, one per task, last 90 days; factory numbers are under Factory KPIs */}
       <h2 className="text-sm font-semibold" data-testid="request-stats-heading">
-        Requests <span className="font-normal text-muted-foreground">· all time, Nexus-era tasks included · factory results are under Factory KPIs</span>
+        Requests <span className="font-normal text-muted-foreground">· last {windowDays} days, one per task · factory results are under Factory KPIs</span>
       </h2>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard label="Tasks queued"  value={queued}  icon={Clock}       color="text-indigo-500" />
+        <StatCard label="Requests"      value={queued}  icon={Clock}       color="text-indigo-500" />
         <StatCard label="PRs merged"    value={merged}  icon={CheckCircle} color="text-emerald-500" />
         <StatCard label="Failed"         value={failed}  icon={XCircle}     color="text-red-400" />
         <StatCard

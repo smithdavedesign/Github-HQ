@@ -6,6 +6,9 @@ import { repositories } from '@/lib/db/schema'
 import { eq, and, notInArray } from 'drizzle-orm'
 import { TriageView } from '@/components/repos/triage-view'
 import type { TriageRepo } from '@/components/repos/triage-view'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = { title: 'Triage' }
 
 // Only surface repos with meaningful archive risk by default.
 // Repos you reviewed and "Kept" that are healthy won't reappear until

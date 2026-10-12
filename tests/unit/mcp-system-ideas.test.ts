@@ -80,3 +80,32 @@ describe('get_idea_pipeline text', () => {
     expect(readLaunchLog(home, 'a')?.posts).toHaveLength(1)
   })
 })
+
+describe('get_idea_pipeline: the road to revenue', () => {
+  const launch = {
+    steps: [
+      { id: 'plan', label: 'Road-to-revenue plan written', owner: 'agent' as const, done: true, evidence: 'Team leads · $9/month' },
+      { id: 'payments', label: 'Stripe product created and mapped to the repo in RepoHQ', owner: 'david' as const, done: false, evidence: 'RepoHQ → repo → Stripe product' },
+    ],
+    next: { id: 'payments', label: 'Stripe product created and mapped to the repo in RepoHQ', owner: 'david' as const }, done: 1, total: 10, price: '$9/month', buyer: 'Team leads paying the AI bill',
+  }
+  const built: IdeaState = { slug: 'codespend', title: 'CodeSpend — AI spend alerts', stage: 'building', launch }
+  it('one idea: progress, price, who pays, whose step is next, every step with its evidence', () => {
+    const t = formatIdea(built, input({ ideas: [built] }))
+    expect(t).toMatch(/Road to revenue: 1\/10 steps at \$9\/month; who pays: Team leads paying the AI bill/)
+    expect(t).toMatch(/Next: Stripe product created and mapped to the repo in RepoHQ \(yours\)/)
+    expect(t).toMatch(/- \[x\] Road-to-revenue plan written \(Team leads · \$9\/month\)/)
+    expect(t).toMatch(/- \[ \] Stripe product created/)
+  })
+  it('the pipeline list shows each built idea\'s next money step', () => {
+    expect(formatPipeline(input({ ideas: [built] }))).toMatch(/- codespend: CodeSpend\. Road to revenue 1\/10, next: Stripe product created and mapped to the repo in RepoHQ \(yours\)\./)
+  })
+  it('names a go-live or MVP build, not "M1", and shows the live audit\'s evidence', () => {
+    const golive: IdeaState = { ...built, build: { milestone: 'GOLIVE', status: 'pr-open', prUrl: 'https://github.com/o/codespend/pull/4' },
+      launch: { ...launch, steps: [{ id: 'launchReady', label: 'Launch-ready: SEO basics, share image, sitemap, privacy and terms live', owner: 'agent' as const, done: false, evidence: '5/9 launch checks · missing: robots.txt' }] } }
+    const t = formatIdea(golive, input({ ideas: [golive] }))
+    expect(t).toMatch(/Build: Go-live pr-open https:\/\/github\.com\/o\/codespend\/pull\/4/)
+    expect(t).toMatch(/- \[ \] Launch-ready: .* \(5\/9 launch checks · missing: robots\.txt\)/)
+    expect(formatIdea({ ...built, build: { milestone: 'MVP', status: 'merged' } }, input({ ideas: [built] }))).toMatch(/Build: MVP merged/)
+  })
+})

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { saveLLMSettings, removeLLMKey, setLLMProvider } from '@/lib/actions/llm'
 import type { LLMProvider } from '@/lib/ai/providers'
-import { PROVIDER_KEY_HINTS } from '@/lib/ai/providers'
+import { PROVIDER_KEY_HINTS, PROVIDER_LABELS, isPaidProvider } from '@/lib/ai/providers'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { Sparkles, Trash2, CheckCircle, AlertCircle } from 'lucide-react'
@@ -15,22 +15,22 @@ const PROVIDERS: { value: LLMProvider; label: string; hint: string }[] = [
   {
     value: 'anthropic',
     label: 'Claude (Anthropic)',
-    hint: 'Recommended. Best at structured JSON output, prompt caching reduces cost. Get key at console.anthropic.com',
+    hint: 'Paid API: every call costs money. Best at structured JSON. Get key at console.anthropic.com',
   },
   {
     value: 'openai',
     label: 'GPT-4o (OpenAI)',
-    hint: 'Uses gpt-4o for deep analysis and gpt-4o-mini for fast tasks. Get key at platform.openai.com',
+    hint: 'Paid API: every call costs money. Uses gpt-4o for deep analysis and gpt-4o-mini for fast tasks. Get key at platform.openai.com',
   },
   {
     value: 'gemini',
     label: 'Gemini (Google)',
-    hint: 'Free tier available. Uses the current Gemini Flash for analysis and Flash-Lite for fast tasks. Get key at aistudio.google.com',
+    hint: '$0 on the free tier (a key from a Google project without billing). Uses the current Gemini Flash for analysis and Flash-Lite for fast tasks. Get key at aistudio.google.com',
   },
   {
     value: 'openrouter',
     label: 'OpenRouter (free models)',
-    hint: '$0 — routes to currently-free models. Weaker at strict JSON; invalid output is repaired once, then retried on Claude Haiku if the server has an Anthropic key. Get key at openrouter.ai/keys',
+    hint: '$0: routes to currently-free models. Weaker at strict JSON; invalid output is repaired once, then retried on Gemini if the server has a Gemini key. Get key at openrouter.ai/keys',
   },
 ]
 
@@ -38,9 +38,12 @@ interface Props {
   initialProvider: LLMProvider
   keySource: 'user' | 'env' | null
   savedProviders: LLMProvider[]
+  /** What AI calls use now (getLLMAdapter): differs from the choice when it's paid and paid is off. */
+  effectiveProvider: LLMProvider | null
+  paidAllowed: boolean
 }
 
-export function LLMSettings({ initialProvider, keySource, savedProviders: initialSavedProviders }: Props) {
+export function LLMSettings({ initialProvider, keySource, savedProviders: initialSavedProviders, effectiveProvider, paidAllowed }: Props) {
   const router = useRouter()
   const [provider, setProvider] = useState<LLMProvider>(initialProvider)
   const [apiKey, setApiKey] = useState('')
@@ -50,6 +53,8 @@ export function LLMSettings({ initialProvider, keySource, savedProviders: initia
   const [isPending, startTransition] = useTransition()
 
   const providerMeta = PROVIDERS.find(p => p.value === provider)!
+  // A paid provider chosen before the $0 rule: no key form, since it can't be saved or used.
+  const locked = isPaidProvider(provider) && !paidAllowed
 
   // Sync server-provided state when navigating back to this page
   useEffect(() => { setCurrentKeySource(keySource) }, [keySource])
@@ -104,29 +109,43 @@ export function LLMSettings({ initialProvider, keySource, savedProviders: initia
       <div className="space-y-2">
         <label className="text-xs font-medium text-muted-foreground">Provider</label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {PROVIDERS.map(p => (
-            <button
-              key={p.value}
-              type="button"
-              onClick={() => handleProviderChange(p.value)}
-              className={`text-left px-3 py-2.5 rounded-lg border text-sm transition-colors ${
-                provider === p.value
-                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 text-foreground'
-                  : 'border-border/60 text-muted-foreground hover:border-border hover:text-foreground'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Sparkles className={`w-3.5 h-3.5 shrink-0 ${provider === p.value ? 'text-indigo-500' : ''}`} />
-                <span className="font-medium">{p.label}</span>
-              </div>
-            </button>
-          ))}
+          {PROVIDERS.map(p => {
+            const off = isPaidProvider(p.value) && !paidAllowed
+            return (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => handleProviderChange(p.value)}
+                disabled={off}
+                aria-pressed={provider === p.value}
+                title={off ? 'Paid API: off while RepoHQ runs at $0 (LLM_ALLOW_PAID=1 turns it on)' : undefined}
+                className={`text-left px-3 py-2.5 rounded-lg border text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  provider === p.value
+                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 text-foreground'
+                    : 'border-border/60 text-muted-foreground hover:border-border hover:text-foreground'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles className={`w-3.5 h-3.5 shrink-0 ${provider === p.value ? 'text-indigo-500' : ''}`} aria-hidden />
+                  <span className="font-medium">{p.label}</span>
+                  {isPaidProvider(p.value) && <Badge variant="outline" className="ml-auto text-[10px] text-muted-foreground">{off ? 'paid · off' : 'paid'}</Badge>}
+                </div>
+              </button>
+            )
+          })}
         </div>
         <p className="text-xs text-muted-foreground">{providerMeta.hint}</p>
+        {effectiveProvider !== provider && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            {effectiveProvider
+              ? `AI features use ${PROVIDER_LABELS[effectiveProvider]}: ${providerMeta.label} is ${isPaidProvider(provider) && !paidAllowed ? 'a paid API, and RepoHQ runs at $0' : 'missing a key'}.`
+              : 'AI features are off: no free provider has a key. Pick OpenRouter or Gemini above and add its key.'}
+          </p>
+        )}
       </div>
 
       {/* Key status */}
-      <div className="flex items-center justify-between">
+      {!locked && <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {currentKeySource === 'user' ? (
             <>
@@ -151,10 +170,10 @@ export function LLMSettings({ initialProvider, keySource, savedProviders: initia
             <Trash2 className="w-3.5 h-3.5" />
           </Button>
         )}
-      </div>
+      </div>}
 
       {/* Key input — shown when no user key set */}
-      {currentKeySource !== 'user' && (
+      {!locked && currentKeySource !== 'user' && (
         <form onSubmit={handleSave} className="space-y-2">
           <Input
             type="password"

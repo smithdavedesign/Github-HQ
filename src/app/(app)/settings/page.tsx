@@ -19,6 +19,9 @@ import { getLLMSettings } from '@/lib/actions/llm'
 import { hasStripeKey, stripeKeySource } from '@/lib/actions/stripe'
 import { getNotificationSettings } from '@/lib/actions/notifications'
 import { getAutoDispatchSettings } from '@/lib/actions/auto-dispatch-settings'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = { title: 'Settings' }
 
 /**
  * Only what you change lives here (2026-10-08 review). Status moved to where it's watched: sync
@@ -61,7 +64,7 @@ export default async function SettingsPage() {
           <CardTitle className="text-base flex items-center gap-2"><Sparkles className="w-4 h-4" />AI provider</CardTitle>
         </CardHeader>
         <CardContent>
-          <LLMSettings initialProvider={llmSettings.provider} keySource={llmSettings.keySource} savedProviders={llmSettings.savedProviders} />
+          <LLMSettings initialProvider={llmSettings.provider} keySource={llmSettings.keySource} savedProviders={llmSettings.savedProviders} effectiveProvider={llmSettings.effectiveProvider} paidAllowed={llmSettings.paidAllowed} />
         </CardContent>
       </Card>
 
@@ -144,7 +147,7 @@ export default async function SettingsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-5">
         <div className="flex items-center gap-3 min-w-0">
           <Avatar className="w-9 h-9">
-            <AvatarImage src={session.user.image ?? undefined} />
+            <AvatarImage src={session.user.image ?? undefined} alt={session.user.name ?? 'Your avatar'} />
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
           <div className="min-w-0">

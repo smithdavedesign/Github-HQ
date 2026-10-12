@@ -63,10 +63,11 @@ test.describe('Agent History — CI failure events (Phase 55)', () => {
 
     await page.goto(`/repos/${ctx.repoId}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
-    await expect(page.getByText(/ci-fail|CI.*fail|build.*fail/i)).toBeVisible({ timeout: 8000 }).catch(() => {
-      // The title contains the prefix which is unique
-      return expect(page.getByText(new RegExp(prefix))).toBeVisible({ timeout: 3000 })
-    })
+    // The seeded event itself, with its check and error (the old regex matched any "build … fail" on the page).
+    const row = page.locator('div.rounded-lg.border', { has: page.getByText(`${prefix}-ci-fail`, { exact: true }) })
+    await expect(row).toBeVisible({ timeout: 8000 })
+    await expect(row.getByText('CI failed: build')).toBeVisible()
+    await expect(row.getByText("Module not found: Can't resolve 'stripe'")).toBeVisible()
 
     await cleanup(prefix)
   })
