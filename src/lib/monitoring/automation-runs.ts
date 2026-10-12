@@ -66,3 +66,20 @@ export function withAutomationRun(kind: string, handler: Handler, shouldRecord: 
     }
   }
 }
+
+/**
+ * A manual AI run (the dashboard's Advisor and CEO report): a `running` row now, so the card can
+ * poll it, then ok or failed with the reason in plain words (describeAiError). Returns the row id;
+ * `work` runs later, in `after()`, so callers pass a function and get the id straight away.
+ */
+export async function startAiRun(kind: 'ai:advisor' | 'ai:ceo-report', userId: string): Promise<string> {
+  const id = randomUUID()
+  await safely('start ai run', () => db.insert(automationRuns).values({ id, userId, kind, trigger: 'manual', status: 'running', startedAt: new Date() }))
+  return id
+}
+
+export async function finishAiRun(id: string, outcome: { ok: true } | { ok: false; error: string }): Promise<void> {
+  await safely('finish ai run', () => db.update(automationRuns)
+    .set(outcome.ok ? { status: 'ok', finishedAt: new Date() } : { status: 'failed', error: outcome.error.slice(0, 2_000), finishedAt: new Date() })
+    .where(eq(automationRuns.id, id)))
+}

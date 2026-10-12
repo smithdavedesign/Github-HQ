@@ -30,6 +30,8 @@ export function runKindLabel(kind: string): string {
     'factory-request': 'Request',
     'factory-report': 'Morning report',
     'factory-scout': 'Model scout',
+    'ai:advisor': 'AI · Portfolio Advisor',
+    'ai:ceo-report': 'AI · CEO report',
   }
   if (labels[kind]) return labels[kind]
   if (kind.startsWith('cron:')) return `Cron · ${kind.slice(5)}`

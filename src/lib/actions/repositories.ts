@@ -8,6 +8,8 @@ import { repositories, repositoryMetrics, techStack, deployments, securityFindin
 import { eq, and, sql, inArray, desc, gte } from 'drizzle-orm'
 import { requestStats, REQUEST_EVENT_TYPES } from '@/lib/agents/request-stats'
 import { skillRuns, type SkillRunRecord } from '@/lib/skills/skill-runs'
+import { startAiRun, finishAiRun } from '@/lib/monitoring/automation-runs'
+import type { AiRunStatus } from '@/lib/ai/run-status'
 import { agentRequests, ideas, portfolioEvents } from '@/lib/db/schema'
 import { closedPrTaskIds } from '@/lib/agents/lifecycle-utils'
 import { decrypt } from '@/lib/crypto-utils'
@@ -335,7 +337,8 @@ export async function getPortfolioValuation() {
   return rows[0] ?? { totalValue: 0, valuedRepos: 0, revenueValue: 0 }
 }
 
-export async function triggerAdvisor() {
+/** Start the AI Portfolio Advisor in the background; the card polls the returned run (getAiRun). */
+export async function triggerAdvisor(): Promise<{ runId: string }> {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
@@ -343,11 +346,32 @@ export async function triggerAdvisor() {
   const { generateAdvisor } = await import('@/lib/ai/advisor')
   const { revalidatePath } = await import('next/cache')
   const userId = session.user.id
+  const runId = await startAiRun('ai:advisor', userId)
 
   after(async () => {
-    await generateAdvisor(userId)
-    revalidatePath('/')
+    try {
+      await generateAdvisor(userId)
+      await finishAiRun(runId, { ok: true })
+      revalidatePath('/')
+    } catch (err) {
+      // Recorded for the card: an error in after() used to vanish, and the button seemed to do nothing.
+      await finishAiRun(runId, { ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
   })
+  return { runId }
+}
+
+/** The latest manual run of the Advisor or CEO report, for the card's status line. */
+export async function getAiRun(kind: 'ai:advisor' | 'ai:ceo-report'): Promise<AiRunStatus | null> {
+  const session = await auth()
+  if (!session?.user?.id) return null
+  const { automationRuns } = await import('@/lib/db/schema')
+  const [row] = await db.select({ id: automationRuns.id, status: automationRuns.status, error: automationRuns.error, startedAt: automationRuns.startedAt, finishedAt: automationRuns.finishedAt })
+    .from(automationRuns)
+    .where(and(eq(automationRuns.userId, session.user.id), eq(automationRuns.kind, kind)))
+    .orderBy(desc(automationRuns.startedAt))
+    .limit(1)
+  return row ? { ...row, status: row.status as AiRunStatus['status'] } : null
 }
 
 export async function getLatestAdvisorContent() {
@@ -629,7 +653,8 @@ export async function updateCostItems(
 
 // ─── Phase 24: CEO Report ────────────────────────────────────────────────────
 
-export async function triggerCeoReport() {
+/** Start the weekly CEO report in the background; the card polls the returned run (getAiRun). */
+export async function triggerCeoReport(): Promise<{ runId: string }> {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Unauthorized')
 
@@ -637,11 +662,18 @@ export async function triggerCeoReport() {
   const { generateCeoReport } = await import('@/lib/ai/ceo-report')
   const { revalidatePath } = await import('next/cache')
   const userId = session.user.id
+  const runId = await startAiRun('ai:ceo-report', userId)
 
   after(async () => {
-    await generateCeoReport(userId)
-    revalidatePath('/')
+    try {
+      await generateCeoReport(userId)
+      await finishAiRun(runId, { ok: true })
+      revalidatePath('/')
+    } catch (err) {
+      await finishAiRun(runId, { ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
   })
+  return { runId }
 }
 
 export async function getLatestCeoReport() {

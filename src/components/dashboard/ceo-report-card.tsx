@@ -9,10 +9,9 @@ import {
   Crosshair, RefreshCw, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import type { CeoReportContent, CeoReportRisk } from '@/lib/ai/ceo-report'
-import { triggerCeoReport } from '@/lib/actions/repositories'
+import { useAiRun, AiRunLine } from './use-ai-run'
 import { formatDistanceToNow } from '@/lib/utils'
 import Link from 'next/link'
-import { toast } from 'sonner'
 
 const URGENCY_STYLE: Record<CeoReportRisk['urgency'], string> = {
   critical: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400',
@@ -25,21 +24,10 @@ interface CeoReportCardProps {
 }
 
 export function CeoReportCard({ report: initialReport }: CeoReportCardProps) {
-  const [report, setReport] = useState(initialReport)
-  const [generating, setGenerating] = useState(false)
+  // The prop, not a copy in state: after a run finishes, router.refresh() brings the new report.
+  const report = initialReport
   const [expanded, setExpanded] = useState(false)
-
-  async function handleGenerate() {
-    setGenerating(true)
-    try {
-      await triggerCeoReport()
-      toast.success('CEO Report is generating — refresh in ~30 seconds')
-    } catch {
-      toast.error('Failed to start CEO Report')
-    } finally {
-      setGenerating(false)
-    }
-  }
+  const { start: handleGenerate, busy: generating, line } = useAiRun('ai:ceo-report', initialReport ? new Date(initialReport.generatedAt) : null)
 
   if (!report) {
     return (
@@ -53,6 +41,7 @@ export function CeoReportCard({ report: initialReport }: CeoReportCardProps) {
             <p className="text-xs text-muted-foreground mt-0.5">
               Portfolio summary, wins, risks, and recommended focus — every Monday.
             </p>
+            <div className="mt-1"><AiRunLine line={line} /></div>
           </div>
           <Button size="sm" onClick={handleGenerate} disabled={generating} className="gap-2 shrink-0">
             {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
@@ -76,7 +65,7 @@ export function CeoReportCard({ report: initialReport }: CeoReportCardProps) {
             <div>
               <CardTitle className="text-sm font-semibold">Weekly CEO Report</CardTitle>
               <p className="text-xs text-muted-foreground">
-                {formatDistanceToNow(new Date(generatedAt))} ago
+                {formatDistanceToNow(new Date(generatedAt))}
               </p>
             </div>
           </div>
@@ -107,6 +96,7 @@ export function CeoReportCard({ report: initialReport }: CeoReportCardProps) {
       </CardHeader>
 
       <CardContent className="space-y-4">
+        <AiRunLine line={line} />
         {/* Portfolio summary strip */}
         <div className="grid grid-cols-3 gap-2 p-3 rounded-lg bg-muted/40 border border-border/60">
           <div className="text-center">

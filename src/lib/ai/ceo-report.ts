@@ -1,4 +1,5 @@
 import { toNum } from '@/lib/utils'
+import { describeAiError } from './errors'
 import { db } from '@/lib/db'
 import { digests, repositories, repositoryMetrics, securityFindings, deployments } from '@/lib/db/schema'
 import { eq, desc } from 'drizzle-orm'
@@ -143,8 +144,9 @@ export async function generateCeoReport(userId: string): Promise<CeoReportConten
       system: SYSTEM_PROMPT, user: prompt, fast: true, maxTokens: 1024, cacheSystem: true,
     }, { fallback: getFallbackAdapter(adapter.provider), label: 'ceo-report' }))
   } catch (err) {
-    console.error('[ceo-report] failed to parse model response:', err instanceof Error ? err.message : err)
-    throw new Error('CEO report: model returned non-JSON response')
+    console.error('[ceo-report] generation failed:', err instanceof Error ? err.message : err)
+    // Say what happened: a free tier's daily limit used to surface as "non-JSON response".
+    throw new Error(`CEO report: ${describeAiError(err)}`)
   }
 
   const result: CeoReportContent = {

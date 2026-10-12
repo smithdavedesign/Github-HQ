@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { describeAiError } from './errors'
 import { digests, repositories, repositoryMetrics, securityFindings } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { getLLMAdapter, getFallbackAdapter } from './adapter'
@@ -100,8 +101,9 @@ export async function generateDigest(userId: string): Promise<DigestContent> {
       system: SYSTEM_PROMPT, user: prompt, fast: false, maxTokens: 1024, cacheSystem: true,
     }, { fallback: getFallbackAdapter(adapter.provider), label: 'digest' }))
   } catch (err) {
-    console.error('[digest] failed to parse model response:', err instanceof Error ? err.message : err)
-    throw new Error('Digest: model returned non-JSON response')
+    console.error('[digest] generation failed:', err instanceof Error ? err.message : err)
+    // Say what happened: a free tier's daily limit used to surface as "non-JSON response".
+    throw new Error(`Digest: ${describeAiError(err)}`)
   }
 
   const result: DigestContent = { ...parsed, generatedAt: new Date().toISOString() }
