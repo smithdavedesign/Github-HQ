@@ -6,7 +6,7 @@
 
 RepoHQ is one part of a larger system whose goal is **products people use and pay for, with near-zero overhead for the owner and no financial risk**: a local AI stack with context on every repo, a research center, an idea pipeline that reviews and demand-tests ideas before building them, and a factory that keeps everything healthy. The [system overview](docs/system-overview.md) has the map, the rules and the scorecard.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fsmithdavedesign%2FGithub-HQ&env=DATABASE_URL,GITHUB_CLIENT_ID,GITHUB_CLIENT_SECRET,AUTH_SECRET,ANTHROPIC_API_KEY,CRON_SECRET,NEXTAUTH_URL&envDescription=See%20README%20for%20setup%20instructions&project-name=repohq&repository-name=repohq)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fsmithdavedesign%2FGithub-HQ&env=DATABASE_URL,GITHUB_CLIENT_ID,GITHUB_CLIENT_SECRET,AUTH_SECRET,OPENROUTER_API_KEY,CRON_SECRET,NEXTAUTH_URL&envDescription=See%20README%20for%20setup%20instructions&project-name=repohq&repository-name=repohq)
 
 ---
 
@@ -130,7 +130,7 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 | `get_skill_history` | Recent skill run history for a repo (prose-formatted) |
 | `get_skill_findings` | Structured JSON findings from most recent skill run + suggestedNextSkill |
 
-**BYOK (Bring Your Own Key)** — Settings → AI Provider: Claude (Anthropic), GPT-4o (OpenAI), Gemini (Google)
+**BYOK (Bring Your Own Key)** — Settings → AI Provider: OpenRouter (free models) or Gemini (free tier) by default. Claude (Anthropic) and GPT-4o (OpenAI) bill per call, so they're off unless `LLM_ALLOW_PAID=1`.
 
 **Public Portfolio**
 - `/u/[github-username]` — public view (opt-in in Settings)
@@ -153,7 +153,7 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 | Database | PostgreSQL (Neon serverless HTTP) |
 | ORM | Drizzle ORM |
 | Auth | Auth.js v5 (GitHub OAuth, DrizzleAdapter) |
-| AI | Anthropic Claude API (Sonnet 4.6 + Haiku 4.5), OpenAI, Gemini (BYOK) |
+| AI | OpenRouter free models and Gemini's free tier by default; Claude and OpenAI with `LLM_ALLOW_PAID=1` (BYOK) |
 | Hosting | Vercel |
 | Crons | GitHub Actions (primary) + Vercel weekly fallback |
 | Revenue | Stripe REST API (restricted key, no SDK) |
@@ -170,7 +170,7 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 |---------|--------------|------|
 | **Neon** | PostgreSQL database connection string | [neon.tech](https://neon.tech) |
 | **GitHub OAuth App** | Client ID + Secret | [github.com/settings/developers](https://github.com/settings/developers) |
-| **Anthropic** | API key | [console.anthropic.com](https://console.anthropic.com) |
+| **OpenRouter** (or Gemini) | API key for free models | [openrouter.ai/keys](https://openrouter.ai/keys) · [aistudio.google.com](https://aistudio.google.com) |
 
 **GitHub OAuth App settings:**
 - Homepage URL: `https://your-app.vercel.app`
@@ -194,7 +194,7 @@ DATABASE_URL=postgresql://...               # Neon connection string
 GITHUB_CLIENT_ID=                           # Local OAuth App
 GITHUB_CLIENT_SECRET=
 AUTH_SECRET=$(openssl rand -base64 32)
-ANTHROPIC_API_KEY=sk-ant-...
+OPENROUTER_API_KEY=sk-or-...                 # free models (or GEMINI_API_KEY); paid providers need LLM_ALLOW_PAID=1
 CRON_SECRET=$(openssl rand -hex 32)
 NEXTAUTH_URL=http://localhost:3000
 ```

@@ -64,6 +64,7 @@ an idea.
     pool only as backup when the subscription is out of capacity. Product building needs the strongest
     model, so this is the reverse of the factory's free-first routing (owner, 2026-10-10).
   - The factory runs free-model-first, and its paid tier has a $0 budget.
+  - RepoHQ's own AI features (repo summaries, the Advisor, plain-English search) use OpenRouter's free models or Gemini's free tier. Claude and GPT-4o need `LLM_ALLOW_PAID=1` (until 2026-10-12 they ran on an Anthropic API key).
   - Private repos never go to free cloud models.
 - **Data classes** ([personal-context.md](personal-context.md)):
   - **public** and **personal** may go to cloud models;
