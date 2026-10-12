@@ -32,16 +32,32 @@ export const getRepositories = cache(async function getRepositories() {
   if (!session?.user?.id) throw new Error('Unauthorized')
 
   return dbOp('load repositories', async () => {
-    const rows = await db.query.repositories.findMany({
-      where: eq(repositories.userId, session.user.id),
-      with: {
-        metrics: true,
-        techStack: true,
-        deployments: true,
-        securityFindings: { where: eq(securityFindings.state, 'open') },
-      },
-    })
-    return rows.sort((a, b) => (b.metrics?.healthScore ?? -1) - (a.metrics?.healthScore ?? -1))
+    // The table is a client component, so everything returned here is sent to the browser. It needs
+    // a count of serious alerts, not the alerts (3,000 advisories made the page 8 MB), and none of
+    // the summaries, briefs or commit weeks: those stay on the server.
+    const [rows, serious] = await Promise.all([
+      db.query.repositories.findMany({
+        where: eq(repositories.userId, session.user.id),
+        columns: { aiSummary: false, cachedBrief: false, attemptSummary: false },
+        with: {
+          metrics: { columns: { weeklyCommitData: false, internalDeps: false, externalDeps: false } },
+          techStack: true,
+          deployments: true,
+        },
+      }),
+      db.select({ repoId: securityFindings.repoId, n: sql<number>`count(*)`.mapWith(Number) })
+        .from(securityFindings)
+        .innerJoin(repositories, eq(securityFindings.repoId, repositories.id))
+        .where(and(eq(repositories.userId, session.user.id), eq(securityFindings.state, 'open'), inArray(securityFindings.severity, ['critical', 'high'])))
+        .groupBy(securityFindings.repoId),
+    ])
+    const seriousByRepo = new Map(serious.map(s => [s.repoId, s.n]))
+    return rows
+      .map(r => {
+        const techDebt = (r.claudeAnalysis as { techDebt?: { level?: string } } | null)?.techDebt?.level
+        return { ...r, claudeAnalysis: techDebt ? { techDebt: { level: techDebt } } : null, seriousAlerts: seriousByRepo.get(r.id) ?? 0 }
+      })
+      .sort((a, b) => (b.metrics?.healthScore ?? -1) - (a.metrics?.healthScore ?? -1))
   })
 })
 

@@ -36,11 +36,12 @@ import { LifecycleBadge } from './lifecycle-badge'
 import { LIFECYCLE_META, type LifecycleStage } from '@/lib/lifecycle'
 import { formatValuation, type ValuationConfidence } from '@/lib/health/valuation'
 
-type RepoRow = Repository & {
-  metrics: RepositoryMetrics | null
+type RepoRow = Omit<Repository, 'aiSummary' | 'cachedBrief' | 'attemptSummary'> & {
+  metrics: Omit<RepositoryMetrics, 'weeklyCommitData' | 'internalDeps' | 'externalDeps'> | null
   techStack: TechStack | null
   deployments: Deployment[]
-  securityFindings: { severity: string }[]
+  /** Open critical and high alerts (getRepositories counts them; the alerts stay on the server). */
+  seriousAlerts: number
 }
 
 const SAVED_VIEWS_KEY = 'repohq:saved-views'
@@ -109,8 +110,7 @@ function applyNLFilters(rows: RepoRow[], filters: NLQueryFilters): RepoRow[] {
     if (filters.isRevenueGenerating != null && row.isRevenueGenerating !== filters.isRevenueGenerating) return false
 
     if (filters.hasSecurityIssues === true) {
-      const serious = row.securityFindings.filter(f => f.severity === 'critical' || f.severity === 'high')
-      if (serious.length === 0) return false
+      if (row.seriousAlerts === 0) return false
     }
 
     if (filters.starsMin != null && (row.stars ?? 0) < filters.starsMin) return false
