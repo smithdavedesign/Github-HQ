@@ -11,6 +11,7 @@
  */
 import { test, expect } from '@playwright/test'
 import { neon } from '@neondatabase/serverless'
+import { LOCAL_DB, LOCAL_DB_REASON } from './helpers/disposable-db'
 
 const DB_URL = process.env.DATABASE_URL ?? ''
 
@@ -83,11 +84,13 @@ test.describe('Agent Performance — Accuracy Table (Phase 52)', () => {
   })
 
   test('shows accuracy section heading', async ({ page }) => {
+    test.skip(LOCAL_DB, LOCAL_DB_REASON)
     await page.goto('/agent-performance?tab=kpis')
     await expect(page.getByText('Advisor Accuracy by Action Type')).toBeVisible({ timeout: 8000 })
   })
 
   test('shows "No completed agent runs" when no data exists', async ({ page }) => {
+    test.skip(LOCAL_DB, LOCAL_DB_REASON)
     test.skip(!DB_URL, 'DATABASE_URL not set')
 
     // Check the message when there are genuinely no high-confidence merges

@@ -82,7 +82,7 @@ left for him) and posting; each morning he reviews what the agents merged and re
   - **financial** is never ingested.
 - **Show it working:** a built or deployed MVP proves itself with screenshots from real browser automation (Playwright, desktop and phone), at the top of its README. The idea builder does it in every build and go-live PR ([idea-factory.md](idea-factory.md)); a person or agent shipping an MVP by hand does the same against the live URL.
 - **Everything merges itself, and what breaks is reverted** (the owner's call: agents 2026-10-12, interactive sessions too 2026-10-13, "full send"):
-  - the factory and the idea pipeline merge a PR once its tests and every check are green and nothing objected (the preview smoke test, the adversarial reviewer, a `hold` label, a review asking for changes);
+  - the factory and the idea pipeline merge a PR once its tests and every check are green (in RepoHQ that includes the browser tests, the "Browser tests (e2e)" check) and nothing objected (the preview smoke test, the adversarial reviewer, a `hold` label, a review asking for changes);
   - a merge that turns the base branch red, or breaks a live site's launch checks, is undone by a revert PR the agent merges, and Slack is told;
   - an autonomous agent never merges a PR touching its own rules (factory code, CI workflows, the model router);
   - an interactive Claude session opens a PR so CI runs, merges it itself once CI is green, and deploys; the owner reviews afterwards, not before;
@@ -130,7 +130,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 |---|---|---|---|
 | Safety and governance | Strong | Strong | Docker sandbox, judge, capability ladder, data classes, $0 policy. Since 2026-10-12 agents merge their own green PRs: the human merge is traded for gates (every check, the preview smoke test, the adversarial reviewer, protected paths) and automatic reverts, with the owner reviewing each morning. |
 | Maintenance factory | Works, narrow | Works, narrow | 78% acceptance at $0, but it fixes lint, deps, docs and tests and has never built a feature. Average PR value is 1.6/5. |
-| Verification | Weak | Fair | Every code change is judged on the build, and each PR's Vercel preview is smoke-tested in a browser next to production. Pages behind a login aren't checked yet. |
+| Verification | Weak | Fair | Every code change is judged on the build, and each PR's Vercel preview is smoke-tested in a browser next to production. Since 2026-10-12 every RepoHQ PR also runs the Playwright suite in CI, signed in, against a fresh local database (122 tests; the 75 that need real synced data run on a Neon branch by hand). |
 | Routing | Rules + history | Rules + history + **tier advisor** (report) | A local model rates each task 1–3. It's scored against outcomes and promoted on evidence. |
 | Local coding | Weak | Weak | The local tier (M0) verified 1 of 7 attempts last week. Building runs on Claude Pro and the free pool. Needs 64–128 GB of unified memory for 30B-class local coders. |
 | Idea generation | Works | Strong | Daily, sourced, portfolio-checked, on Claude Pro; full record in git, shown in full on the Ideas page |

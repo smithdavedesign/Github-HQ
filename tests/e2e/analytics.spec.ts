@@ -21,7 +21,8 @@ test.describe('Analytics page', () => {
     await page.goto('/analytics')
     // Recharts measures its container asynchronously. isVisible() checks once and ignores its
     // timeout, which flaked on a cold Neon branch; wait for either outcome instead.
-    await expect(page.locator('.recharts-wrapper').first().or(page.getByText('No data yet'))).toBeVisible({ timeout: 15_000 })
+    // With no data at all, a chart's frame and an empty card's "No data yet" can both show: either one will do.
+    await expect(page.locator('.recharts-wrapper').first().or(page.getByText('No data yet')).first()).toBeVisible({ timeout: 15_000 })
   })
 
   test('trend card shows the live snapshot until 3 days of history exist, then the chart', async ({ page }) => {
@@ -40,7 +41,7 @@ test.describe('Analytics page', () => {
 
     await page.goto('/analytics')
     if ((row?.days ?? 0) < 3) {
-      await expect(page.getByText(/Showing live snapshot|No data yet/)).toBeVisible({ timeout: 8000 })
+      await expect(page.getByText(/Showing live snapshot|No data yet/).first()).toBeVisible({ timeout: 8000 })
     } else {
       await expect(page.getByText('Showing live snapshot')).toHaveCount(0)
     }
