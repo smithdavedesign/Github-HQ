@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { LOCAL_DB, LOCAL_DB_REASON } from './helpers/disposable-db'
 
 test.describe('Security page', () => {
   test('loads the security page', async ({ page }) => {
@@ -21,6 +22,7 @@ test.describe('Security page', () => {
   })
 
   test('each repo row links to the repo and to its alerts on GitHub, and the page stays small', async ({ page, request }) => {
+    test.skip(LOCAL_DB, LOCAL_DB_REASON)
     await page.goto('/security')
     const empty = await page.getByText('No open security alerts.').isVisible()
     test.skip(empty, 'no open alerts in this database')

@@ -23,6 +23,14 @@ async function signedInUserRepos(): Promise<{ id: number; name: string; fullName
   return rows.map(r => ({ id: r.id as number, name: r.name as string, fullName: r.full_name as string }))
 }
 
+/** Whether the signed-in e2e user owns the factory (FACTORY_USER_ID): what the owner-only APIs check, repos or not. */
+export async function signedInIsOwner(): Promise<boolean> {
+  const url = process.env.DATABASE_URL
+  if (!url || !FACTORY_OWNER) return false
+  const [user] = await neon(url)`SELECT id FROM users ORDER BY last_synced_at DESC NULLS LAST LIMIT 1`
+  return user?.id === FACTORY_OWNER
+}
+
 /** A repo the factory takes requests for (the launcher renders there), or null. */
 export async function getFactoryRepo(): Promise<{ id: number; name: string } | null> {
   const repo = (await signedInUserRepos()).find(r => allowlist.has(r.fullName.toLowerCase()))

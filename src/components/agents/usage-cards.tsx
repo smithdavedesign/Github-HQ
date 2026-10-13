@@ -57,7 +57,7 @@ export function IdeaPipelineCard({ o, now }: { o: UsageOverview; now: Date }) {
               <Hammer className="w-3 h-3 text-amber-500 shrink-0" />
               <Link href={`/ideas/${b.idea}`} className="font-medium hover:underline">{b.idea}</Link>
               <span>{b.milestone ?? 'M1'}</span>
-              <span className="text-muted-foreground">started {formatDistanceToNow(b.since, now.getTime())}{b.model ? ` on ${b.model}${effort ? ` at ${effort}` : ''}` : ''}{b.manual ? ' · Start build now' : ''}</span>
+              <span className="text-muted-foreground">started {formatDistanceToNow(b.since, now.getTime())}{b.model ? ` on ${b.model}${(b.effort ?? effort) ? ` at ${b.effort ?? effort}` : ''}` : ''}{b.manual ? ' · Start build now' : ''}</span>
             </p>
           ))}
           {builds.map(q => (

@@ -94,6 +94,50 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  # The Playwright suite on a fresh local Postgres (scripts/e2e-local.ts): no production data, no real
+  # secret. Agents merge only once every check passes, this one included (factory/lib/automerge.ts).
+  e2e:
+    name: Browser tests (e2e)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 30
+
+    env:
+      FLOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser tests (next dev against a fresh local database)
+        run: npm run test:e2e:local
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: test-results/
+          retention-days: 7
+
   build:
     name: Build
     runs-on: ubuntu-latest
