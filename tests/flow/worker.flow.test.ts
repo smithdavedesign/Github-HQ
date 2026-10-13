@@ -297,7 +297,7 @@ describe('the worker refuses or holds work it should not run now', () => {
     await q(DB, `INSERT INTO agent_requests (id, user_id, repo_id, repo, mode, skill, objective, source) VALUES ($1, $2, $3, $4, 'fix', 'ship', 'x', 'mcp')`,
       [id, FLOW.ownerId, s.outsideRepoId, FLOW.outsideRepo])
     await queue.add('request', { requestId: id }, requestJobOptions(id))
-    expect(await waitForRequest(DB, id, ['rejected'])).toMatchObject({ reason: `${FLOW.outsideRepo} is not on the factory allowlist (factory/factory.config.json "repos")` })
+    expect(await waitForRequest(DB, id, ['rejected'])).toMatchObject({ reason: `the factory doesn't work on ${FLOW.outsideRepo}: open it to the factory from its RepoHQ page, or add it to factory/factory.config.json "repos"` })
     await settled(id)
     expect(await runsFor(id)).toEqual([])
     expect((await eventsFor(id)).map(e => e.event_type)).toEqual(['agent_execution_failed'])

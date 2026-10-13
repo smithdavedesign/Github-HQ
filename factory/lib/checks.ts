@@ -279,6 +279,12 @@ export async function runAuditIn(root: string, dirs: string[], timeoutMs = 120_0
   return counts.reduce((a, c) => ({ critical: a.critical + c.critical, high: a.high + c.high, moderate: a.moderate + c.moderate, low: a.low + c.low }))
 }
 
+/** Two audits added up (pure); null when neither could run. */
+export function addAudits(a: AuditCounts | null, b: AuditCounts | null): AuditCounts | null {
+  if (!a || !b) return a ?? b
+  return { critical: a.critical + b.critical, high: a.high + b.high, moderate: a.moderate + b.moderate, low: a.low + b.low }
+}
+
 /** The repo's lint script rewrites files (eslint --fix, prettier --write). */
 export function lintScriptAutofixes(pkg: PackageJson | null): boolean {
   return /--fix\b|--write\b/.test(pkg?.scripts?.lint ?? '')

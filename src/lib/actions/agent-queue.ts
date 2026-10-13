@@ -2,7 +2,7 @@
 
 import { auth } from '@/lib/auth'
 import type { AdvisorAction } from '@/lib/ai/advisor'
-import { AGENTS_PAGE, queueAdvisorActionForUser, queueSkillForUser } from '@/lib/agents/factory-queue'
+import { AGENTS_PAGE, openRepoToFactory, queueAdvisorActionForUser, queueSkillForUser } from '@/lib/agents/factory-queue'
 import type { GstackSkill } from '@/lib/skills/skill-policy'
 
 // Browser-facing actions only: each derives the user from the session and queues work for the
@@ -37,4 +37,19 @@ export async function queueGstackSkill(repoId: number, skill: GstackSkill, objec
   const r = await queueSkillForUser(session.user.id, repoId, skill, text, 'ui-skill')
   if (!r.ok) throw new Error(r.reason)
   return { taskId: r.taskId, status: 'queued', monitorUrl: AGENTS_PAGE }
+}
+
+/**
+ * "Let the factory work on this repo" (the owner only): the repo joins the allowlist the factory reads
+ * each cycle. Throws a plain Error with the reason when it can't. Returns the repo's full name.
+ */
+export async function openFactoryOnRepo(repoId: number): Promise<{ fullName: string }> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+  const r = await openRepoToFactory(session.user.id, repoId)
+  if (!r.ok) throw new Error(r.reason)
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath(`/repos/${repoId}`)
+  revalidatePath('/')
+  return { fullName: r.fullName! }
 }

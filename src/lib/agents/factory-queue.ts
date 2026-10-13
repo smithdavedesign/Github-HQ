@@ -19,7 +19,7 @@ import { getRepoLifecycle, BLOCKING_STAGES } from '@/lib/agents/lifecycle'
 import type { AccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy-utils'
 import {
-  isAllowlisted, modeForSkill, newRequestRow, pickWeeklySkillRepos, queuedEventValues, type NewRequest, type RequestSource,
+  isAllowlisted, modeForSkill, newRequestRow, withOpenedRepos, pickWeeklySkillRepos, queuedEventValues, type NewRequest, type RequestSource,
 } from '@/lib/agents/factory-request-utils'
 import {
   resolveAdvisorSkill,
@@ -40,9 +40,18 @@ import { requestJobOptions, withQueue } from '../../../factory/lib/queue'
 /** Where the Agents page lives; queue results link here. */
 export const AGENTS_PAGE = '/agent-performance'
 
-/** The factory's allowlist (factory/factory.config.json `repos`): the only repos it will touch. */
+/** The factory's allowlist in factory/factory.config.json `repos`. Repos the owner opened from RepoHQ add to it (factoryAllowlistFor). */
 export function factoryAllowlist(): readonly string[] {
   return factoryConfig.repos
+}
+
+/** The repos the factory works on for this user: the config's allowlist plus the repos they opened to it. */
+export async function factoryAllowlistFor(userId: string): Promise<string[]> {
+  const opened = await db.query.repositories.findMany({
+    where: and(eq(repositories.userId, userId), eq(repositories.factoryEnabled, true)),
+    columns: { fullName: true },
+  })
+  return withOpenedRepos(factoryAllowlist(), opened.map(r => r.fullName))
 }
 
 /** The one user the factory works for (FACTORY_USER_ID, the same id as in ~/.repohq-factory/env). */
@@ -57,9 +66,9 @@ export async function factoryRepoIdsFor(userId: string): Promise<number[]> {
   if (!factoryAccess(userId).ok) return []
   const rows = await db.query.repositories.findMany({
     where: eq(repositories.userId, userId),
-    columns: { id: true, fullName: true },
+    columns: { id: true, fullName: true, factoryEnabled: true },
   })
-  return rows.filter(r => isAllowlisted(r.fullName, factoryAllowlist())).map(r => r.id)
+  return rows.filter(r => r.factoryEnabled || isAllowlisted(r.fullName, factoryAllowlist())).map(r => r.id)
 }
 
 /** The repos the weekly /retro and /health runs use (pickWeeklySkillRepos); none unless the user is the factory owner. */
@@ -67,21 +76,40 @@ export async function weeklySkillReposFor(userId: string, limit: number): Promis
   if (!factoryAccess(userId).ok) return []
   const rows = await db.query.repositories.findMany({
     where: eq(repositories.userId, userId),
-    columns: { id: true, name: true, fullName: true, isFocused: true, isArchived: true },
+    columns: { id: true, name: true, fullName: true, isFocused: true, isArchived: true, factoryEnabled: true },
     with: { metrics: { columns: { lastPush: true } } },
   })
-  return pickWeeklySkillRepos(rows.map(r => ({ ...r, lastPush: r.metrics?.lastPush ?? null })), factoryAllowlist(), limit)
+  const allowlist = [...factoryAllowlist(), ...rows.filter(r => r.factoryEnabled).map(r => r.fullName)]
+  return pickWeeklySkillRepos(rows.map(r => ({ ...r, lastPush: r.metrics?.lastPush ?? null })), allowlist, limit)
 }
 
-/** May this user queue factory work (on this repo)? The reason is what the UI shows when not. */
-export function factoryAccess(userId: string, repoFullName?: string): Access {
+/**
+ * May this user queue factory work (on this repo)? The reason is what the UI shows when not.
+ * `opened`: the owner opened this repo to the factory from RepoHQ (repositories.factory_enabled).
+ */
+export function factoryAccess(userId: string, repoFullName?: string, opened = false): Access {
   const owner = factoryOwnerId()
   if (!owner) return { ok: false, reason: 'The factory is not set up for this deployment (FACTORY_USER_ID is not set).' }
   if (owner !== userId) return { ok: false, reason: 'The factory runs agents for its owner only.' }
-  if (repoFullName && !isAllowlisted(repoFullName, factoryAllowlist())) {
-    return { ok: false, reason: `${repoFullName} is not on the factory allowlist (factory/factory.config.json "repos").` }
+  if (repoFullName && !opened && !isAllowlisted(repoFullName, factoryAllowlist())) {
+    return { ok: false, reason: `The factory doesn't work on ${repoFullName} yet.` }
   }
   return { ok: true }
+}
+
+/**
+ * Open a repo to the factory (the owner's "Let the factory work on this repo"): it joins the allowlist
+ * the factory reads each cycle. The factory's GitHub App still needs access to the repo; GitHub only
+ * lets the owner grant that, in the App's settings.
+ */
+export async function openRepoToFactory(userId: string, repoId: number): Promise<Access & { fullName?: string }> {
+  const owner = factoryAccess(userId)
+  if (!owner.ok) return owner
+  const [row] = await db.update(repositories)
+    .set({ factoryEnabled: true })
+    .where(and(eq(repositories.id, repoId), eq(repositories.userId, userId)))
+    .returning({ fullName: repositories.fullName })
+  return row ? { ok: true, fullName: row.fullName } : { ok: false, reason: `Repo ${repoId} not found` }
 }
 
 /** Map AdvisorAction effort → risk tier, kept in the queued event for the accuracy views. */
@@ -136,11 +164,11 @@ interface EnqueueInput {
 export async function enqueueRequest(input: EnqueueInput): Promise<QueueResult> {
   const repo = await db.query.repositories.findFirst({
     where: and(eq(repositories.id, input.repoId), eq(repositories.userId, input.userId)),
-    columns: { fullName: true, name: true, tags: true },
+    columns: { fullName: true, name: true, tags: true, factoryEnabled: true },
   })
   if (!repo) return { ok: false, reason: `Repo ${input.repoId} not found` }
 
-  const access = factoryAccess(input.userId, repo.fullName)
+  const access = factoryAccess(input.userId, repo.fullName, repo.factoryEnabled)
   if (!access.ok) return access
 
   const mode = modeForSkill(input.skill)

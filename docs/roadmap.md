@@ -300,6 +300,7 @@ The owner decides on ideas and starts builds from RepoHQ, and idea-factory does 
 - [x] Stripe live payments through the broker: tiebreak sells Pro at $5 once (2026-10-13), test-mode objects retired, the product mapped in RepoHQ (ai-stack#14, #16)
 - [x] Pipeline commits credited to the owner's GitHub account, so Vercel builds previews of private idea repos; production URLs and homepages are public addresses only (idea-factory#27, #28)
 - [x] Growth builds' sandbox opens with no models; deploys ship `origin/main` (#97)
+- [x] Act on the Advisor: "Fix it" on a security item queues `/cso` (npm audit fix, never --force, in every lockfile, one PR), and the owner opens a repo to the factory with one click (`repositories.factory_enabled`, read by the factory each cycle); a finished result no longer hides an item's button
 - [ ] Preview smoke for idea repos' milestone PRs, as the factory does for its own PRs
 - [ ] CI on pull requests for the factory repos that have none (7 of 9), now that their PRs merge without a person
 - [ ] A money gate: no builds past M1 without a stated buyer and price, ideally with demand-test signups

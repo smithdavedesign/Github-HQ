@@ -12,6 +12,7 @@ import { MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy-utils'
 import { useAiRun, AiRunLine } from './use-ai-run'
 import { formatDistanceToNow } from '@/lib/utils'
 import { QueueButton } from './queue-button'
+import { OpenFactoryButton } from './open-factory-button'
 import Link from 'next/link'
 
 const IMPACT_ICON = {
@@ -42,6 +43,8 @@ interface AdvisorCardProps {
   hoursPerWeek?: number
   /** Repos the factory takes requests for (owner + allowlist); Run Agent shows only on these. */
   factoryRepoIds?: number[]
+  /** The factory's owner: actions on repos it doesn't work on yet offer "Let the factory work on this repo". */
+  canOpenFactory?: boolean
   accuracyStats?: AccuracyStats[]
 }
 
@@ -74,7 +77,7 @@ function ConfidenceBadge({ impactType, accuracyStats }: { impactType: string; ac
   return <span className="text-[10px] ml-1" title={`${stat.successRate}% success rate (${stat.dataPoints} runs) — low confidence`}>🔴</span>
 }
 
-export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10, factoryRepoIds = [], accuracyStats }: AdvisorCardProps) {
+export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerWeek = 10, factoryRepoIds = [], canOpenFactory = false, accuracyStats }: AdvisorCardProps) {
   // The prop, not a copy in state: after a run finishes, router.refresh() brings the new advisor.
   const advisor = initialAdvisor
   const { start: handleGenerate, busy: generating, line } = useAiRun('ai:advisor', initialAdvisor ? new Date(initialAdvisor.generatedAt) : null)
@@ -239,12 +242,15 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
                     </div>
                   )}
                   {!factoryRepoIds.includes(action.repoId) && (
-                    <Link
-                      href={`/repos/${action.repoId}`}
-                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                    >
-                      View repo <ArrowRight className="w-3 h-3" />
-                    </Link>
+                    <div className="flex items-center gap-2 pt-1 flex-wrap">
+                      {canOpenFactory && <OpenFactoryButton repoId={action.repoId} repoName={action.repoName} />}
+                      <Link
+                        href={`/repos/${action.repoId}`}
+                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                      >
+                        View repo <ArrowRight className="w-3 h-3" />
+                      </Link>
+                    </div>
                   )}
                 </div>
               )}
@@ -253,6 +259,7 @@ export function AdvisorCard({ advisor: initialAdvisor, timeAllocation, hoursPerW
               {!isExpanded && (
                 <div className="flex items-center gap-1.5 px-3 pb-3 -mt-1 ml-0 sm:ml-10 flex-wrap">
                   {factoryRepoIds.includes(action.repoId) && <QueueButton action={action} />}
+                  {!factoryRepoIds.includes(action.repoId) && canOpenFactory && <OpenFactoryButton repoId={action.repoId} repoName={action.repoName} />}
                   <Link
                     href={`/repos/${action.repoId}`}
                     className="text-muted-foreground hover:text-foreground"

@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Search, Heart, GitPullRequest, FileText, ChevronDown, ChevronUp, ChevronRight, Eye, Tv, RotateCcw, BookOpen } from 'lucide-react'
+import { Search, Heart, GitPullRequest, FileText, ChevronDown, ChevronUp, ChevronRight, Eye, Tv, RotateCcw, BookOpen, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { queueGstackSkill } from '@/lib/actions/agent-queue'
 import { SKILL_META, type GstackSkill } from '@/lib/skills/skill-policy'
 import { modeForSkill } from '@/lib/agents/factory-request-utils'
 import { toast } from 'sonner'
+import { OpenFactoryButton } from '@/components/dashboard/open-factory-button'
 import type { SkillRunRecord } from '@/lib/actions/repositories'
 
 // ─── Skill definitions ────────────────────────────────────────────────────────
@@ -23,7 +24,7 @@ interface SkillDef {
 }
 
 const ICON_MAP: Record<string, typeof Search> = {
-  Search, Heart, GitPullRequest, FileText, Eye, Tv, RotateCcw, BookOpen,
+  Search, Heart, GitPullRequest, FileText, Eye, Tv, RotateCcw, BookOpen, ShieldCheck,
 }
 
 const PHASE_ORDER = ['Understand', 'Build Quality', 'Ship', 'Monitor', 'Reflect']
@@ -56,6 +57,8 @@ interface GstackSkillLauncherProps {
   /** The factory takes requests for this repo (owner + allowlist); otherwise why not. */
   factoryEnabled: boolean
   factoryReason?: string | null
+  /** The factory's owner can open this repo to it from here. */
+  canOpenFactory?: boolean
   skillHistory?: Record<string, SkillRunRecord>
 }
 
@@ -63,7 +66,7 @@ const POLL_MS = 15_000
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, factoryEnabled, factoryReason, skillHistory = {} }: GstackSkillLauncherProps) {
+export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, factoryEnabled, factoryReason, canOpenFactory = false, skillHistory = {} }: GstackSkillLauncherProps) {
   // Start from the defaults on both server and client, then apply the stored choice after mount:
   // reading localStorage during render made the server and client HTML differ (hydration error).
   const [openPhases, setOpenPhases] = useState<Set<string>>(() => new Set(['Understand', 'Monitor']))
@@ -178,6 +181,7 @@ export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, facto
       <div className="rounded-lg border border-border/40 bg-muted/10 px-4 py-5 text-center space-y-1.5">
         <p className="text-sm font-medium text-muted-foreground">Agent skills are not available for {repoName}</p>
         <p className="text-xs text-muted-foreground">{factoryReason ?? 'The factory is not set up for this deployment.'}</p>
+        {canOpenFactory && <div className="flex justify-center pt-1"><OpenFactoryButton repoId={repoId} repoName={repoName} /></div>}
       </div>
     )
   }

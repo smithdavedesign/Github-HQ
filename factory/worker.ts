@@ -39,6 +39,7 @@ import { dockerAvailableConfirmed } from './lib/sandbox'
 import { finishRun, parseProtocolLine, pruneRuns, startRun, type RunKind, type RunResult } from './lib/trace'
 import { HEARTBEAT_TIMEOUT_MS, configProblem, heartbeatAction, pickupCheck, recentStarts } from './lib/worker-health'
 import { JOB_TIMEOUT_MS, childCommand, gateFor, needsRequeue, requestFollowUp, requestOutcomeOf, runStatusFor, type HostState } from './lib/worker-policy'
+import { factoryRepos } from './lib/sink'
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const SCHEDULED: ScheduledJobName[] = ['cycle', 'report', 'scout']
@@ -248,8 +249,9 @@ async function processRequest(cfg: FactoryConfig, queue: Queue, job: Job, token?
     throw new DelayedError()
   }
   if (!row) return { status: 'skipped', reason: 'request is no longer open (cancelled or already resolved)' }
-  if (!isAllowlisted(row.repo, cfg.repos)) {
-    const reason = `${row.repo} is not on the factory allowlist (factory/factory.config.json "repos")`
+  // Read for each request: a repo the owner opened from RepoHQ a minute ago counts without a restart.
+  if (!isAllowlisted(row.repo, await factoryRepos(cfg))) {
+    const reason = `the factory doesn't work on ${row.repo}: open it to the factory from its RepoHQ page, or add it to factory/factory.config.json "repos"`
     await resolveRequest(cfg, resolvedFromRow(row), { status: 'rejected', reason }, 'worker', new Date())
     return { status: 'ok', reason }
   }

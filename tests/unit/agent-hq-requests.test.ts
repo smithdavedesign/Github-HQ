@@ -24,9 +24,10 @@ describe('skills → request modes (PRD §8)', () => {
     expect(modeForSkill('ship')).toBe('fix')
     expect(modeForSkill('qa')).toBe('fix')
     expect(modeForSkill('document-release')).toBe('fix')
+    expect(modeForSkill('cso')).toBe('fix') // the Advisor's "Fix it" on a security item: npm audit fix
     for (const s of ['review', 'qa-only', 'health', 'investigate', 'retro'] as const) expect(modeForSkill(s)).toBe('report')
     expect(modeForSkill('canary')).toBeNull()
-    expect(Object.keys(SKILL_MODES)).toHaveLength(9)
+    expect(Object.keys(SKILL_MODES)).toHaveLength(10)
   })
 })
 
