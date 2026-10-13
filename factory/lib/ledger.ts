@@ -285,7 +285,8 @@ export function deadEndKey(repo: string, kind: string, ownerTaskId?: string): st
 /**
  * Tasks (`deadEndKey`) that failed ≥ 2 times in the window with no verified fix since.
  * M0 failures don't count: the local model failing is expected and escalates to M1,
- * so it must not lock the task out of the tiers that can actually do it.
+ * so it must not lock the task out of the tiers that can actually do it. A stop at M2 with
+ * paid off (`approval_needed`) does count: no tier the factory may use can do the task.
  */
 export function deadEnds(entries: LedgerEntry[], now: Date, windowDays = 14): Set<string> {
   const since = now.getTime() - windowDays * 86_400_000
@@ -298,6 +299,16 @@ export function deadEnds(entries: LedgerEntry[], now: Date, windowDays = 14): Se
     // M0 model failures escalate, so they don't count — but deterministic fixes (npm audit fix) never escalate.
     const countsAsDeadEnd = a.tier !== 'M0' || a.harness === 'npm-audit-fix' || a.harness === 'lint-autofix'
     if (a.outcome === 'failed' && countsAsDeadEnd && t >= since) failures.set(key, [...(failures.get(key) ?? []), t])
+  }
+  // A private repo gets only the local model at $0 (no free cloud), so when M0 fails the ladder stops at
+  // M2. Not counted, that stop came back every cycle with a notification (2026-10-13: tiebreak's README,
+  // hourly, 8 times).
+  for (const e of entries) {
+    if (e.type !== 'approval_needed') continue
+    const t = new Date(e.at).getTime()
+    if (t < since) continue
+    const key = deadEndKey(e.repo, e.kind)
+    failures.set(key, [...(failures.get(key) ?? []), t])
   }
   // Only failures after the last success count. Before 2026-10-08 any success in the window
   // cleared the key, so a lint fixer that worked once then had nothing left to fix retried every
