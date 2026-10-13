@@ -8,11 +8,18 @@ import {
   IMPACT_TYPES,
   SUPPRESS_THRESHOLDS,
   computeAccuracy,
+  withImpactTypes,
   type AccuracyStat,
   type ImpactType,
 } from './advisor-accuracy-utils'
 
 export type AccuracyStats = AccuracyStat
+
+/** The merged and failed events, each typed by its task's queued event when it has no impactType itself. */
+function typedOutcomes<T extends { eventType: string; metadata: unknown; occurredAt: Date }>(events: T[]): T[] {
+  const outcomes = events.filter(e => e.eventType === 'agent_pr_merged' || e.eventType === 'agent_execution_failed')
+  return withImpactTypes(outcomes, events.filter(e => e.eventType === 'agent_task_queued'))
+}
 
 /**
  * Returns accuracy stats broken down by impactType.
@@ -25,7 +32,7 @@ export async function getAccuracyByImpactType(userId: string): Promise<AccuracyS
     mergedEvents = await db.query.portfolioEvents.findMany({
       where: and(
         eq(portfolioEvents.userId, userId),
-        inArray(portfolioEvents.eventType, ['agent_pr_merged', 'agent_execution_failed']),
+        inArray(portfolioEvents.eventType, ['agent_pr_merged', 'agent_execution_failed', 'agent_task_queued']),
       ),
       columns: { eventType: true, metadata: true, occurredAt: true },
     })
@@ -34,7 +41,8 @@ export async function getAccuracyByImpactType(userId: string): Promise<AccuracyS
     return []
   }
 
-  return IMPACT_TYPES.map(t => computeAccuracy(mergedEvents, t))
+  const typed = typedOutcomes(mergedEvents)
+  return IMPACT_TYPES.map(t => computeAccuracy(typed, t))
 }
 
 /**
@@ -46,14 +54,14 @@ async function getRepoAccuracy(
   userId: string,
   repoId: number,
 ): Promise<AccuracyStats[]> {
-  const repoEvents = await db.query.portfolioEvents.findMany({
+  const repoEvents = typedOutcomes(await db.query.portfolioEvents.findMany({
     where: and(
       eq(portfolioEvents.userId, userId),
       eq(portfolioEvents.repoId, repoId),
-      inArray(portfolioEvents.eventType, ['agent_pr_merged', 'agent_execution_failed']),
+      inArray(portfolioEvents.eventType, ['agent_pr_merged', 'agent_execution_failed', 'agent_task_queued']),
     ),
     columns: { eventType: true, metadata: true, occurredAt: true },
-  })
+  }))
 
   // Repo-specific only where the repo has ≥ 3 events of that type; the caller falls back to global.
   return IMPACT_TYPES
@@ -68,14 +76,14 @@ async function getRepoAccuracy(
 export async function getDowngradedRepos(userId: string): Promise<
   { repoId: number; repoName: string; impactType: ImpactType; failureCount: number }[]
 > {
-  const allEvents = await db.query.portfolioEvents.findMany({
+  const allEvents = typedOutcomes(await db.query.portfolioEvents.findMany({
     where: and(
       eq(portfolioEvents.userId, userId),
-      inArray(portfolioEvents.eventType, ['agent_pr_merged', 'agent_execution_failed']),
+      inArray(portfolioEvents.eventType, ['agent_pr_merged', 'agent_execution_failed', 'agent_task_queued']),
     ),
-    columns: { repoId: true, eventType: true, metadata: true },
+    columns: { repoId: true, eventType: true, metadata: true, occurredAt: true },
     with: { repository: { columns: { name: true } } },
-  })
+  }))
 
   type Key = `${number}::${string}`
   const counters = new Map<Key, { total: number; failures: number; repoName: string; impactType: ImpactType }>()

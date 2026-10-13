@@ -60,6 +60,25 @@ export interface AccuracyStat {
 type AccuracyMeta = { impactType?: string; deltaConfidence?: string; actualDelta?: number | null; actualDeltaPending?: boolean } | null
 
 /**
+ * Gives each event without an impactType the one its task was queued with (by taskId). Only the Advisor's
+ * agent_task_queued event carries the type: the merge checker's agent_pr_merged and the factory's events
+ * don't, so until 2026-10-13 no merged recommendation ever reached the accuracy table (all 4 merges were
+ * measured, none was typed).
+ */
+export function withImpactTypes<T extends AccuracyEvent>(events: T[], queued: Pick<AccuracyEvent, 'metadata'>[]): T[] {
+  const byTask = new Map<string, string>()
+  for (const q of queued) {
+    const m = q.metadata as { taskId?: string; impactType?: string | null } | null
+    if (m?.taskId && m.impactType) byTask.set(m.taskId, m.impactType)
+  }
+  return events.map(e => {
+    const m = (e.metadata ?? {}) as { taskId?: string; impactType?: string | null }
+    const type = m.taskId ? byTask.get(m.taskId) : undefined
+    return m.impactType || !type ? e : { ...e, metadata: { ...m, impactType: type } }
+  })
+}
+
+/**
  * Advisor accuracy per impact type: did the health score go up after a merged recommendation?
  * Only merges with a measured, high-confidence delta count. A run that failed before opening a PR
  * says nothing about whether the advice was right, so it's reported as `executionFailures` instead

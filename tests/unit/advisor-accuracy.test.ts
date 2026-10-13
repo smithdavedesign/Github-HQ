@@ -3,7 +3,7 @@
  * Tests pure logic only — no DB connections required.
  */
 import { describe, it, expect } from 'vitest'
-import { parsePredictedDelta, MIN_DATA_POINTS } from '../../src/lib/actions/advisor-accuracy-utils'
+import { parsePredictedDelta, MIN_DATA_POINTS, computeAccuracy as accuracyOf, withImpactTypes } from '../../src/lib/actions/advisor-accuracy-utils'
 
 // ─── parsePredictedDelta ──────────────────────────────────────────────────────
 
@@ -219,5 +219,27 @@ describe('computeAccuracy', () => {
     const s = computeAccuracy([merged('opportunity', 3, 2), merged('opportunity', 0, 90), failed('opportunity', 1), failed('opportunity', 1)], 'opportunity', now)
     expect(s.successRate).toBe(50)
     expect(s.timeDecayedRate).toBe(67) // 2 / (2 + 1)
+  })
+})
+
+describe('typing outcomes through their queued task (2026-10-13)', () => {
+  const at = new Date('2026-10-13T12:00:00Z')
+  const queued = [
+    { metadata: { taskId: 't-sec', impactType: 'security', source: 'ui-advisor' } },
+    { metadata: { taskId: 't-skill', impactType: null, source: 'ui-skill' } },
+  ]
+  it("gives a merged PR the type its task was queued with, and leaves typed or unknown events alone", () => {
+    const merged = { eventType: 'agent_pr_merged', occurredAt: at, metadata: { taskId: 't-sec', actualDelta: 1, actualDeltaPending: false } }
+    const typed = { eventType: 'agent_execution_failed', occurredAt: at, metadata: { taskId: 't-sec', impactType: 'health' } }
+    const skill = { eventType: 'agent_pr_merged', occurredAt: at, metadata: { taskId: 't-skill', actualDelta: 19 } }
+    const [m, f, k] = withImpactTypes([merged, typed, skill], queued)
+    expect((m!.metadata as { impactType?: string }).impactType).toBe('security')
+    expect((f!.metadata as { impactType?: string }).impactType, 'its own type wins').toBe('health')
+    expect((k!.metadata as { impactType?: string }).impactType).toBeUndefined()
+  })
+  it('so a measured merge counts: before, every merged recommendation was invisible to the table', () => {
+    const merged = { eventType: 'agent_pr_merged', occurredAt: at, metadata: { taskId: 't-sec', actualDelta: 1, actualDeltaPending: false } }
+    expect(accuracyOf([merged], 'security', at).dataPoints).toBe(0)
+    expect(accuracyOf(withImpactTypes([merged], queued), 'security', at)).toMatchObject({ dataPoints: 1, successRate: 100, avgActualDelta: 1 })
   })
 })
