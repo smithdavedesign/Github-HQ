@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { ArrowLeft, BookOpen, ExternalLink, GitBranch, GitPullRequest, Globe } from 'lucide-react'
+import { ArrowLeft, ExternalLink, GitBranch, GitPullRequest, Globe } from 'lucide-react'
 import { auth } from '@/lib/auth'
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { loadIdea } from '@/lib/ideas/ideas-data'
@@ -57,7 +57,6 @@ export default async function IdeaPage({ params }: Props) {
   const page = safeUrl(v.state.page?.url)
   const repo = safeUrl(v.state.repo)
   const pr = safeUrl(v.state.build?.prUrl)
-  const notion = safeUrl(v.notionUrl)
   const launchPost = r?.launch?.post ? r.launch.post.replace(/\{url\}/g, v.state.page?.url ?? '{url}') : null
   const kitOrder = launchKitOrder(v.docs.launchKit)
   // "Start build now": the next milestone outside the weekly slot (idea_build_requests).
@@ -108,7 +107,6 @@ export default async function IdeaPage({ params }: Props) {
           {pending && <PendingBadge decision={pending} />}
         </div>
         <div className="flex flex-wrap gap-4 text-sm">
-          {notion && <ExtLink href={notion} icon={BookOpen}>Notion row</ExtLink>}
           {page && <ExtLink href={page} icon={Globe}>Landing page</ExtLink>}
           {repo && <ExtLink href={repo} icon={GitBranch}>Repo</ExtLink>}
           {pr && <ExtLink href={pr} icon={GitPullRequest}>Milestone PR</ExtLink>}

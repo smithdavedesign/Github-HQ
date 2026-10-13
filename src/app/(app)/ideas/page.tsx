@@ -1,11 +1,11 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ArrowRight, ExternalLink, Lightbulb } from 'lucide-react'
+import { ArrowRight, Lightbulb } from 'lucide-react'
 import { auth } from '@/lib/auth'
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { loadIdeasOverview } from '@/lib/ideas/ideas-data'
 import {
-  GROUP_LABEL, GROUP_ORDER, IDEA_BOARD_URL, buildSlot, groupIdeas, pipelineHealth, type IdeaGroup,
+  GROUP_LABEL, GROUP_ORDER, buildSlot, groupIdeas, pipelineHealth, type IdeaGroup,
 } from '@/lib/ideas/idea-utils'
 import { filterIdeas, filtersActive, parseIdeaFilters, sortIdeas, tagCounts, topicTags } from '@/lib/ideas/idea-filters'
 import { IdeaCard } from '@/components/ideas/idea-card'
@@ -59,13 +59,10 @@ export default async function IdeasPage({ searchParams }: { searchParams: Promis
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Lightbulb className="h-6 w-6 text-amber-500" />Ideas</h1>
           <p className="text-muted-foreground text-sm mt-1 max-w-2xl">
             Researched and reviewed ideas from the idea pipeline. Approve a build, send one to a $0 demand test, or pass:
-            the pipeline acts on your call within 15 minutes, through the Notion board it already follows.
+            the pipeline acts on your call within 15 minutes.
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
-          <Button variant="outline" size="sm" asChild>
-            <a href={IDEA_BOARD_URL} target="_blank" rel="noopener noreferrer"><ExternalLink />Notion board</a>
-          </Button>
           {first && (
             <Button size="sm" asChild>
               <Link href={`/ideas/${first}`}>Review {groups.decide.length} idea{groups.decide.length === 1 ? '' : 's'}<ArrowRight /></Link>

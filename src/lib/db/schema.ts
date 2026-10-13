@@ -349,16 +349,16 @@ export const ideas = pgTable('ideas', {
   state: jsonb('state').notNull(),         // state.json: review summary, page, signals, validation, repo, build …
   review: jsonb('review'),                 // review.json: forcing questions, risks, kill criteria, landing, launch
   docs: jsonb('docs').notNull(),           // { research, prd, roadmap, review, launch, build } markdown
-  notionUrl: text('notion_url'),
+  notionUrl: text('notion_url'),          // legacy: the idea's Notion row before 2026-10-12; no longer written or read
   hash: text('hash').notNull(),            // of the synced content: the pipeline skips unchanged ideas
   updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }),   // state.updatedAt
   syncedAt: timestamp('synced_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
 })
 
 /**
- * The owner's Build / Demand test / Pass decisions from the Ideas page. The idea pipeline applies
- * pending ones on its next tick by setting the Notion Status, exactly as if the owner had set it
- * there, so Notion stays the board the pipeline follows. pending → applied | failed | cancelled.
+ * The owner's Build / Demand test / Pass decisions from the Ideas page, the board the idea pipeline
+ * follows. It applies pending ones on its next tick (idea-factory applyDecision).
+ * pending → applied | failed | cancelled.
  */
 export const ideaDecisions = pgTable('idea_decisions', {
   id: serial('id').primaryKey(),

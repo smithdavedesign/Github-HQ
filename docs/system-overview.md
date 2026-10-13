@@ -29,8 +29,8 @@ left for him) and posting; each morning he reviews what the agents merged and re
 
 | Stage | What happens | Who decides | Cost |
 |---|---|---|---|
-| Research | One idea a day, sourced (no URL, no claim), checked against the owner's portfolio and interests | the pipeline | $0 (Claude Pro subscription, free models as fallback) |
-| Review | gstack office-hours Six Forcing Questions, premise challenge, alternatives; CEO scope reduction; eng feasibility of M1 | the pipeline, policy on top; **the owner can override on RepoHQ's Ideas page or in Notion** | $0 |
+| Research | One idea a day, sourced (no URL, no claim), checked against the owner's portfolio and interests. Daily discovery pauses while new builds wait for traction; ideas the owner sends are always researched | the pipeline | $0 (Claude Pro subscription, free models as fallback) |
+| Review | gstack office-hours Six Forcing Questions, premise challenge, alternatives; CEO scope reduction; eng feasibility of M1 | the pipeline, policy on top; **the owner can override on RepoHQ's Ideas page** | $0 |
 | Demand test | A public landing page with a waitlist and a launch post the owner may share; 14 days | the numbers (`policy.json`) | $0 (Vercel Hobby) |
 | Build | M1's exit criteria become tests first, then the code; a PR in the idea's private repo | the pipeline merges it once its tests and every check pass; **the owner reviews it in the morning email** | $0 |
 | Live and earning | RepoHQ tracks lifecycle, health and MRR; the factory keeps it healthy | the owner | free tiers until it earns |
@@ -49,7 +49,7 @@ left for him) and posting; each morning he reviews what the agents merged and re
 |---|---|---|
 | **RepoHQ** | `smithdavedesign/Github-HQ` (public), https://repohq.vercel.app | Portfolio dashboard: health, lifecycle, revenue, decision states. Hosts the idea signal endpoint and the MCP server. [Architecture](architecture.md) |
 | **Factory** | `factory/` in this repo; runs on the owner's Mac (launchd worker, BullMQ via Render Redis) | Free-model-first maintenance on its allowlist: RepoHQ and the live products with CI (`factory.config.json`; since 2026-10-12 no dormant personal repos), plus repos the owner opens from RepoHQ with one click: sandboxed fixes judged by checks, build and preview smoke; PRs it merges itself once every check is green, and reverts if they break `main`. "Fix it" on an Advisor security item runs `npm audit fix` (never `--force`) in every lockfile. [Design](autonomous-factory.md), [operator guide](../factory/README.md) |
-| **Idea pipeline** | private repo `idea-factory` (`~/idea-factory`), Notion **Idea Board**, public landing pages on the `idea-pages` Vercel project | Research → review → demand test → build → go live → revenue; git holds every idea in full. [Idea factory](idea-factory.md) |
+| **Idea pipeline** | private repo `idea-factory` (`~/idea-factory`), public landing pages on the `idea-pages` Vercel project; RepoHQ's Ideas page is its board | Research → review → demand test → build → go live → revenue; git holds every idea in full. [Idea factory](idea-factory.md) |
 | **Context index** | `factory/context/`, built daily into `~/.repohq-factory/context/index.json` | One searchable view of repos, ideas, bookmarks and docs, tagged by data class |
 | **Resource Center** | private repo `resource-center` (`my-bookmarks-hub` on Vercel, behind Vercel auth) + the Bridge Chrome extension | The owner's bookmarks as a knowledge source; feeds interests into the context index |
 | **Local AI stack** | `~/ai-stack`, private repo `smithdavedesign/ai-stack` | Ollama, LiteLLM (model aliases and the free pool), Headroom, coding agents. [AI stack docs](ai-stack/README.md) |
@@ -58,12 +58,14 @@ left for him) and posting; each morning he reviews what the agents merged and re
 | **System log** | `~/.system-events/events.jsonl` → collector (launchd, 5 min) → Neon `system_events` | One log across every part, with probes and Slack alerts. [Logging](logging.md) |
 | **Backups** | private GitHub repos | `ai-stack` (the stack's config and scripts, never `.env`), `repohq-factory-state` (the factory's ledger and reports, nightly), `idea-factory` (every idea's record). Code repos live on GitHub. |
 | **Secrets** | macOS keychain + `~/ai-stack/bin/secrets` | One source of truth; `check` runs daily; `rotate litellm` updates every copy. [Authentication](ai-stack/authentication.md) |
-| **Notion** | Idea Board, task boards | The board the idea pipeline follows; the owner decides on RepoHQ's Ideas page, which sets it |
 
 ## Rules every part follows
 
-- **Money:** $0 by default. Free tiers only (Vercel Hobby, Neon free); no paid domains, ads or services
-  before an idea earns more than it costs (`idea-factory/policy.json`). A review that needs spending is a pass.
+- **Money:** agents never spend and hold no card, so their side is $0 by default (free tiers: Vercel Hobby, Neon free).
+  The owner may put up to a few hundred dollars into moving a product forward (his call, 2026-10-12;
+  `idea-factory/policy.json` `ownerBudget.perProductUsd`, $300): an agent proposes the spend and what it
+  should buy (ads to fill a demand test, a domain, a paid tier), and he approves and pays. A product that takes
+  payments needs a host that allows commercial use, which Vercel Hobby doesn't.
 - **Models:**
   - Claude work runs on the owner's **Claude subscription** through headless Claude Code, never API
     credit.
@@ -89,7 +91,7 @@ left for him) and posting; each morning he reviews what the agents merged and re
 - **Agents never see secrets:** databases and API keys come from the credential broker `~/ai-stack/bin/provision`, which writes values straight to the keychain, Vercel env or GitHub secrets. It works on idea repos only and in agent accounts with no card. Anything it can't do is a Slack request to the owner ([provisioning](provisioning.md)).
   - It also makes Stripe payment links, with restricted keys that can create products, prices, links and webhooks and nothing else.
   - Live mode uses a key only the owner can create, and runs at his word. tiebreak has sold Pro at $5 once since 2026-10-13.
-- **The owner's choice wins:** a decision on RepoHQ's Ideas page, or a Notion status the owner sets, overrides any pipeline verdict.
+- **The owner's choice wins:** a decision on RepoHQ's Ideas page overrides any pipeline verdict. The page is the board; there is no Notion since 2026-10-12.
 
 ## Communication and visibility
 
@@ -99,8 +101,7 @@ left for him) and posting; each morning he reviews what the agents merged and re
 | **WhatsApp** | Personal: companion morning and evening messages, the AI briefing, the daily idea report |
 | **Morning email** (06:45) | The daily digest. It opens with **Done overnight**: what the agents merged, reverted and judged on their own. Then **Today**: at most five things for the owner, money first: a focus product's checklist step, the next post from a launch kit, idea PRs the pipeline left for him ([growth loop](growth-loop-prd.md)). Then the review queue, ideas and revenue, the focus products' funnels (**Growth**), the factory's roles, and what's failing now across every system |
 | **RepoHQ Agents page** | **Needs attention** on top, then tabs (`?tab=`): **Now** (the idea pipeline: building now, queued, caps, latest runs; Subscriptions: Claude Pro and Copilot use), **Runs** (the factory's worker, queue, schedules, runs and traces; data syncs), **Requests** (every request with its trace; 90-day figures), **KPIs** (factory KPIs, advisor accuracy, tiers, cost), **Log** (the **System log**: failing now plus the latest events; the Activity Log) |
-| **RepoHQ Ideas page** | Review ideas and decide: approve a build, demand-test or pass (applied through the Notion Idea Board within 15 min). Sort by score, credibility (the review's demand score), effort or newest; filter by tags (vibe, who it's for, money, where the first users come from, AI, topics), score, effort and text |
-| **Notion Idea Board** | The board the idea pipeline follows; decisions can still be made here |
+| **RepoHQ Ideas page** | Review ideas and decide: approve a build, demand-test or pass (applied by the pipeline within 15 min). Sort by score, credibility (the review's demand score), effort or newest; filter by tags (vibe, who it's for, money, where the first users come from, AI, topics), score, effort and text |
 
 ## How an AI agent gets context
 
@@ -132,12 +133,12 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Verification | Weak | Fair | Every code change is judged on the build, and each PR's Vercel preview is smoke-tested in a browser next to production. Pages behind a login aren't checked yet. |
 | Routing | Rules + history | Rules + history + **tier advisor** (report) | A local model rates each task 1–3. It's scored against outcomes and promoted on evidence. |
 | Local coding | Weak | Weak | The local tier (M0) verified 1 of 7 attempts last week. Building runs on Claude Pro and the free pool. Needs 64–128 GB of unified memory for 30B-class local coders. |
-| Idea generation | Works | Strong | Daily, sourced, portfolio-checked, on Claude Pro; full record in git; lossless Notion pages |
+| Idea generation | Works | Strong | Daily, sourced, portfolio-checked, on Claude Pro; full record in git, shown in full on the Ideas page |
 | Idea review | Missing | Works | gstack frameworks applied non-interactively. Four free-developer-tool ideas passed (scores 2–5): the bar is real. Research now has to name who pays and learn from those verdicts, and the next idea, **permitly**, reached Validate (6/10). |
 | Demand test | Missing | **Live** | permitly's page went up automatically (https://idea-pages-livid.vercel.app/permitly/, decision on 2026-10-24). Signals, decision rules and the launch post (`LAUNCH.md`) all work. Distribution is still on the owner. |
 | Building ideas | Missing | Built, first runs under way | Milestones tests first on Claude Opus at extra-high effort (Sonnet, then the free pool, as fallbacks), planned and self-reviewed with gstack, draft PR. Approving builds the whole MVP in one run (stopping at failing tests); one a week automatically, plus up to 2 a day started from the Ideas page. Runs in the factory's Docker sandbox (subscription token; network only to registries and Anthropic), and every patch passes a secret scan before it's committed. Every build PR shows screenshots of the product working (Playwright in the sandbox), also at the top of the README. |
 | Context | Fragmented | Works | One index (44 repos, ideas, 258 bookmarks, 183 doc sections), MCP tools, a skill. Keyword search, no embeddings. |
-| Revenue loop | Missing | Wired, tracked per idea | Idea MRR from RepoHQ in each idea's state, the Notion board and the morning email. Each idea now has a road to revenue: a plan once M1 merges, and a checklist to the first dollar checked every tick, with the owner's steps in the morning email. A completed MVP gets a go-live build (SEO basics, legal pages, a Buy button, the visit beacon, a Vercel project), and the live site is audited every 6 hours. Build queues go to the idea closest to money. Total portfolio MRR is $4.99. Since 2026-10-13 tiebreak takes real payments ($5 once, through the broker's live Stripe key) and codespend is live (https://codespend.vercel.app). One-time payments don't count toward MRR yet. |
+| Revenue loop | Missing | Wired, tracked per idea | Idea MRR from RepoHQ in each idea's state, the Ideas page and the morning email. Each idea now has a road to revenue: a plan once M1 merges, and a checklist to the first dollar checked every tick, with the owner's steps in the morning email. A completed MVP gets a go-live build (SEO basics, legal pages, a Buy button, the visit beacon, a Vercel project), and the live site is audited every 6 hours. Build queues go to the idea closest to money. Total portfolio MRR is $4.99. Since 2026-10-13 tiebreak takes real payments ($5 once, through the broker's live Stripe key) and codespend is live (https://codespend.vercel.app). One-time payments don't count toward MRR yet. |
 | Operations | Fragile, visible | Fragile, **watched** | One system log across every part. Probes cover services, launchd jobs, OpenClaw crons, GitHub crons and provider errors, with alerts to Slack. Still one Mac. |
 
 **Weakest links now, in order:**
@@ -156,7 +157,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Within 15 min of sending | Research + review of an idea the owner sent, verdict back on Slack or WhatsApp (≤ 10 a day, one per tick, so a batch clears the same night) | idea pipeline tick |
 | Every 5 min | System-events collector: ship the log, probe everything (incl. Vercel deploys), alert Slack, refresh the companion's brief; daily: prune, secrets check | launchd `com.user.system-events` |
 | 03:30 | Factory state backup (ledger, reports) → private repo | launchd `com.user.factory-backup` |
-| Every 15 min (daily steps after 09:30) | Idea pipeline tick: Ideas-page decisions, Notion sync, signals and funnels, decisions, promote, an approved idea's M1 build, revenue, a go-live once an MVP is complete (≤ 1 a day), the live audit (every 6 h per live idea), the growth step (focus products; from 10:00, ≤ 2 missions a day), sync to RepoHQ; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |
+| Every 15 min (daily steps after 09:30) | Idea pipeline tick: Ideas-page decisions, signals and funnels, decisions, promote, an approved idea's M1 build, revenue, a go-live once an MVP is complete (≤ 1 a day), the live audit (every 6 h per live idea), the growth step (focus products; from 10:00, ≤ 2 missions a day), sync to RepoHQ; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |
 | Every 6 h, daily, weekly | RepoHQ sync (with security alerts, so counts follow merges within hours), the full security scan, deployments, AI summaries, digest | GitHub Actions crons |
 
 ## What's next

@@ -21,8 +21,8 @@ describe('needsAttention', () => {
   })
 
   it('pipeline errors and a stalled pipeline', () => {
-    const items = needsAttention({ ...base, pipeline: { tickAt: minutesAgo(180), ok: false, errors: ['notion sync failed', 'x'] } })
-    expect(items.map(i => i.text)).toEqual(['Idea pipeline: notion sync failed (+1 more)', "Idea pipeline hasn't ticked for 3h (it runs every 15 min)"])
+    const items = needsAttention({ ...base, pipeline: { tickAt: minutesAgo(180), ok: false, errors: ['ideas sync failed', 'x'] } })
+    expect(items.map(i => i.text)).toEqual(['Idea pipeline: ideas sync failed (+1 more)', "Idea pipeline hasn't ticked for 3h (it runs every 15 min)"])
   })
 
   it('Copilot used up, and a recent Claude capacity hit', () => {

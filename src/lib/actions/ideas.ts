@@ -9,7 +9,7 @@ import { factoryAccess } from '@/lib/agents/factory-queue'
 import { buildMvpTarget, buildNowTarget, checkDecision, goLiveTarget, cleanIdeaText, type IdeaBuildRequestRow, type IdeaDecisionKind, type IdeaView } from '@/lib/ideas/idea-utils'
 
 // Browser-facing actions for the Ideas page. The owner's decision becomes an `idea_decisions` row;
-// the idea pipeline on the Mac applies it on its next tick by setting the Notion Status
+// the idea pipeline on the Mac applies it on its next tick
 // (docs/idea-factory.md). Types only below — a 'use server' file exports nothing but async functions.
 
 export interface QueuedDecision { id: number; status: 'pending' }
@@ -56,7 +56,7 @@ export async function decideIdea(slug: string, decision: IdeaDecisionKind, note?
     if (!idea) throw new DecisionError('Unknown idea')
     const check = checkDecision({
       stage: idea.stage as IdeaView['stage'], state: idea.state as IdeaView['state'],
-      review: idea.review as IdeaView['review'], notionUrl: idea.notionUrl,
+      review: idea.review as IdeaView['review'],
     }, decision)
     if (!check.ok) throw new DecisionError(check.reason)
     await db.update(ideaDecisions)

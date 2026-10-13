@@ -1,6 +1,6 @@
 # Idea factory
 
-The idea half of the system ([system overview](system-overview.md)). Every day it researches one product idea, reviews it with the gstack frameworks, runs a $0 demand test on the ones worth testing, builds M1 for the ones that show signal, and tracks their revenue. The owner decides only what matters: Build, Demand test or Pass on RepoHQ's **Ideas page** (or the Notion **Idea Board**), and merging the M1 PR.
+The idea half of the system ([system overview](system-overview.md)). Every day it researches one product idea (paused while new builds wait for a focus product's traction, `policy.research.discovery`; ideas the owner sends are always researched), reviews it with the gstack frameworks, runs a $0 demand test on the ones worth testing, builds M1 for the ones that show signal, and tracks their revenue. The owner decides only what matters: Build, Demand test or Pass on RepoHQ's **Ideas page**, which is the board. PRs merge themselves once every check passes, and he reviews afterwards. Spending is the owner's call: up to `policy.ownerBudget.perProductUsd` ($300) to move a product forward, never by an agent.
 
 It lives outside this repo, in the private **`idea-factory`** repo: the pipeline code, its tests, and the **record** of every idea in full (`ideas/<slug>/`). The daily job runs in OpenClaw. This page documents the contract between those parts and RepoHQ.
 
@@ -23,10 +23,9 @@ Each idea's lifecycle record is `ideas/<slug>/state.json` (stage, review, page, 
   │  4–8 web searches → RESEARCH.md, PRD.md, ROADMAP.md, idea.json (draft folder)
   ▼
 idea-publish.js publish ── validates the draft
-  ├─▶ ideas/<slug>/ committed and pushed to idea-factory (the record: complete, versioned)
-  └─▶ Notion row, Status "Idea": full research + PRD + roadmap + sources in the page, a Docs link
-      to the record, the repo name reserved
-      WhatsApp: title, one-liner, closest existing repo, Notion link, which engine did the research
+  └─▶ ideas/<slug>/ committed and pushed to idea-factory (the record: complete, versioned), the repo
+      name reserved; the next tick mirrors it to RepoHQ's Ideas page, where the owner decides
+      WhatsApp: title, one-liner, closest existing repo, its Ideas page link, which engine did the research
 ```
 
 **Ideas the owner sends are researched right away**, not at 09:00. That covers `idea: …` on Slack or WhatsApp and the Ideas page's New idea box.
@@ -75,7 +74,7 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
 
 ### 4. Build
 
-- **Repo:** a `build` decision, or the owner setting Notion **Build**, makes `promote` create the private repo (topic `idea`) from the record.
+- **Repo:** a `build` decision on the Ideas page (or a demand test that passed its bar) puts the idea at stage `build`, and `promote` creates the private repo (topic `idea`) from the record on the same tick.
 - **Engine:** Claude Code on the owner's Claude subscription first, because coding a product from a PRD needs the strongest model. LiteLLM's free pool (`free-agent`, through the same Claude Code harness) is used only when the subscription is out of capacity (usage or rate limit, logged out). Every PR states which engine wrote it.
   - **Model and effort** (`policy.build`): `--model opus --effort xhigh`, which is `claude-opus-5-5` on the subscription.
   - If Opus is overloaded or unavailable on the plan, Claude Code itself drops to `claudeFallbackModel` (`sonnet`), still on the subscription. Effort and model never go to the free pool.
@@ -131,7 +130,7 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
 
 - **Tracking:** RepoHQ already tracks lifecycle and MRR per repo. Each tick, the pipeline:
   - marks a new idea repo `building` (purpose Revenue) in RepoHQ;
-  - copies its MRR into `state.json` and the Notion `MRR` column;
+  - copies its MRR into `state.json`, which the Ideas page and the morning email show;
   - moves the idea to `live` when the owner sets the repo's lifecycle to beta, production or growing.
 - **Reporting:** the morning email's "Ideas, demand and revenue" section shows the whole pipeline.
 
@@ -235,11 +234,16 @@ RepoHQ's [Ideas page](https://repohq.vercel.app/ideas) (`src/app/(app)/ideas/`, 
   Within a group any picked tag matches, and every group with a pick must match. Cards show the tags, with cold outreach in amber and spreading in green, since where the first users come from has decided most verdicts.
 - The stats keep counting every idea, and the filters stay in the URL, so a view can be bookmarked or shared.
 
-How a decision travels, with Notion staying the board the pipeline follows:
+How a decision travels (the Ideas page is the board; there is no Notion since 2026-10-12):
 
 1. The page writes a pending `idea_decisions` row (Neon) and nothing else.
-2. On its next tick, at most 15 minutes later, the pipeline sets that Notion Status exactly as the owner would. It marks the row `applied`, or `failed` with the reason. A row still pending can be withdrawn on the page.
-3. Step 1 of the same tick follows the new status like any owner change. Build makes the repo on that tick and **starts M1 on that tick too**, within `policy.build.maxPerWeek`, instead of waiting for the next daily run. The approval note goes to the builder with the PRD.
+2. On its next tick, at most 15 minutes later, the pipeline applies it (`applyDecision` in `bin/idea-pipeline.js`, the same rules as the page's `checkDecision`):
+   - Build moves the idea to `build`, or approves M1 for a repo the review passed;
+   - Demand test moves it to `validate`;
+   - Pass moves it to `pass`.
+
+   It marks the row `applied` with what it did, or `failed` with the reason, for example when the idea moved on since the page checked it. A row still pending can be withdrawn on the page.
+3. Build makes the repo on that tick and **starts M1 on that tick too**, within `policy.build.maxPerWeek`, instead of waiting for the next daily run. The approval note goes to the builder with the PRD.
 4. The tick mirrors every changed idea (`idea.json`, `state.json`, `review.json`, the markdown docs) to the `ideas` table. It also writes its heartbeat and `policy.json` to `idea_pipeline`, so the page shows how fresh it is.
 
 **New ideas** come from `idea: …` on Slack or WhatsApp (the companion runs `idea-publish.js seed`) or from the page's **New idea** box. The box writes an `idea_seeds` row. The next tick moves it into the same research queue (`seeds.jsonl`) and marks it `queued`. Once it's written up, the tick marks it `researched` and links it to its idea. A queued one shows how many are ahead of it.
@@ -257,34 +261,19 @@ How a decision travels, with Notion staying the board the pipeline follows:
 
 The morning email links to the page when ideas need a call. The tables are in `src/lib/db/schema.ts`; idea-factory's side is `lib/repohq.js`. A table added later (`idea_seeds`, `idea_build_requests`) only needs `npm run db:push`, and the page works without it until then.
 
-## Status lifecycle (Notion `Status`)
+## Stages (`state.json` `stage`)
 
-| Status | Set by | Meaning |
+| Stage | Set by | Meaning |
 |---|---|---|
-| `Idea` | pipeline | Researched and recorded; review pending. The page has the full research, PRD, roadmap and sources. |
-| `Validate` | pipeline (review) or **owner** | Worth a demand test: landing page live, signals counting. The page has the review. The owner can send a reviewed idea here from Idea or Pass. |
-| `Build` | pipeline (demand) or **owner** | Create the repo. `promote` picks it up within 15 minutes. The owner can set it at any stage to override a pass. |
-| `Repo Created` | pipeline | The private repo exists (`GitHub_URL`, topic `idea`); M1 build next, then its PR |
-| `Live` | owner (or RepoHQ lifecycle) | Shipped; MRR tracked |
-| `Pass` | pipeline or **owner** | Not now. Research never proposes it again. |
+| `idea` | pipeline | Researched and recorded; review pending |
+| `validate` | pipeline (review) or **owner** | Worth a demand test: landing page live, signals counting. The owner can send a reviewed idea here from `idea` or `pass`. |
+| `build` | pipeline (demand test) or **owner** | Create the repo: `promote` does it on the same tick. The owner can approve a build at any stage before one, overriding a pass. |
+| `repo` | pipeline | The private repo exists (topic `idea`); M1 next, then its PR |
+| `building` | pipeline | Milestones being built and merged |
+| `live` | RepoHQ lifecycle | Shipped (the repo's lifecycle is beta, production or growing); MRR tracked |
+| `pass` | pipeline or **owner** | Not now. Research never proposes it again. |
 
-**The owner's status wins:** each tick reads Notion first, and Pass, Build or Live set by the owner override any pipeline verdict.
-
-Pipeline columns: `Verdict`, `Score` (review), `Page` (landing page), `Visitors`, `Signups` (demand test), `MRR` (revenue), and `Docs` (the git record).
-
-Older options (`Pending`, `In Progress`, `Done`) belong to the earlier pipeline. Its listicle rows were set to `Pass` on 2026-10-10.
-
-## Notion row
-
-| Property | Content |
-|---|---|
-| `Name` | Product title |
-| `Slug` | Repo name: kebab-case, 1–2 words, brandable. Reserved at publish time (refused if taken on GitHub). |
-| `Description` | One sentence: who it's for and the pain it removes |
-| `Keywords`, `EffortEstimate`, `Confidence` | The agent's judgment from the research (Low / Medium / High). Never invented revenue numbers. |
-| `Sources` | URLs behind every claim (at least 3). No URL, no claim. |
-| `GitHub_URL` | Set when the repo is created |
-| `AddedAt`, `SpecCreatedAt` | Timestamps |
+**The owner's decision wins:** a Build, Demand test or Pass from the Ideas page overrides any pipeline verdict. Until 2026-10-12 a Notion Idea Board mirrored these stages and decisions went through it; RepoHQ's `ideas.notion_url` is the leftover, no longer written or read.
 
 ## Draft and repo layout
 
@@ -296,28 +285,17 @@ idea.json     title, repoName, oneLiner, overlaps, tags, effort, confidence, sou
 README.md     added when the repo is created
 ```
 
+Repo names are kebab-case, one or two words and brandable, reserved at publish time (refused if taken on GitHub). Every claim needs a source URL, at least three per idea; effort and confidence are the agent's judgment from the research, never invented revenue numbers.
+
 `idea.json.overlaps` is required. It names the closest existing repo in the owner's portfolio, or says "none". The research step reads the portfolio (every repo's name and description) and must not propose a product the owner already has. The first nightly idea, an offline trip expense splitter, duplicated Open-Travel's budget page, which is how this rule came about.
 
-## Nothing is lost between research and Notion
+## Nothing is lost
 
-The agent's files are the source. Both destinations keep all of their text:
+The agent's files are the source, and nothing on the way cuts them:
 
 - **Git (`idea-factory/ideas/<slug>/`)** stores the files byte for byte, with history. This is the record that agents and the factory read.
-- **The Notion page** carries the same text, converted to Notion blocks within Notion's API limits:
-  - long text is split into 2,000-character pieces, and pieces into further blocks past 100 per block;
-  - tables over 100 rows get the rest appended after;
-  - h4 and deeper headings become bold paragraphs, and nested lists become indentation;
-  - appends are batched by count and size.
-
-  Formatting may be simplified, but text never is. `Sources` and `Description` are Notion *properties* capped at 2,000 characters, so the full source list is in the page body and in git.
-- **Tests** (`npm test` in idea-factory: the conversion tests below plus the pipeline's decision rules, landing-page escaping, review validation, orchestrator rules and Claude runner guards):
-  - converting markdown to blocks is lossless (every non-whitespace character, in order) up to a 1.2 MB worst-case bundle;
-  - every request fits Notion's limits;
-  - emoji are never split;
-  - the research runner refuses API-key auth and MCP connectors.
-
-  `npm run test:live` sends a 51,000-character stress page (a 131-row table, a 9,000-character code block) through the real Notion API, reads it back, and compares.
-- **Checking a real page:** `idea-publish.js verify-page <slug>` reads a page back and fails if any text is missing. `sync-page <slug>` rebuilds a page from git after the docs are edited.
+- **RepoHQ's `ideas` table** mirrors every file in full each tick (`idea.json`, `state.json`, `review.json`, the markdown docs as text), and the Ideas page renders it.
+- **Tests** (`npm test` in idea-factory): the pipeline's decision rules (`applyDecision`), landing-page escaping, review validation, orchestrator rules, a whole tick against a fake RepoHQ, and the research runner's guards (it refuses API-key auth and MCP connectors).
 
 ## Agents and data
 
@@ -327,7 +305,7 @@ The agent's files are the source. Both destinations keep all of their text:
   - It may search and fetch the web, write only to `drafts/`, and run only the publish script.
 - **`scout`** (OpenClaw agent) runs the job and is the fallback researcher on the free pool. It has no personal context: no `USER.md`, no memory, and its workspace says not to read the owner's other workspaces. Its cron job may use only `exec`, `read`, `write`, `ollama_web_search` and `ollama_web_fetch`. It reads untrusted web pages all day, so it is kept apart from the owner's life context (see [personal-context.md](personal-context.md)).
 - **`companion`** (OpenClaw, WhatsApp) never researches. An `idea: …` message is only queued as a seed (`idea-publish.js seed --source slack|whatsapp`), and the pipeline researches it on its next tick.
-- **The script does every side effect** (Notion, `gh`, `git`), always with argument arrays and never shell strings, because titles come from the web.
+- **The script does every side effect** (`gh`, `git`), always with argument arrays and never shell strings, because titles come from the web.
 - **Models:** Claude (Pro subscription) first, then the free pool (`free-agent`). Ideas are public research, so free cloud models are acceptable as the fallback. That is not true for private repos (below).
 
 ## How the factory fits in
