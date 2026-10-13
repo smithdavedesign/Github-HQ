@@ -11,7 +11,9 @@ test.describe('the owner', () => {
     await page.goto(`/repos/${outsideRepo.id}`)
     await page.getByRole('tab', { name: /Agent/i }).click()
     await expect(page.getByText(`Agent skills are not available for ${outsideRepo.name}`)).toBeVisible()
-    await expect(page.getByText('is not on the factory allowlist')).toBeVisible()
+    await expect(page.getByText(`The factory doesn't work on`).first()).toBeVisible()
+    // The owner can open it to the factory from here.
+    await expect(page.getByRole('button', { name: 'Let the factory work on this repo' }).first()).toBeVisible()
     await expect(page.getByRole('button', { name: /^Run \// })).toHaveCount(0)
   })
 })

@@ -155,6 +155,39 @@ export function redCiTask(run: { workflow: string; url: string; conclusion: stri
  * no regression of any previously-passing check. It never auto-merges: the draft PR is
  * labeled `owner-requested` and reviewed as owner intent.
  */
+/**
+ * The owner's "Fix it" on a security item (/cso, RepoHQ's Advisor): the factory's safe fix, `npm audit fix`
+ * (never --force), in the root lockfile and every sub-package's, as one judged PR. No model. `places`
+ * are the lockfile folders ('' is the root).
+ */
+/**
+ * What a security fix request (/cso) does on a repo (pure): reject it, with the reason the owner sees,
+ * or fix these lockfile folders ('' is the root). `audit` is the root's and sub-packages' added up,
+ * null when npm audit couldn't run (the fix is tried anyway).
+ */
+export function securityPlan(input: { repo: string; root: boolean; dirs: string[]; audit: AuditCounts | null }):
+  { action: 'reject'; reason: string } | { action: 'fix'; places: string[]; label: string } {
+  const places = [...(input.root ? [''] : []), ...input.dirs]
+  const label = places.map(p => p || 'the root').join(', ')
+  if (!places.length) return { action: 'reject', reason: `${input.repo} has no npm lockfile, so the safe fix (npm audit fix) has nothing to work on. Its alerts need an upgrade by hand.` }
+  if (input.audit && input.audit.critical + input.audit.high === 0) return { action: 'reject', reason: `npm audit finds nothing critical or high in ${label}. GitHub's alerts may be in another ecosystem, or already fixed.` }
+  return { action: 'fix', places, label }
+}
+
+export function securityFixTask(ownerTaskId: string, audit: AuditCounts | null, places: string[]): FactoryTask {
+  const where = places.map(p => p || 'the root').join(', ')
+  return {
+    kind: 'deps-audit', taskTier: 2, scoped: false, ownerTaskId,
+    files: places.map(p => (p ? `${p}/package-lock.json` : 'package-lock.json')),
+    title: 'Fix security alerts (requested)',
+    objective: audit
+      ? `\`npm audit\` reports ${audit.critical} critical and ${audit.high} high severity vulnerabilities in ${where}. Apply the non-breaking fixes (\`npm audit fix\`, never --force).`
+      : `Apply the non-breaking \`npm audit fix\` (never --force) in ${where}.`,
+    evidence: audit ? `critical=${audit.critical} high=${audit.high} moderate=${audit.moderate} low=${audit.low}` : 'npm audit unavailable before the fix',
+    verify: [],
+  }
+}
+
 export function ownerRequestedTask(repo: string, task: string, ownerTaskId: string, skill?: string): FactoryTask {
   const text = task.trim()
   const guidance = skill ? FIX_SKILL_GUIDANCE[skill] : undefined

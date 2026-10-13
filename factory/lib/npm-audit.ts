@@ -7,6 +7,18 @@
  */
 const ARBORIST_CRASH = /Cannot read propert(?:y|ies) of (?:null|undefined) \(reading '(?:edgesOut|edgesIn|children|package|isProjectRoot)'\)/
 
+/**
+ * Where `npm audit fix` runs (pure): the root with an install (never --force), and each sub-package
+ * lockfile-only, so nothing is installed or run there. A security fix request does both; a sensed
+ * deps-audit does the root, or the sub-packages of a repo with no root package.json.
+ */
+export function auditFixTargets(wsDir: string, subDirs: string[], root: boolean): { cwd: string; args: string[]; label: string }[] {
+  return [
+    ...(root ? [{ cwd: wsDir, args: ['audit', 'fix', '--no-fund'], label: subDirs.length ? '(root)' : '' }] : []),
+    ...subDirs.map(d => ({ cwd: `${wsDir.replace(/\/$/, '')}/${d}`, args: ['audit', 'fix', '--package-lock-only', '--no-fund'], label: d })),
+  ]
+}
+
 export function isArboristCrash(output: string): boolean {
   return ARBORIST_CRASH.test(output)
 }

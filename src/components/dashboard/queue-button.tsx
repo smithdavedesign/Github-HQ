@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { queueAdvisorAction } from '@/lib/actions/agent-queue'
 import type { AdvisorAction } from '@/lib/ai/advisor'
+import { BLOCKING_STAGES, type AgentLifecycleStage } from '@/lib/agents/lifecycle-utils'
 import { toast } from 'sonner'
 import { Bot, Loader2, CheckCircle, ExternalLink, GitPullRequest, AlertCircle, Clock, FileText, XCircle, ShieldCheck } from 'lucide-react'
 
@@ -44,8 +45,10 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
         if (!res.ok || cancelled) return
         const data = await res.json() as StatusPayload & { taskId?: string | null }
         if (cancelled) return
-        // Only hydrate if there's a real in-flight state (not idle/unknown)
-        if (!data.status || data.status === 'idle') return
+        // Only a state that blocks a new request: running, or an agent PR still open. A finished one
+        // (an old report, a merged or closed PR, a failure) is in Agent History; adopting it hid the
+        // button, so an Advisor item couldn't be fixed again (e2e: an old /ship report on the repo).
+        if (!data.status || !BLOCKING_STAGES.has(data.status as AgentLifecycleStage)) return
         setStage(data.status)
         setLabel(data.stage ?? data.status)
         if (data.prUrl)  setPrUrl(data.prUrl)
@@ -100,7 +103,7 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
   }
 
   async function handleRun() {
-    if (!isLikelyToLand(action)) {
+    if (action.impactType !== 'security' && !isLikelyToLand(action)) {
       toast.warning('Substantial task', {
         description: 'The factory works at $0 on free models and keeps changes small — this one may not land in one PR.',
       })
@@ -120,20 +123,24 @@ export function QueueButton({ action }: { action: AdvisorAction }) {
 
   // ── Idle / Launching ───────────────────────────────────────────────────────
   if (stage === 'idle' || stage === 'launching') {
-    const risky = !isLikelyToLand(action)
+    // A security item is fixed the safe way (/cso), whatever its size: no model, no breaking upgrades.
+    const security = action.impactType === 'security'
+    const risky = !security && !isLikelyToLand(action)
     return (
       <button
         onClick={handleRun}
         disabled={stage === 'launching'}
-        title={risky ? 'Substantial task — the factory will try it, but it may be too large for one judged change' : 'Queue for the factory (sandboxed, judged, draft PR)'}
+        title={security
+          ? 'The factory runs npm audit fix (never --force) in every lockfile and opens a PR, which merges itself once its checks pass. What only a breaking upgrade fixes is left, and the PR says how much.'
+          : risky ? 'Substantial task — the factory will try it, but it may be too large for one judged change' : 'Queue for the factory (sandboxed, judged, draft PR)'}
         className={`flex items-center gap-1 h-6 px-2 text-[10px] font-medium rounded border transition-colors disabled:opacity-50 ${
           risky
             ? 'border-amber-300 text-amber-600 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400'
             : 'border-indigo-300 text-indigo-600 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-400 dark:hover:bg-indigo-950/40'
         }`}
       >
-        {stage === 'launching' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
-        {stage === 'launching' ? 'Queuing…' : risky ? 'Queue →' : 'Run Agent'}
+        {stage === 'launching' ? <Loader2 className="w-3 h-3 animate-spin" /> : security ? <ShieldCheck className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
+        {stage === 'launching' ? 'Queuing…' : security ? 'Fix it' : risky ? 'Queue →' : 'Run Agent'}
       </button>
     )
   }

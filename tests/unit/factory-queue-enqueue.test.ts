@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import factoryConfig from '../../factory/factory.config.json'
 
 const REPO = factoryConfig.repos[0]
-let repo: { fullName: string; name: string; tags: string[] | null } | undefined
+let repo: { fullName: string; name: string; tags: string[] | null; factoryEnabled?: boolean } | undefined
 const batches: { table: string; values: Record<string, unknown> }[][] = []
 const lifecycle = vi.fn()
 const withQueue = vi.fn()
@@ -54,7 +54,7 @@ describe('refusals write nothing', () => {
     ['an unknown repo', () => { repo = undefined }, input(), 'Repo 7 not found'],
     ['no factory owner configured', () => { delete process.env.FACTORY_USER_ID }, input(), /FACTORY_USER_ID is not set/],
     ['someone other than the owner', () => {}, input({ userId: 'someone' }), 'The factory runs agents for its owner only.'],
-    ['a repo off the allowlist', () => { repo = { fullName: 'me/elsewhere', name: 'elsewhere', tags: [] } }, input(), /not on the factory allowlist/],
+    ['a repo off the allowlist', () => { repo = { fullName: 'me/elsewhere', name: 'elsewhere', tags: [], factoryEnabled: false } }, input(), "The factory doesn't work on me/elsewhere yet."],
     ['/canary', () => {}, input({ skill: 'canary' }), /no factory equivalent/],
     ['a repo policy that blocks the skill', () => { repo = { fullName: REPO, name: 'x', tags: ['gstack-allow:investigate'] } }, input({ skill: 'ship', source: 'auto-dispatch' }), /Repo policy blocks \/ship/],
   ])('%s', async (_name, arrange, args, reason) => {
@@ -80,6 +80,15 @@ describe('refusals write nothing', () => {
   it('cheap checks first: /canary is refused before the lifecycle lookup', async () => {
     await enqueueRequest(input({ skill: 'canary' }))
     expect(lifecycle).not.toHaveBeenCalled()
+  })
+})
+
+describe('a repo the owner opened to the factory', () => {
+  it('queues like an allowlisted one', async () => {
+    repo = { fullName: 'me/elsewhere', name: 'elsewhere', tags: [], factoryEnabled: true }
+    const r = await enqueueRequest(input())
+    expect(r.ok).toBe(true)
+    expect(batches[0]![0].values).toMatchObject({ repo: 'me/elsewhere' })
   })
 })
 
@@ -136,10 +145,10 @@ describe('advisor actions', () => {
     expect(event.values.metadata).not.toHaveProperty('autoDispatched')
   })
 
-  it('Monday auto-dispatch: "Auto-queued" and tagged; security actions are investigations', async () => {
+  it('Monday auto-dispatch: "Auto-queued" and tagged; security actions are fixed the safe way (/cso)', async () => {
     await queueAdvisorActionForUser('owner', { ...action, impactType: 'security', effort: 'medium' })
     const [row, event] = batches[0]
-    expect(row.values).toMatchObject({ skill: 'investigate', mode: 'report', source: 'auto-dispatch' })
+    expect(row.values).toMatchObject({ skill: 'cso', mode: 'fix', source: 'auto-dispatch' })
     expect(event.values.title).toBe('Auto-queued: Add setup docs')
     expect(event.values.metadata).toMatchObject({ autoDispatched: true, riskTier: 'tier2' })
   })

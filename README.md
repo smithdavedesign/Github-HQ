@@ -64,12 +64,15 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 |-------|--------|
 | Understand | `/investigate` (root cause, report), `/review` (code review, report) |
 | Build Quality | `/qa-only` (find bugs, report), `/qa` (find + fix bugs, fix) |
-| Ship | `/ship` (implement, fix), `/document-release` (update docs + CHANGELOG, fix) |
+| Ship | `/ship` (implement, fix), `/document-release` (update docs + CHANGELOG, fix), `/cso` (fix security alerts: `npm audit fix`, never `--force`, in every lockfile; no model) |
 | Monitor | `/health` (code quality score, report), `/canary` (unavailable) |
 | Reflect | `/retro` (weekly commit analysis, report) |
 
 **Agent Execution Pipeline**
 - "Run Agent" on any advisor action or gstack skill → an `agent_requests` row in Neon plus a BullMQ job; the factory worker takes it next (requests go ahead of scheduled cycles)
+- **"Fix it" on a security item** (Advisor, dashboard or repo page) queues `/cso`: the factory runs `npm audit fix` (never `--force`) in the root lockfile and every sub-package's, and opens one PR that merges itself once its checks pass. The PR says how many critical and high alerts are left for a breaking upgrade
+- **A repo the factory doesn't work on yet:** the owner clicks "Let the factory work on this repo" (repo page or dashboard Advisor). It joins the allowlist the factory reads each cycle (`repositories.factory_enabled`, on top of `factory/factory.config.json`). The factory's GitHub App needs access to the repo too: GitHub → Settings → Applications → repohq-factory → Configure
+- A finished result (a report, a merged or closed PR, a failure) no longer replaces an Advisor item's button; it stays in Agent History
 - The skill picks the mode: fix skills become one judged draft PR, report skills a read-only investigation with findings
 - Report outcomes (`agent_skill_report` events) store findings; UI shows inline preview
 - Lifecycle guard — prevents duplicate queuing; button hydrates from DB on mount so stage is always accurate

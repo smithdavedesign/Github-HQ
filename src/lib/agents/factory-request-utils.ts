@@ -27,6 +27,7 @@ export const SKILL_MODES: Record<GstackSkill, RequestMode | null> = {
   ship: 'fix',
   qa: 'fix',
   'document-release': 'fix',
+  cso: 'fix',
   review: 'report',
   'qa-only': 'report',
   health: 'report',
@@ -124,6 +125,13 @@ export function queuedEventValues(r: NewRequest, title: string, extra: Record<st
 export function isAllowlisted(repoFullName: string, allowlist: readonly string[]): boolean {
   const name = repoFullName.toLowerCase()
   return allowlist.some(r => r.toLowerCase() === name)
+}
+
+/** The config's allowlist plus the repos the owner opened to the factory from RepoHQ, without duplicates (pure). */
+export function withOpenedRepos(allowlist: readonly string[], opened: readonly string[]): string[] {
+  const out = [...allowlist]
+  for (const r of opened) if (!isAllowlisted(r, out)) out.push(r)
+  return out
 }
 
 export interface WeeklyRepoCandidate {

@@ -22,7 +22,7 @@ import {
   allowedTiers, canUsePaidTier, chooseTier, paidStopReason, routableTiers, classifyRepoData, computeTierStats, nextTier, type ModelTier,
 } from '../src/lib/agents/model-router'
 import { loadConfig, type FactoryConfig } from './lib/config'
-import { buildCheck, judgesBuild, collectPackageInfo, confirmFailures, detectPackageManager, installCommand, withoutScripts, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runAuditIn, lockfileDirs, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
+import { addAudits, buildCheck, judgesBuild, collectPackageInfo, confirmFailures, detectPackageManager, installCommand, withoutScripts, lintProblems, lintScriptAutofixes, planChecks, readRepoBasics, readmeIssue, runAudit, runAuditIn, lockfileDirs, runChecks, type AuditCounts, type CheckResult, type CheckSpec } from './lib/checks'
 import { addPrLabel, ensureValueLabels, humanCommitsOn, prLabels, applyPatchAndCommit, listFiles, patchText, checkoutNewBranch, cloneRepo, checkoutIntegrationBranch, commitAll, createDraftPr, currentBranch, diffAgainst, diffInfo, headSha, prState, pushBranch, repoVisibility, resetWorktree, squashOnto } from './lib/git'
 import { copilotReview, requestCopilotReview } from './lib/copilot-review'
 import { commentOnPr, loadGstackChecklist, localReviewComment, runLocalReview, type LocalReview } from './lib/local-review'
@@ -37,7 +37,7 @@ import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
 
 import { run, type Runner } from './lib/proc'
 import { SANDBOX_MODEL_KEY, Sandbox, dockerAvailable, ensureSandboxImages, sandboxModels, sweepSandboxes } from './lib/sandbox'
-import { healthScores, recordApprovalNeeded, recordAttempt, recordResolution, recordValue } from './lib/sink'
+import { factoryRepos, healthScores, recordApprovalNeeded, recordAttempt, recordResolution, recordValue } from './lib/sink'
 import { prValueFromLabels } from '../src/lib/agents/pr-value'
 import { pendingOutcomes, scoreOutcome } from './lib/outcomes'
 import { failedLog, rankOpportunities, senseRepo } from './lib/sensors'
@@ -46,7 +46,7 @@ import { sweepWorkDirs } from './lib/preflight'
 import { nightShiftReadiness, readinessLine, scheduledPolicy } from './lib/night-shift'
 import { freeQuota, m1Deferred } from './lib/quota'
 import { readManagedModels } from './lib/litellm-config'
-import { buildPrompt, filterTasks, fitLocalContext, investigationPrompt, isEnvironmentFailure, ownerReportTask, ownerRequestedTask, parseFindings, parseReport, redCiTask, reportPrompt, tasksFromScan, type FactoryTask } from './lib/tasks'
+import { buildPrompt, filterTasks, fitLocalContext, investigationPrompt, isEnvironmentFailure, ownerReportTask, ownerRequestedTask, parseFindings, parseReport, redCiTask, reportPrompt, securityFixTask, securityPlan, tasksFromScan, type FactoryTask } from './lib/tasks'
 import { ownerOutcome, pendingOwnerRequests, recordOwnerBlocked, recordOwnerResult, staleBotPrBlock, type OwnerOutcome, type OwnerRequest } from './lib/owner-requests'
 import { claimRequest, loadRequest, mirrorOwnerRequest, requeueMirrored, resolveRequest, resolvedFromRow, toOwnerRequest, type AgentRequestRow, type ResolvedRequest } from './lib/agent-requests'
 import { RESULT_PREFIX, Tracer, finishRun, formatProtocolLine, startRun, type RunResult } from './lib/trace'
@@ -54,7 +54,7 @@ import { isAllowlisted, isOpenRequestStatus } from '../src/lib/agents/factory-re
 import { judge, type DiffInfo, type Verdict } from './lib/verify'
 import { NEEDS_REVIEW_LABEL, adversaryAction, adversarySection, runAdversary, type AdversaryResult } from './lib/adversary'
 import { trimCheck, type JudgeInputRecord } from './lib/judge-fixture'
-import { isArboristCrash, lockfileOnlyRetryArgs, onlyForceFixes } from './lib/npm-audit'
+import { auditFixTargets, isArboristCrash, lockfileOnlyRetryArgs, onlyForceFixes } from './lib/npm-audit'
 
 interface Args { dryRun: boolean; repo: string | null; maxRepos: number; report: boolean; keep: boolean; scheduled: boolean; request: string | null }
 
@@ -108,6 +108,8 @@ async function main(): Promise<RunResult> {
     return { status: 'ok' }
   }
   await openTrace(cfg, args)
+  // Repos the owner opened from RepoHQ join the config's allowlist (factory/lib/sink.ts factoryRepos).
+  cfg = { ...cfg, repos: await factoryRepos(cfg) }
   if (existsSync(path.join(cfg.home, 'PAUSE'))) {
     log(`paused (${path.join(cfg.home, 'PAUSE')} exists) — nothing to do`)
     return { status: 'skipped', reason: 'paused (~/.repohq-factory/PAUSE exists)' }
@@ -122,7 +124,7 @@ async function main(): Promise<RunResult> {
     if (!isOpenRequestStatus(request.status)) return { status: 'skipped', reason: `request is already ${request.status}` }
     const allowed = cfg.repos.find(r => isAllowlisted(request!.repo, [r]))
     if (!allowed) {
-      const reason = `${request.repo} is not on the factory allowlist (factory/factory.config.json "repos")`
+      const reason = `the factory doesn't work on ${request.repo}: open it to the factory from its RepoHQ page, or add it to factory/factory.config.json "repos"`
       await resolveRequest(cfg, resolvedFromRow(request), { status: 'rejected', reason }, runId, new Date())
       tracer.step('request', 'fail', reason)
       return { status: 'ok', reason }
@@ -489,10 +491,28 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     if (!red && signals?.redCi?.length) log(`${repo}: red CI already investigated (${signals.redCi.map(r => r.workflow).join(', ')}) — see the morning report; not re-investigating`)
     if (red && cfg.capabilities['red-ci'] !== 'observe') allTasks.unshift(redCiTask(red, base, await failedLog(repo, red.runId)))
     else if (red) allTasks.unshift(redCiTask(red, base, ''))
+    // "Fix it" on a security item (/cso): npm audit fix (never --force) in the root lockfile and every
+    // sub-package's, as one judged PR, instead of a model's change. Lockfiles four levels down count
+    // (smithdavedesign-portfolio's alerts were in a vendored library three levels down).
+    let security: { root: boolean; dirs: string[]; places: string[] } | null = null
+    if (ownerReq?.skill === 'cso' && ownerReq.mode !== 'report') {
+      const root = !!basics.pkg && basics.files.has('package-lock.json')
+      const dirs = lockfileDirs(dir, 4)
+      const total = addAudits(root ? audit : null, dirs.length ? await runAuditIn(ws.dir, dirs, undefined, ws.run) : null)
+      const plan = securityPlan({ repo, root, dirs, audit: total })
+      if (plan.action === 'reject') {
+        await resolveOwner(cfg, ownerReq, repo, { status: 'rejected', reason: plan.reason })
+        return 0
+      }
+      log(`${repo}: security fix requested — npm audit fix in ${plan.label}${total ? ` (${total.critical} critical, ${total.high} high)` : ''}`)
+      security = { root, dirs, places: plan.places }
+      audit = total
+    }
     // Owner request goes to the very front — explicit human intent outranks sensed work.
     if (ownerReq) {
       allTasks.unshift(ownerReq.mode === 'report'
         ? ownerReportTask(repo, ownerReq.task, ownerReq.taskId, ownerReq.skill)
+        : security ? securityFixTask(ownerReq.taskId, audit, security.places)
         : ownerRequestedTask(repo, ownerReq.task, ownerReq.taskId, ownerReq.skill))
     }
     // An Agent HQ request job does exactly what was asked: no sensed work on the side.
@@ -501,8 +521,10 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     // If the owner task was filtered (an owner-requested PR is already open, or it's a dead end),
     // close the loop so the front door reports it instead of re-queuing it every cycle.
     if (ownerReq && !tasks.some(t => t.ownerTaskId === ownerReq.taskId)) {
-      const ownerKind = ownerReq.mode === 'report' ? 'owner-report' : 'owner-requested'
-      const reason = openKinds.has(`${repo}:${ownerKind}`) ? 'an owner-requested PR is already open for this repo — review or close it first' : 'this request already failed twice (a dead end) — queue a more specific one'
+      const ownerKind = security ? 'deps-audit' : ownerReq.mode === 'report' ? 'owner-report' : 'owner-requested'
+      const reason = !openKinds.has(`${repo}:${ownerKind}`) ? 'this request already failed twice (a dead end) — queue a more specific one'
+        : security ? 'a dependency-fix PR is already open for this repo — merge or close it first'
+        : 'an owner-requested PR is already open for this repo — review or close it first'
       if (!ownerReq.stored) recordOwnerBlocked(cfg.home, { ownerTaskId: ownerReq.taskId, repo, runId, now, reason })
       await resolveOwner(cfg, ownerReq, repo, { status: 'rejected', reason })
     }
@@ -519,7 +541,8 @@ async function improveRepo(cfg: FactoryConfig, repo: string, args: Args, aliases
     const sizeOf = (f: string) => { try { return statSync(path.join(dir, f)).size } catch { return 0 } }
     const visibility = await repoVisibility(repo)
     const dataClass = classifyRepoData({ visibility })
-    const ctx: TaskContext = { cfg, repo, dir, ws, base, pkg: basics.pkg, specs, buildSpec, baseline, args, aliases, dataClass, audit, auditDirs }
+    const ctx: TaskContext = { cfg, repo, dir, ws, base, pkg: basics.pkg, specs, buildSpec, baseline, args, aliases, dataClass, audit,
+      auditDirs: security ? security.dirs : auditDirs, auditRoot: security ? security.root : auditDirs.length === 0 }
 
     // Try at most two tasks per repo: when free cloud quota defers the first,
     // local (M0) work on the next task still gets done this cycle.
@@ -593,8 +616,10 @@ interface TaskContext {
   aliases: string[]
   dataClass: ReturnType<typeof classifyRepoData>
   audit: AuditCounts | null
-  /** Sub-packages audited and fixed lockfile-only when the repo has no root package.json. */
+  /** Sub-packages audited and fixed lockfile-only (when the repo has no root package.json, or for a security fix). */
   auditDirs: string[]
+  /** The root lockfile is audited and fixed too (with an install). */
+  auditRoot: boolean
 }
 
 /** Why the free pool (M1) can't take work right now, or null when it can. */
@@ -738,7 +763,7 @@ async function attempt(
 
   // Inside the sandbox the agent reaches LiteLLM through the egress relay, not localhost.
   const harnessCfg: FactoryConfig = ws.sandbox ? { ...cfg, litellm: { ...cfg.litellm, url: ws.sandbox.litellmUrl, key: SANDBOX_MODEL_KEY } } : cfg
-  const h: HarnessResult = deps ? await npmAuditFix(ws, cfg, ctx.auditDirs) : lintFix ? await runLintFixer(ws, lintSpec, cfg) : await runHarness({
+  const h: HarnessResult = deps ? await npmAuditFix(ws, cfg, ctx.auditDirs, ctx.auditRoot) : lintFix ? await runLintFixer(ws, lintSpec, cfg) : await runHarness({
     tier, model, cwd: ws.dir, prompt, files: task.scoped ? task.files : undefined,
     timeoutMs: tier === 'M0' ? cfg.m0TimeoutMs : undefined,
     // Claude Code's small-model role → local Ollama (falls back to the pool). Measured: zero
@@ -803,7 +828,7 @@ async function attempt(
   // Scripts/deps from every package.json (root + sub-packages like client/, server/).
   const judgeInputs = diff.files.length > 0 ? {
     ...collectPackageInfo(dir), readmeAfter, repo, repoFiles: await listFiles(dir), modelEdits: edits as DiffInfo,
-    audit: deps ? { before: auditBefore, after: ctx.auditDirs.length ? await runAuditIn(ws.dir, ctx.auditDirs, undefined, ws.run) : await runAudit(ws.dir, undefined, ws.run) } : undefined,
+    audit: deps ? { before: auditBefore, after: addAudits(ctx.auditRoot ? await runAudit(ws.dir, undefined, ws.run) : null, ctx.auditDirs.length ? await runAuditIn(ws.dir, ctx.auditDirs, undefined, ws.run) : null) } : undefined,
     lintProblems: lintFix ? { before: lintProblems(baseline.find(b => b.name === 'lint')), after: lintProblems(after.find(a => a.name === 'lint')) } : undefined,
   } : null
   const verdict = judgeInputs
@@ -969,9 +994,9 @@ async function runLintFixer(ws: Workspace, spec: CheckSpec | undefined, cfg: Fac
   }
 }
 
-async function npmAuditFix(ws: Workspace, cfg: FactoryConfig, subDirs: string[] = []): Promise<HarnessResult> {
-  // Sub-packages (no root package.json) are fixed lockfile-only: nothing is installed or run.
-  const targets = subDirs.length ? subDirs.map(d => ({ cwd: path.join(ws.dir, d), args: ['audit', 'fix', '--package-lock-only', '--no-fund'], label: d })) : [{ cwd: ws.dir, args: ['audit', 'fix', '--no-fund'], label: '' }]
+async function npmAuditFix(ws: Workspace, cfg: FactoryConfig, subDirs: string[] = [], root = subDirs.length === 0): Promise<HarnessResult> {
+  // The root is fixed with an install; sub-packages lockfile-only: nothing is installed or run there.
+  const targets = auditFixTargets(ws.dir, subDirs, root)
   const rs = []
   for (const t of targets) {
     let r = await ws.run('npm', t.args, { cwd: t.cwd, timeoutMs: cfg.checkTimeoutMs })

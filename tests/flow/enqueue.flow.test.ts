@@ -139,12 +139,12 @@ describe('Run agent on an advisor action', () => {
     await cancelOpen()
   })
 
-  it('security actions come back as an investigation report', async () => {
+  it("security actions are fixed the safe way (/cso: npm audit fix, never --force), not an investigation", async () => {
     const r = await queueAdvisorAction({
       repoId: s.repoId, repoName: 'repo', action: 'Fix the SSRF in the webhook', impactType: 'security',
       estimatedImpact: '+10 security', effort: 'medium', reasoning: 'Open alert',
     })
-    expect((await q(DB, 'SELECT skill, mode FROM agent_requests WHERE id = $1', [r.taskId]))[0]).toEqual({ skill: 'investigate', mode: 'report' })
+    expect((await q(DB, 'SELECT skill, mode FROM agent_requests WHERE id = $1', [r.taskId]))[0]).toEqual({ skill: 'cso', mode: 'fix' })
     await cancelOpen()
   })
 })
@@ -184,7 +184,7 @@ describe('an open agent PR blocks its repo until it is merged or closed', () => 
 
 describe('who may queue work', () => {
   it('only allowlisted repos', async () => {
-    await expect(queueGstackSkill(s.outsideRepoId, 'health', 'x')).rejects.toThrow(`${FLOW.outsideRepo} is not on the factory allowlist`)
+    await expect(queueGstackSkill(s.outsideRepoId, 'health', 'x')).rejects.toThrow(`The factory doesn't work on ${FLOW.outsideRepo} yet.`)
   })
 
   it('only the factory owner, only when signed in, only when the factory is set up', async () => {

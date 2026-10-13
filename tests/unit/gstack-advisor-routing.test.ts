@@ -7,8 +7,8 @@ import {
 } from '../../src/lib/skills/skill-policy'
 
 describe('resolveAdvisorSkill', () => {
-  it('routes security to investigate', () => {
-    expect(resolveAdvisorSkill('security')).toBe('investigate')
+  it('routes security to the safe fix (/cso: npm audit fix, never --force), not a read-only report', () => {
+    expect(resolveAdvisorSkill('security')).toBe('cso')
   })
 
   it('routes non-security to ship', () => {

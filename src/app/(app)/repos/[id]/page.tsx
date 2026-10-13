@@ -71,8 +71,10 @@ export default async function RepoDetailPage({ params }: Props) {
 
   // Agent HQ (Phase 81): the factory takes requests from its owner, for allowlisted repos only.
   const session = await auth()
-  const factory = session?.user?.id ? factoryAccess(session.user.id, repo.fullName) : { ok: false as const, reason: 'Sign in to queue agent work.' }
+  const factory = session?.user?.id ? factoryAccess(session.user.id, repo.fullName, repo.factoryEnabled) : { ok: false as const, reason: 'Sign in to queue agent work.' }
   const factoryReason = factory.ok ? null : factory.reason
+  // The factory's owner can open a repo it doesn't work on yet, from the Advisor ("Let the factory work on this repo").
+  const canOpenFactory = !factory.ok && !!session?.user?.id && factoryAccess(session.user.id).ok
 
   const metrics = repo.metrics
   const stack = repo.techStack
@@ -429,6 +431,9 @@ export default async function RepoDetailPage({ params }: Props) {
               qa:                 `Find and fix bugs in ${repo.name}`,
               ship:               repoActions[0]?.action ?? `Ship latest changes in ${repo.name}`,
               'document-release': `Update README and docs to match what was shipped in ${repo.name}`,
+              cso:                openAlerts.length > 0
+                ? `Fix ${openAlerts.length} critical/high security alert${openAlerts.length > 1 ? 's' : ''} in ${repo.name} (npm audit fix, never --force)`
+                : `Fix the vulnerable dependencies in ${repo.name} (npm audit fix, never --force)`,
               health:             `Run a full code health check on ${repo.name}${stack?.language ? ` (${stack.language})` : ''} — type checking, tests, lint, and dead code, covering whichever of these apply to this project's stack`,
               canary:             repo.homepage ? `Check ${repo.homepage} for console errors and performance issues` : `Monitor ${repo.name} deployments for errors`,
               retro:              `Summarise this week's commits and engineering patterns in ${repo.name}`,
@@ -441,6 +446,7 @@ export default async function RepoDetailPage({ params }: Props) {
                 defaultObjectives={defaultObjectives}
                 factoryEnabled={factory.ok}
                 factoryReason={factoryReason}
+                canOpenFactory={canOpenFactory}
                 skillHistory={skillHistory}
               />
             )
@@ -451,6 +457,9 @@ export default async function RepoDetailPage({ params }: Props) {
             actions={advisor?.actions?.filter(a => a.repoId === repoId) ?? []}
             factoryEnabled={factory.ok}
             factoryReason={factoryReason}
+            canOpenFactory={canOpenFactory}
+            repoId={repoId}
+            repoName={repo.name}
             generatedAt={advisor?.generatedAt}
             accuracyStats={accuracyStats}
           />

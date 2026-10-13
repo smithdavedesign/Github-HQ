@@ -25,11 +25,14 @@ describe('factoryAccess', () => {
     expect(factoryAccess('someone-else')).toEqual({ ok: false, reason: expect.stringMatching(/owner only/) })
   })
 
-  it('only for repos on the factory allowlist (case-insensitive)', () => {
+  it('only for repos on the factory allowlist (case-insensitive), or ones the owner opened to it', () => {
     process.env.FACTORY_USER_ID = 'owner'
     const listed = factoryConfig.repos[0]
     expect(factoryAccess('owner', listed.toUpperCase())).toEqual({ ok: true })
-    expect(factoryAccess('owner', 'smithdavedesign/not-a-factory-repo')).toEqual({ ok: false, reason: expect.stringMatching(/allowlist/) })
+    expect(factoryAccess('owner', 'smithdavedesign/not-a-factory-repo')).toEqual({ ok: false, reason: "The factory doesn't work on smithdavedesign/not-a-factory-repo yet." })
+    // "Let the factory work on this repo" (repositories.factory_enabled).
+    expect(factoryAccess('owner', 'smithdavedesign/not-a-factory-repo', true)).toEqual({ ok: true })
+    expect(factoryAccess('someone-else', 'smithdavedesign/not-a-factory-repo', true).ok, 'still the owner only').toBe(false)
   })
 
   it('reads the allowlist from factory/factory.config.json (same repo, no copy)', () => {

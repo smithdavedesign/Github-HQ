@@ -19,7 +19,7 @@ import { listAliases } from './lib/litellm-ops'
 import { run } from './lib/proc'
 import { freeQuota } from './lib/quota'
 import { buildMorningReport, factoryCantFixOf, cycleLogEntry, emailFailureReason, isCycleLog, toMime, type MorningReport, type RoleId, type RoleSection } from './lib/report'
-import { factoryActivityOf, latestHealthSnapshot, recentSyncs, recordNotification, repoSignalsOf, requestOutcomes } from './lib/sink'
+import { factoryActivityOf, factoryRepos, latestHealthSnapshot, recentSyncs, recordNotification, repoSignalsOf, requestOutcomes } from './lib/sink'
 import { parseGhSearchPrs, type OpenPr } from '../src/lib/agents/open-prs'
 import { nextActions } from '../src/lib/portfolio/next-actions'
 import { runPreflight } from './lib/preflight'
@@ -43,7 +43,9 @@ async function systemEventsSummary(cfg: ReturnType<typeof loadConfig>) {
 
 async function main() {
   const argv = process.argv.slice(2)
-  const cfg = loadConfig()
+  const base = loadConfig()
+  // Repos the owner opened from RepoHQ are reported on too (factory/lib/sink.ts factoryRepos).
+  const cfg = { ...base, repos: await factoryRepos(base) }
   const now = new Date()
   const entries = readLedger(cfg.home)
   const usage = todaysUsage(entries, now)

@@ -11,6 +11,7 @@ import type { AttemptEntry } from './ledger'
 import type { RequestHealth } from './system-health'
 import type { SyncRun } from '../../src/lib/health/sync-health'
 import { PIPELINES, type TaskKind } from './tasks'
+import { withOpenedRepos } from '../../src/lib/agents/factory-request-utils'
 
 /**
  * Optional mirror of factory activity into RepoHQ (same direct-to-Neon pattern
@@ -52,6 +53,24 @@ export async function safely(label: string, fn: () => Promise<void>): Promise<vo
   } catch (err) {
     console.warn(`[factory sink] ${label} failed:`, err instanceof Error ? err.message : err)
   }
+}
+
+/**
+ * The repos the factory works on: factory.config.json's allowlist plus the ones the owner opened from
+ * RepoHQ ("Let the factory work on this repo", repositories.factory_enabled). The config's list alone
+ * when RepoHQ can't be reached, so a database outage never widens or blocks the cycle.
+ */
+export async function factoryRepos(cfg: FactoryConfig): Promise<string[]> {
+  const d = db(cfg)
+  const opened: string[] = []
+  if (d) {
+    await safely('factoryRepos', async () => {
+      const rows = await d.select({ fullName: schema.repositories.fullName }).from(schema.repositories)
+        .where(and(eq(schema.repositories.userId, cfg.repohq.userId!), eq(schema.repositories.factoryEnabled, true)))
+      opened.push(...rows.map(r => r.fullName))
+    })
+  }
+  return withOpenedRepos(cfg.repos, opened)
 }
 
 /** RepoHQ health score per repo (lower-cased full name) for opportunity ranking; empty without the sink. */

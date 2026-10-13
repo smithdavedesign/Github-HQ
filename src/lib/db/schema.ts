@@ -133,6 +133,9 @@ export const repositories = pgTable('repositories', {
   abandonmentReason: text('abandonment_reason'),
   // Phase 37: Stripe product mapping
   stripeProductId: text('stripe_product_id'),
+  // The owner let the factory work on this repo from RepoHQ ("Let the factory work on this repo"), on top
+  // of factory/factory.config.json's allowlist. The factory reads it each cycle (factory/lib/sink.ts).
+  factoryEnabled: boolean('factory_enabled').notNull().default(false),
   // No demand | Too competitive | Too much maintenance | Lost interest | Merged | Pivoted,
   // Revenue & cost fields (Phase 3)
   mrr: numeric('mrr', { precision: 10, scale: 2 }).default('0'),

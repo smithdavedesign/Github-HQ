@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { QueueButton } from '@/components/dashboard/queue-button'
+import { OpenFactoryButton } from '@/components/dashboard/open-factory-button'
 import { Sparkles, ChevronDown, ChevronUp, CheckCircle2, ArrowRight, Clock } from 'lucide-react'
 import Link from 'next/link'
 import { formatDistanceToNow } from '@/lib/utils'
@@ -37,11 +38,16 @@ interface RepoAdvisorSectionProps {
   /** The factory takes requests for this repo (owner + allowlist); otherwise why not. */
   factoryEnabled: boolean
   factoryReason?: string | null
+  /** The factory's owner can open this repo to it from here ("Let the factory work on this repo"). */
+  canOpenFactory?: boolean
+  repoId?: number
+  repoName?: string
   generatedAt?: string
   accuracyStats?: AccuracyStats[]
 }
 
-export function RepoAdvisorSection({ actions, factoryEnabled, factoryReason, generatedAt, accuracyStats }: RepoAdvisorSectionProps) {
+export function RepoAdvisorSection({ actions, factoryEnabled, factoryReason, canOpenFactory = false, repoId, repoName, generatedAt, accuracyStats }: RepoAdvisorSectionProps) {
+  const openButton = !factoryEnabled && canOpenFactory && repoId ? <OpenFactoryButton repoId={repoId} repoName={repoName ?? 'this repo'} /> : null
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set())
 
   function toggleCard(i: number) {
@@ -147,8 +153,9 @@ export function RepoAdvisorSection({ actions, factoryEnabled, factoryReason, gen
                   </ul>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex items-center gap-2 pt-1 flex-wrap">
                   {factoryEnabled && <QueueButton action={action} />}
+                  {openButton}
                   {!factoryEnabled && (
                     <p className="text-[10px] text-muted-foreground">
                       {factoryReason ?? 'The factory does not take requests for this repo.'}
@@ -162,10 +169,11 @@ export function RepoAdvisorSection({ actions, factoryEnabled, factoryReason, gen
             {!isExpanded && (
               <div className="flex items-center gap-2 px-3 pb-3 -mt-1 ml-9">
                 {factoryEnabled && <QueueButton action={action} />}
-                {!factoryEnabled && (
+                {openButton}
+                {!factoryEnabled && !openButton && (
                   <span className="text-[10px] text-muted-foreground flex items-center gap-1" title={factoryReason ?? undefined}>
                     <Clock className="w-2.5 h-2.5" />
-                    Not on the factory allowlist
+                    The factory doesn&apos;t work on this repo
                   </span>
                 )}
               </div>

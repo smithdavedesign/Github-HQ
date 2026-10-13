@@ -1,6 +1,6 @@
 import { toNum } from '@/lib/utils'
 import { loadFactoryKpis } from '@/lib/agents/factory-kpis-query'
-import { factoryRepoIdsFor } from '@/lib/agents/factory-queue'
+import { factoryAccess, factoryRepoIdsFor } from '@/lib/agents/factory-queue'
 import { getDashboardStats, getRepositories, getRepositoriesSlim, getOpportunityData, getLifecycleDistribution, getPortfolioValuation, getLatestAdvisorContent, getArchiveCandidates, getTimeAllocation, getLatestCeoReport, getConcentrationRisk, getProfileRecommendations, getShipItWarnings, getAgentStats, getPortfolioCostBreakdown } from '@/lib/actions/repositories'
 import { getPortfolioScoreTrend } from '@/lib/health/portfolio-snapshot'
 import { getWeeklyDiff } from '@/lib/actions/weekly-diff'
@@ -170,7 +170,7 @@ export default async function DashboardPage() {
 
       <LifecycleDistribution distribution={lifecycleDistribution} />
 
-      <AdvisorCard advisor={advisor} timeAllocation={timeAllocation} hoursPerWeek={userRecord?.hoursPerWeek ?? 10} factoryRepoIds={factoryRepoIds} accuracyStats={accuracyStats} />
+      <AdvisorCard advisor={advisor} timeAllocation={timeAllocation} hoursPerWeek={userRecord?.hoursPerWeek ?? 10} factoryRepoIds={factoryRepoIds} canOpenFactory={factoryAccess(session.user.id).ok} accuracyStats={accuracyStats} />
 
       {/* ── MORE INSIGHTS (unused so far: collapsed until they earn a place, audit §9.3) ── */}
       <CollapsibleSection label="More insights" storageKey="dashboard-more-insights-open" defaultOpen={false}>

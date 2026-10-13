@@ -5,21 +5,22 @@
 export type GstackSkill =
   | 'investigate' | 'review'
   | 'qa-only' | 'qa'
-  | 'ship' | 'document-release'
+  | 'ship' | 'document-release' | 'cso'
   | 'health' | 'canary'
   | 'retro'
 
 const VALID_SKILLS = new Set<GstackSkill>([
   'investigate', 'review', 'qa-only', 'qa',
-  'ship', 'document-release', 'health', 'canary', 'retro',
+  'ship', 'document-release', 'cso', 'health', 'canary', 'retro',
 ])
 
 export type AdvisorImpactType = 'opportunity' | 'revenue' | 'security' | 'health'
 export type SkillPolicyTier = 'report-only' | 'analyze+fix' | 'high-risk'
 export type ConfidenceBand = 'low' | 'medium' | 'high'
 
+/** A security item is fixed the safe way (/cso: npm audit fix, never --force); it used to get a read-only /investigate. */
 export function resolveAdvisorSkill(impactType: AdvisorImpactType): GstackSkill {
-  return impactType === 'security' ? 'investigate' : 'ship'
+  return impactType === 'security' ? 'cso' : 'ship'
 }
 
 const REPORT_ONLY_SKILLS = new Set<GstackSkill>(['health', 'qa-only', 'review', 'canary', 'retro'])
@@ -216,6 +217,12 @@ export const SKILL_META: Record<GstackSkill, SkillMeta> = {
     description: 'Implements the objective as one small change, runs the repo\'s checks and opens a draft PR. Use when you have a clear task.',
     icon: 'GitPullRequest', iconColor: 'text-indigo-500',
     typeLabel: 'Creates PR', typeBadgeColor: 'bg-indigo-50 text-indigo-600 border-indigo-200',
+  },
+  cso: {
+    label: '/cso', phase: 'Ship', type: 'pr',
+    description: 'Fixes security alerts the safe way: npm audit fix (never --force) in the repo and every sub-package lockfile, as one judged PR. What only a breaking upgrade fixes is left, and the PR says how much.',
+    icon: 'ShieldCheck', iconColor: 'text-red-500',
+    typeLabel: 'Creates PR', typeBadgeColor: 'bg-red-50 text-red-600 border-red-200',
   },
   'document-release': {
     label: '/document-release', phase: 'Ship', type: 'pr',
