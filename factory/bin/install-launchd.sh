@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Deploy the factory to ~/.repohq-factory/app and install (or remove with --uninstall) its launchd jobs.
 # Re-run after factory changes merge to redeploy: it deploys origin/main, whatever branch this checkout
-# is on. --head deploys this checkout's HEAD instead (testing a branch on purpose).
+# is on. --head deploys this checkout's HEAD instead (testing a branch on purpose). It first waits for a
+# running factory job to finish (up to 20 minutes), since restarting the worker kills it; --now skips that.
 #
 # With a REDIS_URL (Agent HQ, roadmap Phase 81 — env, keychain, or REDIS_URL in .env.local):
 #   com.repohq.factory.worker — the BullMQ worker (factory/worker.ts), always on (KeepAlive). It runs
@@ -69,6 +70,20 @@ worker_plist() {
 </plist>
 PLIST
 }
+
+# Restarting the worker kills the job it's running (2026-10-13: a deploy cut off a cycle mid-attempt; it could
+# as easily be an owner's request). Wait for it first, up to 20 minutes. --now or --uninstall skip the wait.
+wait_for_running_job() {
+  case " $* " in *" --now "*|*" --uninstall "*) return 0 ;; esac
+  local waited=0
+  while pgrep -f 'factory/run[.]ts --scheduled' >/dev/null 2>&1; do
+    if [ "$waited" -ge 1200 ]; then echo "a factory job is still running after 20 min: deploying anyway"; return 0; fi
+    [ "$waited" -eq 0 ] && echo "a factory job is running: waiting for it to finish (up to 20 min; --now skips this)"
+    sleep 15
+    waited=$((waited + 15))
+  done
+}
+wait_for_running_job "$@"
 
 CALENDAR_LABELS="com.repohq.factory.cycle com.repohq.factory.report com.repohq.factory.scout"
 LABELS="$CALENDAR_LABELS com.repohq.factory.worker com.user.system-events com.user.factory-backup"

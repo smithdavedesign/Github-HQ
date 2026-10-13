@@ -59,6 +59,7 @@ npm run factory:morning -- --no-send   # build the morning report and print it
 bash factory/bin/setup-email.sh you@gmail.com   # one-time: Gmail app password → keychain, test email
 bash factory/bin/install-launchd.sh     # deploy origin/main (--head: this checkout's HEAD); with REDIS_URL: the always-on worker; without: the calendar (cycles hourly 20:00–06:00 + 12:00/16:00 on AC, report 06:45, scout Sun 17:10)
 bash factory/bin/install-launchd.sh --uninstall
+bash factory/bin/install-launchd.sh --now     # deploy without waiting: by default it waits up to 20 min for a running job, since restarting the worker kills it
 touch ~/.repohq-factory/PAUSE           # kill switch (rm to resume)
 ```
 
