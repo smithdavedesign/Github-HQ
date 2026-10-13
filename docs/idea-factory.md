@@ -170,7 +170,10 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - **When it runs:** by itself once the MVP is complete and the site isn't launch-ready (`policy.golive.auto`), at most `policy.golive.maxPerDay` (1), closest to money first, never on a tick that already built. Or from **Get it launch-ready** on the Ideas page, once M1 is merged. A merged go-live sets `state.golive`, and isn't built again: from then on the audit says what's left.
   - **After the merge:** the tick finds the production URL with the Vercel CLI (`vercel ls <project> --prod` then `vercel inspect`, the shortest alias, in `policy.vercelScope`, cached for an hour). It sets it as the repo's GitHub homepage if none is set (never overwriting one), which RepoHQ syncs.
   - **The live audit** (`auditLaunch`, every 6 hours, or when the URL changes) checks 9 things: HTTPS, the home page answering, a title, a meta description, `og:image`, `robots.txt`, `sitemap.xml`, `/privacy` and `/terms`. Speed under 2 s and JSON-LD are reported but don't count. All 9 passing ticks **Launch-ready**, and its evidence lists what's missing ("5/9 launch checks · missing: …"). Becoming launch-ready, and a check that used to pass failing, are logged with the tick.
-  - **What stays the owner's:** the price, creating the Stripe payment link (it's money, so the broker only files the request), and posting the launch.
+  - **What stays the owner's:** the price, the go-ahead to charge, and posting the launch.
+    - The build only files a request for the payment link.
+    - With the live key the owner stored, the broker's `provision stripe <repo> <price> --live` makes the link and webhook, puts them in Vercel and redeploys. The success page and webhook go on the public production domain. tiebreak went live this way at $5 once on 2026-10-13.
+    - Then the live product is mapped to the repo in RepoHQ, which turns the checklist's payment step green.
 - **Build order:** build queues (the weekly slot, approved builds) are ordered by `revenueScore`, so the idea closest to its first dollar goes first, not the one approved first. Demand evidence counts most: a demand test that passed, then signups. Then a plan with a price, then checklist progress, then the review's score.
 
 **The growth loop** (step 5d; idea-factory `lib/growth.js`, `bin/idea-growth.js`, `policy.growth`; [growth-loop-prd.md](growth-loop-prd.md)):
@@ -193,7 +196,7 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
 - **One mission a day per product,** from 10:00, at most `maxMissionsPerDay` (2) a day and `maxBuildsPerWeek` (2) growth builds a week. Never on a tick that already built or wrote a revenue plan. Never while something waits for the owner: an open growth PR, or a kit nobody has posted from. `policy.growth.auto: false` stops new missions; `tick --growth` ignores the 10:00 start in tests.
 - **The missions:**
   - **A growth build** (`buildOne({growth})`, branch `growth-<experiment id>`, one PR "Growth: <slug> (<kind>)", merged by the pipeline once its checks pass):
-    - one change, on Sonnet at high effort, in the sandbox, with no free-pool fallback;
+    - one change, on Sonnet at high effort, in the sandbox, with no free-pool fallback: its sandbox allows no models, and the egress refuses every model call;
     - the brief goes in the build-input file: the mission, the funnel, `LEARNINGS.md`, `PLAYBOOK.md`'s Rules, and how the same kind of experiment went on other products;
     - the builder keeps the beacon, adds tests, appends to `GROWTH.md` and writes honest copy only;
     - it may only file broker requests;
