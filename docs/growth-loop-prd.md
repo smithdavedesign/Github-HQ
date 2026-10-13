@@ -126,7 +126,9 @@ Everything else the system does stays out of the block.
 
 ## Guardrails
 
-- **Money:** $0. Claude runs on the subscription only, and growth runs never fall back to the shared free
+- **Money:** agents spend nothing. Since 2026-10-12 the owner may fund a product forward (`policy.ownerBudget`, $300 a
+  product): a launch kit can propose a paid option (what, how much, targeting, what it should prove), and he
+  decides and pays. Claude runs on the subscription only, and growth runs never fall back to the shared free
   model pool.
 - **Never post or spend:** kit runs can write one file, with no shell and no MCP. Builds run in the
   sandbox and open PRs. A growth build can only ask David for a credential, never create one.

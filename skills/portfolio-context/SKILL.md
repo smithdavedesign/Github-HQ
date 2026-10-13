@@ -2,7 +2,7 @@
 name: portfolio-context
 description: |
   The big picture of the owner's system: what it's for (products people use and pay for, near-zero
-  owner overhead, no financial risk), how the parts fit (RepoHQ, the factory, the idea pipeline,
+  owner overhead, little financial risk), how the parts fit (RepoHQ, the factory, the idea pipeline,
   the Resource Center, the local AI stack, OpenClaw), the rules every part follows (money, models,
   data classes, who merges), and how to look up live context. Use at the start of work in any of
   the owner's repos (Github-HQ/RepoHQ, idea-factory, resource-center, ai-stack, OpenClaw
