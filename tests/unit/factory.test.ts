@@ -240,6 +240,13 @@ describe('ledger', () => {
     const deps = { tier: 'M0' as const, harness: 'npm-audit-fix', kind: 'deps-audit', outcome: 'failed' as const }
     expect([...deadEnds([att(deps), att(deps)], NOW)]).toEqual(['o/r:deps-audit'])
   })
+  it('dead ends: two stops at the paid tier count, so a task nothing free can do stops coming back', () => {
+    const stop = (at = '2026-10-05T10:00:00Z'): LedgerEntry => ({ type: 'approval_needed', runId: 'r', at, repo: 'o/r', kind: 'docs-readme', reason: 'paid tier disabled (monthlyBudgetUsd = 0)', attemptedFree: true })
+    expect(deadEnds([stop()], NOW).size).toBe(0)
+    expect([...deadEnds([stop(), stop()], NOW)]).toEqual(['o/r:docs-readme'])
+    expect(deadEnds([stop('2026-09-01T00:00:00Z'), stop('2026-09-02T00:00:00Z')], NOW).size).toBe(0) // outside the window
+    expect(deadEnds([stop(), stop(), att({ kind: 'docs-readme', outcome: 'verified', at: NOW.toISOString() })], NOW).size).toBe(0)
+  })
   it('dead ends: an owner request only dead-ends itself, not later requests of its kind', () => {
     const failed = (ownerTaskId: string) => att({ kind: 'owner-requested', outcome: 'failed', ownerTaskId })
     // Two requests on the same repo, one failure each: neither is a dead end.

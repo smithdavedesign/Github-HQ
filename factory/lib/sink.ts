@@ -242,6 +242,11 @@ export async function recordApprovalNeeded(cfg: FactoryConfig, repo: string, tit
   const d = db(cfg)
   if (!d) return
   await safely('recordApprovalNeeded', async () => {
+    // One notice a day per task: the same stop used to post this every cycle (2026-10-13).
+    const recent = await d.select({ id: schema.notifications.id }).from(schema.notifications)
+      .where(and(eq(schema.notifications.userId, cfg.repohq.userId!), eq(schema.notifications.title, title), gte(schema.notifications.createdAt, new Date(Date.now() - 86_400_000))))
+      .limit(1)
+    if (recent.length) return
     const repoId = await repoIdFor(d, cfg.repohq.userId!, repo)
     await d.insert(schema.notifications).values({
       userId: cfg.repohq.userId!,
