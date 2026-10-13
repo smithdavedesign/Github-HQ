@@ -61,11 +61,12 @@ left for him) and posting; each morning he reviews what the agents merged and re
 
 ## Rules every part follows
 
-- **Money:** agents never spend and hold no card, so their side is $0 by default (free tiers: Vercel Hobby, Neon free).
+- **Money:** agents never spend and hold no card, so their side is $0 by default (Neon free; the products' Vercel team is on Pro, the owner's $20 a month since 2026-10-13).
   The owner may put up to a few hundred dollars into moving a product forward (his call, 2026-10-12;
   `idea-factory/policy.json` `ownerBudget.perProductUsd`, $300): an agent proposes the spend and what it
-  should buy (ads to fill a demand test, a domain, a paid tier), and he approves and pays. A product that takes
-  payments needs a host that allows commercial use, which Vercel Hobby doesn't.
+  should buy (ads to fill a demand test, a domain, a paid tier), and he approves and pays. Vercel Pro allows commercial
+  use, so a product takes payments where it's hosted. Gemini keys come from a GCP project with no billing account
+  (`idea-agents-5e3bf9`), so they can't cost anything.
 - **Models:**
   - Claude work runs on the owner's **Claude subscription** through headless Claude Code, never API
     credit.
