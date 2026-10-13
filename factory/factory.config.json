@@ -1,30 +1,22 @@
 {
   "repos": [
     "smithdavedesign/Github-HQ",
-    "smithdavedesign/Open-Travel",
-    "smithdavedesign/family-tree",
-    "smithdavedesign/AI-Trend-Tracker",
-    "smithdavedesign/go-adventure",
-    "smithdavedesign/algorithms-docs",
-    "smithdavedesign/gitHub-cron-job-app",
-    "smithdavedesign/love-letter-ai-stalker",
-    "smithdavedesign/smithdavedesign"
+    "smithdavedesign/tiebreak"
   ],
   "allowFreeCloud": [],
   "monthlyBudgetUsd": 0,
   "maxPrsPerCycle": 1,
-  "_comment": "Allowlist of repos the factory may open PRs on (and merge them, see autonomy). gitHub-cron-job-app is excluded: its README is a cron heartbeat file.",
+  "_comment": "Allowlist of repos the factory may open PRs on (and merge them, see autonomy): RepoHQ and the live products that have CI. Since 2026-10-12 it no longer maintains dormant personal repos (Open-Travel, family-tree and six others): in the 14 days before, 201 attempts produced 22 merges, mostly lint and docs, and a quarter hit the free models' rate limits. Add a live product once it has a CI workflow (codespend has none yet), since a repo without checks merges on the judge alone. Repos opened from RepoHQ's repo page (repositories.factory_enabled) come on top of this list.",
   "smoke": {
     "enabled": true,
     "maxPerCycle": 3,
     "vercelScope": "team_ONe0JJaVwgXIAUMHZ7OUgkku",
     "paths": {
-      "smithdavedesign/Open-Travel": [
-        "/",
-        "/login"
-      ],
       "smithdavedesign/Github-HQ": [
         "/login"
+      ],
+      "smithdavedesign/tiebreak": [
+        "/"
       ]
     }
   },

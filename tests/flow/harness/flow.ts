@@ -123,6 +123,8 @@ export interface Seeded {
   otherRepoId: number
   /** The owner's repos on the allowlist, `repoId` first (one open request per repo: specs take one each). */
   allowlistedRepoIds: number[]
+  /** The same repos with their full names. */
+  allowlistedRepos: { id: number; fullName: string }[]
 }
 
 /** Two users (the factory owner and someone else), their sessions, and repos in and out of the allowlist. */
@@ -143,11 +145,15 @@ export async function seed(database: string, opts: { allowlisted?: number } = {}
   const repoId = await repo(FLOW.ownerId, FLOW.allowlistedRepo, 9_001)
   const outsideRepoId = await repo(FLOW.ownerId, FLOW.outsideRepo, 9_002)
   const otherRepoId = await repo(FLOW.otherUserId, FLOW.allowlistedRepo, 9_003)
-  const allowlistedRepoIds = [repoId]
-  for (let i = 1; i < Math.min(opts.allowlisted ?? 1, FLOW.allowlist.length); i++) {
-    allowlistedRepoIds.push(await repo(FLOW.ownerId, FLOW.allowlist[i], 9_100 + i))
+  const allowlistedRepos = [{ id: repoId, fullName: FLOW.allowlistedRepo }]
+  for (let i = 1; i < (opts.allowlisted ?? 1); i++) {
+    // Past the config's short list, a repo the owner opened from RepoHQ (repositories.factory_enabled) is allowlisted too.
+    const fullName = FLOW.allowlist[i] ?? `flow-owner/opened-${i}`
+    const id = await repo(FLOW.ownerId, fullName, 9_100 + i)
+    if (!FLOW.allowlist[i]) await q(database, 'UPDATE repositories SET factory_enabled = true WHERE id = $1', [id])
+    allowlistedRepos.push({ id, fullName })
   }
-  return { ownerSession, otherSession, repoId, outsideRepoId, otherRepoId, allowlistedRepoIds }
+  return { ownerSession, otherSession, repoId, outsideRepoId, otherRepoId, allowlistedRepoIds: allowlistedRepos.map(r => r.id), allowlistedRepos }
 }
 
 /** A BullMQ handle on the factory queue, for assertions and test-only manipulation. */

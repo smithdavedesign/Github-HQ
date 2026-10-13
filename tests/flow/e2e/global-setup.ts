@@ -25,12 +25,12 @@ export default async function globalSetup() {
   await closePools()
 
   const name = (fullName: string) => fullName.split('/')[1]
-  const ids = s.allowlistedRepoIds
+  const [report, pr, controls] = s.allowlistedRepos
   const data: E2eSeed = {
     ownerId: FLOW.ownerId,
-    reportRepo: { id: ids[0], name: name(FLOW.allowlist[0]) },
-    prRepo: { id: ids[1], name: name(FLOW.allowlist[1]) },
-    controlsRepo: { id: ids[2], name: name(FLOW.allowlist[2]) },
+    reportRepo: { id: report.id, name: name(report.fullName) },
+    prRepo: { id: pr.id, name: name(pr.fullName) },
+    controlsRepo: { id: controls.id, name: name(controls.fullName) },
     outsideRepo: { id: s.outsideRepoId, name: name(FLOW.outsideRepo) },
     otherRepo: { id: s.otherRepoId, name: name(FLOW.allowlistedRepo) },
   }
