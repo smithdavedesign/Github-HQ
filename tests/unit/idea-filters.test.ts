@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  cardTags, credibilityOf, filterIdeas, filtersActive, filtersQuery, parseIdeaFilters, sortIdeas, tagCounts, topicTags, type IdeaFilters,
+  activeFilters, cardTags, credibilityOf, filterIdeas, filtersActive, filtersQuery, parseIdeaFilters, sortIdeas, tagCounts, topicTags, type IdeaFilters,
 } from '../../src/lib/ideas/idea-filters'
 import type { IdeaView } from '../../src/lib/ideas/idea-utils'
 
@@ -96,5 +96,18 @@ describe('Ideas page filters: tags', () => {
 
   it('a card shows its group tags in group order, labelled', () => {
     expect(cardTags(idea('c', { tags: ['ai', 'pets', 'reach:outbound', 'fun'] })).map(t => t.label)).toEqual(['Fun', 'Cold outreach', 'AI'])
+  })
+})
+
+describe('activeFilters (the filter bar\'s removable chips)', () => {
+  it('lists score, effort, tags and source, each with what removing it changes', () => {
+    const f = { sort: 'score' as const, tags: ['fun', 'reach:viral', 'compliance'], effort: ['low'], minScore: 6, q: 'gift', mine: true }
+    const a = activeFilters(f)
+    expect(a.map(x => x.label)).toEqual(['Score 6+', 'Low effort', 'Fun', 'Spreads itself', 'compliance', 'Sent by me'])
+    expect(a.find(x => x.label === 'Spreads itself')!.remove).toEqual({ tags: ['fun', 'compliance'] })
+    expect(a.find(x => x.label === 'Score 6+')!.remove).toEqual({ minScore: null })
+  })
+  it('is empty with nothing picked; a search shows in its own box, not as a chip', () => {
+    expect(activeFilters({ sort: 'newest', tags: [], effort: [], minScore: null, q: 'gift', mine: false })).toEqual([])
   })
 })

@@ -178,11 +178,14 @@ test.describe('Ideas page', () => {
     // By score Alpha (8) leads; by credibility Beta (demand 6) does.
     expect(await order()).toEqual(['Alpha', 'Beta'])
 
-    // A tag chip filters and lands in the URL; Clear brings everything back.
+    // The filters open from one button; a tag chip filters, lands in the URL and shows as a removable chip.
+    await filters.getByRole('button', { name: /^Filters/ }).click()
     await filters.getByRole('button', { name: /^Spreads itself/ }).click()
     await expect(page).toHaveURL(/tags=reach%3Aviral/)
     await expect(alpha).toBeVisible()
     await expect(beta).toHaveCount(0)
+    await expect(filters.getByRole('button', { name: 'Remove Spreads itself' })).toBeVisible()
+    await expect(filters.getByTestId('idea-filter-count')).toHaveText(/^1 of \d+ ideas$/)
     await filters.getByRole('button', { name: 'Clear filters' }).click()
     await expect(beta).toBeVisible()
 
@@ -197,7 +200,7 @@ test.describe('Ideas page', () => {
     await expect(alpha).toBeVisible()
     await expect(beta).toHaveCount(0)
     await page.goto('/ideas?sort=credibility')
-    await expect(filters.getByRole('button', { name: 'Credibility' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(filters.getByRole('combobox', { name: 'Sort ideas' })).toContainText('Credibility')
     expect(await order()).toEqual(['Beta', 'Alpha'])
   })
 
