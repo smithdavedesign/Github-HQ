@@ -41,6 +41,9 @@ export interface IdeaRun {
   manual: boolean
   prUrl: string | null
   summary: string
+  /** A build's time limit and the milestones it set out to build (its start event says). */
+  timeoutMinutes: number | null
+  planned: string[] | null
 }
 
 const HOUR = 3_600_000
@@ -70,16 +73,66 @@ export function ideaRuns(events: LogEvent[]): IdeaRun[] {
       manual: d.manual === true || /Start build now/.test(e.message),
       prUrl: e.subject?.pr ?? str(d.prUrl),
       summary: e.message,
+      timeoutMinutes: typeof d.timeoutMinutes === 'number' ? d.timeoutMinutes : null,
+      planned: Array.isArray(d.planned) ? d.planned.filter((m): m is string => typeof m === 'string') : null,
     })
   }
   return out.sort((a, b) => b.at.getTime() - a.at.getTime())
 }
 
-/** Builds that started and haven't reported back, within their timeout plus a margin. */
+/**
+ * Builds that started and haven't reported back, within their own time limit (an MVP run's is hours; its
+ * start event says) plus a margin for the checks and the PR.
+ */
 export function runningBuilds(runs: IdeaRun[], now: Date, timeoutMinutes = 45): IdeaRun[] {
   const latest = new Map<string, IdeaRun>()
   for (const r of runs) if (r.kind === 'build' && r.idea && !latest.has(r.idea)) latest.set(r.idea, r) // newest first
-  return [...latest.values()].filter(r => r.status === 'start' && now.getTime() - r.at.getTime() < (timeoutMinutes + 15) * 60_000)
+  return [...latest.values()].filter(r => r.status === 'start' && now.getTime() - r.at.getTime() < ((r.timeoutMinutes ?? timeoutMinutes) + 60) * 60_000)
+}
+
+export interface BuildProgress { step: number; steps: number; label: string; at: Date }
+
+/** The newest step a build reported since it started (idea-factory buildOne: a step per milestone, then the checks and the PR). */
+export function buildProgress(events: LogEvent[], idea: string, since: Date): BuildProgress | null {
+  let best: BuildProgress | null = null
+  for (const e of events) {
+    if (e.system !== 'idea-factory' || e.component !== 'build' || e.subject?.idea !== idea || e.ts < since) continue
+    const p = (e.data ?? {}).progress as { step?: unknown; steps?: unknown; label?: unknown } | undefined
+    if (!p || typeof p.step !== 'number' || typeof p.steps !== 'number' || p.steps < 1) continue
+    if (!best || e.ts > best.at) best = { step: p.step, steps: p.steps, label: typeof p.label === 'string' ? p.label : '', at: e.ts }
+  }
+  return best
+}
+
+const minutesText = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${Math.round(m % 60)}m` : ''}` : `${Math.max(1, Math.round(m))}m`)
+
+/**
+ * A running build's bar: the share of its steps done, or of its time limit when it reports no steps (a build
+ * started before steps were reported). → {pct 0-100, what it's doing, elapsed against the limit}.
+ */
+export function buildBar(b: { since: Date; limitMinutes: number | null; progress: BuildProgress | null; planned: string[] | null }, now: Date): { pct: number; doing: string; time: string; byTime: boolean } {
+  const elapsed = Math.max(0, (now.getTime() - b.since.getTime()) / 60_000)
+  const time = b.limitMinutes ? `${minutesText(elapsed)} of up to ${minutesText(b.limitMinutes)}` : `${minutesText(elapsed)} so far`
+  if (b.progress) {
+    const { step, steps, label } = b.progress
+    return { pct: Math.min(100, Math.max(4, Math.round(((step - 1) / steps) * 100))), doing: `Step ${step} of ${steps}: ${label}`, time, byTime: false }
+  }
+  const planned = b.planned?.length ? `${b.planned.length > 1 ? `${b.planned[0]}–${b.planned[b.planned.length - 1]}` : b.planned[0]} planned` : 'Working'
+  return { pct: b.limitMinutes ? Math.min(95, Math.round((elapsed / b.limitMinutes) * 100)) : 0, doing: `${planned}; no steps reported (bar shows time used)`, time, byTime: true }
+}
+
+/** Why a queued build waits, in plain words (the pipeline writes "waiting: …" on the request). */
+export function waitText(result: string | null): string {
+  const r = (result ?? '').replace(/^waiting:\s*/i, '')
+  if (!r) return 'Starts on the pipeline’s next run'
+  let m = r.match(/^(\d+) builds are running \(the limit is (\d+)\)/)
+  if (m) return `Waits for a free slot: ${m[1]} of ${m[2]} builds are running`
+  m = r.match(/^Docker has .*\((\d+) running\)/)
+  if (m) return `Waits for memory: Docker is full with ${m[1]} build${m[1] === '1' ? '' : 's'}, so it starts when one finishes`
+  m = r.match(/^the Mac has (\d+)%/)
+  if (m) return `Waits for memory: the Mac has only ${m[1]}% free`
+  if (/is building now/.test(r)) return 'Waits for this idea’s current build to finish'
+  return r[0]!.toUpperCase() + r.slice(1)
 }
 
 /** Messages that mean the subscription couldn't take the work (idea-factory lib/claude.js capacityFailure). */

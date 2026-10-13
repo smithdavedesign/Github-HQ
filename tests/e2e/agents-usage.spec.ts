@@ -29,7 +29,9 @@ test.describe('Agents page: idea pipeline and subscriptions', () => {
     if (!DISPOSABLE_DB || !FACTORY_OWNER) return
     await cleanup()
     await event(5, { system: 'idea-factory', component: 'build', event: 'M1', status: 'start', message: 'e2e: M1 started (Start build now) on opus at xhigh',
-      subject: { idea: IDEA }, data: { milestone: 'M1', manual: true, model: 'opus', effort: 'xhigh' } })
+      subject: { idea: IDEA }, data: { milestone: 'M1', manual: true, model: 'opus', effort: 'xhigh', planned: ['M1', 'M2'], timeoutMinutes: 240 } })
+    await event(2, { system: 'idea-factory', component: 'build', event: 'M1', status: 'info', message: `${IDEA}: step 2 of 3, M2 (2 of 2)`,
+      subject: { idea: IDEA }, data: { progress: { step: 2, steps: 3, label: 'M2 (2 of 2)' } } })
     await event(30, { system: 'idea-factory', component: 'research', event: 'run', status: 'ok', message: `e2e: recorded ${SEEDED} on claude-sonnet-5-5 (seeded)`,
       subject: { idea: SEEDED }, data: { model: 'claude-sonnet-5-5', engine: 'claude', trigger: 'seed' }, durationMs: 90_000 })
     await event(1, { system: 'idea-factory', component: 'claude', event: 'capacity', status: 'info', message: "e2e: Claude subscription couldn't take the work: usage limit reached",
@@ -50,7 +52,11 @@ test.describe('Agents page: idea pipeline and subscriptions', () => {
     await expect(panel.getByRole('heading', { name: /Idea pipeline/ })).toBeVisible()
     const building = panel.getByTestId('idea-pipeline-building')
     await expect(building.getByRole('link', { name: IDEA })).toBeVisible()
-    await expect(building).toContainText(/M1\s*started .* on opus at xhigh · Start build now/)
+    await expect(building).toContainText(/M1\s*on opus at xhigh · Start build now/)
+    // Its progress: the step it reported, as a bar, and its time against the limit.
+    await expect(building).toContainText('Step 2 of 3: M2 (2 of 2)')
+    await expect(building).toContainText(/of up to 4h/)
+    await expect(building.getByRole('progressbar')).toBeVisible()
     const limits = panel.getByTestId('idea-pipeline-limits')
     await expect(limits).toContainText('Builds at once')
     await expect(limits).toContainText('Seeded research')
