@@ -90,7 +90,7 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - **Closed** when it's a growth PR whose checks failed: its experiment is abandoned as `failed`, and the mission is tried again the next day.
   - **Left for the owner** when it's a milestone or go-live build whose tests or checks failed, or it touches a protected path (`.github/workflows/`). `state.build.held` says why; the morning email's Today block lists it.
   - **Reverted** when the live site's launch checks fail within a day of an agent merge (step 5b): a revert PR, merged, `state.build.reverted`, and a `fail` event so Slack hears of it. The alert closes (Slack: recovered) once the site passes its launch checks again. An experiment the judge finds clearly worse is reverted the same way, as news for the morning email rather than an alert.
-  - Interactive Claude sessions don't follow this: they open draft PRs and ask before merging.
+  - Interactive Claude sessions merge their own PRs too, once CI is green (the owner's call, 2026-10-13: "full send"); he reviews afterwards.
 - **M1:** `bin/idea-build.js` builds it, at most one build a week from the weekly slot:
   - **Plan:** gstack's plan-eng-review (Step 0 scope challenge, architecture review, test review) is applied to the milestone first, and the result goes into `BUILD.md` as `## Plan`;
   - ROADMAP M1's exit criteria become failing tests first;

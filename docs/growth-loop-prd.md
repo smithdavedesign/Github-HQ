@@ -148,7 +148,8 @@ David asked for full autonomy: agents merge their own work and carry on, and he 
 morning instead of starting sessions or assigning work. His choices: merge scope **everything** (the
 factory's PRs and the idea pipeline's, including RepoHQ and idea-factory), failures **reverted
 automatically, with Slack told**, and the "draft PRs, David merges" rule **scoped to interactive
-sessions**.
+sessions**. On 2026-10-13 he dropped that last part too ("full send"): interactive sessions merge their
+own PRs once CI is green, and he reviews afterwards.
 
 | | The idea pipeline (`lib/autonomy.js`, `policy.autonomy`) | The factory (`factory/lib/automerge.ts`, config `autonomy`) |
 |---|---|---|
@@ -159,8 +160,8 @@ sessions**.
 | Tells David | Slack for a breakage revert (closed when the site passes again); the morning email for everything | Slack for a revert (closed when the base branch is green again); the morning email for everything |
 
 The morning email opens with **Done overnight**: what the agents merged, reverted and judged in the last
-24 hours. Interactive Claude sessions still open draft PRs and ask before merging. Nothing force-pushes or
-deletes.
+24 hours. Interactive Claude sessions merge their own PRs once CI is green (since 2026-10-13). Nothing
+force-pushes or deletes.
 
 ## Kept and cut from v1
 
@@ -181,8 +182,8 @@ v1 would have built.
 
 ## Rollout
 
-Each phase ships as draft PRs to RepoHQ and idea-factory, and David merges them (these are interactive
-sessions, so the autonomy rule doesn't apply to them).
+Each phase shipped as PRs to RepoHQ and idea-factory. Through 2026-10-12 David merged them; since 2026-10-13
+the session that opens a PR merges it once CI is green.
 
 1. **Day 0, no code (done 2026-10-12):** tiebreak's first launch kit. Its Stripe payment link went live on 2026-10-13: $5 once, made by the broker with the live key David stored.
 2. **Phase 0, fixes (live 2026-10-12):** a bug that can rerun the daily steps; merges on live products
