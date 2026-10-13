@@ -70,10 +70,8 @@ export function IdeaPipelineCard({ o, now }: { o: UsageOverview; now: Date }) {
 
         {queued.length > 0 && <p className="text-muted-foreground">Queued: {queued.join(' · ')}</p>}
 
-        <div className="grid grid-cols-3 gap-2" data-testid="idea-pipeline-limits">
-          <Limit label="Manual builds" used={o.limits.manual.used} cap={o.limits.manual.cap} note="24 h" />
-          <Limit label="Weekly build slot" used={o.limits.weekly.used} cap={o.limits.weekly.max}
-            note={o.limits.weekly.free ? 'this week' : `next ${o.limits.weekly.nextFreeAt?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? 'soon'}`} />
+        <div className="grid grid-cols-2 gap-2" data-testid="idea-pipeline-limits">
+          <Limit label="Builds at once" used={o.limits.builds.running} cap={o.limits.builds.max} note={o.limits.held ? 'new ideas held' : 'no daily cap'} />
           <Limit label="Seeded research" used={o.limits.seeded.used} cap={o.limits.seeded.cap} note="24 h" />
         </div>
 

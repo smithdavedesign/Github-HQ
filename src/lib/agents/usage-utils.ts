@@ -157,18 +157,19 @@ export function copilotUsage(latest: LogEvent | null, now: Date): CopilotUsage |
 }
 
 export interface IdeaLimits {
-  manual: { used: number; cap: number }
-  weekly: BuildSlot
+  /** Builds running now against policy.build.concurrency.max (no daily or weekly cap since 2026-10-13). */
+  builds: { running: number; max: number }
+  held: BuildSlot['held']
   seeded: { used: number; cap: number }
 }
 
-/** The caps the owner chose (idea-factory policy.json), against the last 24 hours and this week. */
-export function ideaLimits(input: { manualStarts: Date[]; weekly: BuildSlot; runs: IdeaRun[]; policy: IdeaPolicy | null; now: Date }): IdeaLimits {
+/** The limits the owner chose (idea-factory policy.json): builds at once now, seeded research in the last 24 hours. */
+export function ideaLimits(input: { running: number; slot: BuildSlot; runs: IdeaRun[]; policy: IdeaPolicy | null; now: Date }): IdeaLimits {
   const { now, policy } = input
   const recent = (d: Date) => now.getTime() - d.getTime() < DAY
   return {
-    manual: { used: input.manualStarts.filter(recent).length, cap: policy?.build?.manualPerDay ?? 2 },
-    weekly: input.weekly,
+    builds: { running: input.running, max: input.slot.max },
+    held: input.slot.held,
     seeded: { used: input.runs.filter(r => r.kind === 'research' && r.seeded && r.status !== 'start' && recent(r.at)).length, cap: policy?.research?.seeded?.maxPerDay ?? 3 },
   }
 }

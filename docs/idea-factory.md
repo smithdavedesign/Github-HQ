@@ -90,7 +90,12 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - **Left for the owner** when it's a milestone or go-live build whose tests or checks failed, or it touches a protected path (`.github/workflows/`). `state.build.held` says why; the morning email's Today block lists it.
   - **Reverted** when the live site's launch checks fail within a day of an agent merge (step 5b): a revert PR, merged, `state.build.reverted`, and a `fail` event so Slack hears of it. The alert closes (Slack: recovered) once the site passes its launch checks again. An experiment the judge finds clearly worse is reverted the same way, as news for the morning email rather than an alert.
   - Interactive Claude sessions merge their own PRs too, once CI is green (the owner's call, 2026-10-13: "full send"); he reviews afterwards.
-- **M1:** `bin/idea-build.js` builds it, at most one build a week from the weekly slot:
+- **Builds run side by side** (the owner's call, 2026-10-13: "push the system to almost its limits", no daily or weekly cap, only how many run at once):
+  - **Their own processes:** the tick starts each build as `bin/idea-build-job.js`, detached, and moves on. The job answers the request row and Slack (or the growth experiment), syncs its idea to this page, and leaves a result the next tick logs and commits. Its output is in `.builds/<slug>.log` while it runs.
+  - **How many:** at most `policy.build.concurrency.max` (3) at once (`lib/build-slots.js`). Each starts only while Docker has `reserveMemoryMb` (2 GB) to spare, counting every running sandbox at least that much, and the Mac has `minFreeMemoryPct` (10%) of its memory free. On the 5.8 GB Docker VM that's two at once; a third starts when there's room. Each tick logs what runs and the memory to `pipeline.log`.
+  - **Who goes first:** Start build now requests, oldest first. Builds the pipeline starts itself (go-lives, first builds, the rest of a started MVP, growth builds) run on any tick in the slots left, always keeping `reserveForRequests` (1) free. They wait `retryAfterHours` (24) after a failed build or a closed PR, so a failing build can't loop.
+  - **Safety:** the tick never writes an idea's record while it builds, and record writes are atomic. A build whose process died is recorded as failed, with its request answered. One still running after `hungAfterHours` (6) is stopped. Sandboxes carry their owner's pid, so a build opening its sandbox sweeps only a crashed build's leftovers (`sweepSandboxes({ orphansOnly })`).
+- **M1:** `bin/idea-build.js` builds it:
   - **Plan:** gstack's plan-eng-review (Step 0 scope challenge, architecture review, test review) is applied to the milestone first, and the result goes into `BUILD.md` as `## Plan`;
   - ROADMAP M1's exit criteria become failing tests first;
   - then the smallest $0 stack, implemented until the tests pass, plus `BUILD.md`;
@@ -98,15 +103,14 @@ On 2026-10-10 the first four ideas all passed (scores 2–5). They were free dev
   - **Screenshot proof** (the owner's rule, 2026-10-11): the last milestone of a run adds `npm run screenshots`, which starts the app, drives it with Playwright on the sandbox's Chromium (`$CHROMIUM_PATH`) and captures the main flow at desktop size and on a phone. The builder looks at each PNG, then puts them under `docs/screenshots/` and at the top of README.md, under the title;
     - the pipeline checks the README itself (local images above its first other section, at least two, present in the repo). If they're missing it gives the builder one reminder round. The PR then shows the screenshots, pinned to the commit, or says they're missing; it doesn't lose the build over it;
   - the pipeline runs the tests itself and opens a PR (branch `m1`), which it merges once its tests and checks pass (autonomy, above).
-- **Start build now:** an approved idea doesn't have to wait for the weekly slot. See [Deciding: the Ideas page](#deciding-the-ideas-page).
+- **Start build now:** an approved idea starts on the pipeline's next run with a free slot. See [Deciding: the Ideas page](#deciding-the-ideas-page).
 - **New-build hold** (`policy.build.startNew: false`, the owner's call on 2026-10-12: distribution before more MVPs).
-  - **What waits:** an idea that has never been built waits for its first build, from both the weekly slot and an approval (`newBuildsHeld` in `lib/pipeline.js`).
+  - **What waits:** an idea that has never been built waits for its first build, automatic or from an approval (`newBuildsHeld` in `lib/pipeline.js`).
   - **What carries on:** ideas already being built (codespend and dawnlog's next milestones), and their go-lives. **Start build now** still works.
   - **When it lifts:** by itself, once a focus product (`policy.growth.focus`) has `policy.growth.minVisitorsPerWeek` (50) unique visitors in 7 days ([growth loop](growth-loop-prd.md)).
   - **On the Ideas page:** the Build card and the approval dialog say so.
-  - **Weekly cap:** go-live builds, and later growth builds, don't count toward `maxPerWeek`; each has its own cap.
 - **Let it rip: MVP builds** (`policy.build.mode: "mvp"`, the default since 2026-10-11).
-  - **What runs:** approving a build, and the weekly slot, build *every remaining roadmap milestone in one run* (`buildOne({ mvp })`). It's one sandbox session (the worker lives up to 8 hours), a gstack plan and tests first for each milestone, then one secret scan, one commit and one PR.
+  - **What runs:** approving a build, and an automatic build, build *every remaining roadmap milestone in one run* (`buildOne({ mvp })`). It's one sandbox session (the worker lives up to 8 hours), a gstack plan and tests first for each milestone, then one secret scan, one commit and one PR.
   - **When it stops:** at the first milestone whose tests fail, at one that falls back off Opus (`policy.build.mvp.stopOnFallback`, so the rest gets the strongest model), or after `maxMinutes` (240).
   - **The PR** lists every milestone with its result. A merge marks only the completed ones done (`build.milestones`), and the next build starts where it stopped.
   - **Revenue context:** `REVENUE.md` goes to the builder, so checkout and legal pages land in the MVP.
@@ -243,21 +247,18 @@ How a decision travels (the Ideas page is the board; there is no Notion since 20
    - Pass moves it to `pass`.
 
    It marks the row `applied` with what it did, or `failed` with the reason, for example when the idea moved on since the page checked it. A row still pending can be withdrawn on the page.
-3. Build makes the repo on that tick and **starts M1 on that tick too**, within `policy.build.maxPerWeek`, instead of waiting for the next daily run. The approval note goes to the builder with the PRD.
+3. Build makes the repo on that tick and **starts M1 on that tick too** when a build slot is free, instead of waiting for the next daily run. The approval note goes to the builder with the PRD.
 4. The tick mirrors every changed idea (`idea.json`, `state.json`, `review.json`, the markdown docs) to the `ideas` table. It also writes its heartbeat and `policy.json` to `idea_pipeline`, so the page shows how fresh it is.
 
 **New ideas** come from `idea: …` on Slack or WhatsApp (the companion runs `idea-publish.js seed`) or from the page's **New idea** box. The box writes an `idea_seeds` row. The next tick moves it into the same research queue (`seeds.jsonl`) and marks it `queued`. Once it's written up, the tick marks it `researched` and links it to its idea. A queued one shows how many are ahead of it.
 
 **Start build now** is on the Build card of an approved idea whose repo exists. It also appears after a milestone's PR is merged, to build the next one.
 - **The request:** the button confirms what happens, takes an optional note for the builder, and writes a pending `idea_build_requests` row.
-- **When it runs:** on its next tick, the pipeline takes the oldest pending request, re-checks it (`manualBuildTarget`, the same rules as the page's `buildNowTarget`) and builds that milestone, outside `maxPerWeek`.
-- **Limits:**
-  - one build per tick;
-  - at most `policy.build.manualPerDay` (2) manual starts in any 24 hours, because an Opus build at xhigh can use most of a usage window the owner's own sessions share. Over the cap a request waits, and the reason shows on the page;
-  - manual builds don't use the weekly slot.
-- **Result:** the row moves `pending → running → done | failed`, with the PR link and the engine, and the PR is posted in Slack (#team-agents). A queued request can be withdrawn. If the weekly slot builds the same idea first, the waiting request is settled with that PR.
+- **When it runs:** on its next tick, the pipeline takes the pending requests oldest first, re-checks each (`manualBuildTarget`, the same rules as the page's `buildNowTarget`) and starts every one a free build slot allows.
+- **Limits:** no daily cap since 2026-10-13. A request waits, with the reason on the page, while every slot is taken, while Docker or the Mac is short on memory, while its idea is building, or while its idea's last PR is open (the PR merges itself). Every build shares the owner's Claude usage window, so three at once use it faster; builds fall back as before (Sonnet, then the free pool).
+- **Result:** the row moves `pending → running → done | failed`, with the PR link and the engine, and the PR is posted in Slack (#team-agents). A queued request can be withdrawn. If an automatic build of the same idea gets there first, the waiting request is settled with that PR.
 
-**Build the MVP** (one request for every remaining milestone, `milestone: "MVP"`) and **Get it launch-ready** (`milestone: "GOLIVE"`, see [go live](#5-revenue)) sit beside it. They use the same table, cap and queue, so neither needs a schema change. Get it launch-ready appears once M1 is merged and no build or PR is open.
+**Build the MVP** (one request for every remaining milestone, `milestone: "MVP"`) and **Get it launch-ready** (`milestone: "GOLIVE"`, see [go live](#5-revenue)) sit beside it. They use the same table, slots and queue, so neither needs a schema change. Get it launch-ready appears once M1 is merged and no build or PR is open.
 
 The morning email links to the page when ideas need a call. The tables are in `src/lib/db/schema.ts`; idea-factory's side is `lib/repohq.js`. A table added later (`idea_seeds`, `idea_build_requests`) only needs `npm run db:push`, and the page works without it until then.
 

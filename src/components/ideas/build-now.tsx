@@ -28,8 +28,8 @@ interface Props {
 
 /**
  * "Build the MVP" (every remaining milestone in one run) or "Start build now" (one milestone) on an
- * idea's page: the pipeline builds it on the next tick, outside the weekly build slot
- * (idea_build_requests). Confirm first; a queued request can be withdrawn.
+ * idea's page: the pipeline builds it on its next tick with a free build slot (idea_build_requests;
+ * up to policy.build.concurrency.max run at once). Confirm first; a queued request can be withdrawn.
  */
 export function BuildNow({ slug, name, target, steps, mvp, golive, request, blocked }: Props) {
   const router = useRouter()

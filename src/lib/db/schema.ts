@@ -397,9 +397,9 @@ export const ideaSeeds = pgTable('idea_seeds', {
 ])
 
 /**
- * "Start build now" on the Ideas page: build an approved idea's next milestone without waiting for the
- * weekly build slot. The idea pipeline takes the oldest pending one on its next tick (at most
- * policy.build.manualPerDay starts in 24 hours) and records the outcome here.
+ * "Start build now" on the Ideas page: build an approved idea's next milestone now. The idea pipeline
+ * starts pending ones, oldest first, on its next tick with a free build slot (up to
+ * policy.build.concurrency.max at once, no daily cap) and records the outcome here.
  * pending → running → done | failed; pending ones can be cancelled. `result` says why one is waiting.
  */
 export const ideaBuildRequests = pgTable('idea_build_requests', {

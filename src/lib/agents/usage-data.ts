@@ -80,8 +80,9 @@ export async function loadUsageOverview(now = new Date()): Promise<UsageOverview
       prsToReview: states.filter(s => s.state.build?.status === 'pr-open').length,
     },
     limits: ideaLimits({
-      manualStarts: requests.map(q => q.startedAt).filter((d): d is Date => !!d),
-      weekly: buildSlot(states, policy, now),
+      // What's building per the build events and running requests (the record's "running" can lag).
+      running: building.size,
+      slot: buildSlot(states, policy),
       runs, policy, now,
     }),
     claude: claudeUsage(logEvents, now),

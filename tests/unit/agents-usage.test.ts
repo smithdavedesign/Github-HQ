@@ -57,16 +57,16 @@ describe('Agents page: the idea pipeline from the system log', () => {
     expect(claudeUsage([ev({ status: 'fail', message: 'Claude research failed: Claude AI usage limit reached|1791' })], NOW).lastCapacity).not.toBeNull()
   })
 
-  it('limits: manual starts and seeded research in the last 24 hours against policy', () => {
+  it('limits: builds running now against the limit, and seeded research in the last 24 hours', () => {
     const runs = ideaRuns([
       ev({ ts: ago(60), message: 'recorded a on claude-sonnet-5-5 (seeded)' }),
       ev({ ts: ago(30 * 60), message: 'recorded b on claude-sonnet-5-5 (seeded)' }),
       ev({ ts: ago(20), message: 'recorded c on claude-sonnet-5-5' }),
     ])
-    const slot = { used: 1, max: 1, free: false, nextFreeAt: new Date('2026-10-18T00:00:00Z'), held: null }
-    const l = ideaLimits({ manualStarts: [ago(5), ago(25 * 60)], weekly: slot, runs, policy: { build: { manualPerDay: 2 }, research: { seeded: { maxPerDay: 3 } } }, now: NOW })
-    expect(l).toEqual({ manual: { used: 1, cap: 2 }, weekly: slot, seeded: { used: 1, cap: 3 } })
-    expect(ideaLimits({ manualStarts: [], weekly: slot, runs: [], policy: null, now: NOW })).toMatchObject({ manual: { cap: 2 }, seeded: { cap: 3 } })
+    const slot = { running: 1, max: 3, free: true, autoFree: true, held: 'new builds wait until tiebreak has 50 visitors a week' }
+    const l = ideaLimits({ running: 2, slot, runs, policy: { research: { seeded: { maxPerDay: 3 } } }, now: NOW })
+    expect(l).toEqual({ builds: { running: 2, max: 3 }, held: slot.held, seeded: { used: 1, cap: 3 } })
+    expect(ideaLimits({ running: 0, slot: { ...slot, held: null }, runs: [], policy: null, now: NOW })).toMatchObject({ builds: { running: 0, max: 3 }, held: null, seeded: { cap: 3 } })
   })
 
   it('names the engine', () => {
