@@ -32,6 +32,8 @@ export const RELAY_URL = 'http://egress:4000'
 export const SANDBOX_MODEL_KEY = 'sk-repohq-sandbox'
 const PROXY_URL = 'http://egress:8888'
 const LABEL = 'repohq.factory.sandbox'
+// The process that opened the sandbox: a sweep can tell a crashed run's leftovers from a sandbox in use.
+const OWNER_LABEL = `${LABEL}.owner`
 const DOCKER_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'docker')
 
 /** Exit codes from `timeout` (GNU coreutils) when the command overran: TERM then KILL. */
@@ -107,20 +109,21 @@ export function proxyEnv(): Record<string, string> {
   }
 }
 
-export interface SandboxNames { network: string; egress: string; worker: string; label: string }
+export interface SandboxNames { network: string; egress: string; worker: string; label: string; owner: string }
 
-export function sandboxNames(scope: string, id = randomUUID().slice(0, 8)): SandboxNames {
+export function sandboxNames(scope: string, id = randomUUID().slice(0, 8), ownerPid = process.pid): SandboxNames {
   return {
     network: `repohq-sbx-${id}`,
     egress: `repohq-sbx-${id}-egress`,
     worker: `repohq-sbx-${id}-worker`,
     label: `${LABEL}=${createHash('sha256').update(scope).digest('hex').slice(0, 12)}`,
+    owner: `${OWNER_LABEL}=${ownerPid}`,
   }
 }
 
 export function egressRunArgs(n: SandboxNames, image: string, opts: { allowHosts: string[]; allowModels: string[]; upstream: string }): string[] {
   return [
-    'run', '-d', '--name', n.egress, '--label', n.label,
+    'run', '-d', '--name', n.egress, '--label', n.label, '--label', n.owner,
     // Default bridge for the way out; the internal network is attached afterwards with alias "egress".
     '--network', 'bridge', '--add-host', 'host.docker.internal:host-gateway',
     '--cap-drop', 'ALL', '--cap-add', 'SETUID', '--cap-add', 'SETGID', '--security-opt', 'no-new-privileges',
@@ -136,7 +139,7 @@ export function egressRunArgs(n: SandboxNames, image: string, opts: { allowHosts
 
 export function workerRunArgs(n: SandboxNames, image: string, cfg: SandboxConfig): string[] {
   return [
-    'run', '-d', '--name', n.worker, '--label', n.label,
+    'run', '-d', '--name', n.worker, '--label', n.label, '--label', n.owner,
     '--network', n.network,
     '--init', '--user', 'worker', '-w', WORKDIR,
     '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
@@ -163,12 +166,28 @@ export function execArgs(container: string, cmd: string, args: string[], opts: P
   return out
 }
 
-/** Remove every container and network a previous (crashed) cycle left behind for this scope. */
-export async function sweepSandboxes(scope: string): Promise<number> {
+/** Whether the process that opened a sandbox still runs (an empty or bad owner label: no). */
+export function ownerAlive(owner: string): boolean {
+  const pid = Number(owner)
+  if (!owner || !Number.isInteger(pid) || pid <= 0) return false
+  try { process.kill(pid, 0); return true } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM' }
+}
+
+/**
+ * Remove the containers and networks a previous (crashed) run left behind for this scope. `orphansOnly`
+ * keeps the ones whose owner process still runs: idea builds share one scope and run side by side since
+ * 2026-10-13, and each one sweeps when it opens, so a full sweep would remove the others mid-build.
+ */
+export async function sweepSandboxes(scope: string, { orphansOnly = false }: { orphansOnly?: boolean } = {}): Promise<number> {
   const label = sandboxNames(scope).label
-  const ids = (await run('docker', ['ps', '-aq', '--filter', `label=${label}`], { timeoutMs: 30_000 })).output.split('\n').map(s => s.trim()).filter(Boolean)
+  const format = `{{.ID}} {{.Label "${OWNER_LABEL}"}}`
+  const leftovers = async (list: string[]) => (await run('docker', [...list, '--filter', `label=${label}`, '--format', format], { timeoutMs: 30_000 })).output
+    .split('\n').map(s => s.trim()).filter(Boolean)
+    .map(line => { const [id, owner = ''] = line.split(' '); return { id, owner } })
+    .filter(x => !orphansOnly || !ownerAlive(x.owner)).map(x => x.id)
+  const ids = await leftovers(['ps', '-a'])
   if (ids.length > 0) await run('docker', ['rm', '-f', ...ids], { timeoutMs: 60_000 })
-  const nets = (await run('docker', ['network', 'ls', '-q', '--filter', `label=${label}`], { timeoutMs: 30_000 })).output.split('\n').map(s => s.trim()).filter(Boolean)
+  const nets = await leftovers(['network', 'ls'])
   if (nets.length > 0) await run('docker', ['network', 'rm', ...nets], { timeoutMs: 60_000 })
   return ids.length
 }
@@ -202,7 +221,7 @@ export class Sandbox {
       return r
     }
     try {
-      await must('network', ['network', 'create', '--internal', '--label', n.label, n.network])
+      await must('network', ['network', 'create', '--internal', '--label', n.label, '--label', n.owner, n.network])
       await must('egress', egressRunArgs(n, o.images.egress, { allowHosts: o.cfg.allowHosts, allowModels: o.allowModels, upstream: upstreamUrl(o.litellmUrl) }), 120_000, { LITELLM_KEY: o.litellmKey })
       await must('egress attach', ['network', 'connect', '--alias', 'egress', n.network, n.egress])
       await must('worker', workerRunArgs(n, o.images.worker, o.cfg))

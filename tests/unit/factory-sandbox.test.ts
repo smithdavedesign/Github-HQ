@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { DEFAULT_SANDBOX, loadConfig } from '../../factory/lib/config'
 import {
-  RELAY_URL, WORKDIR, egressRunArgs, execArgs, imageTag, proxyEnv, sandboxImages, sandboxModels, sandboxNames, upstreamUrl, workerRunArgs,
+  RELAY_URL, WORKDIR, egressRunArgs, execArgs, imageTag, ownerAlive, proxyEnv, sandboxImages, sandboxModels, sandboxNames, upstreamUrl, workerRunArgs,
 } from '../../factory/lib/sandbox'
 import { aiderEnv, claudeCodeEnv, runHarness } from '../../factory/lib/harness'
 import { runAudit, runChecks } from '../../factory/lib/checks'
@@ -57,6 +57,24 @@ describe('worker container', () => {
     expect(args[args.indexOf('--label') + 1]).toBe(names.label)
     expect(sandboxNames('/home/test').label).toBe(names.label)
     expect(sandboxNames('/home/other').label).not.toBe(names.label)
+  })
+  it('names the process that opened it, so a sweep spares sandboxes still in use', () => {
+    expect(names.owner).toBe(`repohq.factory.sandbox.owner=${process.pid}`)
+    expect(sandboxNames('/home/test', 'x', 4242).owner).toBe('repohq.factory.sandbox.owner=4242')
+    expect(args.filter((_, i) => args[i - 1] === '--label')).toEqual([names.label, names.owner])
+  })
+})
+
+describe('the crash sweep (idea builds share a scope and run side by side)', () => {
+  it("treats a sandbox as in use only while its owner process runs", () => {
+    expect(ownerAlive(String(process.pid))).toBe(true)
+    expect(ownerAlive('4206649')).toBe(false) // no such process
+    expect(ownerAlive('')).toBe(false) // a sandbox from before owner labels: a leftover
+    expect(ownerAlive('abc')).toBe(false)
+  })
+  it('labels the egress relay with its owner too', () => {
+    const egress = egressRunArgs(names, 'egress:1', { allowHosts: [], allowModels: [], upstream: 'http://host.docker.internal:4000' })
+    expect(egress.filter((_, i) => egress[i - 1] === '--label')).toEqual([names.label, names.owner])
   })
 })
 

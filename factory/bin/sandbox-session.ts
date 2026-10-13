@@ -137,7 +137,8 @@ async function main() {
     open: async ({ allowHosts, allowModels, lifetimeMs }) => {
       if (cfg.sandbox.mode === 'off') throw new Error('the factory sandbox is off (FACTORY_SANDBOX=off)')
       if (!(await dockerAvailable())) throw new Error('Docker is not running')
-      await sweepSandboxes(scope)
+      // Only a crashed build's leftovers: other idea builds may be running in this scope right now.
+      await sweepSandboxes(scope, { orphansOnly: true })
       const images = await ensureSandboxImages(cfg.sandbox, log)
       const o: SandboxOpenOptions = {
         cfg: { ...cfg.sandbox, allowHosts: [...new Set([...cfg.sandbox.allowHosts, ...allowHosts])], ...(lifetimeMs ? { lifetimeMs: Math.max(lifetimeMs, cfg.sandbox.lifetimeMs) } : {}) },
