@@ -318,6 +318,19 @@ export const systemEvents = pgTable('system_events', {
 ])
 
 /**
+ * Where the owner's secrets live (Settings → Keys): one row per Mac, replaced by `~/ai-stack/bin/secrets sync`.
+ * Names, file places, keychain service names and cloud env NAMES only; never a value or a fingerprint.
+ */
+export const secretInventory = pgTable('secret_inventory', {
+  host: text('host').primaryKey(),
+  takenAt: timestamp('taken_at', { mode: 'date', withTimezone: true }).notNull(),
+  entries: jsonb('entries').notNull(),   // SecretEntry[] (src/lib/secrets/inventory.ts)
+  cloud: jsonb('cloud').notNull(),       // {vercel, github, gcp, neon}: names only
+  keychain: jsonb('keychain').notNull(), // keychain service names this system owns
+  blocked: jsonb('blocked').notNull(),   // paths the scan couldn't read
+})
+
+/**
  * Demand signals from idea landing pages (the idea pipeline's validation step, docs/idea-factory.md):
  * a page view or a waitlist signup per idea slug. Written by the public POST /api/ideas/signal; read by
  * the idea pipeline (validation decisions) and the morning report. Not tied to a user: ideas are the
