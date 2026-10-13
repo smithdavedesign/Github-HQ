@@ -104,14 +104,16 @@ valuation =
 All scoring is pure functions in `src/lib/health/scoring.ts` and `src/lib/health/valuation.ts`. Recalculated on every sync.
 
 ### Monday Cron (Digest + Advisor + CEO Report + Auto-Dispatch)
-`/api/cron/digest` runs Mondays at 06:00 UTC and generates three artifacts in parallel for each user, then runs auto-dispatch:
+`/api/cron/digest` runs Mondays at 06:00 UTC. For each user it writes the digest first, then the Advisor and CEO report together (they attach to the newest digest row), then runs auto-dispatch (`runWeeklyAi`, `src/lib/ai/weekly.ts`):
 
-1. **Triage Digest** — top 3 portfolio priorities with urgency, reason, action (claude-haiku, cached prompt)
-2. **Portfolio Advisor** — pre-computes opportunity score deltas per repo, then asks Claude for top 5 quantified actions
-3. **CEO Report** — portfolio summary, biggest wins, biggest risks, recommended focus (claude-haiku, cached prompt)
+1. **Triage Digest** — top 3 portfolio priorities with urgency, reason, action
+2. **Portfolio Advisor** — pre-computes opportunity score deltas per repo, then asks the model for top 5 quantified actions
+3. **CEO Report** — portfolio summary, biggest wins, biggest risks, recommended focus
 4. **Auto-Dispatch** — if enabled, filters advisor actions through effort/security/accuracy/lifecycle gates and queues eligible tasks for the factory
 
-All stored as jsonb columns on the `digests` row. Dashboard cards show the most recent if < 8 days old.
+The models are OpenRouter's free tier or Gemini's, Claude only with `LLM_ALLOW_PAID=1` (`src/lib/ai/providers.ts`). A busy provider (429, 503, "high demand") falls back to the other, and a busy one gets one more try a few seconds later (`generateJson`, `src/lib/ai/structured.ts`). A step that still fails fails the run: HTTP 500 with the reasons, recorded on the Agents page, and alerted in Slack. Before 2026-10-13 the steps ran under `Promise.allSettled` and the run said ok whatever happened.
+
+All are stored as jsonb columns on the `digests` row. The dashboard cards show each one for 8 days, by its own `generatedAt`. They used to go by the digest row's date: with no digest from 2026-08-17 to 2026-10-12, every Advisor and CEO report run succeeded and its card still showed nothing (`freshContent`, `src/lib/ai/fresh.ts`). They are on the dashboard only, never emailed.
 
 ### Portfolio Feed
 `/feed` has two tabs:

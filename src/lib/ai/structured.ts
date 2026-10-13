@@ -1,4 +1,5 @@
 import type { GenerateParams, LLMAdapter } from './adapter'
+import { isTransientAiError } from './errors'
 
 /**
  * Structured-output guard (Phase 62).
@@ -61,7 +62,7 @@ function findMatchingBracket(s: string, start: number): number {
 
 export interface StructuredResult<T> {
   value: T
-  /** 1 = first try, 2 = after repair, 3 = fallback adapter. */
+  /** 1 = first try, 2 = after repair, 3 = fallback adapter, 4 = one more try after a busy provider. */
   attempts: number
   usedFallback: boolean
 }
@@ -80,23 +81,39 @@ const defaultValidator = <T>(value: unknown): T => {
 export async function generateJson<T>(
   adapter: LLMAdapter,
   params: GenerateParams,
-  options: { validate?: Validator<T>; fallback?: LLMAdapter | null; label?: string } = {},
+  options: { validate?: Validator<T>; fallback?: LLMAdapter | null; label?: string; retryDelayMs?: number } = {},
 ): Promise<StructuredResult<T>> {
   const validate = options.validate ?? defaultValidator<T>
   const label = options.label ?? 'structured'
+  const retryDelayMs = options.retryDelayMs ?? 5_000
 
   const tryParse = (text: string): T => validate(extractJson(text))
 
-  // Provider errors (429 quota, 503 overloaded) go straight to the fallback: a free
-  // tier being busy must not fail the advisor or digest.
+  // Provider errors (429 quota, 503 overloaded) go straight to the fallback: a free tier being busy
+  // must not fail the advisor or digest. When the fallback is busy too, or there is none, the busy one
+  // gets one more try a few seconds later: on 2026-10-13 Gemini's "high demand" failed the digest and
+  // the Advisor, and the weekly digest went unwritten.
+  const afterProviderError = async (err: unknown): Promise<StructuredResult<T>> => {
+    let fallbackErr: unknown = null
+    if (options.fallback) {
+      console.warn(`[${label}] ${adapter.provider} failed (${err instanceof Error ? err.message.slice(0, 120) : err}); falling back to ${options.fallback.provider}`)
+      let fb: string | null = null
+      try { fb = await options.fallback.generate({ ...params, fast: true }) } catch (e) { fallbackErr = e }
+      if (fb !== null) return { value: tryParse(fb), attempts: 3, usedFallback: true }
+    }
+    const retry = isTransientAiError(err) ? adapter : options.fallback && isTransientAiError(fallbackErr) ? options.fallback : null
+    if (!retry) throw fallbackErr ?? err
+    console.warn(`[${label}] ${retry.provider} is busy; one more try in ${retryDelayMs / 1000}s`)
+    await new Promise(res => setTimeout(res, retryDelayMs))
+    const again = await retry.generate(retry === adapter ? params : { ...params, fast: true })
+    return { value: tryParse(again), attempts: 4, usedFallback: retry !== adapter }
+  }
+
   let first: string
   try {
     first = await adapter.generate(params)
   } catch (err) {
-    if (!options.fallback) throw err
-    console.warn(`[${label}] ${adapter.provider} failed (${err instanceof Error ? err.message.slice(0, 120) : err}); falling back to ${options.fallback.provider}`)
-    const fb = await options.fallback.generate({ ...params, fast: true })
-    return { value: tryParse(fb), attempts: 3, usedFallback: true }
+    return afterProviderError(err)
   }
   try {
     return { value: tryParse(first), attempts: 1, usedFallback: false }

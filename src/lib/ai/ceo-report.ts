@@ -5,6 +5,7 @@ import { digests, repositories, repositoryMetrics, securityFindings, deployments
 import { eq, desc } from 'drizzle-orm'
 import { getLLMAdapter, getFallbackAdapter } from './adapter'
 import { generateJson } from './structured'
+import { freshContent } from './fresh'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -195,11 +196,6 @@ export async function getLatestCeoReport(userId: string): Promise<CeoReportConte
     columns: { ceoReport: true, generatedAt: true },
   })
 
-  if (!latest?.ceoReport) return null
-
-  // Expire after 8 days (same policy as weekly briefing)
-  const age = Date.now() - new Date(latest.generatedAt!).getTime()
-  if (age > 8 * 24 * 60 * 60 * 1000) return null
-
-  return latest.ceoReport as CeoReportContent
+  // Expires after 8 days (the weekly briefing's policy), by the report's own date, not its digest row's.
+  return freshContent(latest?.ceoReport as CeoReportContent | null | undefined, latest?.generatedAt)
 }

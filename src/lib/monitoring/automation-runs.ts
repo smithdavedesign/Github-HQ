@@ -40,6 +40,14 @@ export function summarize(body: unknown): Record<string, unknown> | null {
  * Wrap a cron route: authorised calls (CRON_SECRET) are recorded from start to finish.
  * `shouldRecord` narrows it for routes driven in a loop (ai-summary processes one job per call).
  */
+/** A failed route's own reason from its JSON body ({ error } or { errors: [...] }), else its status (pure). */
+export function failureReason(body: unknown, status: number): string {
+  const b = body as { error?: unknown; errors?: unknown } | null
+  const said = typeof b?.error === 'string' ? b.error
+    : Array.isArray(b?.errors) && b.errors.length ? b.errors.map(String).join('; ') : null
+  return (said ? `HTTP ${status}: ${said}` : `HTTP ${status}`).slice(0, 2_000)
+}
+
 export function withAutomationRun(kind: string, handler: Handler, shouldRecord: (request: Request) => boolean = () => true): Handler {
   return async (request: Request) => {
     // Unauthorised calls are answered by the route itself (401) and are not runs.
@@ -53,7 +61,7 @@ export function withAutomationRun(kind: string, handler: Handler, shouldRecord: 
         .set({
           status: response.ok ? 'ok' : 'failed',
           summary: summarize(body),
-          error: response.ok ? null : `HTTP ${response.status}`,
+          error: response.ok ? null : failureReason(body, response.status),
           finishedAt: new Date(),
         })
         .where(eq(automationRuns.id, id)))

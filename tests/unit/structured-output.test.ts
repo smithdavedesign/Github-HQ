@@ -84,9 +84,31 @@ describe('generateJson', () => {
     expect(r).toEqual({ value: { ok: true }, attempts: 3, usedFallback: true })
   })
 
-  it('rethrows provider errors when there is no fallback', async () => {
+  it('gives a busy provider one more try when there is no fallback, then rethrows', async () => {
     const failing: LLMAdapter = { provider: 'gemini', generate: vi.fn(async () => { throw new Error('429') }) }
-    await expect(generateJson(failing, PARAMS)).rejects.toThrow('429')
+    await expect(generateJson(failing, PARAMS, { retryDelayMs: 0 })).rejects.toThrow('429')
+    expect(failing.generate).toHaveBeenCalledTimes(2)
+  })
+
+  it('when the fallback is busy too, tries the busy provider once more (both free tiers at once, 2026-10-13)', async () => {
+    let calls = 0
+    const flaky: LLMAdapter = { provider: 'openrouter', generate: vi.fn(async () => { if (calls++ === 0) throw Object.assign(new Error('Provider returned error'), { status: 429 }); return '{"ok":true}' }) }
+    const busy: LLMAdapter = { provider: 'gemini', generate: vi.fn(async () => { throw new Error('This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.') }) }
+    expect(await generateJson(flaky, PARAMS, { fallback: busy, retryDelayMs: 0 })).toEqual({ value: { ok: true }, attempts: 4, usedFallback: false })
+    // The primary's error was final (a bad key): the busy fallback gets the retry instead.
+    let fbCalls = 0
+    const badKey: LLMAdapter = { provider: 'openrouter', generate: vi.fn(async () => { throw Object.assign(new Error('invalid api key'), { status: 401 }) }) }
+    const busyOnce: LLMAdapter = { provider: 'gemini', generate: vi.fn(async () => { if (fbCalls++ === 0) throw new Error('503 UNAVAILABLE'); return '{"from":"gemini"}' }) }
+    expect(await generateJson(badKey, PARAMS, { fallback: busyOnce, retryDelayMs: 0 })).toEqual({ value: { from: 'gemini' }, attempts: 4, usedFallback: true })
+  })
+
+  it("doesn't retry what waiting won't fix: a used-up daily quota or a rejected key", async () => {
+    const daily: LLMAdapter = { provider: 'openrouter', generate: vi.fn(async () => { throw new Error('429 Rate limit exceeded: free-models-per-day') }) }
+    await expect(generateJson(daily, PARAMS, { retryDelayMs: 0 })).rejects.toThrow('free-models-per-day')
+    expect(daily.generate).toHaveBeenCalledTimes(1)
+    const rejected: LLMAdapter = { provider: 'gemini', generate: vi.fn(async () => { throw Object.assign(new Error('permission denied'), { status: 403 }) }) }
+    await expect(generateJson(rejected, PARAMS, { retryDelayMs: 0 })).rejects.toThrow('permission denied')
+    expect(rejected.generate).toHaveBeenCalledTimes(1)
   })
 
   it('throws when repair fails and there is no fallback', async () => {

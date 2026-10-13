@@ -13,6 +13,7 @@ import {
 import { formatValuation } from '@/lib/health/valuation'
 import { getAccuracyByImpactType, getDowngradedRepos } from '@/lib/actions/advisor-accuracy'
 import { MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy-utils'
+import { freshContent } from './fresh'
 
 
 export interface AdvisorAction {
@@ -277,13 +278,8 @@ export async function getLatestAdvisor(userId: string): Promise<AdvisorContent |
     orderBy: (d, { desc }) => [desc(d.generatedAt)],
     columns: { advisorContent: true, generatedAt: true },
   })
-  if (!latest?.advisorContent) return null
-
-  // Return if generated within 8 days
-  const age = Date.now() - (latest.generatedAt?.getTime() ?? 0)
-  if (age > 8 * 24 * 60 * 60 * 1000) return null
-
-  return latest.advisorContent as AdvisorContent
+  // Shown for 8 days, by the Advisor's own date, not its digest row's.
+  return freshContent(latest?.advisorContent as AdvisorContent | null | undefined, latest?.generatedAt)
 }
 
 // ─── Accuracy section builder ─────────────────────────────────────────────────
