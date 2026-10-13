@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { LOCAL_DB, LOCAL_DB_REASON } from './helpers/disposable-db'
 
 test.describe('Repositories table', () => {
   test('loads the repos page', async ({ page }) => {
@@ -31,6 +32,7 @@ test.describe('Repositories table', () => {
   })
 
   test('the columns menu uses names, and a search with no match says so', async ({ page }) => {
+    test.skip(LOCAL_DB, LOCAL_DB_REASON)
     await page.goto('/repos')
     await page.getByRole('button', { name: 'Columns' }).click()
     const menu = page.getByRole('menu')
@@ -53,6 +55,7 @@ test.describe('Repositories table', () => {
   })
 
   test('clicking repo name navigates to detail page', async ({ page }) => {
+    test.skip(LOCAL_DB, LOCAL_DB_REASON)
     await page.goto('/repos')
     const firstLink = page.locator('tbody tr').first().getByRole('link').first()
     const name = await firstLink.textContent()

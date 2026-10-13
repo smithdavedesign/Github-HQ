@@ -30,6 +30,8 @@ export interface IdeaRun {
   status: 'ok' | 'fail' | 'start'
   durationMs: number | null
   model: string | null
+  /** The effort the run asked for (Claude Code's --effort), when the event says. */
+  effort: string | null
   engine: 'claude' | 'free' | null
   /** Ran on something weaker than asked: the free pool, or Sonnet for an Opus build. */
   fellBack: boolean
@@ -60,6 +62,7 @@ export function ideaRuns(events: LogEvent[]): IdeaRun[] {
       at: e.ts, kind, idea: e.subject?.idea ?? null, status: e.status,
       durationMs: e.durationMs,
       model: str(d.model) ?? e.message.match(/\bon (claude-[\w.-]+)/)?.[1] ?? null,
+      effort: str(d.effort),
       engine,
       fellBack: bool(d.fellBack) ?? engine === 'free',
       seeded: d.trigger === 'seed' || /\(seeded\)/.test(e.message),

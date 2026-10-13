@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { LOCAL_DB, LOCAL_DB_REASON } from './helpers/disposable-db'
 
 test.describe('Dashboard', () => {
   test('loads and shows metric cards', async ({ page }) => {
@@ -56,6 +57,7 @@ test.describe('Dashboard', () => {
   })
 
   test('Needs you: what to do next and the open PR queue lead the page', async ({ page }) => {
+    test.skip(LOCAL_DB, LOCAL_DB_REASON)
     await page.goto('/')
     await expect(page.getByText('Needs you', { exact: true })).toBeVisible()
     await expect(page.getByText(/deserve attention|Nothing needs you today/).first()).toBeVisible()
@@ -87,6 +89,7 @@ test.describe('Open PRs card layout', () => {
   // "today" and was cut off at the card's edge; long titles once pushed it out on a phone.
   for (const [label, viewport] of [['desktop', { width: 1440, height: 900 }], ['phone', { width: 390, height: 844 }]] as const) {
     test(`every PR's age fits inside the card (${label})`, async ({ page }) => {
+      test.skip(LOCAL_DB, LOCAL_DB_REASON)
       await page.setViewportSize(viewport)
       await page.goto('/')
       const card = page.getByTestId('open-prs')

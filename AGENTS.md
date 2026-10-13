@@ -71,6 +71,7 @@ Anything that runs on a schedule or in the background logs to the shared system 
 
 ### E2E tests
 - `npm run test:e2e` runs the suite against a **throwaway Neon branch** of production (`scripts/e2e-branch.sh`): created for the run, deleted after it, app on port 3100, `REDIS_URL` empty so nothing reaches the real queue, and the signed-in e2e user owns the factory so owner-only specs run. Needs the Neon CLI logged in. Pass spec paths after `--`.
+- `npm run test:e2e:local` runs the same suite against a **fresh local Postgres** (`scripts/e2e-local.ts`; `docker compose --profile flow up -d flow-postgres` first). The database holds one owner and nothing else, the app gets dummy keys, and every provider key is blanked. CI runs it on every PR (the "Browser tests (e2e)" check), so agents merge only after the browser tests pass. Specs that need real synced data (repos, PRs, history) skip there with `test.skip(LOCAL_DB, LOCAL_DB_REASON)` (`tests/e2e/helpers/disposable-db.ts`) and still run on a Neon branch. A new spec should seed its own data so it runs in CI.
 - `npm run test:e2e:prod-db` is the old behaviour (`.env.local`'s DATABASE_URL, which is production). Avoid it: specs that overwrite or delete shared rows skip there (`test.skip(!DISPOSABLE_DB, …)`, `tests/e2e/helpers/disposable-db.ts`), and never queue runnable work from it, since the owner's real worker would run it.
 
 ### Flow tests (`tests/flow`, see its README)

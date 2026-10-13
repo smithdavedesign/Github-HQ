@@ -8,7 +8,7 @@
 import { test, expect } from '@playwright/test'
 import { neon } from '@neondatabase/serverless'
 import { randomUUID } from 'node:crypto'
-import { FACTORY_OWNER, getFactoryRepo, NOT_FACTORY_OWNER } from './helpers/factory'
+import { FACTORY_OWNER, getFactoryRepo, NOT_FACTORY_OWNER, signedInIsOwner } from './helpers/factory'
 
 const DB_URL = process.env.DATABASE_URL ?? ''
 
@@ -109,7 +109,7 @@ test.describe('Agent HQ API', () => {
   })
 
   test('overview is owner-only; trace needs an id', async ({ request }) => {
-    const owner = !!(await getFactoryRepo())
+    const owner = await signedInIsOwner()
     const res = await request.get('/api/agent-hq')
     expect(res.status()).toBe(owner ? 200 : 403)
     if (owner) {
