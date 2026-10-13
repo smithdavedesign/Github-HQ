@@ -57,7 +57,7 @@ left for him) and posting; each morning he reviews what the agents merged and re
 | **Slack** | workspace channel **#team-agents** (app `repoHQ-message`, socket mode through OpenClaw) | The communication layer: talk to the companion (@-mention in the channel, or DM), and where **system alerts** land: failures, reminders, recoveries |
 | **System log** | `~/.system-events/events.jsonl` → collector (launchd, 5 min) → Neon `system_events` | One log across every part, with probes and Slack alerts. [Logging](logging.md) |
 | **Backups** | private GitHub repos | `ai-stack` (the stack's config and scripts, never `.env`), `repohq-factory-state` (the factory's ledger and reports, nightly), `idea-factory` (every idea's record). Code repos live on GitHub. |
-| **Secrets** | macOS keychain + `~/ai-stack/bin/secrets` | One source of truth; `check` runs daily; `rotate litellm` updates every copy. [Authentication](ai-stack/authentication.md) |
+| **Secrets** | macOS keychain + `~/ai-stack/bin/secrets` | One source of truth; `check` runs daily; `rotate litellm` updates every copy. `scan` finds every secret on the Mac (in a throwaway container: no network, read-only, non-root) and the secret names in Vercel, GitHub, GCP and Neon; `vault` copies each value into the keychain (`vault/<scope>/<NAME>`) without a model ever seeing it; `sync` sends the names-only inventory to **Settings → Keys** (`/settings/keys`, owner only: rotate link per platform, keychain item, every place a key is used, what to fix first). [Authentication](ai-stack/authentication.md) |
 
 ## Rules every part follows
 

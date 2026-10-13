@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { formatDistanceToNow } from '@/lib/utils'
-import { GitFork, CreditCard, Sparkles, Bell, Bot, ChevronRight } from 'lucide-react'
+import { GitFork, CreditCard, Sparkles, Bell, Bot, ChevronRight, KeyRound } from 'lucide-react'
 import { PublicProfileToggle } from '@/components/settings/public-profile-toggle'
 import { StripeConnect } from '@/components/settings/stripe-connect'
 import { ProfileReadmeGenerator } from '@/components/settings/profile-readme-generator'
@@ -112,6 +112,20 @@ export default async function SettingsPage() {
           />
         </CardContent>
       </Card>
+
+      {ownsFactory && (
+        <Link href="/settings/keys" className="block" data-testid="settings-keys-link">
+          <Card className="hover:bg-muted/40 transition-colors">
+            <CardContent className="flex items-center justify-between py-4">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium flex items-center gap-2"><KeyRound className="w-4 h-4" />Keys</p>
+                <p className="text-xs text-muted-foreground">Every API key your system uses: where to rotate it and where it lives in the keychain.</p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </CardContent>
+          </Card>
+        </Link>
+      )}
 
       <Card>
         <CardHeader>
