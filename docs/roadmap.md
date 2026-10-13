@@ -289,7 +289,7 @@ The factory becomes the only executor, and Nexus's queue infrastructure (Redis/B
 The owner decides on ideas and starts builds from RepoHQ, and idea-factory does the work ([idea-factory.md](idea-factory.md)).
 - [x] Ideas page: review an idea and approve a build, a demand test or a pass (`idea_decisions`, applied by the pipeline through Notion) (#65)
 - [x] New idea box: ideas typed on the page join the research queue (`idea_seeds`) (#67)
-- [x] Ideas the owner sends are researched and reviewed on the next tick and answered on Slack or WhatsApp, up to 3 a day (idea-factory#4, #68)
+- [x] Ideas the owner sends are researched and reviewed on the next tick and answered on Slack or WhatsApp, up to 3 a day (idea-factory#4, #68); 10 a day since 2026-10-12 (idea-factory#30)
 - [x] Start build now: an approved idea's next milestone is built on the next tick, outside the weekly slot, at most 2 a day (`idea_build_requests`). Builds run `--model opus --effort xhigh`, fall back to Sonnet and then the free pool, plan with gstack plan-eng-review and self-review with gstack's checklist. Covered by unit, e2e and tick system tests.
 - [x] Builds in the factory's Docker sandbox with a subscription token, instead of on the host (`factory/bin/sandbox-session.ts`, idea-factory `lib/sandbox.js`); a secret scan with one repair round before any commit; the credential broker through `.provision`
 - [x] Road to revenue: a plan once M1 is merged (gstack startup frameworks), the launch checklist checked every tick, a card on the idea page and morning-email lines; build queues ordered by how close each idea is to its first dollar
