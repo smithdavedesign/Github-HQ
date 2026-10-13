@@ -7,14 +7,16 @@ import { loadIdeasOverview } from '@/lib/ideas/ideas-data'
 import {
   GROUP_LABEL, GROUP_ORDER, IDEA_BOARD_URL, buildSlot, groupIdeas, pipelineHealth, type IdeaGroup,
 } from '@/lib/ideas/idea-utils'
+import { filterIdeas, filtersActive, parseIdeaFilters, sortIdeas, tagCounts, topicTags } from '@/lib/ideas/idea-filters'
 import { IdeaCard } from '@/components/ideas/idea-card'
+import { IdeaFilterBar } from '@/components/ideas/idea-filter-bar'
 import { NewIdea } from '@/components/ideas/new-idea'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export const metadata = { title: 'Ideas' }
 
-export default async function IdeasPage() {
+export default async function IdeasPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
   const access = factoryAccess(session.user.id)
@@ -36,6 +38,12 @@ export default async function IdeasPage() {
   const maxValidating = pipeline.policy?.validation?.maxValidating ?? 5
   const mrr = views.reduce((n, v) => n + (v.state.revenue?.mrr ?? 0), 0)
   const first = groups.decide[0]?.slug
+  // The stats above count every idea; the filters (in the URL) narrow and order the lists below.
+  const filters = parseIdeaFilters(await searchParams)
+  const filtered = filtersActive(filters)
+  const shown = filterIdeas(views, filters)
+  const shownGroups = groupIdeas(shown, now)
+  for (const g of GROUP_ORDER) shownGroups[g] = sortIdeas(shownGroups[g], filters.sort)
 
   const stats: { label: string; value: string; hint: string }[] = [
     { label: 'Needs your call', value: String(groups.decide.length), hint: 'new or recently reviewed' },
@@ -82,7 +90,7 @@ export default async function IdeasPage() {
             ))}
           </div>
 
-          <NewIdea seeds={seeds} />
+          <NewIdea seeds={seeds} perDay={pipeline.policy?.research?.seeded?.maxPerDay ?? 10} />
 
           <div className={cn('flex items-start gap-2 text-xs rounded-lg border px-3 py-2', health.stale || pipeline.ok === false ? 'border-amber-500/30 bg-amber-500/5' : 'bg-muted/30')}>
             <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', health.stale ? 'bg-amber-500' : pipeline.ok === false ? 'bg-red-500' : 'bg-emerald-500')} aria-hidden />
@@ -97,7 +105,11 @@ export default async function IdeasPage() {
               The idea pipeline copies every idea here on each run. If this stays empty, check that the pipeline on the Mac has the RepoHQ sync step (idea-factory bin/idea-pipeline.js).
             </SetupNote>
           ) : (
-            GROUP_ORDER.map(g => <Group key={g} group={g} items={groups[g]} policy={pipeline.policy} now={now} />)
+            <>
+              <IdeaFilterBar filters={filters} counts={tagCounts(views)} topics={topicTags(views)} shown={shown.length} total={views.length} />
+              {filtered && shown.length === 0 && <p className="text-sm text-muted-foreground">No ideas match these filters.</p>}
+              {GROUP_ORDER.map(g => <Group key={g} group={g} items={shownGroups[g]} policy={pipeline.policy} now={now} filtered={filtered} />)}
+            </>
           )}
 
           <p className="text-xs text-muted-foreground">
@@ -109,15 +121,16 @@ export default async function IdeasPage() {
   )
 }
 
-function Group({ group, items, policy, now }: { group: IdeaGroup; items: ReturnType<typeof groupIdeas>[IdeaGroup]; policy: Parameters<typeof IdeaCard>[0]['policy']; now: Date }) {
-  if (items.length === 0 && group !== 'decide') return null
+function Group({ group, items, policy, now, filtered }: { group: IdeaGroup; items: ReturnType<typeof groupIdeas>[IdeaGroup]; policy: Parameters<typeof IdeaCard>[0]['policy']; now: Date; filtered: boolean }) {
+  if (items.length === 0 && (group !== 'decide' || filtered)) return null
   const { title, blurb } = GROUP_LABEL[group]
   const body = items.length === 0
     ? <p className="text-sm text-muted-foreground">Nothing waiting on you. New ideas arrive daily at 09:00, and ideas you send are researched within about half an hour.</p>
     : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{items.map(v => <IdeaCard key={v.slug} v={v} group={group} policy={policy} now={now} />)}</div>
   if (group === 'passed') {
     return (
-      <details className="group/passed space-y-3">
+      // Open while filtering, so matching passed ideas aren't hidden behind "Show".
+      <details className="group/passed space-y-3" open={filtered}>
         <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
           <h2 className="inline text-lg font-semibold">{title}</h2>
           <span className="ml-2 text-sm text-muted-foreground">{items.length} · {blurb} <span className="group-open/passed:hidden">Show</span><span className="hidden group-open/passed:inline">Hide</span></span>

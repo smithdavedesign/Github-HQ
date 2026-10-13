@@ -28,18 +28,18 @@ async function ready(): Promise<string | null> {
   return row?.ok ? null : 'the ideas tables are not in this database (npm run db:push)'
 }
 
-async function seed(slug: string, title: string, score: number) {
+async function seed(slug: string, title: string, score: number, { tags = [] as string[], demand = 3 } = {}) {
   const at = new Date(Date.now() - 3600_000).toISOString()
   const state = { stage: 'pass', review: { verdict: 'pass', score, summary: `Review summary for ${title}.`, at } }
   const review = {
     verdict: 'pass', score, summary: `Review summary for ${title}.`,
-    forcingQuestions: { demand: { score: 3, evidence: 'One forum thread.' }, wedge: { score: 7, evidence: 'Clear wedge.' } },
+    forcingQuestions: { demand: { score: demand, evidence: 'One forum thread.' }, wedge: { score: 7, evidence: 'Clear wedge.' } },
     risks: ['Thin demand'], killCriteria: 'Fewer than 5 signups.', feasibility: { zeroCost: true, m1Weekend: true, notes: 'Static site' },
     landing: { headline: 'H', subhead: 'S', bullets: ['b'], cta: 'Join' }, launch: { channels: [{ name: 'r/test' }], post: 'Try {url}' },
   }
   const docs = { prd: `# PRD\n\n## Problem\n\nThe **${title}** problem.\n\n<script>window.__pwned = true</script>\n\n[bad](javascript:alert(1))`, research: '# Research\n\nNotes.' }
   await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, notion_url, hash, updated_at)
-    VALUES (${slug}, ${`${title} — a test idea`}, 'pass', ${JSON.stringify({ oneLiner: 'x', effort: 'Low', sources: ['https://example.com/a'] })}::jsonb,
+    VALUES (${slug}, ${`${title} — a test idea`}, 'pass', ${JSON.stringify({ oneLiner: 'x', effort: 'Low', sources: ['https://example.com/a'], tags })}::jsonb,
       ${JSON.stringify(state)}::jsonb, ${JSON.stringify(review)}::jsonb, ${JSON.stringify(docs)}::jsonb, 'https://www.notion.so/e2e', 'e2e', now())
     ON CONFLICT (slug) DO NOTHING`
 }
@@ -136,8 +136,8 @@ test.describe('Ideas page', () => {
     await cleanup()
     // The branch copies production, whose real builds today would hit the manual cap and change every dialog. Age them (disposable branch only: ready() checks).
     await sql()`UPDATE idea_build_requests SET started_at = started_at - interval '2 days' WHERE started_at > now() - interval '1 day'`
-    await seed(SLUG, 'Alpha', 8)
-    await seed(SLUG2, 'Beta', 5)
+    await seed(SLUG, 'Alpha', 8, { tags: ['fun', 'consumer', 'one-time', 'reach:viral'], demand: 3 })
+    await seed(SLUG2, 'Beta', 5, { tags: ['serious', 'business', 'saas', 'reach:outbound'], demand: 6 })
     await seedApproved(SLUG3, 'Gamma')
     await seedBuilt(SLUG4, 'Delta')
     await seedGrowth(SLUG5, 'Epsilon')
@@ -159,6 +159,46 @@ test.describe('Ideas page', () => {
     // Model-written markdown never runs scripts or javascript: links.
     expect(await page.evaluate(() => (window as unknown as { __pwned?: boolean }).__pwned)).toBeUndefined()
     await expect(page.getByRole('link', { name: 'bad' })).toHaveCount(0)
+  })
+
+  test('filters and sorts ideas by tag, score, text and credibility, and keeps them in the URL', async ({ page }) => {
+    const skip = await ready()
+    test.skip(!!skip, skip ?? '')
+    const section = page.locator('section', { has: page.getByRole('heading', { name: /Needs your call/ }) })
+    const filters = page.getByTestId('idea-filters')
+    const alpha = section.getByRole('link', { name: 'Alpha' })
+    const beta = section.getByRole('link', { name: 'Beta' })
+    const order = async () => (await section.getByRole('link').allInnerTexts()).filter(n => n === 'Alpha' || n === 'Beta')
+
+    await page.goto('/ideas')
+    // Cards show their tags and how credible the demand is.
+    const alphaTags = section.locator('div.group', { has: page.getByRole('link', { name: 'Alpha' }) }).getByTestId('idea-card-tags')
+    await expect(alphaTags).toContainText('Spreads itself')
+    await expect(alphaTags).toContainText('demand 3/10')
+    // By score Alpha (8) leads; by credibility Beta (demand 6) does.
+    expect(await order()).toEqual(['Alpha', 'Beta'])
+
+    // A tag chip filters and lands in the URL; Clear brings everything back.
+    await filters.getByRole('button', { name: /^Spreads itself/ }).click()
+    await expect(page).toHaveURL(/tags=reach%3Aviral/)
+    await expect(alpha).toBeVisible()
+    await expect(beta).toHaveCount(0)
+    await filters.getByRole('button', { name: 'Clear filters' }).click()
+    await expect(beta).toBeVisible()
+
+    // Search as you type.
+    await filters.getByRole('textbox', { name: 'Search ideas' }).fill('Beta')
+    await expect(page).toHaveURL(/q=Beta/)
+    await expect(alpha).toHaveCount(0)
+    await expect(beta).toBeVisible()
+
+    // A shared link opens the same view: minimum score, then credibility order.
+    await page.goto('/ideas?min=6')
+    await expect(alpha).toBeVisible()
+    await expect(beta).toHaveCount(0)
+    await page.goto('/ideas?sort=credibility')
+    await expect(filters.getByRole('button', { name: 'Credibility' })).toHaveAttribute('aria-pressed', 'true')
+    expect(await order()).toEqual(['Beta', 'Alpha'])
   })
 
   test('approving queues a decision for the pipeline, and it can be withdrawn', async ({ page }) => {

@@ -18,6 +18,8 @@ export interface IdeaJson {
   confidence?: string
   sources?: string[]
   recordedAt?: string
+  /** Set when the owner sent the idea (Slack, WhatsApp, the New idea box, a session). */
+  seedId?: string
 }
 
 export interface IdeaStateJson {
@@ -565,10 +567,11 @@ export function cleanIdeaText(text: string): { ok: true; text: string } | { ok: 
 }
 
 /** Where a submitted idea stands, in one line. */
-export function seedStatusLabel(s: Pick<IdeaSeedRow, 'status' | 'result'>, ahead: number): string {
+/** `perDay`: policy.research.seeded.maxPerDay, as the pipeline last published it. */
+export function seedStatusLabel(s: Pick<IdeaSeedRow, 'status' | 'result'>, ahead: number, perDay = 10): string {
   switch (s.status) {
     case 'pending': return 'Waiting for the pipeline (within 15 min)'
-    case 'queued': return ahead > 0 ? `In the research queue, ${ahead} ahead of it: up to 3 are researched a day, each as soon as the one before is done` : 'Next in the research queue: researched and reviewed within about half an hour'
+    case 'queued': return ahead > 0 ? `In the research queue, ${ahead} ahead of it: up to ${perDay} are researched a day, each as soon as the one before is done` : 'Next in the research queue: researched and reviewed within about half an hour'
     case 'researched': return 'Researched'
     case 'failed': return `Couldn’t be queued: ${s.result ?? 'see the pipeline log'}`
     case 'cancelled': return 'Withdrawn'
