@@ -25,7 +25,10 @@ description: |
    - **Every built idea has a checklist** to the first dollar (`state.launch`, the Road to revenue card): the next step says whose it is. The owner's steps are the Stripe product, posting (the `launch` skill drafts the posts) and a price decision.
    - Each idea is in full in `~/idea-factory/ideas/<slug>/` (research, PRD, roadmap, review, state).
 3. **Follow the rules:**
-   - **No spending:** free tiers only; nothing paid before it earns. (Written without the dollar sign: skill loading would replace it with the first argument.)
+   - **Spending:** agents never spend or hold a card. The owner may put a few hundred dollars into moving a
+     product forward (idea-factory `policy.json` ownerBudget, 300 per product, his call 2026-10-12): propose the
+     spend and what it should buy, and he approves and pays. Free tiers otherwise. (Written without the dollar
+     sign: skill loading would replace it with the first argument.)
    - **Claude work on the Pro subscription, never API credit.** Strip `ANTHROPIC_API_KEY`; the
      reference is `idea-factory/lib/claude.js`.
    - **Data classes:** never send employer work data to a cloud model; never touch financial data.
@@ -33,7 +36,7 @@ description: |
      The factory and the idea pipeline merge their own PRs once tests and every check are green, and
      revert what breaks. In an interactive session you open a PR so CI runs, merge it yourself once CI
      is green, and do the deploy step; he reviews afterwards. Never force-push or delete.
-   - **The owner's Notion status overrides any verdict.**
+   - **The owner's decision on RepoHQ's Ideas page overrides any verdict** (no Notion since 2026-10-12).
 4. **Logs, alerts, backups and secrets** ([docs/logging.md](/Users/davidsmith/Documents/Repos/Github-HQ/RepoHQ/docs/logging.md)):
    - **One log:** every system writes to `~/.system-events/events.jsonl`; the collector ships it to Neon `system_events` every 5 minutes.
    - **Probes:** services, launchd jobs, OpenClaw crons, GitHub crons, Vercel deploys, provider errors, secrets.

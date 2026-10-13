@@ -38,9 +38,9 @@ async function seed(slug: string, title: string, score: number, { tags = [] as s
     landing: { headline: 'H', subhead: 'S', bullets: ['b'], cta: 'Join' }, launch: { channels: [{ name: 'r/test' }], post: 'Try {url}' },
   }
   const docs = { prd: `# PRD\n\n## Problem\n\nThe **${title}** problem.\n\n<script>window.__pwned = true</script>\n\n[bad](javascript:alert(1))`, research: '# Research\n\nNotes.' }
-  await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, notion_url, hash, updated_at)
+  await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, hash, updated_at)
     VALUES (${slug}, ${`${title} — a test idea`}, 'pass', ${JSON.stringify({ oneLiner: 'x', effort: 'Low', sources: ['https://example.com/a'], tags })}::jsonb,
-      ${JSON.stringify(state)}::jsonb, ${JSON.stringify(review)}::jsonb, ${JSON.stringify(docs)}::jsonb, 'https://www.notion.so/e2e', 'e2e', now())
+      ${JSON.stringify(state)}::jsonb, ${JSON.stringify(review)}::jsonb, ${JSON.stringify(docs)}::jsonb, 'e2e', now())
     ON CONFLICT (slug) DO NOTHING`
 }
 
@@ -58,9 +58,9 @@ async function seedApproved(slug: string, title: string) {
   }
   const state = { stage: 'repo', repo: `https://github.com/smithdavedesign/${slug}`, ownerApproved: true, review: { verdict: 'pass', score: 4, at: new Date().toISOString() }, launch }
   const docs = { prd: '# PRD\n\nGamma.', roadmap: '# Roadmap\n\n## M1 — core\n\nExit: it works.\n\n## M2 — more\n\nExit: more works.', revenue: '# Revenue plan\n\nIndie devs pay $9 a month for the digest.' }
-  await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, notion_url, hash, updated_at)
+  await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, hash, updated_at)
     VALUES (${slug}, ${`${title} — an approved test idea`}, 'repo', ${JSON.stringify({ oneLiner: 'x' })}::jsonb, ${JSON.stringify(state)}::jsonb,
-      ${JSON.stringify({ verdict: 'pass', score: 4 })}::jsonb, ${JSON.stringify(docs)}::jsonb, 'https://www.notion.so/e2e', 'e2e', now())
+      ${JSON.stringify({ verdict: 'pass', score: 4 })}::jsonb, ${JSON.stringify(docs)}::jsonb, 'e2e', now())
     ON CONFLICT (slug) DO NOTHING`
 }
 
@@ -70,9 +70,9 @@ async function seedBuilt(slug: string, title: string) {
     funnel: { d7: { visit: 2, signup: 0, activate: 0, checkout: 0 }, prev7: { visit: 0 }, all: { visit: 2 }, seen: { visit: true } },
     launch: { steps: [], next: { id: 'mvp', label: 'MVP built: every roadmap milestone merged', owner: 'agent' }, done: 2, total: 10, price: '$12 once' } }
   const docs = { prd: '# PRD', roadmap: '# Roadmap\n\n## M1 — core\n\n## M2 — more' }
-  await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, notion_url, hash, updated_at)
+  await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, hash, updated_at)
     VALUES (${slug}, ${`${title} — a built test idea`}, 'building', ${JSON.stringify({ oneLiner: 'x' })}::jsonb, ${JSON.stringify(state)}::jsonb,
-      ${JSON.stringify({ verdict: 'pass', score: 4 })}::jsonb, ${JSON.stringify(docs)}::jsonb, 'https://www.notion.so/e2e', 'e2e', now())
+      ${JSON.stringify({ verdict: 'pass', score: 4 })}::jsonb, ${JSON.stringify(docs)}::jsonb, 'e2e', now())
     ON CONFLICT (slug) DO NOTHING`
 }
 
@@ -91,9 +91,9 @@ async function seedGrowth(slug: string, title: string) {
     build: { milestone: 'GROWTH', kind: 'seo', experiment: `${slug}-20261020-seo`, milestones: [], status: 'pr-open', prUrl: pr },
     launch: { steps: [], next: { id: 'payments', label: 'Stripe product created and mapped to the repo in RepoHQ', owner: 'david' }, done: 6, total: 10, price: '$5 once' } }
   const docs = { prd: '# PRD', roadmap: '# Roadmap\n\n## M1 — core\n\n## M2 — more', learnings: '# Learnings\n\n- 2026-10-20 · funnel beacon · keep: the beacon went live, and 1 visitor in 12 used the core action.' }
-  await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, notion_url, hash, updated_at)
+  await sql()`INSERT INTO ideas (slug, title, stage, idea, state, review, docs, hash, updated_at)
     VALUES (${slug}, ${`${title} — a live test product`}, 'live', ${JSON.stringify({ oneLiner: 'x' })}::jsonb, ${JSON.stringify(state)}::jsonb,
-      ${JSON.stringify({ verdict: 'pass', score: 4 })}::jsonb, ${JSON.stringify(docs)}::jsonb, 'https://www.notion.so/e2e', 'e2e', now())
+      ${JSON.stringify({ verdict: 'pass', score: 4 })}::jsonb, ${JSON.stringify(docs)}::jsonb, 'e2e', now())
     ON CONFLICT (slug) DO NOTHING`
 }
 

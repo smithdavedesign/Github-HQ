@@ -10,7 +10,7 @@ function idea(slug: string, over: { tags?: string[]; score?: number; demand?: nu
     idea: { oneLiner: over.oneLiner ?? 'one liner', tags: over.tags, confidence: over.confidence, effort: over.effort, seedId: over.seedId, recordedAt: over.at },
     state: over.score === undefined ? {} : { review: { verdict: 'pass', score: over.score, at: over.at } },
     review: over.demand === undefined ? null : { forcingQuestions: { demand: { score: over.demand, evidence: 'threads' } } },
-    docs: {}, notionUrl: null, updatedAt: null, signals: null, decisions: [], buildRequests: [],
+    docs: {}, updatedAt: null, signals: null, decisions: [], buildRequests: [],
   }
 }
 const NONE: IdeaFilters = parseIdeaFilters({})

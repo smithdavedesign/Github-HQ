@@ -389,7 +389,7 @@ npm run db:generate   # Generate migration files
 - [Autonomous Factory](docs/autonomous-factory.md) — free-model-first self-improvement loop: local AI stack lane, model-tier routing, Docker-sandboxed worker, Judge v2 + adversarial review, capability stages, sensors and a ranked queue, job record and KPIs, night shift, infra agent (Horizon 3). Operator guide: [factory/README.md](factory/README.md)
 - [System overview](docs/system-overview.md) — **start here**: the goal, the loop (research → gstack review → $0 demand test → build → revenue), where every part lives, the rules (money, models, data classes, who merges), how agents get context, the scorecard and the schedules
 - [System logging](docs/logging.md) — one log across every system (RepoHQ, factory, idea pipeline, AI stack, OpenClaw, launchd, GitHub crons), probes, and Slack #team-agents alerts for failures and recoveries
-- [Idea factory](docs/idea-factory.md) — the daily idea pipeline: research on the local stack → Notion Idea Board → the owner picks Build or Pass → private repo; how the factory will pick up idea repos after the 30-day window
+- [Idea factory](docs/idea-factory.md) — the idea pipeline: research on the Claude subscription → review → $0 demand test → the owner picks Build, Demand test or Pass on the Ideas page → private repo → build, go live, grow
 - [Personal context policy](docs/personal-context.md) — data classes (public, personal, work-confidential, financial), what each consumer (companion, scout, factory, Resource Center) may read and which models each class may reach, and what enforces it
 - [gstack Findings](docs/gstack-findings.md) — running log of skill run findings and resolutions
 - [MCP Setup](mcp/README.md) — IDE integration guide with all 14 tools

@@ -54,7 +54,7 @@ export interface IdeaStateJson {
   revenue?: { mrr: number; updatedAt?: string }
   ownerApproved?: boolean
   passReason?: string
-  /** The owner's last decision, set by the pipeline when it applies one (from this page or Notion). */
+  /** The owner's last decision, set by the pipeline when it applies one from this page. */
   ownerDecision?: { decision: IdeaDecisionKind; at: string; note?: string; source?: string }
 }
 
@@ -271,7 +271,6 @@ export interface IdeaView {
   state: IdeaStateJson
   review: ReviewJson | null
   docs: IdeaDocs
-  notionUrl: string | null
   updatedAt: Date | null
   /** Live counts from idea_signals (the synced state lags by up to a tick). */
   signals: Signals | null
@@ -282,8 +281,6 @@ export interface IdeaView {
 }
 
 const DAY = 86_400_000
-/** The Notion Idea Board (idea-factory IDEA_BOARD_ID): the board the pipeline follows. */
-export const IDEA_BOARD_URL = 'https://www.notion.so/3f5bf9bf93e481b78036fc1cd59fd48f'
 /** The idea's git record: idea-factory's ideas/<slug>/. */
 export const ideaRecordUrl = (slug: string) => `https://github.com/smithdavedesign/idea-factory/tree/main/ideas/${encodeURIComponent(slug)}`
 /** A review the pipeline acted on by itself stays in "needs you" this long, so you can overrule it. */
@@ -328,7 +325,7 @@ export function pendingDecision(v: Pick<IdeaView, 'decisions'>): IdeaDecisionRow
   return v.decisions.find(d => d.status === 'pending') ?? null
 }
 
-/** The owner has already decided this idea (a decision applied here, or a Pass/Build set in Notion). */
+/** The owner has already decided this idea (a decision from this page that the pipeline applied). */
 export function ownerDecided(v: Pick<IdeaView, 'decisions' | 'state'>): boolean {
   return v.decisions.some(d => d.status === 'applied') || !!v.state.ownerDecision || v.state.passReason === 'owner' || v.state.ownerApproved === true
 }
@@ -384,9 +381,8 @@ export function reviewQueue(views: IdeaView[], now: Date): string[] {
 
 export type DecisionCheck = { ok: true } | { ok: false; reason: string }
 
-/** Which decisions the pipeline can act on from this stage (idea-factory ownerOverride). */
-export function checkDecision(v: Pick<IdeaView, 'stage' | 'state' | 'review' | 'notionUrl'>, decision: IdeaDecisionKind): DecisionCheck {
-  if (!v.notionUrl) return { ok: false, reason: 'This idea has no Notion row yet, so the pipeline has nowhere to record the decision.' }
+/** Which decisions the pipeline can act on from this stage (idea-factory applyDecision, the same rules). */
+export function checkDecision(v: Pick<IdeaView, 'stage' | 'state' | 'review'>, decision: IdeaDecisionKind): DecisionCheck {
   switch (decision) {
     case 'build':
       if (['idea', 'validate', 'pass'].includes(v.stage)) return { ok: true }
@@ -495,19 +491,19 @@ export function whatHappens(decision: IdeaDecisionKind, v: Pick<IdeaView, 'slug'
           : 'Builds M1 right after, on your Claude subscription (Opus at extra-high effort; the free pool only if it’s out of capacity): a gstack plan, tests first, then code until they pass.')
         : `This week’s build slot is used (${slot.used} of ${slot.max}); M1 starts after ${slot.nextFreeAt ? fmtDay(slot.nextFreeAt) : 'the slot frees up'}, or sooner with Start build now once the repo exists.`
       return [
-        'On its next run (within 15 min) the pipeline sets the Notion row to Build.',
+        'On its next run (within 15 min) the pipeline applies it.',
         repo,
         when,
         'Your note, if you add one, goes to the builder with the PRD.',
-        'Opens a draft PR (branch m1) for you to merge. Each merged milestone starts the next one in the roadmap.',
-        '$0: free hosting tiers only.',
+        'Opens a PR (branch m1), which the pipeline merges once its tests and every check pass. Each merged milestone starts the next one in the roadmap.',
+        'Hosting starts on free tiers; anything paid waits for your OK (policy ownerBudget).',
       ]
     }
     case 'validate': {
       const max = policy?.validation?.maxValidating ?? DEFAULTS.maxValidating
       const days = policy?.validation?.days ?? DEFAULTS.days
       return [
-        'On its next run the pipeline sets the Notion row to Validate.',
+        'On its next run (within 15 min) the pipeline applies it.',
         validating >= max
           ? `${validating} demand tests are already running (the cap is ${max}): its landing page waits for a free slot.`
           : 'Its landing page goes live on the free idea-pages site at the next daily run (09:30), with a launch post to share.',
@@ -517,7 +513,7 @@ export function whatHappens(decision: IdeaDecisionKind, v: Pick<IdeaView, 'slug'
     case 'pass':
       if (v.stage === 'pass') return ['Records that you agree with the review’s pass: the idea leaves “Needs your call”.', 'Nothing else changes. You can still approve it later.']
       return [
-        'On its next run the pipeline sets the Notion row to Pass.',
+        'On its next run (within 15 min) the pipeline applies it.',
         v.stage === 'validate' ? 'Its demand test stops counting toward a decision.' : 'Nothing is built.',
         'Research never proposes it again. You can still approve it from the Passed list.',
       ]

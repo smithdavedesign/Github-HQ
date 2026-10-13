@@ -12,7 +12,7 @@ const daysAgo = (d: number) => new Date(NOW.getTime() - d * 86_400_000).toISOStr
 function idea(slug: string, over: Partial<IdeaView> = {}): IdeaView {
   return {
     slug, title: `${slug} — a tool for someone`, stage: 'idea', idea: { oneLiner: 'one liner' }, state: {}, review: null, docs: {},
-    notionUrl: `https://www.notion.so/${slug}`, updatedAt: null, signals: null, decisions: [], buildRequests: [], ...over,
+    updatedAt: null, signals: null, decisions: [], buildRequests: [], ...over,
   }
 }
 const decision = (over: Partial<IdeaDecisionRow>): IdeaDecisionRow => ({
@@ -67,7 +67,8 @@ describe('Ideas page: what each decision may do', () => {
     // Agreeing with the review's pass, once.
     expect(checkDecision(idea('a', { stage: 'pass' }), 'pass').ok).toBe(true)
     expect(checkDecision(idea('a', { stage: 'pass', state: { passReason: 'owner' } }), 'pass').ok).toBe(false)
-    expect(checkDecision(idea('a', { notionUrl: null }), 'build')).toMatchObject({ ok: false, reason: expect.stringMatching(/no Notion row/) })
+    // No Notion since 2026-10-12: a just-recorded idea can be decided right away.
+    expect(checkDecision(idea('a'), 'build')).toEqual({ ok: true })
   })
   it('explains what happens next, including a used build slot', () => {
     const free = buildSlot([], POLICY, NOW)

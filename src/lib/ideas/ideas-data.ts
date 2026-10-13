@@ -32,7 +32,6 @@ function toView(r: IdeaRow, signals: Map<string, Signals>, decisions: IdeaDecisi
     state: (r.state ?? {}) as IdeaView['state'],
     review: (r.review ?? null) as IdeaView['review'],
     docs: (r.docs ?? {}) as IdeaView['docs'],
-    notionUrl: r.notionUrl,
     updatedAt: r.updatedAt,
     signals: signals.get(r.slug) ?? null,
     decisions: decisions.filter(d => d.slug === r.slug),
