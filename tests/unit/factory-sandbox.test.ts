@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { spawnSync } from 'node:child_process'
+import path from 'node:path'
 import { DEFAULT_SANDBOX, loadConfig } from '../../factory/lib/config'
 import {
   RELAY_URL, WORKDIR, egressRunArgs, execArgs, imageTag, proxyEnv, sandboxImages, sandboxModels, sandboxNames, upstreamUrl, workerRunArgs,
@@ -73,6 +75,18 @@ describe('egress container', () => {
     expect(upstreamUrl('http://localhost:4000')).toBe('http://host.docker.internal:4000')
     expect(upstreamUrl('http://127.0.0.1:4000/')).toBe('http://host.docker.internal:4000')
     expect(upstreamUrl('http://gateway.lan:4000')).toBe('http://gateway.lan:4000')
+  })
+  it('starts with an empty model list (an idea growth build: no models), but not a missing one', () => {
+    // The real entrypoint, outside the image: past its checks it writes /etc/tinyproxy, which isn't here,
+    // so that's where it stops. With the list required to be non-empty, every growth build's egress
+    // exited at once ("sandbox egress did not become ready", tiebreak, 2026-10-12).
+    const entry = path.join(__dirname, '../../factory/docker/egress-entrypoint.sh')
+    const start = (models?: string) => spawnSync('sh', [entry], { encoding: 'utf8', timeout: 10_000, env: env({ PATH: process.env.PATH ?? '', EGRESS_ALLOW_HOSTS: 'api.anthropic.com', ...(models === undefined ? {} : { EGRESS_ALLOW_MODELS: models }) }) })
+    const empty = start('')
+    expect(empty.stderr).not.toMatch(/EGRESS_ALLOW_MODELS/)
+    expect(empty.stderr).toMatch(/tinyproxy/)
+    expect(egressRunArgs(names, 'egress:1', { allowHosts: ['api.anthropic.com'], allowModels: [], upstream: 'http://host.docker.internal:4000' })).toContain('EGRESS_ALLOW_MODELS=')
+    expect(start().stderr).toMatch(/EGRESS_ALLOW_MODELS is required/)
   })
   it('routes package managers through the proxy but model calls straight to the relay', () => {
     const env = proxyEnv()

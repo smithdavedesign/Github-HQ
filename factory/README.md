@@ -139,7 +139,7 @@ host ◀──────────────── patch (file contents on
 | No host access | No bind mounts, no Docker socket; the clone is streamed in with `tar` and owned by a non-root `worker` user |
 | Least privilege | `--cap-drop ALL`, `no-new-privileges`, `--cpus 4`, `--memory 4g` (no extra swap), `--pids-limit 1024` |
 | Egress allowlist | The worker is on an `--internal` network with no route out. Its only peer, the egress container, proxies `sandbox.allowHosts` (default `registry.npmjs.org`, `registry.yarnpkg.com`) and refuses every other host |
-| Free models only | Model calls go to the egress relay, which forwards only the factory's aliases (`local-agent`, `free-agent`, `local-small`; the paid alias only when `monthlyBudgetUsd > 0`). The LiteLLM key is a known constant, so this is what stops repo code from spending on `cloud-smart` |
+| Free models only | Model calls go to the egress relay, which forwards only the factory's aliases (`local-agent`, `free-agent`, `local-small`; the paid alias only when `monthlyBudgetUsd > 0`). The LiteLLM key is a known constant, so this is what stops repo code from spending on `cloud-smart`. The list may be empty, meaning no model calls at all: an idea growth build uses only the Claude subscription. An empty list once made the egress exit, and every growth build failed until #97 |
 | Time limits | Every command runs under `timeout` inside the container; the container's PID 1 is a 90-minute `sleep`, so it exits on its own even if the factory dies |
 | Cleanup | Containers and the network are removed after each repo; leftovers from a crashed run are swept at the next cycle start (label `repohq.factory.sandbox`) |
 | No fallback to the host | If Docker isn't running, the cycle is **skipped** (logged), never run on the host |

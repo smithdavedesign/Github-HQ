@@ -184,16 +184,16 @@ v1 would have built.
 Each phase ships as draft PRs to RepoHQ and idea-factory, and David merges them (these are interactive
 sessions, so the autonomy rule doesn't apply to them).
 
-1. **Day 0, no code (done 2026-10-12):** tiebreak's first launch kit; David creates its Stripe payment link.
+1. **Day 0, no code (done 2026-10-12):** tiebreak's first launch kit. Its Stripe payment link went live on 2026-10-13: $5 once, made by the broker with the live key David stored.
 2. **Phase 0, fixes (live 2026-10-12):** a bug that can rerun the daily steps; merges on live products
    going untracked; Start build now after a go-live. Also the new-build hold, and the four funnel events
    in RepoHQ and in future go-live builds.
 3. **Phase 1, measurement (live 2026-10-12):** the funnel saved for every live product; `LEARNINGS.md`
    and `PLAYBOOK.md`; funnel lines in MCP; the Today block.
-4. **Phase 2, the growth step:** the rules, the experiment record, growth builds, kit runs and caps,
+4. **Phase 2, the growth step (live 2026-10-12):** the rules, the experiment record, growth builds, kit runs and caps,
    and the Growth card on the Ideas page. tiebreak's first missions: its funnel beacon, then SEO pages
    for searches such as "PickFu alternative".
-5. **Phase 3, outcomes, and autonomy:** experiments judged when their window ends, lessons appended,
+5. **Phase 3, outcomes, and autonomy (live 2026-10-13):** experiments judged when their window ends, lessons appended,
    playbook rules proposed; the pipeline and the factory merge their own green PRs and revert what breaks;
    the morning email's Done overnight section.
 6. **Later:** Search Console, a "mark posted" button, one-time Stripe payments counted as revenue,

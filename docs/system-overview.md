@@ -87,6 +87,8 @@ left for him) and posting; each morning he reviews what the agents merged and re
   - nothing force-pushes or deletes.
   Code: `factory/lib/automerge.ts` (config `autonomy`), idea-factory `lib/autonomy.js` (`policy.autonomy`).
 - **Agents never see secrets:** databases and API keys come from the credential broker `~/ai-stack/bin/provision`, which writes values straight to the keychain, Vercel env or GitHub secrets. It works on idea repos only and in agent accounts with no card. Anything it can't do is a Slack request to the owner ([provisioning](provisioning.md)).
+  - It also makes Stripe payment links, with restricted keys that can create products, prices, links and webhooks and nothing else.
+  - Live mode uses a key only the owner can create, and runs at his word. tiebreak has sold Pro at $5 once since 2026-10-13.
 - **The owner's choice wins:** a decision on RepoHQ's Ideas page, or a Notion status the owner sets, overrides any pipeline verdict.
 
 ## Communication and visibility
@@ -135,11 +137,11 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Demand test | Missing | **Live** | permitly's page went up automatically (https://idea-pages-livid.vercel.app/permitly/, decision on 2026-10-24). Signals, decision rules and the launch post (`LAUNCH.md`) all work. Distribution is still on the owner. |
 | Building ideas | Missing | Built, first runs under way | Milestones tests first on Claude Opus at extra-high effort (Sonnet, then the free pool, as fallbacks), planned and self-reviewed with gstack, draft PR. Approving builds the whole MVP in one run (stopping at failing tests); one a week automatically, plus up to 2 a day started from the Ideas page. Runs in the factory's Docker sandbox (subscription token; network only to registries and Anthropic), and every patch passes a secret scan before it's committed. Every build PR shows screenshots of the product working (Playwright in the sandbox), also at the top of the README. |
 | Context | Fragmented | Works | One index (44 repos, ideas, 258 bookmarks, 183 doc sections), MCP tools, a skill. Keyword search, no embeddings. |
-| Revenue loop | Missing | Wired, tracked per idea | Idea MRR from RepoHQ in each idea's state, the Notion board and the morning email. Each idea now has a road to revenue: a plan once M1 merges, and a checklist to the first dollar checked every tick, with the owner's steps in the morning email. A completed MVP gets a go-live build (SEO basics, legal pages, a Buy button, the visit beacon, a Vercel project), and the live site is audited every 6 hours. Build queues go to the idea closest to money. Total portfolio MRR is $4.99. |
+| Revenue loop | Missing | Wired, tracked per idea | Idea MRR from RepoHQ in each idea's state, the Notion board and the morning email. Each idea now has a road to revenue: a plan once M1 merges, and a checklist to the first dollar checked every tick, with the owner's steps in the morning email. A completed MVP gets a go-live build (SEO basics, legal pages, a Buy button, the visit beacon, a Vercel project), and the live site is audited every 6 hours. Build queues go to the idea closest to money. Total portfolio MRR is $4.99. Since 2026-10-13 tiebreak takes real payments ($5 once, through the broker's live Stripe key) and codespend is live (https://codespend.vercel.app). One-time payments don't count toward MRR yet. |
 | Operations | Fragile, visible | Fragile, **watched** | One system log across every part. Probes cover services, launchd jobs, OpenClaw crons, GitHub crons and provider errors, with alerts to Slack. Still one Mac. |
 
 **Weakest links now, in order:**
-1. **Distribution.** A landing page nobody sees proves nothing. tiebreak, the one live product, has had 3 visitors. Posting stays the owner's job; the growth loop ([growth-loop-prd.md](growth-loop-prd.md)) makes it one item a day, with posts drafted and measured.
+1. **Distribution.** A landing page nobody sees proves nothing. tiebreak can take payments but had 6 visitors in its first week; codespend went live on 2026-10-13. Posting stays the owner's job; the growth loop ([growth-loop-prd.md](growth-loop-prd.md)) makes it one item a day, with posts drafted and measured.
 2. **The first real build.** M1 building is proven by a test run (tripsplit, 19 tests); the first real one follows a Build decision.
 3. **Local model quality**, which is a hardware problem.
 4. **Single-Mac operations.**
