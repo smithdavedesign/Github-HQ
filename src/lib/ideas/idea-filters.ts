@@ -82,6 +82,19 @@ export function filtersQuery(f: IdeaFilters): string {
 
 export const filtersActive = (f: IdeaFilters) => f.tags.length > 0 || f.effort.length > 0 || f.minScore !== null || f.q.trim() !== '' || f.mine
 
+export interface ActiveFilter { key: string; label: string; remove: Partial<IdeaFilters> }
+
+/** What filters the list now, each with what removing it changes: the filter bar's chips. Search shows in its own box. */
+export function activeFilters(f: IdeaFilters): ActiveFilter[] {
+  const label = (tag: string) => TAG_GROUPS.flatMap(g => g.tags).find(t => t.tag === tag)?.label ?? tag
+  return [
+    ...(f.minScore !== null ? [{ key: 'min', label: `Score ${f.minScore}+`, remove: { minScore: null } }] : []),
+    ...f.effort.map(e => ({ key: `effort:${e}`, label: `${e[0]!.toUpperCase()}${e.slice(1)} effort`, remove: { effort: f.effort.filter(x => x !== e) } })),
+    ...f.tags.map(t => ({ key: `tag:${t}`, label: label(t), remove: { tags: f.tags.filter(x => x !== t) } })),
+    ...(f.mine ? [{ key: 'mine', label: 'Sent by me', remove: { mine: false } }] : []),
+  ]
+}
+
 export const scoreOf = (v: IdeaView): number | null => v.state.review?.score ?? v.review?.score ?? null
 const tagsOf = (v: IdeaView) => (v.idea.tags ?? []).map(t => String(t).toLowerCase())
 

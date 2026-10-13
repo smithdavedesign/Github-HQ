@@ -103,7 +103,7 @@ export default async function IdeasPage({ searchParams }: { searchParams: Promis
             </SetupNote>
           ) : (
             <>
-              <IdeaFilterBar filters={filters} counts={tagCounts(views)} topics={topicTags(views)} shown={shown.length} total={views.length} />
+              <IdeaFilterBar filters={filters} counts={tagCounts(views)} topics={topicTags(views, 60)} shown={shown.length} total={views.length} />
               {filtered && shown.length === 0 && <p className="text-sm text-muted-foreground">No ideas match these filters.</p>}
               {GROUP_ORDER.map(g => <Group key={g} group={g} items={shownGroups[g]} policy={pipeline.policy} now={now} filtered={filtered} />)}
             </>
