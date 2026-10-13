@@ -14,6 +14,10 @@ describe('shouldAlertHealth', () => {
   it(`re-alerts after a further drop of ${REALERT_DROP}+ points`, () => {
     expect(shouldAlertHealth({ ...base, health: 40, lastAlertedScore: 45 })).toBe(true)
   })
+  it('never alerts for a repo younger than two weeks: new idea repos score low for being new', () => {
+    expect(shouldAlertHealth({ ...base, health: 35, young: true })).toBe(false)
+    expect(shouldAlertHealth({ ...base, health: 35, young: false })).toBe(true)
+  })
   it('never alerts for archived or sunsetting repos', () => {
     expect(shouldAlertHealth({ ...base, health: 20, retired: true })).toBe(false)
   })

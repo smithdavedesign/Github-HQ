@@ -5,7 +5,7 @@ import { notifications, users, repositories } from '@/lib/db/schema'
 import { eq, and, gte, isNull, desc } from 'drizzle-orm'
 import { sendWebhook } from './webhook'
 import { repeatKey } from '@/lib/feed/collapse'
-import { shouldAlertHealth } from './health-alert-policy'
+import { shouldAlertHealth, YOUNG_DAYS } from './health-alert-policy'
 
 export type NotificationEventType =
   | 'health_alert'
@@ -96,7 +96,7 @@ export async function checkHealthThresholdAlerts(userId: string): Promise<number
   const userRepos = await db.query.repositories.findMany({
     where: eq(repositories.userId, userId),
     with: { metrics: { columns: { healthScore: true } } },
-    columns: { id: true, name: true, isArchived: true, lifecycleStatus: true },
+    columns: { id: true, name: true, isArchived: true, lifecycleStatus: true, createdAt: true },
   })
 
   // Score at each repo's latest health alert (newest first, so the first one seen wins).
@@ -116,7 +116,8 @@ export async function checkHealthThresholdAlerts(userId: string): Promise<number
   for (const repo of userRepos) {
     const health = repo.metrics?.healthScore
     const retired = !!repo.isArchived || repo.lifecycleStatus === 'archived' || repo.lifecycleStatus === 'sunsetting'
-    if (!shouldAlertHealth({ health, threshold, lastAlertedScore: lastAlertedScore.get(repo.id) ?? null, retired })) continue
+    const young = Date.now() - repo.createdAt.getTime() < YOUNG_DAYS * 86_400_000
+    if (!shouldAlertHealth({ health, threshold, lastAlertedScore: lastAlertedScore.get(repo.id) ?? null, retired, young })) continue
 
     await dispatchNotification({
       userId,
