@@ -223,6 +223,18 @@ The first version created a private repo every night. That would have added abou
 
 RepoHQ's [Ideas page](https://repohq.vercel.app/ideas) (`src/app/(app)/ideas/`, owner only) is where the owner reviews and decides. It lists the ideas that need a call first: unreviewed ones, and ones the review passed in the last 14 days that the owner hasn't seen. Then come the running demand tests, builds, live ideas and the passed list. Each idea opens to its review at a glance and tabs for the PRD, research, roadmap, full review, launch post and sources. A decision panel offers **Approve build**, **Demand test first** or **Pass**, or **Agree, keep passed** on an idea the review already passed. Each one confirms what will happen next. Keys: A / T / P to decide, ← → to step through the queue, Esc to go back.
 
+**Sorting and filtering** (`src/lib/ideas/idea-filters.ts`, `components/ideas/idea-filter-bar.tsx`):
+- **Sort** by score, **credibility**, effort or newest. Credibility is the review's demand score, i.e. how strong the evidence is that people want and pay for the idea. Ideas reviewed before that score existed use the research's confidence instead.
+- **Filter** by minimum score, effort, the ideas the owner sent, text, and tags.
+- **Tags:** research gives every idea one tag from each group (idea-factory `SKILL.md`), plus `ai` where it applies and a few topics:
+  - vibe: fun, wacky, serious;
+  - for: consumers, businesses, developers;
+  - money: SaaS, one-time, service;
+  - first users from: spreads itself, search, app stores, community posts, cold outreach.
+
+  Within a group any picked tag matches, and every group with a pick must match. Cards show the tags, with cold outreach in amber and spreading in green, since where the first users come from has decided most verdicts.
+- The stats keep counting every idea, and the filters stay in the URL, so a view can be bookmarked or shared.
+
 How a decision travels, with Notion staying the board the pipeline follows:
 
 1. The page writes a pending `idea_decisions` row (Neon) and nothing else.

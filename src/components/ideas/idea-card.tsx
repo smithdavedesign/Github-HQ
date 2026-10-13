@@ -5,7 +5,10 @@ import { DemandMeters, PendingBadge, ScoreBadge, StageBadge } from './idea-bits'
 import {
   buildRequestLabel, demandProgress, pendingDecision, safeUrl, shortTitle, tagline, type IdeaGroup, type IdeaPolicy, type IdeaView,
 } from '@/lib/ideas/idea-utils'
-import { errorSummary, formatDistanceToNow } from '@/lib/utils'
+import { TAG_TONE, cardTags, credibilityOf } from '@/lib/ideas/idea-filters'
+import { cn, errorSummary, formatDistanceToNow } from '@/lib/utils'
+
+const TONE_CLASS = { good: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400', warn: 'bg-amber-500/10 text-amber-700 dark:text-amber-400' }
 
 /** One idea in the list: enough to decide whether to open it, and the one number that matters for its stage. */
 export function IdeaCard({ v, group, policy, now }: { v: IdeaView; group: IdeaGroup; policy: IdeaPolicy | null; now: Date }) {
@@ -15,6 +18,8 @@ export function IdeaCard({ v, group, policy, now }: { v: IdeaView; group: IdeaGr
   const request = v.buildRequests?.[0] ?? null
   const reviewedAt = v.state.review?.at ? new Date(v.state.review.at) : null
   const demand = group === 'testing' ? demandProgress(v.signals, v.state, policy, now) : null
+  const tags = cardTags(v)
+  const credibility = credibilityOf(v)
   return (
     <div className="group relative rounded-xl border bg-card p-4 transition-colors hover:border-primary/40 focus-within:border-primary/40">
       <div className="flex items-start justify-between gap-3">
@@ -34,6 +39,17 @@ export function IdeaCard({ v, group, policy, now }: { v: IdeaView; group: IdeaGr
         {v.idea.effort && <Badge variant="outline" className="text-muted-foreground">effort {v.idea.effort.toLowerCase()}</Badge>}
         {pending && <PendingBadge decision={pending} />}
       </div>
+
+      {(tags.length > 0 || credibility) && (
+        <div className="flex flex-wrap items-center gap-1 mt-2" data-testid="idea-card-tags">
+          {tags.map(t => (
+            <span key={t.tag} className={cn('rounded-full px-2 py-0.5 text-[11px]', TAG_TONE[t.tag] ? TONE_CLASS[TAG_TONE[t.tag]] : 'bg-muted text-muted-foreground')}>{t.label}</span>
+          ))}
+          {credibility && (
+            <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground" title="Credibility: how strong the review found the evidence that people want and pay for this">{credibility.label}</span>
+          )}
+        </div>
+      )}
 
       {group !== 'testing' && v.state.review?.summary && (
         <p className="text-xs text-muted-foreground mt-3 line-clamp-3 leading-relaxed">{v.state.review.summary}</p>

@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
  * "New idea": the same research queue as "idea: …" on Slack or WhatsApp. Below it, what was
  * submitted and where each one stands (waiting → queued → researched).
  */
-export function NewIdea({ seeds }: { seeds: IdeaSeedRow[] }) {
+export function NewIdea({ seeds, perDay }: { seeds: IdeaSeedRow[]; perDay: number }) {
   const router = useRouter()
   const [text, setText] = useState('')
   const [busy, startTransition] = useTransition()
@@ -25,7 +25,7 @@ export function NewIdea({ seeds }: { seeds: IdeaSeedRow[] }) {
     startTransition(async () => {
       try {
         await submitIdea(trimmed)
-        toast.success('Idea queued for research', { description: 'Researched and reviewed within about half an hour (up to 3 a day); the verdict lands here and in Slack.' })
+        toast.success('Idea queued for research', { description: `Researched and reviewed within about half an hour (up to ${perDay} a day); the verdict lands here and in Slack.` })
         setText('')
         router.refresh()
       } catch (e) {
@@ -63,7 +63,7 @@ export function NewIdea({ seeds }: { seeds: IdeaSeedRow[] }) {
         />
       </label>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">Researched and reviewed within about half an hour (up to 3 a day, oldest first), then it shows up here for your call and the verdict goes to Slack.</p>
+        <p className="text-xs text-muted-foreground">Researched and reviewed within about half an hour (up to {perDay} a day, oldest first), then it shows up here for your call and the verdict goes to Slack.</p>
         <Button size="sm" onClick={submit} disabled={busy || trimmed.length < SEED_MIN}>
           {busy ? <Loader2 className="animate-spin" /> : <Plus />} Queue for research
           <kbd className="ml-1 text-[10px] font-mono opacity-60 max-sm:hidden">⌘↵</kbd>
@@ -81,7 +81,7 @@ export function NewIdea({ seeds }: { seeds: IdeaSeedRow[] }) {
                   <p className={cn('text-xs', s.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground')}>
                     {s.status === 'researched' && s.slug
                       ? <>Researched: <Link href={`/ideas/${s.slug}`} className="text-primary hover:underline">open {s.slug}</Link></>
-                      : seedStatusLabel(s, ahead)}
+                      : seedStatusLabel(s, ahead, perDay)}
                   </p>
                 </div>
                 {s.status === 'pending' && (

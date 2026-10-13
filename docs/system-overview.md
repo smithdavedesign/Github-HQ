@@ -99,7 +99,7 @@ left for him) and posting; each morning he reviews what the agents merged and re
 | **WhatsApp** | Personal: companion morning and evening messages, the AI briefing, the daily idea report |
 | **Morning email** (06:45) | The daily digest. It opens with **Done overnight**: what the agents merged, reverted and judged on their own. Then **Today**: at most five things for the owner, money first: a focus product's checklist step, the next post from a launch kit, idea PRs the pipeline left for him ([growth loop](growth-loop-prd.md)). Then the review queue, ideas and revenue, the focus products' funnels (**Growth**), the factory's roles, and what's failing now across every system |
 | **RepoHQ Agents page** | **Needs attention** on top, then tabs (`?tab=`): **Now** (the idea pipeline: building now, queued, caps, latest runs; Subscriptions: Claude Pro and Copilot use), **Runs** (the factory's worker, queue, schedules, runs and traces; data syncs), **Requests** (every request with its trace; 90-day figures), **KPIs** (factory KPIs, advisor accuracy, tiers, cost), **Log** (the **System log**: failing now plus the latest events; the Activity Log) |
-| **RepoHQ Ideas page** | Review ideas and decide: approve a build, demand-test or pass (applied through the Notion Idea Board within 15 min) |
+| **RepoHQ Ideas page** | Review ideas and decide: approve a build, demand-test or pass (applied through the Notion Idea Board within 15 min). Sort by score, credibility (the review's demand score), effort or newest; filter by tags (vibe, who it's for, money, where the first users come from, AI, topics), score, effort and text |
 | **Notion Idea Board** | The board the idea pipeline follows; decisions can still be made here |
 
 ## How an AI agent gets context
