@@ -8,7 +8,7 @@
 
 ## The goal
 
-**Make things people use and pay for, with near-zero overhead for the owner and no financial risk.**
+**Make things people use and pay for, with near-zero overhead for the owner and little financial risk:** agents never spend, and the owner puts at most a few hundred dollars into a product he wants to push (since 2026-10-12).
 
 A local AI stack knows the owner's repos, interests and ideas. It researches product ideas, reviews
 them, cheaply tests demand, builds the ones that show signal, keeps every repo healthy, and tracks

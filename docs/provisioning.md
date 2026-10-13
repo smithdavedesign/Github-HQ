@@ -31,7 +31,7 @@ Part of the [system overview](system-overview.md). Agents will build whole produ
 - Only repos with the GitHub topic `idea` can be provisioned, plus any the owner lists in `~/.config/provision/allow`. So no agent can touch RepoHQ's or the owner's own projects.
 - Names are validated before anything runs.
 - Every call is logged with `emit-event` (system `ai-stack`, component `provision`).
-- Everything runs in the agent accounts with **no card on file**, so $0 is enforced by the providers, not by trust.
+- Everything runs in the agent accounts with **no card on file**, so agents spending nothing is enforced by the providers, not by trust. The owner may still put money into a product (idea-factory `policy.ownerBudget`, $300 a product, since 2026-10-12): an agent proposes it, and he pays from his own accounts.
 
 ## Stripe
 
