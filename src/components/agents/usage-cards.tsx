@@ -3,7 +3,8 @@ import { CheckCircle, CircleDashed, Gauge, GitPullRequest, Hammer, Lightbulb, XC
 import { formatDistanceToNow } from '@/lib/utils'
 import { pipelineHealth } from '@/lib/ideas/idea-utils'
 import type { UsageOverview } from '@/lib/agents/usage-data'
-import { engineText, type IdeaRun, type UsageWindow } from '@/lib/agents/usage-utils'
+import { buildBar, engineText, waitText, type IdeaRun, type UsageWindow } from '@/lib/agents/usage-utils'
+import { Progress } from '@/components/ui/progress'
 import { fmtDuration } from './format'
 
 const KIND_STYLE: Record<IdeaRun['kind'], string> = {
@@ -33,7 +34,6 @@ export function IdeaPipelineCard({ o, now }: { o: UsageOverview; now: Date }) {
   const effort = o.pipeline.policy?.build?.effort ?? null
   const { builds, awaitingReview, seedsQueued, prsToReview } = o.queue
   const queued = [
-    builds.length && plural(builds.length, 'build request'),
     awaitingReview && `${plural(awaitingReview, 'idea')} awaiting review`,
     seedsQueued && `${plural(seedsQueued, 'idea')} from the Ideas page queued for research`,
     prsToReview && `${plural(prsToReview, 'milestone PR')} waiting for your review`,
@@ -52,18 +52,26 @@ export function IdeaPipelineCard({ o, now }: { o: UsageOverview; now: Date }) {
 
         <div className="space-y-1" data-testid="idea-pipeline-building">
           <p className="font-medium">Building now</p>
-          {o.building.length === 0 ? <p className="text-muted-foreground">Nothing is building.</p> : o.building.map(b => (
-            <p key={b.idea} className="flex items-center gap-1.5">
-              <Hammer className="w-3 h-3 text-amber-500 shrink-0" />
-              <Link href={`/ideas/${b.idea}`} className="font-medium hover:underline">{b.idea}</Link>
-              <span>{b.milestone ?? 'M1'}</span>
-              <span className="text-muted-foreground">started {formatDistanceToNow(b.since, now.getTime())}{b.model ? ` on ${b.model}${(b.effort ?? effort) ? ` at ${b.effort ?? effort}` : ''}` : ''}{b.manual ? ' · Start build now' : ''}</span>
-            </p>
-          ))}
+          {o.building.length === 0 ? <p className="text-muted-foreground">Nothing is building.</p> : o.building.map(b => {
+            const bar = buildBar(b, now)
+            return (
+              <div key={b.idea} className="space-y-1 rounded-md border border-border/40 p-2" data-testid="idea-build-progress">
+                <p className="flex flex-wrap items-center gap-1.5">
+                  <Hammer className="w-3 h-3 text-amber-500 shrink-0" />
+                  <Link href={`/ideas/${b.idea}`} className="font-medium hover:underline">{b.idea}</Link>
+                  <span>{b.milestone ?? 'M1'}</span>
+                  <span className="text-muted-foreground">{b.model ? `on ${b.model}${(b.effort ?? effort) ? ` at ${b.effort ?? effort}` : ''}` : ''}{b.manual ? ' · Start build now' : ''}</span>
+                  <span className="ml-auto tabular-nums text-muted-foreground">{bar.time}</span>
+                </p>
+                <Progress value={bar.pct} aria-label={`${b.idea}: ${bar.doing}`} className={bar.byTime ? 'h-1.5 opacity-60' : 'h-1.5'} />
+                <p className="text-[11px] text-muted-foreground">{bar.doing}</p>
+              </div>
+            )
+          })}
           {builds.map(q => (
             <p key={`${q.slug}-${q.createdAt.toISOString()}`} className="flex items-center gap-1.5 text-muted-foreground">
               <CircleDashed className="w-3 h-3 shrink-0" />
-              <Link href={`/ideas/${q.slug}`} className="hover:underline">{q.slug}</Link> {q.milestone ?? 'M1'} queued {formatDistanceToNow(q.createdAt, now.getTime())}{q.result ? ` — ${q.result}` : ''}
+              <Link href={`/ideas/${q.slug}`} className="hover:underline">{q.slug}</Link> {q.milestone ?? 'M1'} queued {formatDistanceToNow(q.createdAt, now.getTime())} · {waitText(q.result)}
             </p>
           ))}
         </div>

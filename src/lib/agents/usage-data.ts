@@ -11,8 +11,8 @@ import { db } from '@/lib/db'
 import { ideaBuildRequests, ideaPipeline, ideaSeeds, ideas, systemEvents } from '@/lib/db/schema'
 import { buildSlot, type IdeaPolicy, type IdeaStateJson } from '@/lib/ideas/idea-utils'
 import {
-  claudeUsage, copilotUsage, ideaLimits, ideaRuns, runningBuilds,
-  type ClaudeUsage, type CopilotUsage, type IdeaLimits, type IdeaRun, type LogEvent,
+  buildProgress, claudeUsage, copilotUsage, ideaLimits, ideaRuns, runningBuilds,
+  type BuildProgress, type ClaudeUsage, type CopilotUsage, type IdeaLimits, type IdeaRun, type LogEvent,
 } from './usage-utils'
 
 export interface QueuedBuild { slug: string; milestone: string | null; status: string; result: string | null; createdAt: Date; startedAt: Date | null }
@@ -22,7 +22,7 @@ export interface UsageOverview {
   /** Last 7 days, newest first. */
   runs: IdeaRun[]
   /** Building right now: a build's start event without its result, or a running request. */
-  building: { idea: string; milestone: string | null; since: Date; manual: boolean; model: string | null; effort: string | null }[]
+  building: { idea: string; milestone: string | null; since: Date; manual: boolean; model: string | null; effort: string | null; limitMinutes: number | null; planned: string[] | null; progress: BuildProgress | null }[]
   queue: { builds: QueuedBuild[]; awaitingReview: number; seedsQueued: number; prsToReview: number }
   limits: IdeaLimits
   claude: ClaudeUsage
@@ -62,10 +62,14 @@ export async function loadUsageOverview(now = new Date()): Promise<UsageOverview
 
   const building = new Map<string, UsageOverview['building'][number]>()
   for (const r of runningBuilds(runs, now, policy?.build?.timeoutMinutes ?? 45)) {
-    building.set(r.idea!, { idea: r.idea!, milestone: r.milestone, since: r.at, manual: r.manual, model: r.model, effort: r.effort })
+    building.set(r.idea!, { idea: r.idea!, milestone: r.milestone, since: r.at, manual: r.manual, model: r.model, effort: r.effort,
+      limitMinutes: r.timeoutMinutes ?? policy?.build?.timeoutMinutes ?? 45, planned: r.planned, progress: buildProgress(logEvents, r.idea!, r.at) })
   }
   for (const q of requests) {
-    if (q.status === 'running' && !building.has(q.slug)) building.set(q.slug, { idea: q.slug, milestone: q.milestone, since: q.startedAt ?? q.createdAt, manual: true, model: null, effort: null })
+    if (q.status === 'running' && !building.has(q.slug)) {
+      const since = q.startedAt ?? q.createdAt
+      building.set(q.slug, { idea: q.slug, milestone: q.milestone, since, manual: true, model: null, effort: null, limitMinutes: null, planned: null, progress: buildProgress(logEvents, q.slug, since) })
+    }
   }
 
   const states = ideaRows.map(r => ({ slug: r.slug, stage: r.stage, state: (r.state ?? {}) as IdeaStateJson }))

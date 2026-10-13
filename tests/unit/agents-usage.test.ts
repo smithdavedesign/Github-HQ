@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { claudeUsage, copilotUsage, engineText, ideaLimits, ideaRuns, runningBuilds, type LogEvent } from '../../src/lib/agents/usage-utils'
+import { claudeUsage, copilotUsage, engineText, ideaLimits, ideaRuns, runningBuilds, type LogEvent, buildBar, buildProgress, waitText } from '../../src/lib/agents/usage-utils'
 import { copilotUsageData, copilotUsageMessage, publishCopilotUsage } from '../../factory/lib/copilot-quota'
 import type { emitEvent } from '../../factory/system/events'
 
@@ -106,5 +106,37 @@ describe('Agents page: Copilot usage', () => {
     expect(copilotUsage(snap(26 * 60), NOW)?.stale).toBe(true)
     expect(copilotUsage(null, NOW)).toBeNull()
     expect(copilotUsage(ev({ data: { installed: false } }), NOW)).toMatchObject({ installed: false, percentRemaining: null })
+  })
+})
+
+describe('Agents page: how far each build is (2026-10-13)', () => {
+  const T = new Date('2026-10-13T20:00:00Z')
+  const min = (m: number) => new Date(T.getTime() - m * 60_000)
+  const progressEvent = (m: number, step: number, idea = 'squadwrap') => ({ ts: min(m), system: 'idea-factory', component: 'build', event: 'MVP', status: 'info',
+    message: 'x', durationMs: null, subject: { idea }, data: { progress: { step, steps: 5, label: `M${step} (${step} of 4)` } } })
+
+  it("takes a build's newest step since it started", () => {
+    const events = [progressEvent(100, 1), progressEvent(40, 2), progressEvent(10, 3, 'other'), progressEvent(300, 4)]
+    expect(buildProgress(events, 'squadwrap', min(120))).toMatchObject({ step: 2, steps: 5, label: 'M2 (2 of 4)' })
+    expect(buildProgress(events, 'nobody', min(120))).toBeNull()
+  })
+  it('draws the bar from steps done, or from time used when the build reports none', () => {
+    const p = { step: 3, steps: 5, label: 'M3 (3 of 4)', at: min(5) }
+    expect(buildBar({ since: min(90), limitMinutes: 240, progress: p, planned: null }, T)).toEqual({ pct: 40, doing: 'Step 3 of 5: M3 (3 of 4)', time: '1h 30m of up to 4h', byTime: false })
+    const old = buildBar({ since: min(120), limitMinutes: 240, progress: null, planned: ['M1', 'M2', 'M3', 'M4'] }, T)
+    expect(old).toMatchObject({ pct: 50, byTime: true, time: '2h of up to 4h' })
+    expect(old.doing).toMatch(/^M1–M4 planned; no steps reported/)
+  })
+  it('keeps an MVP build running for its own time limit, not the 45 minutes of one milestone', () => {
+    const start = { at: min(120), kind: 'build' as const, idea: 'squadwrap', status: 'start' as const, durationMs: null, model: null, effort: null, engine: null,
+      fellBack: false, seeded: false, milestone: 'MVP', manual: true, prUrl: null, summary: '', timeoutMinutes: 240, planned: ['M1'] }
+    expect(runningBuilds([start], T, 45).map(r => r.idea)).toEqual(['squadwrap'])
+    expect(runningBuilds([{ ...start, timeoutMinutes: null }], T, 45)).toEqual([])
+  })
+  it('says why a queued build waits, in plain words', () => {
+    expect(waitText('waiting: Docker has 1.7 GB to spare, and a build needs 2.0 GB (2 running)')).toBe('Waits for memory: Docker is full with 2 builds, so it starts when one finishes')
+    expect(waitText('waiting: 3 builds are running (the limit is 3)')).toBe('Waits for a free slot: 3 of 3 builds are running')
+    expect(waitText('waiting: the Mac has 6% of its memory free, and a build needs 10%')).toBe('Waits for memory: the Mac has only 6% free')
+    expect(waitText(null)).toBe('Starts on the pipeline’s next run')
   })
 })
