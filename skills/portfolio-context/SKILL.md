@@ -29,9 +29,10 @@ description: |
    - **Claude work on the Pro subscription, never API credit.** Strip `ANTHROPIC_API_KEY`; the
      reference is `idea-factory/lib/claude.js`.
    - **Data classes:** never send employer work data to a cloud model; never touch financial data.
-   - **Who merges** (the owner's call, 2026-10-12): the factory and the idea pipeline merge their own
-     PRs once tests and every check are green, and revert what breaks. In an interactive session you
-     open draft PRs and the owner merges them. Never force-push or delete on your own.
+   - **Who merges:** everything merges itself on the owner's repos (his call, 2026-10-13: "full send").
+     The factory and the idea pipeline merge their own PRs once tests and every check are green, and
+     revert what breaks. In an interactive session you open a PR so CI runs, merge it yourself once CI
+     is green, and do the deploy step; he reviews afterwards. Never force-push or delete.
    - **The owner's Notion status overrides any verdict.**
 4. **Logs, alerts, backups and secrets** ([docs/logging.md](/Users/davidsmith/Documents/Repos/Github-HQ/RepoHQ/docs/logging.md)):
    - **One log:** every system writes to `~/.system-events/events.jsonl`; the collector ships it to Neon `system_events` every 5 minutes.

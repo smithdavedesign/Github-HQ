@@ -79,11 +79,11 @@ left for him) and posting; each morning he reviews what the agents merged and re
   - **work** (employer-confidential) stays on local models only;
   - **financial** is never ingested.
 - **Show it working:** a built or deployed MVP proves itself with screenshots from real browser automation (Playwright, desktop and phone), at the top of its README. The idea builder does it in every build and go-live PR ([idea-factory.md](idea-factory.md)); a person or agent shipping an MVP by hand does the same against the live URL.
-- **Agents merge their own PRs and revert what breaks** (the owner's call, 2026-10-12):
+- **Everything merges itself, and what breaks is reverted** (the owner's call: agents 2026-10-12, interactive sessions too 2026-10-13, "full send"):
   - the factory and the idea pipeline merge a PR once its tests and every check are green and nothing objected (the preview smoke test, the adversarial reviewer, a `hold` label, a review asking for changes);
   - a merge that turns the base branch red, or breaks a live site's launch checks, is undone by a revert PR the agent merges, and Slack is told;
-  - PRs touching the agents' own rules (factory code, CI workflows, the model router) wait for the owner;
-  - interactive Claude sessions still open draft PRs and ask before merging;
+  - an autonomous agent never merges a PR touching its own rules (factory code, CI workflows, the model router);
+  - an interactive Claude session opens a PR so CI runs, merges it itself once CI is green, and deploys; the owner reviews afterwards, not before;
   - nothing force-pushes or deletes.
   Code: `factory/lib/automerge.ts` (config `autonomy`), idea-factory `lib/autonomy.js` (`policy.autonomy`).
 - **Agents never see secrets:** databases and API keys come from the credential broker `~/ai-stack/bin/provision`, which writes values straight to the keychain, Vercel env or GitHub secrets. It works on idea repos only and in agent accounts with no card. Anything it can't do is a Slack request to the owner ([provisioning](provisioning.md)).
