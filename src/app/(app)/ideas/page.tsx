@@ -33,7 +33,7 @@ export default async function IdeasPage({ searchParams }: { searchParams: Promis
   const { views, pipeline, seeds, missingTables } = await loadIdeasOverview()
   const now = new Date()
   const groups = groupIdeas(views, now)
-  const slot = buildSlot(views, pipeline.policy, now)
+  const slot = buildSlot(views, pipeline.policy)
   const health = pipelineHealth(pipeline.tickAt, pipeline.ok, now)
   const maxValidating = pipeline.policy?.validation?.maxValidating ?? 5
   const mrr = views.reduce((n, v) => n + (v.state.revenue?.mrr ?? 0), 0)
@@ -48,7 +48,7 @@ export default async function IdeasPage({ searchParams }: { searchParams: Promis
   const stats: { label: string; value: string; hint: string }[] = [
     { label: 'Needs your call', value: String(groups.decide.length), hint: 'new or recently reviewed' },
     { label: 'Demand tests', value: `${groups.testing.length}/${maxValidating}`, hint: 'running, of the cap' },
-    { label: 'Build slot', value: slot.free ? 'Free' : 'Used', hint: `${slot.free ? `${slot.used} of ${slot.max} this week` : `next ${slot.nextFreeAt?.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) ?? 'soon'}`}${slot.held ? '; new ideas wait for traction' : ''}` },
+    { label: 'Building now', value: `${slot.running}/${slot.max}`, hint: `${slot.free ? 'side by side, no daily cap' : 'every slot in use'}${slot.held ? '; new ideas wait for traction' : ''}` },
     { label: 'Idea MRR', value: `$${mrr.toFixed(0)}`, hint: `${groups.live.length} live` },
   ]
 

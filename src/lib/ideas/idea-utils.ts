@@ -1,6 +1,6 @@
 /**
  * The Ideas page's rules, kept pure so they can be tested: which ideas need the owner, what each
- * decision would do next, the demand test's progress and the weekly build slot. The shapes mirror
+ * decision would do next, the demand test's progress and how many builds are running. The shapes mirror
  * idea-factory's record (ideas/<slug>/idea.json, state.json, review.json, policy.json); keep them in
  * step with factory/context/ideas.ts and idea-factory's lib/pipeline.js.
  */
@@ -207,7 +207,9 @@ export interface IdeaPolicy {
     buildEarly?: { minSignups?: number; minSignupRate?: number }
   }
   build?: {
-    maxPerWeek?: number; engine?: string; model?: string; effort?: string; claudeFallbackModel?: string; manualPerDay?: number; timeoutMinutes?: number; mode?: 'mvp' | 'milestone'; mvp?: { maxMilestones?: number; maxMinutes?: number; stopOnFallback?: boolean }
+    engine?: string; model?: string; effort?: string; claudeFallbackModel?: string; timeoutMinutes?: number; mode?: 'mvp' | 'milestone'; mvp?: { maxMilestones?: number; maxMinutes?: number; stopOnFallback?: boolean }
+    /** How many builds run at once (no daily or weekly cap since 2026-10-13); builds the pipeline starts itself leave reserveForRequests slots for Start build now. */
+    concurrency?: { max?: number; reserveForRequests?: number; reserveMemoryMb?: number; minFreeMemoryPct?: number; retryAfterHours?: number }
     /** false: ideas never built wait for their first build until a focus product has traction (newBuildsHold). */
     startNew?: boolean
   }
@@ -245,7 +247,7 @@ export interface IdeaDecisionRow {
 
 export type IdeaBuildRequestStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
 
-/** "Start build now" (idea_build_requests): the pipeline builds the milestone outside the weekly slot. */
+/** "Start build now" (idea_build_requests): the pipeline builds the milestone on its next run with a free build slot. */
 export interface IdeaBuildRequestRow {
   id: number
   slug: string
@@ -289,7 +291,7 @@ export const RECENT_REVIEW_DAYS = 14
 export const PIPELINE_STALE_MINUTES = 60
 
 const DEFAULTS = {
-  maxPerWeek: 1, manualPerDay: 2, maxValidating: 5, days: 14, minVisitorsToJudge: 50,
+  maxConcurrent: 3, reserveForRequests: 1, maxValidating: 5, days: 14, minVisitorsToJudge: 50,
   build: { minSignups: 5, minSignupRate: 0.05 }, buildEarly: { minSignups: 10, minSignupRate: 0.08 },
 }
 
@@ -419,17 +421,21 @@ export function newBuildsHold(views: ({ slug?: string } & Pick<IdeaView, 'state'
   return `new builds wait until ${focus.length ? focus.join(' or ') : 'a focus product'} has ${bar} visitors a week`
 }
 
-/** `held`: why ideas never built wait for their first build (newBuildsHold), else null. */
-export interface BuildSlot { used: number; max: number; free: boolean; nextFreeAt: Date | null; held: string | null }
+/**
+ * Builds running now against policy.build.concurrency.max: idea-factory runs them side by side, with no daily
+ * or weekly cap (2026-10-13). `free`: a Start build now request would start on the next run; `autoFree`: so
+ * would a build the pipeline starts itself (it leaves the last reserveForRequests slots for requests).
+ * `held`: why ideas never built wait for their first build (newBuildsHold), else null. The pipeline also
+ * waits for free memory (lib/build-slots.js), which the page can't see.
+ */
+export interface BuildSlot { running: number; max: number; free: boolean; autoFree: boolean; held: string | null }
 
-/** policy.build.maxPerWeek over roadmap builds started in the last 7 days (idea-factory buildsThisWeek). */
-export function buildSlot(views: ({ slug?: string } & Pick<IdeaView, 'state'>)[], policy: IdeaPolicy | null, now: Date): BuildSlot {
-  const max = policy?.build?.maxPerWeek ?? DEFAULTS.maxPerWeek
-  // Builds started with "Start build now" have their own cap (manualPerDay), and so do go-live and growth builds.
-  const starts = views.map(v => v.state.build).filter(b => !!b?.at && !b.manual && isRoadmapBuild(b.milestone)).map(b => b!.at!)
-    .map(at => new Date(at).getTime()).filter(t => now.getTime() - t < 7 * DAY).sort((a, b) => a - b)
-  const free = starts.length < max
-  return { used: starts.length, max, free, nextFreeAt: free ? null : new Date(starts[starts.length - max]! + 7 * DAY), held: newBuildsHold(views, policy) }
+export function buildSlot(views: ({ slug?: string; buildRequests?: Pick<IdeaBuildRequestRow, 'status'>[] } & Pick<IdeaView, 'state'>)[], policy: IdeaPolicy | null): BuildSlot {
+  const c = policy?.build?.concurrency
+  const max = c?.max ?? DEFAULTS.maxConcurrent
+  // The record says "running" once the build has cloned its repo; a request says so as soon as it's claimed.
+  const running = views.filter(v => v.state.build?.status === 'running' || (v.buildRequests ?? []).some(r => r.status === 'running')).length
+  return { running, max, free: running < max, autoFree: running < max - (c?.reserveForRequests ?? DEFAULTS.reserveForRequests), held: newBuildsHold(views, policy) }
 }
 
 export interface DemandProgress {
@@ -485,11 +491,11 @@ export function whatHappens(decision: IdeaDecisionKind, v: Pick<IdeaView, 'slug'
       const repo = v.state.repo ? `Uses the existing repo ${v.state.repo.replace('https://github.com/', '')}.` : `Creates the private repo ${v.slug} (topic “idea”) on the same run.`
       const when = slot.held
         ? `Its first build waits: ${slot.held}. Start build now builds it sooner, once the repo exists.`
-        : slot.free
+        : slot.autoFree
         ? (policy?.build?.mode === 'mvp'
           ? 'Builds the MVP right after: every roadmap milestone in one run on your Claude subscription (Opus at extra-high effort), each with a gstack plan and tests first. It stops at the first milestone whose tests fail.'
           : 'Builds M1 right after, on your Claude subscription (Opus at extra-high effort; the free pool only if it’s out of capacity): a gstack plan, tests first, then code until they pass.')
-        : `This week’s build slot is used (${slot.used} of ${slot.max}); M1 starts after ${slot.nextFreeAt ? fmtDay(slot.nextFreeAt) : 'the slot frees up'}, or sooner with Start build now once the repo exists.`
+        : `${slot.running} builds are running (up to ${slot.max} at once, the last slot kept for Start build now): its first build starts when one finishes${slot.free ? ', or right away with Start build now once the repo exists' : ''}.`
       return [
         'On its next run (within 15 min) the pipeline applies it.',
         repo,
@@ -610,20 +616,19 @@ export function buildNowTarget(v: Pick<IdeaView, 'stage' | 'state' | 'docs' | 'b
   return { ok: false, reason: v.stage === 'live' ? 'Already live.' : 'Nothing to build yet.' }
 }
 
-/** Manual builds started in the last 24 hours, across all ideas (policy.build.manualPerDay's window). */
-export function manualStartsLast24h(views: Pick<IdeaView, 'buildRequests'>[], now: Date): number {
-  return views.flatMap(v => v.buildRequests).filter(r => r.startedAt && now.getTime() - r.startedAt.getTime() < DAY).length
+/** Every build slot is taken: the request waits its turn. */
+function queuedBehind(slot: Pick<BuildSlot, 'running' | 'max'>): string {
+  return `${slot.running} builds are running (the limit is ${slot.max}): this one starts on the pipeline’s first run after one of them finishes.`
 }
 
 /** What happens after "Start build now", in order, for the confirm dialog. */
-export function buildNowSteps(milestone: string, v: Pick<IdeaView, 'state'>, policy: IdeaPolicy | null, startsLast24h: number): string[] {
+export function buildNowSteps(milestone: string, v: Pick<IdeaView, 'state'>, policy: IdeaPolicy | null, slot: Pick<BuildSlot, 'running' | 'max'>): string[] {
   const b = policy?.build
-  const cap = b?.manualPerDay ?? DEFAULTS.manualPerDay
   const repo = v.state.repo ? v.state.repo.replace('https://github.com/', '') : 'its repo'
   return [
-    startsLast24h >= cap
-      ? `${startsLast24h} manual builds started in the last 24 hours (the cap is ${cap}): this one waits in the queue until the oldest is a day old.`
-      : `On its next run (within 15 min) the pipeline builds ${milestone} in ${repo}, without waiting for the weekly build slot.`,
+    slot.running >= slot.max
+      ? queuedBehind(slot)
+      : `On its next run (within 15 min) the pipeline builds ${milestone} in ${repo}, alongside anything already building (up to ${slot.max} at once, each when the Mac has the memory for it).`,
     `Claude Code on your subscription: ${b?.model ?? 'opus'} at effort ${b?.effort ?? 'xhigh'}. ${b?.claudeFallbackModel ? `${b.claudeFallbackModel[0]!.toUpperCase()}${b.claudeFallbackModel.slice(1)} if it’s unavailable; ` : ''}the free pool only if the subscription can’t take it.`,
     'It plans with gstack’s plan-eng-review first, writes failing tests, codes until they pass, then checks its own diff against gstack’s review checklist.',
     `It can use up to ${b?.timeoutMinutes ?? 45} minutes of your Claude Pro usage, which your own sessions share.`,
@@ -667,9 +672,9 @@ export function milestoneRange(ms: string[]): string {
 }
 
 /** What happens after "Build the MVP", for the confirm dialog. */
-export function buildMvpSteps(milestones: string[], v: Pick<IdeaView, 'state'>, policy: IdeaPolicy | null, startsLast24h: number): string[] {
+export function buildMvpSteps(milestones: string[], v: Pick<IdeaView, 'state'>, policy: IdeaPolicy | null, slot: Pick<BuildSlot, 'running' | 'max'>): string[] {
   const minutes = policy?.build?.mvp?.maxMinutes ?? 240
-  const [first, engine, , , ...rest] = buildNowSteps(milestoneRange(milestones), v, policy, startsLast24h)
+  const [first, engine, , , ...rest] = buildNowSteps(milestoneRange(milestones), v, policy, slot)
   return [
     first!.replace(`builds ${milestoneRange(milestones)} in`, `builds ${milestones.join(', ')} one after another in`),
     engine!,
@@ -699,12 +704,11 @@ export function goLiveTarget(v: Pick<IdeaView, 'state' | 'buildRequests'>): GoLi
 }
 
 /** What happens after "Get it launch-ready", for the confirm dialog. */
-export function goLiveSteps(v: Pick<IdeaView, 'state'>, policy: IdeaPolicy | null, startsLast24h: number): string[] {
-  const cap = policy?.build?.manualPerDay ?? DEFAULTS.manualPerDay
+export function goLiveSteps(v: Pick<IdeaView, 'state'>, slot: Pick<BuildSlot, 'running' | 'max'>): string[] {
   const price = v.state.launch?.price
   return [
-    startsLast24h >= cap
-      ? `${startsLast24h} manual builds started in the last 24 hours (the cap is ${cap}): this one waits in the queue until the oldest is a day old.`
+    slot.running >= slot.max
+      ? queuedBehind(slot)
       : 'On its next run (within 15 min) the pipeline makes it launch-ready, in the sandbox, without changing what it does:',
     'SEO basics: titles, meta descriptions, a share image, sitemap.xml, robots.txt and structured data.',
     'Privacy and terms pages, linked from the footer.',

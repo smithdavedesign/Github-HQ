@@ -6,7 +6,7 @@ import { factoryAccess } from '@/lib/agents/factory-queue'
 import { loadIdea } from '@/lib/ideas/ideas-data'
 import {
   DECISION_LABEL, buildAutonomyNote, launchKitOrder, buildMvpSteps, buildMvpTarget, goLiveSteps, goLiveTarget, buildNowSteps, buildNowTarget, buildRequestLabel, milestoneRange, buildSlot, checkDecision, decisionLabel, demandProgress, ideaRecordUrl,
-  beaconLive, growthKindLabel, manualStartsLast24h, pendingDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
+  beaconLive, growthKindLabel, pendingDecision, pipelineHealth, reviewQueue, safeUrl, shortTitle, tagline, whatHappens, type IdeaDecisionKind, type IdeaView,
 } from '@/lib/ideas/idea-utils'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -48,7 +48,7 @@ export default async function IdeaPage({ params }: Props) {
   const nextInQueue = idx >= 0 ? queue[idx + 1] ?? null : null
   const afterDecision = idx >= 0 ? (queue[idx + 1] ?? queue[idx - 1] ?? null) : null
 
-  const slot = buildSlot(overview.views, policy, now)
+  const slot = buildSlot(overview.views, policy)
   const validating = overview.views.filter(x => x.stage === 'validate').length
   const pending = pendingDecision(v)
   const health = pipelineHealth(overview.pipeline.tickAt, overview.pipeline.ok, now)
@@ -59,16 +59,15 @@ export default async function IdeaPage({ params }: Props) {
   const pr = safeUrl(v.state.build?.prUrl)
   const launchPost = r?.launch?.post ? r.launch.post.replace(/\{url\}/g, v.state.page?.url ?? '{url}') : null
   const kitOrder = launchKitOrder(v.docs.launchKit)
-  // "Start build now": the next milestone outside the weekly slot (idea_build_requests).
+  // "Start build now": the next milestone, on the pipeline's next run with a free build slot (idea_build_requests).
   const buildTarget = buildNowTarget(v)
-  const startsToday = manualStartsLast24h(overview.views, now)
-  const buildSteps = buildTarget.ok ? buildNowSteps(buildTarget.milestone, v, policy, startsToday) : []
+  const buildSteps = buildTarget.ok ? buildNowSteps(buildTarget.milestone, v, policy, slot) : []
   // "Build the MVP": every remaining milestone in one run (policy.build.mvp).
   const mvpTarget = buildMvpTarget(v, policy?.build?.mvp?.maxMilestones ?? 6)
-  const mvpSteps = mvpTarget.ok ? buildMvpSteps(mvpTarget.milestones, v, policy, startsToday) : []
+  const mvpSteps = mvpTarget.ok ? buildMvpSteps(mvpTarget.milestones, v, policy, slot) : []
   // "Get it launch-ready" (idea-factory go-live): any time after M1 is merged.
   const liveTarget = goLiveTarget(v)
-  const liveSteps = liveTarget.ok ? goLiveSteps(v, policy, startsToday) : []
+  const liveSteps = liveTarget.ok ? goLiveSteps(v, slot) : []
   const lastRequest = v.buildRequests[0] ?? null
   const autonomyNote = buildAutonomyNote(v.state.build, policy)
 
@@ -201,7 +200,7 @@ export default async function IdeaPage({ params }: Props) {
                   : pr && v.state.build?.milestone === 'MVP' ? `MVP (${milestoneRange(v.state.build.milestones?.length ? v.state.build.milestones : v.state.build.planned ?? [])}) PR ${v.state.build.status ?? 'open'}${v.state.build.stopped ? ` — stopped: ${v.state.build.stopped}` : ''}.`
                   : pr ? `${v.state.build?.milestone ?? 'M1'} PR ${v.state.build?.status ?? 'open'}${v.state.build?.testsPassing === false ? ' — tests failing' : v.state.build?.testsPassing ? ' — tests passing' : ''}.`
                   : slot.held ? `M1 not started: ${slot.held}. Start build now still works.`
-                  : `M1 not started. Build slot: ${slot.free ? 'free this week' : `used, next ${slot.nextFreeAt?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? 'soon'}`}.`}</p>
+                  : `M1 not started yet: ${slot.autoFree ? 'it starts on the pipeline’s next run' : `${slot.running} builds are running (up to ${slot.max} at once); it starts when one finishes`}.`}</p>
                 {autonomyNote && <p className={v.state.build?.held && v.state.build.status === 'pr-open' ? 'text-xs text-amber-700 dark:text-amber-300' : 'text-xs text-muted-foreground'}>{autonomyNote}</p>}
                 {v.state.build?.model && v.state.build.status !== 'running' && (
                   <p className="text-xs text-muted-foreground">Built with {v.state.build.engine === 'free' ? `the free pool (${v.state.build.model})` : `${v.state.build.model}${v.state.build.effort ? ` · effort ${v.state.build.effort}` : ''}`}{v.state.build.manual ? ', started here' : ''}.</p>

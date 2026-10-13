@@ -258,7 +258,7 @@ test.describe('Ideas page', () => {
     await page.getByRole('button', { name: 'Just M1' }).click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByRole('heading', { name: /Start M1 build now: Gamma/ })).toBeVisible()
-    await expect(dialog.getByText(/builds M1 in smithdavedesign\/e2e-idea-gamma, without waiting for the weekly build slot/)).toBeVisible()
+    await expect(dialog.getByText(/builds M1 in smithdavedesign\/e2e-idea-gamma, alongside anything already building/)).toBeVisible()
     await expect(dialog.getByText(/at effort xhigh/)).toBeVisible()
     await expect(dialog.getByText(/plan-eng-review first/)).toBeVisible()
     await dialog.getByRole('textbox', { name: /Note for the builder/ }).fill('e2e: CLI first')

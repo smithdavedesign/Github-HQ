@@ -116,8 +116,8 @@ export async function cancelIdeaSeed(id: number): Promise<void> {
 
 /**
  * "Start build now" (one milestone) or "Build the MVP" (`mode: 'mvp'`, every remaining milestone in one
- * run): the pipeline builds it on its next tick, outside the weekly
- * build slot (idea_build_requests; at most policy.build.manualPerDay starts in 24 hours, the rest wait).
+ * run): the pipeline builds it on its next tick with a free build slot (idea_build_requests; up to
+ * policy.build.concurrency.max builds run at once, the rest wait).
  */
 export async function requestBuild(slug: string, note?: string, mode: 'milestone' | 'mvp' | 'golive' = 'milestone'): Promise<{ id: number; milestone: string }> {
   const userId = await ownerId()
