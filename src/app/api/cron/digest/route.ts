@@ -4,6 +4,7 @@ import { users } from '@/lib/db/schema'
 import { generateDigest } from '@/lib/ai/digest'
 import { generateAdvisor, getLatestAdvisor } from '@/lib/ai/advisor'
 import { generateCeoReport } from '@/lib/ai/ceo-report'
+import { runWeeklyAi } from '@/lib/ai/weekly'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { autoDispatchAdvisorActions, queueSkillForUser, weeklySkillReposFor } from '@/lib/agents/factory-queue'
 import { getAccuracyByImpactType } from '@/lib/actions/advisor-accuracy'
@@ -41,15 +42,11 @@ async function handle(request: Request) {
 
   for (const user of allUsers) {
     try {
-      // Generate weekly briefing, advisor, and CEO report in parallel
-      await Promise.allSettled([
-        generateDigest(user.id),
-        generateAdvisor(user.id),
-        generateCeoReport(user.id),
-        // Phase 54-T4: distill the last 7 days of agent_attempt events per repo —
-        // a 7-day lookback doesn't care which day this cron runs
-        distillAttempts(user.id),
-      ])
+      // The weekly briefing first, then the Advisor, CEO report and attempt distiller (Phase 54-T4: the
+      // last 7 days of agent_attempt events per repo). What fails is reported, not swallowed.
+      for (const f of await runWeeklyAi(user.id, { digest: generateDigest, advisor: generateAdvisor, ceoReport: generateCeoReport, distill: distillAttempts })) {
+        errors.push(f)
+      }
 
       // Auto-dispatch eligible advisor actions if enabled
       if (user.autoDispatchEnabled) {
@@ -109,7 +106,8 @@ async function handle(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, processed, errors, autoQueued: totalAutoQueued, weeklySkillsQueued })
+  // A failure fails the run (the Agents page, Slack, the GitHub workflow), with the reason in its row.
+  return NextResponse.json({ ok: errors.length === 0, processed, errors, autoQueued: totalAutoQueued, weeklySkillsQueued }, { status: errors.length ? 500 : 200 })
 }
 
 /** Queue a weekly report skill on up to `limit` of the user's factory repos. Never throws; returns how many were queued. */

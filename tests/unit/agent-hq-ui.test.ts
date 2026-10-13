@@ -37,7 +37,14 @@ describe('withAutomationRun (cron routes on the automation timeline)', () => {
 
   it('marks non-2xx responses and thrown errors as failed', async () => {
     await withAutomationRun('cron:digest', async () => Response.json({ error: 'boom' }, { status: 500 }))(authed())
-    expect(calls[1]).toMatchObject({ values: { status: 'failed', error: 'HTTP 500' } })
+    expect(calls[1]).toMatchObject({ values: { status: 'failed', error: 'HTTP 500: boom' } })
+    calls.length = 0
+    // The digest cron's failures, in its run's row (the Agents page and the Slack alert say what broke).
+    await withAutomationRun('cron:digest', async () => Response.json({ ok: false, errors: ['digest: busy', 'Advisor: busy'] }, { status: 500 }))(authed())
+    expect(calls[1]).toMatchObject({ values: { status: 'failed', error: 'HTTP 500: digest: busy; Advisor: busy' } })
+    calls.length = 0
+    await withAutomationRun('cron:digest', async () => new Response('gateway timeout', { status: 504 }))(authed())
+    expect(calls[1]).toMatchObject({ values: { status: 'failed', error: 'HTTP 504' } })
     calls.length = 0
     await expect(withAutomationRun('cron:digest', async () => { throw new Error('db down') })(authed())).rejects.toThrow('db down')
     expect(calls[1]).toMatchObject({ values: { status: 'failed', error: 'db down' } })
