@@ -7,10 +7,10 @@ const attempt = (metadata: Record<string, unknown>) => ({ eventType: 'agent_atte
 describe('summarizeFactoryEvents', () => {
   it('rolls up factory attempts per tier and ignores other agents', () => {
     const s = summarizeFactoryEvents([
-      attempt({ source: 'factory', tier: 'M0', outcome: 'success', resolution: 'merged' }),
+      attempt({ source: 'factory', tier: 'M0', outcome: 'success', resolution: 'merged', prUrl: 'https://github.com/o/a/pull/1' }),
       attempt({ source: 'factory', tier: 'M0', outcome: 'failed' }),
-      attempt({ source: 'factory', tier: 'M1', outcome: 'success', resolution: 'rejected' }),
-      attempt({ source: 'factory', tier: 'M2', outcome: 'success', costUsd: 0.42 }),
+      attempt({ source: 'factory', tier: 'M1', outcome: 'success', resolution: 'rejected', prUrl: 'https://github.com/o/a/pull/2' }),
+      attempt({ source: 'factory', tier: 'M2', outcome: 'success', costUsd: 0.42, prUrl: 'https://github.com/o/a/pull/3' }),
       attempt({ agent: 'Claude Code via MCP', outcome: 'success' }),
     ])
     expect(s.rows.find(r => r.tier === 'M0')).toEqual({ tier: 'M0', attempts: 2, verified: 1, merged: 1, rejected: 0, costUsd: 0 })
@@ -18,6 +18,15 @@ describe('summarizeFactoryEvents', () => {
     expect(s.totalAttempts).toBe(4)
     expect(s.freeSharePct).toBe(67)
     expect(s.totalCostUsd).toBeCloseTo(0.42)
+  })
+
+  it('counts as verified only an attempt that opened a PR: an investigation or a report passes without one', () => {
+    const s = summarizeFactoryEvents([
+      attempt({ source: 'factory', tier: 'M1', outcome: 'success', kind: 'red-ci', prUrl: null }),
+      attempt({ source: 'factory', tier: 'M1', outcome: 'success', kind: 'owner-report' }),
+      attempt({ source: 'factory', tier: 'M1', outcome: 'success', kind: 'fix-lint', prUrl: 'https://github.com/o/a/pull/4' }),
+    ])
+    expect(s.rows.find(r => r.tier === 'M1')).toMatchObject({ attempts: 3, verified: 1 })
   })
 
   it('returns null free share with no verified fixes and picks the latest scout report', () => {

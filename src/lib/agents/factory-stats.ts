@@ -16,6 +16,8 @@ interface AttemptMeta {
   tier?: ModelTier
   outcome?: 'success' | 'failed'
   resolution?: 'merged' | 'rejected'
+  /** The PR the attempt opened; none for an investigation or a report. */
+  prUrl?: string | null
   costUsd?: number
   /** Where the repo's code ran (Phase 76). Older events have none: they ran on the host. */
   isolation?: 'docker' | 'host'
@@ -59,7 +61,9 @@ export function summarizeFactoryEvents(events: FactoryEventLike[]): FactorySumma
       const row = rows.find(r => r.tier === m.tier)
       if (!row) continue
       row.attempts += 1
-      if (m.outcome === 'success') row.verified += 1
+      // Verified = passed the repo's checks and opened a PR. A red-CI investigation or a report passes too
+      // but opens none: counted, they read as PRs stuck open (29 of M1's 47 "verified" in October).
+      if (m.outcome === 'success' && m.prUrl) row.verified += 1
       if (m.resolution === 'merged') row.merged += 1
       if (m.resolution === 'rejected') row.rejected += 1
       row.costUsd += m.costUsd ?? 0

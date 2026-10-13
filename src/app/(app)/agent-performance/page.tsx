@@ -231,7 +231,7 @@ export default async function AgentPerformancePage({ searchParams }: { searchPar
                     Autonomous Factory by Model Tier
                   </h2>
                   <p className="text-[10px] text-muted-foreground max-w-xs text-right">
-                    M0 local · M1 free cloud · M2 paid. Verified = passed the repo&apos;s own checks and opened a draft PR.
+                    M0 local · M1 free cloud · M2 paid. Verified = passed the repo&apos;s own checks and opened a PR (investigations and reports open none).
                   </p>
                 </div>
                 <div className="rounded-lg border border-border/50 overflow-hidden">
