@@ -119,6 +119,9 @@ function Inventory({ row }: { row: { host: string; takenAt: Date; entries: Secre
               <div key={k.id} className="rounded-lg border p-3 space-y-2 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <code className="font-semibold break-all">{k.name}</code>
+                  {k.billable && !k.revoked && (k.cap
+                    ? <Badge variant="outline" className="font-normal" title="Spend limit set at the provider">cap: {k.cap}</Badge>
+                    : <Badge variant="outline" className="font-normal text-amber-600 border-amber-600/40" title="This key can spend money">no spend cap on record</Badge>)}
                   {k.revoked ? <Badge variant="outline" className="text-muted-foreground" title="Recorded dead: leftover copies are harmless">revoked</Badge>
                     : k.problems.length === 0 && <Badge variant="outline" className="text-emerald-600 border-emerald-600/40">ok</Badge>}
                   {k.problems.map(p => <span key={p} className={`rounded-md px-1.5 py-0.5 text-xs break-all ${/^committed|^in git/.test(p) ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'}`}>{p}</span>)}
@@ -136,7 +139,7 @@ function Inventory({ row }: { row: { host: string; takenAt: Date; entries: Secre
                   <summary className="cursor-pointer text-muted-foreground">Used in {k.places.length} place{k.places.length === 1 ? '' : 's'} on the Mac{k.cloud.length ? ` and ${k.cloud.length} in the cloud` : ''}</summary>
                   <ul className="mt-1.5 space-y-0.5 pl-4 list-disc">
                     {k.places.map((p, i) => (
-                      <li key={i} className="break-all"><code>{p.path}{p.line ? `:${p.line}` : ''}</code>{p.field !== k.name && <span className="text-muted-foreground"> ({p.field})</span>}{p.note && <span className="text-muted-foreground"> — {p.note}</span>}</li>
+                      <li key={i} className="break-all"><code>{p.kind === 'keychain-only' ? `${p.path.replace(/^keychain:/, '')} (keychain only)` : `${p.path}${p.line ? `:${p.line}` : ''}`}</code>{p.field !== k.name && <span className="text-muted-foreground"> ({p.field})</span>}{p.note && <span className="text-muted-foreground"> — {p.note}</span>}</li>
                     ))}
                     {k.cloud.map(c => <li key={c} className="text-muted-foreground">{c} (same name)</li>)}
                   </ul>

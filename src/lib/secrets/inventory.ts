@@ -22,6 +22,10 @@ export type SecretEntry = {
   places: SecretPlace[]
   /** Recorded dead (`bin/secrets revoked`): copies left in git history or backups are harmless. */
   revoked?: boolean
+  /** The platform can bill for this key (`BILLABLE` in ai-stack secrets/vault.py). */
+  billable?: boolean
+  /** The spend limit set at the provider, as recorded with `bin/secrets add --cap` / `bin/secrets cap`. */
+  cap?: string | null
 }
 /** A macOS protection or exposure check from the scan (`ok` null: for information). */
 export type HostCheck = { name: string; ok: boolean | null; detail: string }
@@ -108,6 +112,8 @@ export function groupInventory(row: Pick<InventoryRow, 'entries' | 'cloud'>): { 
   for (const r of row.cloud.github?.repos ?? []) for (const a of r.leakAlerts ?? []) {
     alerts.push({ severity: 'high', text: `GitHub found a leaked ${a.type} in ${r.repo}${r.private === false ? ' (public repo)' : ''}.`, href: a.url })
   }
+  const uncapped = row.entries.filter(e => e.billable && !e.cap && !e.revoked)
+  if (uncapped.length) alerts.push({ severity: 'medium', text: `${uncapped.length} key${uncapped.length === 1 ? '' : 's'} that can spend money ha${uncapped.length === 1 ? 's' : 've'} no spend cap on record: set a limit at the provider, then run ~/ai-stack/bin/secrets cap <keychain name> "<limit>".` })
   const backups = [...new Set(row.entries.flatMap(e => e.places.filter(strayBackup).map(p => p.path)))]
   if (backups.length) alerts.push({ severity: 'medium', text: `${backups.length} backup file${backups.length === 1 ? ' holds' : 's hold'} copies of keys (${backups.join(', ')}): delete them once you've checked nothing needs them.` })
   return { groups, alerts: alerts.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'high' ? -1 : 1)) }

@@ -11,7 +11,7 @@ const sql = () => neon(process.env.DATABASE_URL ?? '')
 const place = (path: string, extra: Record<string, unknown> = {}) => ({ path, field: 'X', kind: 'env-file', tracked: false, everCommitted: false, ...extra })
 const entries = [
   { id: 'k1', name: 'GITHUB_TOKEN', platform: 'github', keychain: ['vault/portfolio/GITHUB_TOKEN'], places: [place('~/Repos/portfolio/.env', { field: 'GITHUB_TOKEN', tracked: true, repo: 'portfolio', line: 1 })] },
-  { id: 'k2', name: 'OPENAI_API_KEY', platform: 'openai', keychain: ['vault/app/OPENAI_API_KEY'], places: [place('~/Repos/app/.env', { field: 'OPENAI_API_KEY' })] },
+  { id: 'k2', name: 'OPENAI_API_KEY', platform: 'openai', keychain: ['vault/app/OPENAI_API_KEY'], billable: true, cap: '$20/month', places: [place('~/Repos/app/.env', { field: 'OPENAI_API_KEY' })] },
   { id: 'k3', name: 'OLD_DEPLOY_TOKEN', platform: 'vercel', keychain: [], revoked: true, places: [place('~/Repos/old/.env', { field: 'OLD_DEPLOY_TOKEN', tracked: true, repo: 'old' })] },
 ]
 const hostChecks = [{ name: 'Disk encryption (FileVault)', ok: true, detail: 'FileVault is On.' }, { name: 'macOS updates', ok: false, detail: 'macOS Sequoia 15.8.1' }]
@@ -49,6 +49,7 @@ test.describe('Settings → Keys', () => {
     await expect(openai.getByRole('link', { name: /Rotate/ })).toHaveAttribute('href', 'https://platform.openai.com/api-keys')
     await openai.getByText(/Used in 1 place on the Mac and 1 in the cloud/).click()
     await expect(openai).toContainText('Vercel: app (same name)')
+    await expect(openai).toContainText('cap: $20/month')
 
     // A revoked key: badge, no urgent alert even though it's still committed.
     await expect(page.getByTestId('key-platform-vercel')).toContainText('revoked')
