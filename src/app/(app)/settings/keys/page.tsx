@@ -8,8 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { CopyButton } from '@/components/ideas/copy-button'
 import { formatDistanceToNow } from '@/lib/utils'
-import { AlertTriangle, ChevronLeft, ExternalLink, KeyRound, Lock } from 'lucide-react'
-import { groupInventory, type CloudInventory, type SecretEntry } from '@/lib/secrets/inventory'
+import { AlertTriangle, CheckCircle2, ChevronLeft, ExternalLink, KeyRound, Laptop, Lock, XCircle } from 'lucide-react'
+import { groupInventory, type CloudInventory, type HostCheck, type SecretEntry } from '@/lib/secrets/inventory'
 import { keychainCommand } from '@/lib/secrets/platforms'
 import type { Metadata } from 'next'
 
@@ -35,7 +35,7 @@ export default async function KeysPage() {
           Every key your system uses, where to rotate it, and where it lives on your Mac. Names only: values never leave the keychain.
         </p>
       </div>
-      {!row ? <Empty /> : <Inventory row={{ ...row, entries: row.entries as SecretEntry[], cloud: row.cloud as CloudInventory, keychain: row.keychain as string[], blocked: row.blocked as { path: string; error: string }[] }} />}
+      {!row ? <Empty /> : <Inventory row={{ ...row, entries: row.entries as SecretEntry[], cloud: row.cloud as CloudInventory, keychain: row.keychain as string[], blocked: row.blocked as { path: string; error: string }[], hostChecks: (row.hostChecks as HostCheck[] | null) ?? [] }} />}
     </div>
   )
 }
@@ -51,7 +51,7 @@ function Empty() {
   )
 }
 
-function Inventory({ row }: { row: { host: string; takenAt: Date; entries: SecretEntry[]; cloud: CloudInventory; keychain: string[]; blocked: { path: string; error: string }[] } }) {
+function Inventory({ row }: { row: { host: string; takenAt: Date; entries: SecretEntry[]; cloud: CloudInventory; keychain: string[]; blocked: { path: string; error: string }[]; hostChecks: HostCheck[] } }) {
   const { groups, alerts } = groupInventory(row)
   const held = row.entries.filter(e => e.keychain.length > 0).length
   const places = row.entries.reduce((n, e) => n + e.places.length, 0)
@@ -68,6 +68,22 @@ function Inventory({ row }: { row: { host: string; takenAt: Date; entries: Secre
       <p className="text-xs text-muted-foreground">
         Scanned {formatDistanceToNow(row.takenAt)} on {row.host}. Refresh: <code>~/ai-stack/bin/secrets scan && ~/ai-stack/bin/secrets sync</code>
       </p>
+
+      {row.hostChecks.length > 0 && (
+        <Card data-testid="host-checks">
+          <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Laptop className="w-4 h-4" />This Mac</CardTitle></CardHeader>
+          <CardContent>
+            <ul className="space-y-1 text-sm">
+              {row.hostChecks.map(c => (
+                <li key={c.name} className="flex items-start gap-2">
+                  {c.ok === false ? <XCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" /> : <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600" />}
+                  <span><span className="font-medium">{c.name}</span> <span className="text-muted-foreground break-words">— {c.detail}</span></span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {alerts.length > 0 && (
         <Card className="border-amber-500/40">
@@ -103,7 +119,8 @@ function Inventory({ row }: { row: { host: string; takenAt: Date; entries: Secre
               <div key={k.id} className="rounded-lg border p-3 space-y-2 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <code className="font-semibold break-all">{k.name}</code>
-                  {k.problems.length === 0 && <Badge variant="outline" className="text-emerald-600 border-emerald-600/40">ok</Badge>}
+                  {k.revoked ? <Badge variant="outline" className="text-muted-foreground" title="Recorded dead: leftover copies are harmless">revoked</Badge>
+                    : k.problems.length === 0 && <Badge variant="outline" className="text-emerald-600 border-emerald-600/40">ok</Badge>}
                   {k.problems.map(p => <span key={p} className={`rounded-md px-1.5 py-0.5 text-xs break-all ${/^committed|^in git/.test(p) ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'}`}>{p}</span>)}
                 </div>
                 {k.warning && <p className="text-xs text-amber-600 dark:text-amber-400">{k.warning}</p>}
