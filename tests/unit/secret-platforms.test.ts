@@ -61,6 +61,12 @@ describe('groupInventory', () => {
     expect(alerts[0]!.text).toContain('secrets scrub')
   })
 
+  it('keys that can spend money show their cap, and the uncapped ones get one alert', () => {
+    const e = (id: string, cap: string | null) => ({ id, name: 'K' + id, platform: 'openai', keychain: ['vault/x/K' + id], billable: true, cap, places: [place('~/x/.env', { field: 'K' + id })] })
+    const { alerts } = groupInventory({ entries: [e('1', '$20/month'), e('2', null), e('3', null)], cloud: {} })
+    expect(alerts.filter(a => /spend cap/.test(a.text)).map(a => a.text.slice(0, 40))).toEqual(['2 keys that can spend money have no spen'])
+  })
+
   it('groups by platform, flags problems and finds cloud copies by name', () => {
     const { groups, alerts } = groupInventory({ entries, cloud })
     const gh = groups.find(g => g.platform.key === 'github-token')!
