@@ -47,6 +47,20 @@ describe('groupInventory', () => {
   const cloud = { vercel: { projects: [{ project: 'site', envs: [{ name: 'OPENAI_API_KEY', targets: ['production'] }, { name: 'LITELLM_MASTER_KEY', targets: [] }] }] },
     github: { repos: [{ repo: 'old-tool', private: false, secrets: [], dependabot: [], leakAlerts: [{ type: 'Google API Key', url: 'https://github.com/x' }] }], checked: 1 } }
 
+  it('a revoked key has nothing to fix and raises no alert, even when it is still committed', () => {
+    const { groups, alerts } = groupInventory({ entries: [{ id: 'k9', name: 'GITHUB_TOKEN', platform: 'github', keychain: [], revoked: true,
+      places: [place('~/r/portfolio/.env', { tracked: true, repo: 'portfolio', field: 'GITHUB_TOKEN' })] }], cloud: {} })
+    expect(groups[0]!.keys[0]!.problems).toEqual([])
+    expect(alerts).toEqual([])
+  })
+
+  it('copies left in logs or transcripts are a problem and an alert, and need no keychain copy of their own', () => {
+    const { groups, alerts } = groupInventory({ entries: [{ id: 'k8', name: 'SLACK_BOT_TOKEN', platform: 'slack', keychain: ['system-events-slack-token'],
+      places: [place('~/.openclaw/openclaw.json', { field: 'channels.slack.botToken', kind: 'openclaw-config' }), place('~/.openclaw/agents/companion/sessions/a.jsonl', { kind: 'trace' })] }], cloud: {} })
+    expect(groups[0]!.keys[0]!.problems).toEqual(['1 copy left in logs or transcripts (bin/secrets scrub)'])
+    expect(alerts[0]!.text).toContain('secrets scrub')
+  })
+
   it('groups by platform, flags problems and finds cloud copies by name', () => {
     const { groups, alerts } = groupInventory({ entries, cloud })
     const gh = groups.find(g => g.platform.key === 'github-token')!

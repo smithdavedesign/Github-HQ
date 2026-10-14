@@ -328,6 +328,7 @@ export const secretInventory = pgTable('secret_inventory', {
   cloud: jsonb('cloud').notNull(),       // {vercel, github, gcp, neon}: names only
   keychain: jsonb('keychain').notNull(), // keychain service names this system owns
   blocked: jsonb('blocked').notNull(),   // paths the scan couldn't read
+  hostChecks: jsonb('host_checks'),      // HostCheck[]: FileVault, firewall, network exposure, updates (no secrets)
 })
 
 /**
