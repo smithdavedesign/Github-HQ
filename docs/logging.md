@@ -95,7 +95,7 @@ Older events without `data` still show: the page reads the model and engine from
 | RepoHQ `automation_runs` | a factory job or cron route failed |
 | Vercel production deploys (every project) | the latest finished production deploy is `ERROR` or `CANCELED` |
 | Live product: botchelor (`/api/health`) | not reachable or HTTP 5xx (503: it can't reach its database) |
-| botchelor health detail (its cron secret from the keychain) | an episode report is waiting for review at `/admin`, a date is stuck generating for 15+ minutes, or the paid-model daily cap is reached (dates fall back to the free model until 00:00 UTC) |
+| botchelor health detail (its cron secret from the keychain) | an episode report is waiting for review at `/admin`, a date is stuck generating for 15+ minutes, the paid-model daily cap is reached (dates fall back to the free model until 00:00 UTC), or the app recorded server errors in the last hour (API and page errors, route pattern and cleaned message) |
 | launchd: nightly factory backup | last run failed or not loaded |
 | Secrets (`~/ai-stack/bin/secrets check`, daily) | a copy differs from the keychain, a secrets file is readable by others, or a backup holds a live key |
 

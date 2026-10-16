@@ -81,6 +81,10 @@ describe('probes', () => {
     // A cap of 0 means the paid default is off, not reached; a reply without the detail reports nothing.
     expect(productHealthEvents('botchelor', admin, { paid_dates: { today: 0, cap: 0 } }, now)[0]!.status).toBe('ok')
     expect(productHealthEvents('botchelor', admin, {}, now)).toEqual([])
+    // Server errors in the last hour fail with the latest one named; none is ok.
+    const errs = productHealthEvents('botchelor', admin, { errors: { last_hour: 3, latest: { kind: 'api', route: '/api/assets/:id', message: 'integer out of range' } } }, now)
+    expect(errs[0]).toMatchObject({ event: 'errors', status: 'fail', message: expect.stringContaining('3 server errors in the last hour (latest api /api/assets/:id: integer out of range)') })
+    expect(productHealthEvents('botchelor', admin, { errors: { last_hour: 0, latest: null } }, now)[0]!.status).toBe('ok')
   })
   it('provider errors in the LiteLLM log (out of credit) become failures', () => {
     const evs = providerEvents('AnthropicError: Your credit balance is too low to access the Anthropic API\n... credit balance is too low', now)
