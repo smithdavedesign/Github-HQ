@@ -125,6 +125,7 @@ export interface ProductHealth {
   reports?: { episodes?: number; reports?: number; oldest_at?: string | null }
   stuck_generating?: number
   paid_dates?: { today?: number; cap?: number }
+  errors?: { last_hour?: number; latest?: { kind?: string; route?: string; message?: string } | null }
 }
 
 /**
@@ -150,6 +151,14 @@ export function productHealthEvents(project: string, adminUrl: string, h: Produc
     const reached = cap > 0 && today >= cap
     out.push(ev('vercel', project, 'paid-cap', !reached,
       reached ? `${project}: paid-model cap reached (${today}/${cap} today); dates run on the free model until 00:00 UTC` : `${project}: ${today}/${cap} paid-model dates today`, undefined, now))
+  }
+  if (typeof h.errors?.last_hour === 'number') {
+    const n = h.errors.last_hour
+    const l = h.errors.latest
+    out.push(ev('vercel', project, 'errors', n === 0,
+      n === 0 ? `${project}: no server errors in the last hour`
+        : `${project}: ${n} server error${n === 1 ? '' : 's'} in the last hour${l ? ` (latest ${l.kind ?? '?'} ${l.route ?? ''}: ${String(l.message ?? '').slice(0, 160)})` : ''}`,
+      n ? { last_hour: n, route: l?.route ?? null } : undefined, now))
   }
   return out
 }
