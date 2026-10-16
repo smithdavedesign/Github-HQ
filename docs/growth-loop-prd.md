@@ -28,7 +28,8 @@ roadmap is merged. David's one step only he can do, posting, has no daily slot.
 
 David set these on 2026-10-12.
 
-- **Focus is tiebreak only.** It is the one live product. The next product joins once its MVP is live.
+- **Focus: tiebreak, then botchelor.** tiebreak was the one live product; botchelor joined on 2026-10-16, once it
+  was live on botchelor.com with the funnel beacon. The next product joins once its MVP is live.
 - **Finish started MVPs; start no new ones.** The weekly build slot finishes codespend and dawnlog and
   their go-lives. The 6 approved ideas wait for a first build until a focus product reaches 50 visitors
   a week. "Start build now" still works.

@@ -36,7 +36,7 @@ left for him) and posting; each morning he reviews what the agents merged and re
 | Live and earning | RepoHQ tracks lifecycle, health and MRR; the factory keeps it healthy | the owner | free tiers until it earns |
 
 **After launch: the growth loop** ([growth-loop-prd.md](growth-loop-prd.md), step 5d of the idea pipeline, since 2026-10-12).
-- **Each tick:** for each focus product (`policy.growth.focus` in idea-factory; tiebreak first), the pipeline reads the funnel and picks the bottleneck by rule: launch → instrument → acquire → activate → monetize → retain, or park.
+- **Each tick:** for each focus product (`policy.growth.focus` in idea-factory: tiebreak, then botchelor), the pipeline reads the funnel and picks the bottleneck by rule: launch → instrument → acquire → activate → monetize → retain, or park.
 - **Once a day per product:** it starts one mission. That's a growth build (one change, as a PR, on Sonnet), a launch kit of posts the owner publishes, or an item in the morning email's Today block.
 - **Each mission is an experiment** with a baseline, a target and a window. Merging the growth PR starts it; a growth PR whose checks fail is closed, and the mission is tried again the next day.
 - **When the window ends,** the judge compares it with the window before: keep, iterate, or revert one that made things clearly worse. Each result is a line in the product's `LEARNINGS.md`; a kept one is proposed for the portfolio's `PLAYBOOK.md`.
