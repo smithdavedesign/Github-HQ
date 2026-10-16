@@ -3,7 +3,7 @@ import { mkdtempSync, appendFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fingerprint, normalizeEvent, redact, type SystemEvent } from '../../factory/system/events'
-import { decideAlerts, vercelEvents, launchdEvents, openClawCronEvents, probesToShip, productHealthEvents, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
+import { decideAlerts, slackPostEvent, vercelEvents, launchdEvents, openClawCronEvents, probesToShip, productHealthEvents, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
 import { systemEventLines } from '../../factory/lib/report'
 
 const e = (fp: string, status: SystemEvent['status'], ts: string, message = 'm'): SystemEvent => {
@@ -124,6 +124,14 @@ describe('alerts', () => {
     const text = slackText([{ kind: 'fail', fp: 'ai-stack:litellm:probe', message: 'unreachable', since: t0.toISOString() }, { kind: 'recovered', fp: 'openclaw:frontdoor:launchd', message: 'exited 0', since: new Date(t0.getTime() - 3 * 3_600_000).toISOString() }], t0)
     expect(text).toMatch(/🔴 \*ai-stack:litellm:probe\* — failing: unreachable/)
     expect(text).toMatch(/🟢 \*openclaw:frontdoor:launchd\* — recovered after 3 h: exited 0/)
+  })
+  it('a failed Slack post is a failure event with the fix; the recovery is logged once', () => {
+    const fail = slackPostEvent({ ok: false, error: 'not_in_channel' }, false, t0)!
+    expect([fail.status, fingerprint(fail)]).toEqual(['fail', 'repohq:collector:slack-post'])
+    expect(fail.message).toMatch(/\/invite @repohqmessage/)
+    expect(slackPostEvent({ ok: false, error: 'invalid_auth' }, true, t0)!.message).toMatch(/keychain/)
+    expect(slackPostEvent({ ok: true }, true, t0)!.status).toBe('ok')
+    expect(slackPostEvent({ ok: true }, false, t0)).toBeNull()
   })
 })
 

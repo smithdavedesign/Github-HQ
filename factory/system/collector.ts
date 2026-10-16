@@ -11,7 +11,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { EVENTS_DIR, EVENTS_FILE, fingerprint, normalizeEvent, type SystemEvent } from './events'
+import { EVENTS_DIR, EVENTS_FILE, emitEvent, fingerprint, normalizeEvent, type SystemEvent } from './events'
 import { refreshOpenClawBrief } from '../context/brief'
 
 // ─── What's watched ─────────────────────────────────────────────────────────
@@ -62,6 +62,18 @@ export const PROVIDER_ERRORS: Array<{ re: RegExp; event: string; message: string
 const ev = (system: string, component: string, event: string, ok: boolean, message: string, data?: Record<string, unknown>, now = new Date()): SystemEvent => ({
   ts: now.toISOString(), system, component, event, status: ok ? 'ok' : 'fail', level: ok ? 'info' : 'error', message, ...(data ? { data } : {}),
 })
+
+/**
+ * The outcome of posting alerts to Slack, as an event: a failed post is a failure of its own, or every alert would go
+ * unseen without a trace (2026-10-14: the bot was dropped from #team-agents by an app reinstall, two days of alerts lost
+ * quietly). A recovery is logged once, after a failure; quiet successes aren't.
+ */
+export function slackPostEvent(r: { ok: boolean; error?: string }, wasFailing: boolean, now = new Date()): SystemEvent | null {
+  if (r.ok) return wasFailing ? ev('repohq', 'collector', 'slack-post', true, 'alerts reach Slack #team-agents again', undefined, now) : null
+  const fix = r.error === 'not_in_channel' ? ': the bot is not in the channel, so in #team-agents type /invite @repohqmessage'
+    : /invalid_auth|token_revoked|account_inactive/.test(r.error ?? '') ? ': the Slack token was refused, so store the current bot token in the keychain (system-events-slack-token)' : ''
+  return ev('repohq', 'collector', 'slack-post', false, `alerts not posted to Slack: ${r.error ?? 'unknown error'}${fix}`, undefined, now)
+}
 
 /** `launchctl list` output → one event per watched job. */
 export function launchdEvents(listOutput: string, now = new Date()): SystemEvent[] {
@@ -229,7 +241,7 @@ export function slackText(alerts: Alert[], now: Date): string {
 // ─── IO ─────────────────────────────────────────────────────────────────────
 
 const STATE_FILE = path.join(EVENTS_DIR, '.collector.json')
-interface CollectorState { offset: number; openclawSince: number; automationSince: string; probes: Record<string, { status: string; at: string }>; alerts: AlertState; lastPrune?: string }
+interface CollectorState { offset: number; openclawSince: number; automationSince: string; probes: Record<string, { status: string; at: string }>; alerts: AlertState; lastPrune?: string; slackFailing?: boolean }
 
 function loadState(): CollectorState {
   try { return JSON.parse(readFileSync(STATE_FILE, 'utf8')) } catch { return { offset: 0, openclawSince: Date.now() - 3_600_000, automationSince: new Date(Date.now() - 3_600_000).toISOString(), probes: {}, alerts: { open: {} } } }
@@ -350,6 +362,9 @@ export async function collect(opts: { databaseUrl: string | null; slack: { token
       body: JSON.stringify({ channel: opts.slack.channel, text: slackText(alerts, now), unfurl_links: false }),
     }).then(x => x.json() as Promise<{ ok: boolean; error?: string }>).catch(e => ({ ok: false, error: String(e) }))
     posted = r.ok
+    const outcome = slackPostEvent(r, !!state.slackFailing, now)
+    if (outcome) emitEvent(outcome) // read back next cycle, so it reaches Neon, the report's "Failing now" and the agents' brief
+    state.slackFailing = !r.ok
   }
   if (sql && !opts.dryRun && state.lastPrune?.slice(0, 10) !== now.toISOString().slice(0, 10)) {
     try { await sql`DELETE FROM system_events WHERE ts < now() - interval '90 days'`; state.lastPrune = now.toISOString() } catch { /* keep going */ }
