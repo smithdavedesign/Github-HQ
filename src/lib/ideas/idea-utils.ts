@@ -92,6 +92,8 @@ export interface FunnelCounts { visit?: number; signup?: number; activate?: numb
 /** Saved by the pipeline for built products: the last 7 days, the 7 before, all time, and where visitors came from. */
 export interface Funnel {
   at?: string; d7?: FunnelCounts; prev7?: FunnelCounts; all?: FunnelCounts; referrers7d?: { host: string; visitors: number }[]
+  /** Visitors left out this week as a burst of direct visits that did nothing (idea-factory lib/repohq.js cleanSignals). */
+  burst7d?: number
   /** Which events the product's beacon has ever sent: no `visit` means it still runs the old one-view beacon. */
   seen?: { visit?: boolean; activate?: boolean; checkout?: boolean }
 }
@@ -186,6 +188,7 @@ export function beaconLive(s: Pick<IdeaStateJson, 'funnel' | 'golive' | 'growth'
 export function funnelSummary(f: Funnel): string {
   const n = (x: number | undefined, w: string) => `${x ?? 0} ${w}${x === 1 ? '' : 's'}`
   return `${n(f.d7?.visit, 'visitor')} this week (${f.prev7?.visit ?? 0} the week before), ${n(f.d7?.activate, 'activation')}, ${n(f.d7?.checkout, 'Buy click')}`
+    + (f.burst7d ? ` (${f.burst7d} more left out: a burst of direct visits that did nothing, likely crawlers or a test)` : '')
 }
 
 export interface LaunchStep { id: string; label: string; owner: 'agent' | 'david'; done: boolean; evidence?: string }
