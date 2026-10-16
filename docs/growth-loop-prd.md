@@ -91,6 +91,13 @@ Every live product reports four events to RepoHQ's existing signal endpoint
 
 - The funnel counts unique visitors per event: the last 7 days, the 7 before, and all time, plus the
   top referring sites. Owner, bot and preview traffic don't count.
+- **Bursts don't count either** (idea-factory `lib/repohq.js` `cleanSignals`, since 2026-10-16). A burst is an hour in
+  which 8 or more different visitors (`policy.growth.burstMinVisitors`) arrive with no referrer and never sign up,
+  activate or click Buy: a crawler sweep or a test run. Those visits are left out of the funnel, the experiment windows
+  and the demand tests. botchelor.com's first 31 "visitors" arrived within two hours of the domain going live, and 24
+  were left out. The 48 hours after a logged launch post still count, because Reddit's app sends no referrer either.
+  The funnel records how many were left out (`burst7d`), and the email, the Ideas page and MCP say so. Until an
+  experiment starts, its baseline follows the funnel.
 - An experiment compares two windows of equal length: before it started and after. Each experiment has a
   minimum sample and an absolute target. Short of data, it is extended once, then recorded as "not
   enough data".

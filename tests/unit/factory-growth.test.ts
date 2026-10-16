@@ -86,6 +86,9 @@ describe('Growth section', () => {
     const busy = { ...tiebreak, funnel: { ...tiebreak.funnel!, d7: { visit: 60 }, seen: { visit: true } } }
     expect(growthLines([busy], growth())[0]).toMatch(/Reached, so new MVP builds can start again\.$/)
     expect(growthLines([permitly], growth({ focus: [] }))).toEqual([])
+    const swept = { ...tiebreak, funnel: { ...tiebreak.funnel!, d7: { visit: 9, activate: 0, checkout: 0 }, burst7d: 24 } }
+    expect(growthLines([swept], growth())[1], 'visitors left out as a burst are said, not hidden')
+      .toMatch(/^tiebreak: 9 visitors this week \(0 the week before\), 0 activations, 0 Buy clicks \(24 more left out: a burst of direct visits that did nothing, likely crawlers or a test\); sources:/)
   })
   it("reads the focus, the bar, kits and logs from idea-factory's files", () => {
     const home = mkdtempSync(path.join(tmpdir(), 'growth-'))
