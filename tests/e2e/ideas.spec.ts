@@ -272,7 +272,7 @@ test.describe('Ideas page', () => {
     expect(r).toMatchObject({ milestone: 'M1', status: 'pending', note: 'e2e: CLI first' })
 
     await page.getByRole('button', { name: /Withdraw/ }).click()
-    await expect(page.getByText('Withdrawn')).toBeVisible()
+    await expect(page.getByText('Withdrawn', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Just M1' })).toBeEnabled()
     const [w] = await sql()`SELECT status FROM idea_build_requests WHERE slug = ${SLUG3} ORDER BY id DESC LIMIT 1`
     expect(w.status).toBe('cancelled')
@@ -311,7 +311,7 @@ test.describe('Ideas page', () => {
     const [r] = await sql()`SELECT milestone, status FROM idea_build_requests WHERE slug = ${SLUG3} ORDER BY id DESC LIMIT 1`
     expect(r).toMatchObject({ milestone: 'MVP', status: 'pending' })
     await page.getByRole('button', { name: /Withdraw/ }).click()
-    await expect(page.getByText('Withdrawn')).toBeVisible()
+    await expect(page.getByText('Withdrawn', { exact: true })).toBeVisible()
   })
 
   test('Road to revenue shows the steps to the first dollar, whose step is next, and the plan', async ({ page }) => {
@@ -346,7 +346,7 @@ test.describe('Ideas page', () => {
     expect(r).toMatchObject({ milestone: 'GOLIVE', status: 'pending' })
     await expect(page.getByRole('button', { name: 'Get it launch-ready' })).toHaveCount(0)
     await page.getByRole('button', { name: /Withdraw/ }).click()
-    await expect(page.getByText('Withdrawn')).toBeVisible()
+    await expect(page.getByText('Withdrawn', { exact: true })).toBeVisible()
   })
 
   test('the new-build hold: an approved idea that was never built says its first build waits for traction', async ({ page }) => {
