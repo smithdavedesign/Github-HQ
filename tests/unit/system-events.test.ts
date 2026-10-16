@@ -3,7 +3,7 @@ import { mkdtempSync, appendFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fingerprint, normalizeEvent, redact, type SystemEvent } from '../../factory/system/events'
-import { decideAlerts, vercelEvents, launchdEvents, openClawCronEvents, probesToShip, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
+import { decideAlerts, vercelEvents, launchdEvents, openClawCronEvents, probesToShip, productHealthEvents, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
 import { systemEventLines } from '../../factory/lib/report'
 
 const e = (fp: string, status: SystemEvent['status'], ts: string, message = 'm'): SystemEvent => {
@@ -66,6 +66,21 @@ describe('probes', () => {
     ], now)
     expect(evs.map(x => [x.component, x.status])).toEqual([['repohq', 'ok'], ['open-travel', 'fail'], ['idea-pages', 'ok']])
     expect(evs[1]!.message).toMatch(/latest production deploy is ERROR: https:\/\/vercel\.com\/x/)
+  })
+  it('a live product\'s health detail: reports waiting, stuck dates and the paid cap fail; nothing waiting is ok', () => {
+    const admin = 'https://botchelor.vercel.app/admin'
+    const busy = productHealthEvents('botchelor', admin, {
+      reports: { episodes: 2, reports: 4, oldest_at: '2026-10-10T18:00:00.000Z' }, stuck_generating: 1, paid_dates: { today: 100, cap: 100 },
+    }, now)
+    const by = (event: string) => busy.find(x => x.event === event)!
+    expect(by('reports')).toMatchObject({ system: 'vercel', component: 'botchelor', status: 'fail', message: expect.stringContaining('2 reported episodes waiting for review at ' + admin) })
+    expect(by('stuck-dates')).toMatchObject({ status: 'fail', message: expect.stringMatching(/1 date stuck/) })
+    expect(by('paid-cap')).toMatchObject({ status: 'fail', message: expect.stringMatching(/cap reached \(100\/100 today\)/) })
+    const quiet = productHealthEvents('botchelor', admin, { reports: { episodes: 0 }, stuck_generating: 0, paid_dates: { today: 3, cap: 100 } }, now)
+    expect(quiet.map(x => [x.event, x.status])).toEqual([['reports', 'ok'], ['stuck-dates', 'ok'], ['paid-cap', 'ok']])
+    // A cap of 0 means the paid default is off, not reached; a reply without the detail reports nothing.
+    expect(productHealthEvents('botchelor', admin, { paid_dates: { today: 0, cap: 0 } }, now)[0]!.status).toBe('ok')
+    expect(productHealthEvents('botchelor', admin, {}, now)).toEqual([])
   })
   it('provider errors in the LiteLLM log (out of credit) become failures', () => {
     const evs = providerEvents('AnthropicError: Your credit balance is too low to access the Anthropic API\n... credit balance is too low', now)

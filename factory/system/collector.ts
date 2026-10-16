@@ -38,6 +38,16 @@ export const HTTP_PROBES: Array<{ system: string; component: string; url: string
   { system: 'ai-stack', component: 'headroom', url: 'http://127.0.0.1:8787/health' },
   { system: 'openclaw', component: 'gateway', url: 'http://127.0.0.1:18789/' },
   { system: 'repohq', component: 'app', url: 'https://repohq.vercel.app/login' },
+  // Live products: 503 when the app can't reach its database (botchelor docs/launch-readiness.md).
+  { system: 'vercel', component: 'botchelor', url: 'https://botchelor.vercel.app/api/health' },
+]
+
+/**
+ * Live products whose health endpoint has a token-gated detail: what needs the owner, beyond being up. The token is
+ * the product's cron secret, read from the keychain at probe time; liveness itself is the plain HTTP probe above.
+ */
+export const PRODUCT_HEALTH: Array<{ project: string; url: string; tokenService: string; adminUrl: string }> = [
+  { project: 'botchelor', url: 'https://botchelor.vercel.app/api/health', tokenService: 'vault/botchelor/CRON_SECRET', adminUrl: 'https://botchelor.vercel.app/admin' },
 ]
 
 /** Provider trouble that otherwise only shows up as a fallback (2026-10-10: Anthropic credit ran out silently). */
@@ -109,6 +119,39 @@ export function vercelEvents(deployments: Array<{ name: string; state?: string; 
     const state = d.state ?? d.readyState
     return ev('vercel', d.name, 'deploy', state === 'READY', state === 'READY' ? `${d.name} production is live` : `${d.name}'s latest production deploy is ${state}: ${d.inspectorUrl ?? d.url ?? ''}`, undefined, now)
   })
+}
+
+export interface ProductHealth {
+  reports?: { episodes?: number; reports?: number; oldest_at?: string | null }
+  stuck_generating?: number
+  paid_dates?: { today?: number; cap?: number }
+}
+
+/**
+ * A product's health detail → one event per thing the owner may have to act on, each ok when there's nothing:
+ * reports waiting for review, dates stuck generating, and the paid-model daily cap being reached (dates then run
+ * on the free model until 00:00 UTC, which is either a good day or abuse).
+ */
+export function productHealthEvents(project: string, adminUrl: string, h: ProductHealth, now = new Date()): SystemEvent[] {
+  const out: SystemEvent[] = []
+  if (h.reports) {
+    const n = h.reports.episodes ?? 0
+    out.push(ev('vercel', project, 'reports', n === 0,
+      n === 0 ? `${project}: no reports waiting` : `${project}: ${n} reported episode${n === 1 ? '' : 's'} waiting for review at ${adminUrl}`,
+      n ? { episodes: n, reports: h.reports.reports ?? n, oldest_at: h.reports.oldest_at ?? null } : undefined, now))
+  }
+  if (typeof h.stuck_generating === 'number') {
+    const n = h.stuck_generating
+    out.push(ev('vercel', project, 'stuck-dates', n === 0,
+      n === 0 ? `${project}: no dates stuck generating` : `${project}: ${n} date${n === 1 ? '' : 's'} stuck generating for 15+ minutes`, undefined, now))
+  }
+  if (typeof h.paid_dates?.today === 'number' && typeof h.paid_dates.cap === 'number') {
+    const { today, cap } = h.paid_dates
+    const reached = cap > 0 && today >= cap
+    out.push(ev('vercel', project, 'paid-cap', !reached,
+      reached ? `${project}: paid-model cap reached (${today}/${cap} today); dates run on the free model until 00:00 UTC` : `${project}: ${today}/${cap} paid-model dates today`, undefined, now))
+  }
+  return out
 }
 
 /** LiteLLM log text → one event per kind of provider trouble seen (ok when none). */
@@ -216,9 +259,22 @@ async function httpProbe(p: (typeof HTTP_PROBES)[number], now: Date): Promise<Sy
   }
 }
 
+async function productHealthProbe(p: (typeof PRODUCT_HEALTH)[number], now: Date): Promise<SystemEvent[]> {
+  const token = sh('security', ['find-generic-password', '-s', p.tokenService, '-w'], 10_000)?.trim()
+  if (!token) return [] // no token on this machine: the liveness probe still runs
+  try {
+    const r = await fetch(p.url, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8_000) })
+    if (!r.ok) return [] // an outage is the liveness probe's to report
+    return productHealthEvents(p.project, p.adminUrl, await r.json() as ProductHealth, now)
+  } catch {
+    return []
+  }
+}
+
 export async function probeAll(now: Date, state: CollectorState): Promise<SystemEvent[]> {
   const out: SystemEvent[] = []
   for (const p of HTTP_PROBES) out.push(await httpProbe(p, now))
+  for (const p of PRODUCT_HEALTH) out.push(...await productHealthProbe(p, now))
   const docker = sh('docker', ['info', '--format', '{{.ServerVersion}}'], 20_000)
   out.push(ev('ai-stack', 'docker', 'probe', !!docker?.trim(), docker?.trim() ? `Docker ${docker.trim()} running` : 'Docker is not running: factory cycles skip without the sandbox', undefined, now))
   const launchctl = sh('launchctl', ['list'])
