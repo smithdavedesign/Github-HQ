@@ -3,7 +3,7 @@ import { mkdtempSync, appendFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fingerprint, normalizeEvent, redact, type SystemEvent } from '../../factory/system/events'
-import { decideAlerts, slackPostEvent, vercelEvents, launchdEvents, openClawCronEvents, probesToShip, productHealthEvents, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
+import { decideAlerts, slackPostEvent, vercelEvents, launchdEvents, mediaQueueEvent, modelRouterEvent, MEDIA_STUCK_MS, openClawCronEvents, probesToShip, productHealthEvents, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
 import { systemEventLines } from '../../factory/lib/report'
 
 const e = (fp: string, status: SystemEvent['status'], ts: string, message = 'm'): SystemEvent => {
@@ -43,6 +43,17 @@ describe('probes', () => {
     expect(by('pipeline')).toMatchObject({ status: 'fail', message: expect.stringMatching(/exited 1/) })
     expect(by('gateway')).toMatchObject({ status: 'fail', message: expect.stringMatching(/not running \(last exit 78\)/) })
     expect(by('headroom')).toMatchObject({ status: 'fail', message: expect.stringMatching(/not loaded/) })
+  })
+  it('media-gen: an empty or young queue is fine, a job waiting past the limit is stuck', () => {
+    expect(mediaQueueEvent([], now)).toMatchObject({ status: 'ok', component: 'media-gen' })
+    expect(mediaQueueEvent([now.getTime() - 5 * 60_000, now.getTime()], now)).toMatchObject({ status: 'ok', message: expect.stringMatching(/2 image\/video job\(s\) queued, oldest 5 min/) })
+    expect(mediaQueueEvent([now.getTime() - MEDIA_STUCK_MS - 60_000], now)).toMatchObject({ status: 'fail', message: expect.stringMatching(/stuck for 61 min/) })
+  })
+  it('model router: fails while OpenClaw is held on the local fallback, recovers when the hold expires', () => {
+    expect(modelRouterEvent(null, now).status).toBe('ok')
+    expect(modelRouterEvent({ cloudLimitedUntil: now.getTime() - 1 }, now).status).toBe('ok')
+    expect(modelRouterEvent({ cloudLimitedUntil: now.getTime() + 45 * 60_000, reason: 'rate limit error' }, now))
+      .toMatchObject({ status: 'fail', system: 'openclaw', message: expect.stringMatching(/rate limit error.*local-chat until 20:45 UTC/) })
   })
   it('OpenClaw cron runs since the last collect, named by job', () => {
     const lines = [
