@@ -27,6 +27,7 @@ export const WATCHED_JOBS: Array<{ label: string; kind: 'daemon' | 'interval'; s
   { label: 'com.user.repohq-frontdoor-report', kind: 'interval', system: 'openclaw', component: 'frontdoor' },
   { label: 'com.user.system-events', kind: 'interval', system: 'ai-stack', component: 'collector' },
   { label: 'com.user.factory-backup', kind: 'interval', system: 'factory', component: 'backup' },
+  { label: 'com.localai.media-gen', kind: 'interval', system: 'ai-stack', component: 'media-gen' },
   // homebrew.mxcl.ollama is deliberately not watched: it exits 1 by design (Ollama.app owns :11434).
 ]
 
@@ -92,6 +93,31 @@ export function launchdEvents(listOutput: string, now = new Date()): SystemEvent
     const ok = r.status === '0'
     return ev(j.system, j.component, 'launchd', ok, ok ? `${j.label} last run exited 0` : `${j.label} last run exited ${r.status}`, { label: j.label }, now)
   })
+}
+
+/** Local image/video jobs (ai-stack bin/media-gen) waiting longer than this are stuck: a video takes at most ~40 min. */
+export const MEDIA_STUCK_MS = 60 * 60_000
+
+/** Ages of the jobs waiting in ~/.local/state/media-gen-inbox → one event: fails when the oldest has waited past MEDIA_STUCK_MS. */
+export function mediaQueueEvent(jobMtimesMs: number[], now = new Date()): SystemEvent {
+  if (!jobMtimesMs.length) return ev('ai-stack', 'media-gen', 'probe', true, 'no image/video jobs waiting', undefined, now)
+  const ageMin = Math.round((now.getTime() - Math.min(...jobMtimesMs)) / 60_000)
+  const ok = ageMin * 60_000 <= MEDIA_STUCK_MS
+  return ev('ai-stack', 'media-gen', 'probe', ok, ok
+    ? `${jobMtimesMs.length} image/video job(s) queued, oldest ${ageMin} min`
+    : `image/video job stuck for ${ageMin} min (${jobMtimesMs.length} waiting): see ~/.local/state/media-gen.log and comfyui.log`, { queued: jobMtimesMs.length, oldestMin: ageMin }, now)
+}
+
+/**
+ * OpenClaw's model-router plugin state (~/.local/state/model-router.json) → one event. While the free cloud models are
+ * rate-limited it routes chats to the local 7B, so the companion is slower and weaker: worth one alert and one recovery
+ * (2026-10-16: every free provider hit its limit at once and the companion reset its memory).
+ */
+export function modelRouterEvent(state: { cloudLimitedUntil?: number; reason?: string } | null, now = new Date()): SystemEvent {
+  const until = state?.cloudLimitedUntil ?? 0
+  if (until <= now.getTime()) return ev('openclaw', 'model-router', 'probe', true, 'OpenClaw is on the free cloud models', undefined, now)
+  return ev('openclaw', 'model-router', 'probe', false,
+    `free cloud models rate-limited (${state?.reason ?? 'rate limit'}): OpenClaw on local-chat until ${new Date(until).toISOString().slice(11, 16)} UTC`, { until: new Date(until).toISOString() }, now)
 }
 
 /** OpenClaw cron run lines (one JSON object each) since `sinceMs` → events, named by job. */
@@ -306,6 +332,21 @@ export async function probeAll(now: Date, state: CollectorState): Promise<System
   if (vercel) { try { out.push(...vercelEvents(JSON.parse(vercel.slice(vercel.indexOf('{'))).deployments ?? [], now)) } catch { /* skip */ } }
   const logs = sh('docker', ['logs', 'litellm', '--since', '6m'], 20_000)
   if (logs !== null) out.push(...providerEvents(logs, now))
+  out.push(...localStateEvents(now))
+  return out
+}
+
+/** ai-stack state files: the media-gen queue and the OpenClaw model router (only on a Mac that has them). */
+function localStateEvents(now: Date, home = process.env.HOME ?? ''): SystemEvent[] {
+  const out: SystemEvent[] = []
+  const inbox = path.join(home, '.local', 'state', 'media-gen-inbox')
+  if (existsSync(inbox)) {
+    try { out.push(mediaQueueEvent(readdirSync(inbox).filter(f => f.endsWith('.json')).map(f => statSync(path.join(inbox, f)).mtimeMs), now)) } catch { /* skip */ }
+  }
+  const router = path.join(home, '.local', 'state', 'model-router.json')
+  if (existsSync(router)) {
+    try { out.push(modelRouterEvent(JSON.parse(readFileSync(router, 'utf8')), now)) } catch { /* skip */ }
+  }
   return out
 }
 

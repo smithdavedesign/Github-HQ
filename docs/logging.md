@@ -97,6 +97,9 @@ Older events without `data` still show: the page reads the model and engine from
 | Live product: botchelor (`/api/health`) | not reachable or HTTP 5xx (503: it can't reach its database) |
 | botchelor health detail (its cron secret from the keychain) | an episode report is waiting for review at `/admin`, a date is stuck generating for 15+ minutes, the paid-model daily cap is reached (dates fall back to the free model until 00:00 UTC), or the app recorded server errors in the last hour (API and page errors, route pattern and cleaned message) |
 | launchd: nightly factory backup | last run failed or not loaded |
+| launchd: ai-stack `com.localai.media-gen` (local image/video worker) | last run failed or not loaded |
+| media-gen queue (`~/.local/state/media-gen-inbox`) | an image/video job has waited over an hour |
+| OpenClaw model router (`~/.local/state/model-router.json`) | the free cloud models are rate-limited and OpenClaw is held on the local `local-chat` fallback (one alert, one recovery) |
 | Secrets (`~/ai-stack/bin/secrets check`, daily) | a copy differs from the keychain, a secrets file is readable by others, or a backup holds a live key |
 
 `homebrew.mxcl.ollama` is deliberately not watched: it exits 1 by design, because Ollama.app owns port 11434.
