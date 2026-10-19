@@ -14,6 +14,7 @@ import { formatValuation } from '@/lib/health/valuation'
 import { getAccuracyByImpactType, getDowngradedRepos } from '@/lib/actions/advisor-accuracy'
 import { MIN_DATA_POINTS } from '@/lib/actions/advisor-accuracy-utils'
 import { freshContent } from './fresh'
+import { hasAdvisorShape } from './advisor-shape'
 
 
 export interface AdvisorAction {
@@ -245,6 +246,8 @@ Rules:
     throw new Error(`Advisor: ${describeAiError(err)}`)
   }
 
+  if (!hasAdvisorShape(parsed)) throw new Error('Advisor: the model replied without an actions list')
+
   const result: AdvisorContent = { ...parsed, generatedAt: new Date().toISOString() }
 
   // Store in the most recent digest record, or create a stub
@@ -278,8 +281,10 @@ export async function getLatestAdvisor(userId: string): Promise<AdvisorContent |
     orderBy: (d, { desc }) => [desc(d.generatedAt)],
     columns: { advisorContent: true, generatedAt: true },
   })
+  // A malformed row shows as no Advisor rather than crashing the dashboard.
+  if (!hasAdvisorShape(latest?.advisorContent)) return null
   // Shown for 8 days, by the Advisor's own date, not its digest row's.
-  return freshContent(latest?.advisorContent as AdvisorContent | null | undefined, latest?.generatedAt)
+  return freshContent(latest.advisorContent as AdvisorContent, latest.generatedAt)
 }
 
 // ─── Accuracy section builder ─────────────────────────────────────────────────
