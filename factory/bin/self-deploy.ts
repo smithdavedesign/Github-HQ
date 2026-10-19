@@ -4,7 +4,7 @@
  * and when main changed code the factory runs and every check on it is green, it runs install-launchd.sh for that
  * commit (factory/lib/self-deploy.ts). The installer waits for a running factory job before restarting the worker.
  *
- *   npx tsx factory/bin/self-deploy.ts [--dry-run]
+ *   npm run factory:self-deploy -- [--dry-run]
  */
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
