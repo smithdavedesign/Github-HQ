@@ -26,6 +26,7 @@ export const WATCHED_JOBS: Array<{ label: string; kind: 'daemon' | 'interval'; s
   { label: 'com.user.repohq-frontdoor-report', kind: 'interval', system: 'openclaw', component: 'frontdoor' },
   { label: 'com.user.system-events', kind: 'interval', system: 'ai-stack', component: 'collector' },
   { label: 'com.user.factory-backup', kind: 'interval', system: 'factory', component: 'backup' },
+  { label: 'com.repohq.factory.deploy', kind: 'interval', system: 'factory', component: 'self-deploy' },
   { label: 'com.localai.media-gen', kind: 'interval', system: 'ai-stack', component: 'media-gen' },
   // Ollama isn't watched as a launchd job: Ollama.app owns :11434, so homebrew.mxcl.ollama exits 1 by design and
   // com.ollama.ollama sits idle while Ollama runs (a false "not running" every 5 minutes until 2026-10-19). The

@@ -158,6 +158,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 | Within 15 min of sending | Research + review of an idea the owner sent, verdict back on Slack or WhatsApp (≤ 10 a day, one per tick, so a batch clears the same night) | idea pipeline tick |
 | Every 5 min | System-events collector: ship the log, probe everything (incl. Vercel deploys), alert Slack, refresh the companion's brief; daily: prune, secrets check | launchd `com.user.system-events` |
 | 03:30 | Factory state backup (ledger, reports) → private repo | launchd `com.user.factory-backup` |
+| Every 10 min | Factory self-deploy: a green `main` that changed factory code is deployed to `~/.repohq-factory/app` | launchd `com.repohq.factory.deploy` |
 | Every 15 min (daily steps after 09:30) | Idea pipeline tick: Ideas-page decisions, signals and funnels, decisions, promote, an approved idea's M1 build, revenue, a go-live once an MVP is complete (≤ 1 a day), the live audit (every 6 h per live idea), the growth step (focus products; from 10:00, ≤ 2 missions a day), sync to RepoHQ; daily review, landing pages, M1 build | launchd `com.user.idea-pipeline` |
 | Every 6 h, daily, weekly | RepoHQ sync (with security alerts, so counts follow merges within hours), the full security scan, deployments, AI summaries, digest | GitHub Actions crons |
 
@@ -165,7 +166,7 @@ Rated against the goal. "Was" is the review at the start of 2026-10-10; "now" is
 
 - CI on pull requests for the factory repos that have none (7 of 9). Their PRs merge on the factory's own sandboxed checks, the Vercel preview build where there is one, and the smoke test.
 - Smoke-test logged-in pages (a test account per app).
-- Vercel runtime errors into the system log (the last unwatched surface).
+- Vercel runtime errors into the system log for the other products (RepoHQ records its own since 2026-10-19: `server_errors`, `/api/health`).
 - A stronger demand signal than signups: a "what would you pay" step on landing pages.
 - Embeddings for the context index, if keyword search starts missing things.
 - Hardware: 64–128 GB unified memory, after the 30-day experiment's numbers are in (2026-11-06).

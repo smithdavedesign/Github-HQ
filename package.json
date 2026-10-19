@@ -31,6 +31,7 @@
     "factory:judge-fixture": "tsx factory/bin/judge-fixture.ts",
     "factory:migrate": "tsx factory/bin/migrate.ts",
     "factory:backfill-jobs": "tsx factory/bin/backfill-jobs.ts",
+    "factory:self-deploy": "tsx factory/bin/self-deploy.ts",
     "factory:smoke": "tsx factory/bin/smoke.ts",
     "context": "tsx factory/bin/context.ts",
     "factory:rate": "tsx factory/bin/rate.ts",
