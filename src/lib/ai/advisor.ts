@@ -246,7 +246,7 @@ Rules:
     throw new Error(`Advisor: ${describeAiError(err)}`)
   }
 
-  if (!hasAdvisorShape(parsed)) throw new Error('Advisor: the model replied without a headline and actions')
+  if (!hasAdvisorShape(parsed)) throw new Error('Advisor: the model replied without an actions list')
 
   const result: AdvisorContent = { ...parsed, generatedAt: new Date().toISOString() }
 

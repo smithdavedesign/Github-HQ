@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { hasAdvisorShape } from '../../src/lib/ai/advisor-shape'
 
 describe('hasAdvisorShape', () => {
-  it('accepts a headline with an actions array', () => {
+  it('accepts an actions array', () => {
     expect(hasAdvisorShape({ headline: 'Ship it', actions: [], generatedAt: '2026-10-19T00:00:00Z' })).toBe(true)
+    expect(hasAdvisorShape({ actions: [] })).toBe(true)
   })
 
   it('rejects the row that crashed the dashboard on 2026-10-19', () => {

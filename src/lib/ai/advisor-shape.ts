@@ -3,8 +3,6 @@
  * JSON but had no headline or actions; it was saved as `{ generatedAt }` and the dashboard crashed on
  * `advisor.actions.slice`.
  */
-export function hasAdvisorShape(value: unknown): value is { headline: string; actions: unknown[] } {
-  if (!value || typeof value !== 'object') return false
-  const v = value as { headline?: unknown; actions?: unknown }
-  return typeof v.headline === 'string' && Array.isArray(v.actions)
+export function hasAdvisorShape(value: unknown): value is { actions: unknown[] } {
+  return !!value && typeof value === 'object' && Array.isArray((value as { actions?: unknown }).actions)
 }
