@@ -98,6 +98,7 @@ Older events without `data` still show: the page reads the model and engine from
 | botchelor health detail (its cron secret from the keychain) | an episode report is waiting for review at `/admin`, a date is stuck generating for 15+ minutes, the paid-model daily cap is reached (dates fall back to the free model until 00:00 UTC), or the app recorded server errors in the last hour (API and page errors, route pattern and cleaned message) |
 | RepoHQ health detail (`vault/repohq/CRON_SECRET` from the keychain) | the app recorded server errors in the last hour (pages, server components, actions: `src/instrumentation.ts` → `server_errors`). Its pages sit behind sign-in, so this is what catches a crashed dashboard (2026-10-19) |
 | launchd: nightly factory backup | last run failed or not loaded |
+| launchd: factory self-deploy (`com.repohq.factory.deploy`, every 10 min) | last run failed or not loaded; a failed deploy is also its own event, `factory:self-deploy:deploy` |
 | launchd: ai-stack `com.localai.media-gen` (local image/video worker) | last run failed or not loaded |
 | media-gen queue (`~/.local/state/media-gen-inbox`) | an image/video job has waited over an hour |
 | OpenClaw model router (`~/.local/state/model-router.json`) | the free cloud models are rate-limited and OpenClaw is held on the local `local-chat` fallback (one alert, one recovery) |

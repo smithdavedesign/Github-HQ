@@ -57,9 +57,14 @@ npm run context -- build | search "<q>" | interests | overview   # the context i
 npm run factory:backfill-jobs           # copy ledger history into agent_jobs (needs ~/.repohq-factory/env sourced)
 npm run factory:morning -- --no-send   # build the morning report and print it
 bash factory/bin/setup-email.sh you@gmail.com   # one-time: Gmail app password → keychain, test email
-bash factory/bin/install-launchd.sh     # deploy origin/main (--head: this checkout's HEAD); with REDIS_URL: the always-on worker; without: the calendar (cycles hourly 20:00–06:00 + 12:00/16:00 on AC, report 06:45, scout Sun 17:10)
+bash factory/bin/install-launchd.sh     # install once, or deploy at once (merges deploy themselves: below); deploys origin/main (--head: this checkout's HEAD); with REDIS_URL: the always-on worker; without: the calendar (cycles hourly 20:00–06:00 + 12:00/16:00 on AC, report 06:45, scout Sun 17:10)
 bash factory/bin/install-launchd.sh --uninstall
 bash factory/bin/install-launchd.sh --now     # deploy without waiting: by default it waits up to 20 min for a running job, since restarting the worker kills it
+```
+
+**Merges deploy themselves.** launchd `com.repohq.factory.deploy` runs `factory/bin/self-deploy.ts` every 10 minutes from the deployed checkout. It fetches `main` from GitHub; when main changed code the checkout runs (`factory/`, `mcp/`, `src/lib/`, `package*.json`) and every check on that commit is green, it checks it out and runs `npm ci` while no factory job is running (undone if that fails), then runs `install-launchd.sh` for it. A red main waits; a failed deploy is logged as `factory:self-deploy:deploy` (Slack) and held until main moves. Before 2026-10-19 this step was manual, and #125 and #126 ran nowhere for two days.
+
+```bash
 touch ~/.repohq-factory/PAUSE           # kill switch (rm to resume)
 ```
 

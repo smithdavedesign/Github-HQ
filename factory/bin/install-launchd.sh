@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Deploy the factory to ~/.repohq-factory/app and install (or remove with --uninstall) its launchd jobs.
-# Re-run after factory changes merge to redeploy: it deploys origin/main, whatever branch this checkout
-# is on. --head deploys this checkout's HEAD instead (testing a branch on purpose). It first waits for a
+# Merges deploy themselves: com.repohq.factory.deploy (factory/bin/self-deploy.ts) runs this for a green main
+# that changed factory code, within 10 minutes. Run it by hand to install, or to deploy at once: it deploys
+# origin/main, whatever branch this checkout is on. --head deploys this checkout's HEAD instead (testing a branch on purpose). It first waits for a
 # running factory job to finish (up to 20 minutes), since restarting the worker kills it; --now skips that.
 #
 # With a REDIS_URL (Agent HQ, roadmap Phase 81 — env, keychain, or REDIS_URL in .env.local):
@@ -87,6 +88,9 @@ wait_for_running_job "$@"
 
 CALENDAR_LABELS="com.repohq.factory.cycle com.repohq.factory.report com.repohq.factory.scout"
 LABELS="$CALENDAR_LABELS com.repohq.factory.worker com.user.system-events com.user.factory-backup"
+# Self-deploy (factory/bin/self-deploy.ts) runs this script from com.repohq.factory.deploy: that job is left alone
+# then, since booting it out would kill the deploy halfway.
+[ -z "${FACTORY_SELF_DEPLOY:-}" ] && LABELS="$LABELS com.repohq.factory.deploy"
 for label in $LABELS; do
   launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
   rm -f "$AGENTS/$label.plist"
@@ -101,7 +105,10 @@ mkdir -p "$AGENTS" "$HOME/.repohq-factory/logs"
 # ── Deploy: a pinned checkout of origin/main, or with --head this checkout's committed HEAD ─────
 # Merging is how factory code gets approved (and the factory merges its own PRs now), so an
 # unmerged branch is never deployed by accident.
-if [ "${1:-}" = "--head" ]; then
+if [ -n "${FACTORY_DEPLOY_SHA:-}" ]; then
+  # From self-deploy: the commit it fetched from GitHub and already checked out (launchd can't read ~/Documents).
+  SHA="$FACTORY_DEPLOY_SHA"
+elif [ "${1:-}" = "--head" ]; then
   SHA="$(git -C "$ROOT" rev-parse HEAD)"
   [ -n "$(git -C "$ROOT" status --porcelain -- factory src/lib/agents)" ] && echo "warning: uncommitted factory changes are NOT deployed (deploying $SHA)"
 else
@@ -111,7 +118,7 @@ fi
 if [ ! -d "$APP/.git" ]; then
   git clone -q "$ROOT" "$APP"
 fi
-git -C "$APP" fetch -q origin "$SHA" 2>/dev/null || git -C "$APP" fetch -q origin
+git -C "$APP" cat-file -e "$SHA^{commit}" 2>/dev/null || git -C "$APP" fetch -q origin "$SHA" 2>/dev/null || git -C "$APP" fetch -q origin
 git -C "$APP" checkout -q --detach "$SHA"
 (cd "$APP" && npm ci --no-audit --no-fund --silent >/dev/null)
 echo "deployed $(git -C "$APP" log -1 --format='%h %s') → $APP"
@@ -205,6 +212,28 @@ cat > "$AGENTS/com.user.factory-backup.plist" <<PLIST
 </plist>
 PLIST
 INSTALL="$INSTALL com.user.factory-backup"
+
+# Self-deploy: every 10 minutes, a green main that changed factory code is deployed (factory/lib/self-deploy.ts).
+if [ -z "${FACTORY_SELF_DEPLOY:-}" ]; then
+  cat > "$AGENTS/com.repohq.factory.deploy.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.repohq.factory.deploy</string>
+  <key>ProgramArguments</key>
+  <array><string>$APP/node_modules/.bin/tsx</string><string>$APP/factory/bin/self-deploy.ts</string></array>
+  <key>WorkingDirectory</key><string>$APP</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string><key>HOME</key><string>$HOME</string></dict>
+  <key>StartInterval</key><integer>600</integer>
+  <key>StandardOutPath</key><string>$HOME/.repohq-factory/logs/self-deploy.log</string>
+  <key>StandardErrorPath</key><string>$HOME/.repohq-factory/logs/self-deploy.log</string>
+</dict>
+</plist>
+PLIST
+  INSTALL="$INSTALL com.repohq.factory.deploy"
+fi
 
 for label in $INSTALL; do
   plutil -lint "$AGENTS/$label.plist" >/dev/null
