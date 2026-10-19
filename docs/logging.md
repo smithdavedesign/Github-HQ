@@ -85,9 +85,9 @@ Older events without `data` still show: the page reads the model and engine from
 
 | Probe | Fails when |
 |---|---|
-| LiteLLM, Ollama, Headroom, OpenClaw gateway, RepoHQ (`/login`) | not reachable or HTTP 5xx |
+| LiteLLM, Ollama (`:11434`), Headroom, OpenClaw gateway, RepoHQ (`/api/health`, 503 when it can't reach its database) | not reachable or HTTP 5xx |
 | Docker | not running (factory cycles skip without the sandbox) |
-| launchd: factory worker, OpenClaw gateway, Headroom, Ollama, caffeinate | not running |
+| launchd: factory worker, OpenClaw gateway, Headroom, caffeinate | not running |
 | launchd: idea pipeline, front door, the collector itself | last run exited non-zero, or not loaded |
 | OpenClaw cron runs (briefing, companion messages, idea research) | a run finished with an error |
 | GitHub Actions cron workflows (Github-HQ) | disabled (the 60-day inactivity trap) |
@@ -96,13 +96,14 @@ Older events without `data` still show: the page reads the model and engine from
 | Vercel production deploys (every project) | the latest finished production deploy is `ERROR` or `CANCELED` |
 | Live product: botchelor (`/api/health`) | not reachable or HTTP 5xx (503: it can't reach its database) |
 | botchelor health detail (its cron secret from the keychain) | an episode report is waiting for review at `/admin`, a date is stuck generating for 15+ minutes, the paid-model daily cap is reached (dates fall back to the free model until 00:00 UTC), or the app recorded server errors in the last hour (API and page errors, route pattern and cleaned message) |
+| RepoHQ health detail (`vault/repohq/CRON_SECRET` from the keychain) | the app recorded server errors in the last hour (pages, server components, actions: `src/instrumentation.ts` → `server_errors`). Its pages sit behind sign-in, so this is what catches a crashed dashboard (2026-10-19) |
 | launchd: nightly factory backup | last run failed or not loaded |
 | launchd: ai-stack `com.localai.media-gen` (local image/video worker) | last run failed or not loaded |
 | media-gen queue (`~/.local/state/media-gen-inbox`) | an image/video job has waited over an hour |
 | OpenClaw model router (`~/.local/state/model-router.json`) | the free cloud models are rate-limited and OpenClaw is held on the local `local-chat` fallback (one alert, one recovery) |
 | Secrets (`~/ai-stack/bin/secrets check`, daily) | a copy differs from the keychain, a secrets file is readable by others, or a backup holds a live key |
 
-`homebrew.mxcl.ollama` is deliberately not watched: it exits 1 by design, because Ollama.app owns port 11434.
+Ollama isn't watched as a launchd job: Ollama.app owns port 11434, so `homebrew.mxcl.ollama` exits 1 by design and `com.ollama.ollama` idles while Ollama is up. The `:11434` probe says whether it's running.
 
 ## Operations
 

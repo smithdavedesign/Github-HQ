@@ -34,7 +34,7 @@ Vercel's official MCP (`https://mcp.vercel.com`, OAuth) is configured for **Clau
 
 ## Ollama
 
-Local model server. [Docs](https://docs.ollama.com) · runs as a Homebrew LaunchAgent on `:11434`.
+Local model server. [Docs](https://docs.ollama.com) · Ollama.app serves `:11434` (ai-stack `da57c94`, 2026-10-10: Ollama.app only).
 
 **Tuning** (in `~/Library/LaunchAgents/homebrew.mxcl.ollama.plist`):
 
@@ -45,9 +45,9 @@ Local model server. [Docs](https://docs.ollama.com) · runs as a Homebrew Launch
 | `OLLAMA_KEEP_ALIVE` | `-1` | Ignored by Ollama.app. The effective value is `keep_alive: 70m` per model in `litellm/config.yaml` (written by the factory scout): warm across the hourly factory cycles, released when idle. Pinning forever (`-1`) held 5.5 GB around the clock and pushed the 16 GB Mac into memory-pressure warning (2026-10-10). |
 | `OLLAMA_API_KEY` | *(set)* | Authenticates Ollama cloud web-search |
 
-> The GUI **Ollama.app is disabled** (`launchctl disable com.ollama.ollama`) so it can't steal `:11434` with an untuned config.
+> Since 2026-10-10 **Ollama.app owns `:11434`** and the Homebrew LaunchAgent exits 1 by design, so the table above is history: the effective settings are Ollama.app's own plus `keep_alive` from LiteLLM. The collector watches Ollama by its HTTP probe on `:11434`, not by a launchd job.
 
-Check: `ollama ps` → `UNTIL` should read `Forever`.
+Check: `ollama ps` → `UNTIL` reads about 70 minutes after a model's last use.
 
 ---
 

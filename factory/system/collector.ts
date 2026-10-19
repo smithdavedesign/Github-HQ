@@ -21,14 +21,15 @@ export const WATCHED_JOBS: Array<{ label: string; kind: 'daemon' | 'interval'; s
   { label: 'com.repohq.factory.worker', kind: 'daemon', system: 'factory', component: 'worker' },
   { label: 'ai.openclaw.gateway', kind: 'daemon', system: 'openclaw', component: 'gateway' },
   { label: 'com.localai.headroom', kind: 'daemon', system: 'ai-stack', component: 'headroom' },
-  { label: 'com.ollama.ollama', kind: 'daemon', system: 'ai-stack', component: 'ollama' },
   { label: 'com.user.caffeinate-ac', kind: 'daemon', system: 'ai-stack', component: 'caffeinate' },
   { label: 'com.user.idea-pipeline', kind: 'interval', system: 'idea-factory', component: 'pipeline' },
   { label: 'com.user.repohq-frontdoor-report', kind: 'interval', system: 'openclaw', component: 'frontdoor' },
   { label: 'com.user.system-events', kind: 'interval', system: 'ai-stack', component: 'collector' },
   { label: 'com.user.factory-backup', kind: 'interval', system: 'factory', component: 'backup' },
   { label: 'com.localai.media-gen', kind: 'interval', system: 'ai-stack', component: 'media-gen' },
-  // homebrew.mxcl.ollama is deliberately not watched: it exits 1 by design (Ollama.app owns :11434).
+  // Ollama isn't watched as a launchd job: Ollama.app owns :11434, so homebrew.mxcl.ollama exits 1 by design and
+  // com.ollama.ollama sits idle while Ollama runs (a false "not running" every 5 minutes until 2026-10-19). The
+  // HTTP probe on :11434 below is what says whether it's up.
 ]
 
 const VERCEL_SCOPE = process.env.VERCEL_SCOPE ?? 'team_ONe0JJaVwgXIAUMHZ7OUgkku'
@@ -38,7 +39,7 @@ export const HTTP_PROBES: Array<{ system: string; component: string; url: string
   { system: 'ai-stack', component: 'ollama', url: 'http://127.0.0.1:11434/api/version' },
   { system: 'ai-stack', component: 'headroom', url: 'http://127.0.0.1:8787/health' },
   { system: 'openclaw', component: 'gateway', url: 'http://127.0.0.1:18789/' },
-  { system: 'repohq', component: 'app', url: 'https://repohq.vercel.app/login' },
+  { system: 'repohq', component: 'app', url: 'https://repohq.vercel.app/api/health' },
   // Live products: 503 when the app can't reach its database (botchelor docs/launch-readiness.md).
   { system: 'vercel', component: 'botchelor', url: 'https://botchelor.vercel.app/api/health' },
 ]
@@ -49,6 +50,8 @@ export const HTTP_PROBES: Array<{ system: string; component: string; url: string
  */
 export const PRODUCT_HEALTH: Array<{ project: string; url: string; tokenService: string; adminUrl: string }> = [
   { project: 'botchelor', url: 'https://botchelor.vercel.app/api/health', tokenService: 'vault/botchelor/CRON_SECRET', adminUrl: 'https://botchelor.vercel.app/admin' },
+  // RepoHQ reports server errors only: its pages sit behind sign-in, so a crash there never fails the liveness probe.
+  { project: 'repohq', url: 'https://repohq.vercel.app/api/health', tokenService: 'vault/repohq/CRON_SECRET', adminUrl: 'https://repohq.vercel.app' },
 ]
 
 /** Provider trouble that otherwise only shows up as a fallback (2026-10-10: Anthropic credit ran out silently). */

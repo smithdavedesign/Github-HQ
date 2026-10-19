@@ -3,7 +3,7 @@ import { mkdtempSync, appendFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fingerprint, normalizeEvent, redact, type SystemEvent } from '../../factory/system/events'
-import { decideAlerts, slackPostEvent, vercelEvents, launchdEvents, mediaQueueEvent, modelRouterEvent, MEDIA_STUCK_MS, openClawCronEvents, probesToShip, productHealthEvents, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
+import { WATCHED_JOBS, HTTP_PROBES, PRODUCT_HEALTH, decideAlerts, slackPostEvent, vercelEvents, launchdEvents, mediaQueueEvent, modelRouterEvent, MEDIA_STUCK_MS, openClawCronEvents, probesToShip, productHealthEvents, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
 import { systemEventLines } from '../../factory/lib/report'
 
 const e = (fp: string, status: SystemEvent['status'], ts: string, message = 'm'): SystemEvent => {
@@ -96,6 +96,14 @@ describe('probes', () => {
     const errs = productHealthEvents('botchelor', admin, { errors: { last_hour: 3, latest: { kind: 'api', route: '/api/assets/:id', message: 'integer out of range' } } }, now)
     expect(errs[0]).toMatchObject({ event: 'errors', status: 'fail', message: expect.stringContaining('3 server errors in the last hour (latest api /api/assets/:id: integer out of range)') })
     expect(productHealthEvents('botchelor', admin, { errors: { last_hour: 0, latest: null } }, now)[0]!.status).toBe('ok')
+  })
+  it('watches Ollama by its port, not a launchd job, and RepoHQ by its health endpoint', () => {
+    // Ollama.app owns :11434, so com.ollama.ollama idles while Ollama is up (false alarms until 2026-10-19).
+    expect(WATCHED_JOBS.some(j => j.component === 'ollama')).toBe(false)
+    expect(HTTP_PROBES.find(p => p.component === 'ollama')?.url).toContain(':11434')
+    // The dashboard sits behind sign-in: its crashes reach the collector as server errors, not a failed probe.
+    expect(HTTP_PROBES.find(p => p.system === 'repohq')?.url).toBe('https://repohq.vercel.app/api/health')
+    expect(PRODUCT_HEALTH.find(p => p.project === 'repohq')).toMatchObject({ tokenService: 'vault/repohq/CRON_SECRET' })
   })
   it('provider errors in the LiteLLM log (out of credit) become failures', () => {
     const evs = providerEvents('AnthropicError: Your credit balance is too low to access the Anthropic API\n... credit balance is too low', now)
