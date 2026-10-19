@@ -144,13 +144,58 @@ Everything else the system does stays out of the block.
 - **Honest distribution:** posts say a builder is asking. Each community's rules decide whether a link
   goes in. No fake accounts, votes or paid placement.
 - **Privacy:** prompts and reports carry counts and site names, never emails or visitor hashes.
-- **Caps:** at most 2 missions a day and 2 growth builds a week, one per product a day; never on a tick
-  that already built; nothing before 10:00. Growth builds use Sonnet, which leaves Opus for MVP builds.
+- **Caps:** at most 6 missions a day, one per product a day; 4 rule-based growth builds a week, and up to 3 features a
+  day from the weekly plans (see Feature loop); never on a tick that already ran a long step. Each kind starts only in its
+  window (see Schedule). Rule-based growth builds use Sonnet; features use Opus.
 - **One mission in flight per product.** In flight means being built or waiting for David: an open growth
   PR, or a kit nobody has posted from. An experiment being measured doesn't block the next mission, so a
   product can have a kit and search pages running at once. Holding each 14–28-day window alone would take
   about 50 days to get through the beacon, a kit and search pages. Overlapping windows are noted when an
   experiment is judged.
+
+## Feature loop (David's call, 2026-10-19)
+
+Two small growth changes a week, on Sonnet, from 10:00, didn't build much: 1.8/5 value per PR, and Botchelor built
+nothing after the 16th because its unposted kit held every build. David asked for larger, forward-looking work across
+the products, spread through the night and day but mostly at night. The feature loop extends the growth loop instead
+of starting a second system.
+
+1. **A weekly plan per focus product** (idea-factory `lib/plan.js`, `bin/idea-plan.js`). Once a week at night, or
+   sooner once everything in the last plan is built, Claude on the subscription (Opus) reads the product's record
+   (PRD, roadmap, revenue plan, research, the funnel, every experiment so far and its lessons) and the playbook, and
+   writes `PLAN.md`: up to 3 features that move the funnel's bottleneck. Each has the metric it should move, a reason
+   grounded in the record, and 2–5 acceptance criteria a test can check. Items that change payments are marked. The run
+   can write only `PLAN.md`: no shell, no MCP, no free-pool fallback. Only products past launch and instrumenting get one.
+2. **One feature built a night per product** (a `feature` mission, `lib/growth.js`). The plan's next item comes before
+   the bottleneck's own mission, on Opus at xhigh for up to 75 minutes. The task lists the criteria and asks for a test
+   of each, written first. A kit waiting for David's post no longer holds a build (`canStartBuild`): posting is his,
+   building isn't.
+3. **Checked harder before it merges itself.**
+   - A separate run reviews the work against the criteria (`.acceptance.json`, never committed). The builder gets one
+     fix round, and the PR body lists each criterion met or not.
+   - Once every check is green, the preview is smoke-tested against production in a real browser (RepoHQ's
+     `factory:smoke`, run from the deployed factory checkout), once per commit.
+   - Payment code (`policy.autonomy.ownerOnlyPatterns`: Stripe, checkout, billing, pricing) or an item marked
+     `payments` waits for David.
+   - A failed check closes the PR; the item is tried again after 12 hours, and dropped after 3 failed builds.
+4. **Measured like every experiment.** A merge starts the feature's window with its own metric, target and length. The
+   judge writes the result to `LEARNINGS.md`, proposes a playbook rule when it's kept, and reverts a feature that makes
+   a share 30% worse. The next plan reads the results. The morning email says how many features were built, merged and
+   judged in the last 7 days, and lists each focus product's plan with every item's status; so does the Growth card on
+   the Ideas page.
+
+### Schedule
+
+What the pipeline starts by itself waits for its window (idea-factory `lib/schedule.js`, `policy.schedule`). The
+factory's own cycles use the same windows (`factory.config.json` `schedules`, default `5 0-6,12,14,16,22,23 * * *`).
+
+| Window | Hours | What may start (per window) |
+|---|---|---|
+| Night | 22:00–07:00 | 2 features, 2 weekly plans, 2 growth builds, 6 go-lives and MVP builds; factory cycles hourly |
+| Day | 12:00–17:00 | 1 feature, 1 growth build, 2 launch kits, 2 go-lives and MVP builds; factory cycles at 12:00, 14:00, 16:00 |
+| Quiet | 07:00–12:00, 17:00–22:00 | nothing automatic, so David's own sessions get the Mac and the subscription |
+
+"Start build now" requests start whenever a build slot is free. `policy.schedule.off` switches the windows off.
 
 ## Autonomy (David's call, 2026-10-12)
 
@@ -207,7 +252,10 @@ the session that opens a PR merges it once CI is green.
 5. **Phase 3, outcomes, and autonomy (live 2026-10-13):** experiments judged when their window ends, lessons appended,
    playbook rules proposed; the pipeline and the factory merge their own green PRs and revert what breaks;
    the morning email's Done overnight section.
-6. **Later:** Search Console, a "mark posted" button, one-time Stripe payments counted as revenue,
+6. **Phase 4, the feature loop (live 2026-10-19):** weekly plans, nightly feature builds on Opus with an acceptance
+   check and a preview smoke test before they merge themselves, payment code held for David, and the night and day
+   windows.
+7. **Later:** Search Console, a "mark posted" button, one-time Stripe payments counted as revenue,
    research missions.
 
 ## Success and stop criteria

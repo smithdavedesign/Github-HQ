@@ -57,7 +57,7 @@ npm run context -- build | search "<q>" | interests | overview   # the context i
 npm run factory:backfill-jobs           # copy ledger history into agent_jobs (needs ~/.repohq-factory/env sourced)
 npm run factory:morning -- --no-send   # build the morning report and print it
 bash factory/bin/setup-email.sh you@gmail.com   # one-time: Gmail app password → keychain, test email
-bash factory/bin/install-launchd.sh     # install once, or deploy at once (merges deploy themselves: below); deploys origin/main (--head: this checkout's HEAD); with REDIS_URL: the always-on worker; without: the calendar (cycles hourly 20:00–06:00 + 12:00/16:00 on AC, report 06:45, scout Sun 17:10)
+bash factory/bin/install-launchd.sh     # install once, or deploy at once (merges deploy themselves: below); deploys origin/main (--head: this checkout's HEAD); with REDIS_URL: the always-on worker; without: the calendar (cycles hourly 22:00–06:00 + 12:00/14:00/16:00 on AC, report 06:45, scout Sun 17:10)
 bash factory/bin/install-launchd.sh --uninstall
 bash factory/bin/install-launchd.sh --now     # deploy without waiting: by default it waits up to 20 min for a running job, since restarting the worker kills it
 ```
@@ -286,7 +286,7 @@ Routing learns per difficulty (simple: docs/lint-autofix/deps; medium: lint/type
 
 ## Night shift
 
-Scheduled cycles (the worker's `cycle` scheduler, or the launchd calendar without a `REDIS_URL` → `run.ts --scheduled`) run hourly 20:00–06:00 plus 12:00 and 16:00, and:
+Scheduled cycles (the worker's `cycle` scheduler, or the launchd calendar without a `REDIS_URL` → `run.ts --scheduled`) run hourly 22:00–06:00 plus 12:00, 14:00 and 16:00 (the night and day windows the idea pipeline uses too), and:
 - are **skipped on battery** (`FACTORY_REQUIRE_AC=0` overrides): on battery the Mac sleeps mid-cycle;
 - **refuse to run with the sandbox off**;
 - **always run at $0**, even if `monthlyBudgetUsd` allows paid work for manual runs.

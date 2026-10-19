@@ -1,7 +1,7 @@
 import { Activity } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { GROWTH_STAGE_LABEL, experimentLine, funnelSummary, nextMissionText, safeUrl, type Funnel, type GrowthExperiment, type GrowthState } from '@/lib/ideas/idea-utils'
+import { GROWTH_STAGE_LABEL, experimentLine, funnelSummary, nextMissionText, planItemStatus, safeUrl, type Funnel, type GrowthExperiment, type GrowthState, type PlanItemStatus } from '@/lib/ideas/idea-utils'
 import { cn } from '@/lib/utils'
 
 const STATUS_CLASS: Record<GrowthExperiment['status'], string> = {
@@ -12,10 +12,19 @@ const STATUS_CLASS: Record<GrowthExperiment['status'], string> = {
   abandoned: 'text-muted-foreground',
 }
 
+const PLAN_CLASS: Record<PlanItemStatus, string> = {
+  planned: 'text-muted-foreground',
+  building: 'border-amber-500/50 text-amber-700 dark:text-amber-300',
+  shipped: 'border-sky-500/50 text-sky-700 dark:text-sky-300',
+  decided: 'border-emerald-500/50 text-emerald-700 dark:text-emerald-300',
+  failed: 'border-red-500/50 text-red-700 dark:text-red-300',
+  dropped: 'text-muted-foreground line-through',
+}
+
 /**
  * The growth loop on one product (docs/growth-loop-prd.md, idea-factory step 5d): its funnel this week
  * against the last and where visitors came from, then, for a focus product, the stage and bottleneck the
- * loop sees, the next mission, and its experiments, newest first.
+ * loop sees, the next mission, this week's plan of features (built one a night), and its experiments, newest first.
  */
 /** `beacon`: whether it runs the funnel beacon (idea-utils beaconLive), even before its first visit. */
 export function GrowthCard({ funnel, growth, focus, beacon }: { funnel?: Funnel; growth?: GrowthState; focus: boolean; beacon: boolean }) {
@@ -45,6 +54,23 @@ export function GrowthCard({ funnel, growth, focus, beacon }: { funnel?: Funnel;
             <p className="text-xs rounded-md bg-primary/5 border border-primary/20 px-2 py-1.5" data-testid="growth-next">
               <span className="font-medium">Next:</span> {nextMissionText(growth.next)}
             </p>
+            {growth.plan?.items?.length ? (
+              <div className="space-y-1" data-testid="growth-plan">
+                <p className="text-[11px] font-medium text-muted-foreground">Plan, week of {growth.plan.at.slice(0, 10)} (built one a night)</p>
+                <ol className="space-y-1">
+                  {growth.plan.items.map(it => {
+                    const st = planItemStatus(it, growth.experiments)
+                    return (
+                      <li key={it.id} className="text-xs">
+                        <Badge variant="outline" className={cn('h-4 px-1 text-[10px] mr-1', PLAN_CLASS[st])}>{st}</Badge>
+                        {it.title}{it.payments ? ' · payments: yours to merge' : ''}
+                        {it.why && <span className="block text-[11px] text-muted-foreground">{it.why}</span>}
+                      </li>
+                    )
+                  })}
+                </ol>
+              </div>
+            ) : null}
             {experiments.length > 0 && (
               <ul className="space-y-1.5" aria-label="Experiments">
                 {experiments.slice(0, 6).map(e => {

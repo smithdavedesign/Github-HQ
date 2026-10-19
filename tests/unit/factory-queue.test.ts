@@ -71,7 +71,7 @@ describe('queue contract (docs/agent-hq-migration-prd.md §6)', () => {
 
 describe('schedules (replace the launchd calendar)', () => {
   it('defaults reproduce the Night Shift v2 calendar', () => {
-    expect(DEFAULT_SCHEDULES).toEqual({ cycle: '5 0-6,12,16,20-23 * * *', report: '45 6 * * *', scout: '10 17 * * 0' })
+    expect(DEFAULT_SCHEDULES).toEqual({ cycle: '5 0-6,12,14,16,22,23 * * *', report: '45 6 * * *', scout: '10 17 * * 0' })
     expect(loadConfig({ FACTORY_CONFIG: '/nonexistent.json' } as unknown as NodeJS.ProcessEnv).schedules).toEqual(DEFAULT_SCHEDULES)
   })
 })
