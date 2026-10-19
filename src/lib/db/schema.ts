@@ -545,6 +545,20 @@ export const automationRuns = pgTable('automation_runs', {
 
 export type AutomationRun = typeof automationRuns.$inferSelect
 
+/**
+ * Server errors from pages, server components and actions (src/instrumentation.ts): route pattern and a cleaned
+ * message, never request data. GET /api/health reports the last hour to the collector. Kept 7 days.
+ */
+export const serverErrors = pgTable('server_errors', {
+  id: serial('id').primaryKey(),
+  at: timestamp('at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
+  kind: text('kind').notNull(),   // render | route | action | proxy
+  route: text('route').notNull(),
+  message: text('message').notNull(),
+}, (table) => [
+  index('server_errors_at_idx').on(table.at),
+])
+
 /** Step timeline of a run (claimed → clone → checks → tier attempt → judge → PR …). Kept 90 days. */
 export const traceEvents = pgTable('trace_events', {
   id: serial('id').primaryKey(),
