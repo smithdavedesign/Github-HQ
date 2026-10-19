@@ -125,3 +125,38 @@ describe('Growth section and the funnel beacon', () => {
     expect(growthLines([tiebreak], growth()).some(l => /old beacon/.test(l))).toBe(true)
   })
 })
+
+describe('the feature loop (weekly plans, features built at night)', () => {
+  const ago = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString()
+  const item = (id: string, over = {}) => ({ id, title: id.replace('-', ' '), metric: 'visit' as const, acceptance: ['a', 'b'], ...over })
+  const feature = (id: string, over = {}) => ({ id, kind: 'feature', executor: 'build' as const, hypothesis: 'h', metric: 'visit' as const, baseline: 4, target: 50, windowDays: 14, status: 'proposed' as const, createdAt: ago(1), ...over })
+  const withPlan: IdeaState = {
+    ...tiebreak,
+    growth: {
+      stage: 'acquire', bottleneck: '4 visitors this week, under 50', next: { kind: 'seo', executor: 'build' },
+      plan: { at: ago(2), items: [item('compare-pages', { attempts: ['e1'] }), item('first-run', { payments: true }), item('old-idea', { attempts: ['e2'] })] },
+      experiments: [
+        feature('e1', { status: 'running', prUrl: 'https://github.com/o/tiebreak/pull/7', startedAt: ago(1), title: 'Comparison pages' }),
+        feature('e2', { status: 'decided', decision: 'keep', decidedAt: ago(1), createdAt: ago(20), startedAt: ago(15), title: 'Old idea', result: { value: 60, before: 4 } }),
+      ],
+    },
+  }
+
+  it("a plan item's status follows its builds", async () => {
+    const { planItemStatus } = await import('../../src/lib/ideas/idea-utils')
+    const exps = withPlan.growth!.experiments!
+    expect(planItemStatus(item('x'), exps)).toBe('planned')
+    expect(planItemStatus(item('x', { attempts: ['e1'] }), exps)).toBe('shipped')
+    expect(planItemStatus(item('x', { attempts: ['e2'] }), exps)).toBe('decided')
+    const failed = [1, 2, 3].map(n => feature(`f${n}`, { status: 'abandoned', failed: true }))
+    expect(planItemStatus(item('x', { attempts: ['f1'] }), failed)).toBe('failed')
+    expect(planItemStatus(item('x', { attempts: ['f1', 'f2', 'f3'] }), failed)).toBe('dropped')
+  })
+
+  it('the email shows each focus product\'s plan and what the week built and moved', () => {
+    const lines = growthLines([withPlan], growth())
+    expect(lines[1]).toBe('Features, last 7 days: 1 built, 1 merged; judged: tiebreak: Old idea keep (4 visitors a week → 60 visitors a week). They build at night (22:00–07:00), one per product at a time.')
+    expect(lines).toContain(`Plan, week of ${withPlan.growth!.plan!.at.slice(0, 10)}: 1. compare pages (shipped); 2. first run (planned, payments: yours to merge); 3. old idea (decided).`)
+    expect(growthLines([tiebreak], growth()).some(l => l.startsWith('Features, last 7 days')), 'no plan, no feature line').toBe(false)
+  })
+})

@@ -115,12 +115,63 @@ export interface GrowthExperiment {
   result?: { lift?: boolean | null; value?: number | null; before?: number | null; sample?: number; note?: string; ranWith?: string[] }
   /** A revert decision the pipeline carried out: its revert PR. */
   reverted?: { at: string; url?: string | null }
+  /** A feature from the weekly plan: the plan item it built. */
+  planItem?: string; title?: string; payments?: boolean
+}
+
+/** One feature in a product's weekly plan (idea-factory lib/plan.js): what to build, the number it should move, how to check it. */
+export interface PlanItem {
+  id: string; title: string; why?: string; metric: GrowthMetric; acceptance: string[]
+  windowDays?: number; size?: 'S' | 'M' | 'L'; payments?: boolean; target?: number
+  /** The experiments its builds started, newest last. */
+  attempts?: string[]
+}
+export interface GrowthPlan { at: string; items: PlanItem[]; errors?: string[] }
+
+export type PlanItemStatus = 'planned' | 'building' | 'shipped' | 'decided' | 'failed' | 'dropped'
+
+/** Where a plan item stands, from its builds' experiments, as idea-factory's itemStatus says it. */
+export function planItemStatus(item: PlanItem, experiments: GrowthExperiment[] = []): PlanItemStatus {
+  const attempts = (item.attempts ?? []).map(id => experiments.find(e => e.id === id)).filter((e): e is GrowthExperiment => !!e)
+  const last = attempts.at(-1)
+  if (!last) return 'planned'
+  if (last.status === 'proposed') return 'building'
+  if (last.status === 'running' || last.status === 'measuring') return 'shipped'
+  if (last.status === 'decided') return 'decided'
+  if (last.status === 'abandoned' && last.failed) return attempts.filter(e => e.status === 'abandoned' && e.failed).length >= 3 ? 'dropped' : 'failed'
+  return 'dropped'
+}
+
+/**
+ * The feature loop over the last 7 days across products (pure): features whose build opened a PR, merged ones (their
+ * experiment started), and judged ones with how their numbers moved.
+ */
+export function featureWeek(growths: Array<{ name: string; growth?: GrowthState }>, now = new Date()): { built: number; merged: number; judged: string[] } {
+  const since = now.getTime() - 7 * 86_400_000
+  const recent = (t?: string) => !!t && new Date(t).getTime() >= since
+  let built = 0, merged = 0
+  const judged: string[] = []
+  for (const { name, growth } of growths) {
+    for (const e of growth?.experiments ?? []) {
+      if (e.kind !== 'feature') continue
+      if (e.prUrl && recent(e.createdAt)) built++
+      if (recent(e.startedAt)) merged++
+      if (e.status === 'decided' && recent(e.decidedAt)) {
+        const moved = e.result?.value === null || e.result?.value === undefined ? (e.result?.note ?? 'no reading') : `${growthValue(e.metric, e.result.before ?? e.baseline)} → ${growthValue(e.metric, e.result.value)}`
+        judged.push(`${name}: ${e.title ?? e.planItem ?? e.id} ${e.decision} (${moved})`)
+      }
+    }
+  }
+  return { built, merged, judged }
 }
 
 /** A focus product's growth record, refreshed every pipeline tick (idea-factory step 5d). */
 export interface GrowthState {
   stage?: 'launch' | 'instrument' | 'acquire' | 'activate' | 'monetize' | 'retain' | 'park'
   bottleneck?: string
+  /** This week's plan of features (idea-factory lib/plan.js), built one a night. */
+  plan?: GrowthPlan
+  planFailedAt?: string
   /** The next mission; null while the last one's result is pending. */
   next?: { kind: string; executor: 'build' | 'claude' | 'owner'; metric?: string } | null
   experiments?: GrowthExperiment[]
@@ -133,7 +184,7 @@ export const GROWTH_STAGE_LABEL: Record<NonNullable<GrowthState['stage']>, strin
 }
 const GROWTH_KIND_LABEL: Record<string, string> = {
   instrumentation: 'funnel beacon', kit: 'launch kit', seo: 'search pages', landing: 'first screen', paywall: 'paid offer placement',
-  post: 'post the next kit channel', park: 'decide whether to park it',
+  post: 'post the next kit channel', park: 'decide whether to park it', feature: 'feature',
 }
 /** "search pages" for "seo"; unknown kinds as they are. */
 export const growthKindLabel = (kind: string) => GROWTH_KIND_LABEL[kind] ?? kind

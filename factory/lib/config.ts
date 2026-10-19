@@ -87,11 +87,13 @@ export interface FactoryConfig {
 }
 
 /**
- * Night Shift v2 (Phase 80): cycles at :05 hourly 20:00–06:00 plus 12:00 and 16:00; the morning
- * report at 06:45; the model scout Sundays 17:10 — the calendar launchd ran before Phase 81.
+ * Cycles at :05 hourly through the night window (22:00–06:00) plus 12:00, 14:00 and 16:00, the same night and day
+ * windows the idea pipeline starts its work in (idea-factory policy.schedule; the owner's call on 2026-10-19: mostly
+ * at night, some in the day, none while he's likely at the Mac). The morning report at 06:45; the model scout
+ * Sundays 17:10. Until 2026-10-19 cycles also ran at 20:00 and 21:00 and not at 14:00 (Night Shift v2, Phase 80).
  */
 export const DEFAULT_SCHEDULES: Record<ScheduledJobName, string> = {
-  cycle: '5 0-6,12,16,20-23 * * *',
+  cycle: '5 0-6,12,14,16,22,23 * * *',
   report: '45 6 * * *',
   scout: '10 17 * * 0',
 }

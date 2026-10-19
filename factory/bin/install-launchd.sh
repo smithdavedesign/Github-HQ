@@ -10,7 +10,7 @@
 #                               Agent HQ requests and the scheduled cycle / report / scout, whose
 #                               times are now BullMQ job schedulers (factory.config.json `schedules`).
 # Without one, the pre-Phase-81 calendar (no Agent HQ requests):
-#   com.repohq.factory.cycle  — hourly 20:00–06:00 (Night Shift v2) plus 12:00 and 16:00 local (≤ 1 PR per cycle,
+#   com.repohq.factory.cycle  — hourly 22:00–06:00 (the night window) plus 12:00, 14:00 and 16:00 local (≤ 1 PR per cycle,
 #                               ≤ maxPrsPerDay per factory day) → 3–8 draft PRs by morning
 #   com.repohq.factory.report — 06:45 local: one update per gstack role, emailed
 #   com.repohq.factory.scout  — Sundays 17:10 local
@@ -162,7 +162,7 @@ else
   echo "warning: no REDIS_URL (env, keychain or .env.local) — installing the launchd calendar; Agent HQ requests won't run."
   echo "         Create the Redis from render.yaml, set REDIS_URL and re-run this script to switch to the worker."
   INSTALL="$CALENDAR_LABELS"
-  CYCLE_HOURS="20 21 22 23 0 1 2 3 4 5 6 12 16"
+  CYCLE_HOURS="22 23 0 1 2 3 4 5 6 12 14 16"
   CYCLE_TIMES="$(for h in $CYCLE_HOURS; do printf '    <dict><key>Hour</key><integer>%s</integer><key>Minute</key><integer>5</integer></dict>\n' "$h"; done)"
   plist com.repohq.factory.cycle cycle "<array>
 $CYCLE_TIMES

@@ -6,7 +6,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { OpenPr } from '../../src/lib/agents/open-prs'
-import { GROWTH_STAGE_LABEL, IDEAS_PAGE_URL, beaconLive, experimentLine, funnelSummary, launchKitOrder, nextMissionText } from '../../src/lib/ideas/idea-utils'
+import { GROWTH_STAGE_LABEL, IDEAS_PAGE_URL, beaconLive, experimentLine, featureWeek, funnelSummary, launchKitOrder, nextMissionText, planItemStatus } from '../../src/lib/ideas/idea-utils'
 import type { IdeaState } from './ideas'
 import { readLaunchLog, type LaunchLog } from './idea-pipeline'
 
@@ -129,6 +129,11 @@ export function growthLines(ideas: IdeaState[], g: GrowthInput): string[] {
   const traction = focus.some(i => (i.funnel?.d7?.visit ?? 0) >= g.minVisitorsPerWeek)
   const hold = !g.holdNewBuilds ? '' : traction ? ' Reached, so new MVP builds can start again.' : ' Until one reaches it, ideas never built wait for their first build.'
   const lines = [`Focus: ${focus.map(i => short(i.title)).join(', ')}. Traction bar: ${g.minVisitorsPerWeek} visitors a week.${hold}`]
+  // The feature loop (idea-factory lib/plan.js): what was built from the weekly plans, and what moved.
+  const fw = featureWeek(focus.map(i => ({ name: short(i.title), growth: i.growth })))
+  if (fw.built || fw.merged || fw.judged.length || focus.some(i => i.growth?.plan)) {
+    lines.push(`Features, last 7 days: ${fw.built} built, ${fw.merged} merged${fw.judged.length ? `; judged: ${fw.judged.join('; ')}` : ''}. They build at night (22:00–07:00), one per product at a time.`)
+  }
   for (const i of focus) {
     const name = short(i.title)
     const f = i.funnel
@@ -140,6 +145,12 @@ export function growthLines(ideas: IdeaState[], g: GrowthInput): string[] {
       lines.push(`Growth loop: ${GROWTH_STAGE_LABEL[gr.stage].toLowerCase()} (${gr.bottleneck ?? ''}). Next: ${nextMissionText(gr.next)}.`)
       for (const e of (gr.experiments ?? []).filter(x => x.status === 'proposed' || x.status === 'running' || x.status === 'measuring')) {
         lines.push(`Experiment: ${experimentLine(e)}${e.prUrl ? ` — ${e.prUrl}` : ''}`)
+      }
+      if (gr.plan?.items?.length) {
+        const items = gr.plan.items.map((it, k) => `${k + 1}. ${it.title} (${planItemStatus(it, gr.experiments)}${it.payments ? ', payments: yours to merge' : ''})`)
+        lines.push(`Plan, week of ${gr.plan.at.slice(0, 10)}: ${items.join('; ')}.`)
+      } else if (gr.planFailedAt) {
+        lines.push(`Plan: the weekly plan failed on ${gr.planFailedAt.slice(0, 10)}; it's tried again tonight.`)
       }
     }
     const channels = kitChannels(g.kits[i.slug])
