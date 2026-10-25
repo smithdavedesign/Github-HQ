@@ -4,7 +4,7 @@
  *   2. add probes nobody else runs: local services (LiteLLM, Ollama, Headroom, OpenClaw, Docker), launchd
  *      jobs, OpenClaw cron runs, GitHub Actions cron state, failed RepoHQ automation runs, and provider
  *      errors in LiteLLM's log (out of credit, auth, rate limits);
- *   3. ship to Neon `system_events` (redacted);
+ *   3. ship to Neon `system_events` (redacted), at most once an hour (NEON_SHIP_MS);
  *   4. post failures and recoveries to Slack (deduplicated: one alert per failure, repeated every 6h).
  * Pure parts are exported for tests; IO is at the bottom.
  */
@@ -35,12 +35,26 @@ export const WATCHED_JOBS: Array<{ label: string; kind: 'daemon' | 'interval'; s
 
 const VERCEL_SCOPE = process.env.VERCEL_SCOPE ?? 'team_ONe0JJaVwgXIAUMHZ7OUgkku'
 
-export const HTTP_PROBES: Array<{ system: string; component: string; url: string; auth?: 'litellm' }> = [
+/**
+ * How often the collector touches RepoHQ's Neon database: reading automation runs, shipping events, probing the app
+ * (its health check queries Neon). Neon suspends after 5 idle minutes, so touching it every 5 minutes kept it awake
+ * around the clock and used up the free plan's 100 compute-hours by 2026-10-25, which took RepoHQ down until the
+ * quota reset. Everything else, Slack alerts included, still runs every 5 minutes.
+ */
+export const NEON_SHIP_MS = 60 * 60_000
+
+/** Due once NEON_SHIP_MS has passed since the last shipment that went through (a minute early, for launchd's jitter). */
+export function neonDue(lastShip: string | undefined, now: Date): boolean {
+  return !lastShip || now.getTime() - new Date(lastShip).getTime() >= NEON_SHIP_MS - 60_000
+}
+
+/** Probes marked `wakesNeon` query RepoHQ's database, so they run only when shipping is due. */
+export const HTTP_PROBES: Array<{ system: string; component: string; url: string; auth?: 'litellm'; wakesNeon?: true }> = [
   { system: 'ai-stack', component: 'litellm', url: 'http://127.0.0.1:4000/health/liveliness' },
   { system: 'ai-stack', component: 'ollama', url: 'http://127.0.0.1:11434/api/version' },
   { system: 'ai-stack', component: 'headroom', url: 'http://127.0.0.1:8787/health' },
   { system: 'openclaw', component: 'gateway', url: 'http://127.0.0.1:18789/' },
-  { system: 'repohq', component: 'app', url: 'https://repohq.vercel.app/api/health' },
+  { system: 'repohq', component: 'app', url: 'https://repohq.vercel.app/api/health', wakesNeon: true },
   // Live products: 503 when the app can't reach its database (botchelor docs/launch-readiness.md).
   { system: 'vercel', component: 'botchelor', url: 'https://botchelor.vercel.app/api/health' },
 ]
@@ -49,10 +63,10 @@ export const HTTP_PROBES: Array<{ system: string; component: string; url: string
  * Live products whose health endpoint has a token-gated detail: what needs the owner, beyond being up. The token is
  * the product's cron secret, read from the keychain at probe time; liveness itself is the plain HTTP probe above.
  */
-export const PRODUCT_HEALTH: Array<{ project: string; url: string; tokenService: string; adminUrl: string }> = [
+export const PRODUCT_HEALTH: Array<{ project: string; url: string; tokenService: string; adminUrl: string; wakesNeon?: true }> = [
   { project: 'botchelor', url: 'https://botchelor.vercel.app/api/health', tokenService: 'vault/botchelor/CRON_SECRET', adminUrl: 'https://botchelor.vercel.app/admin' },
   // RepoHQ reports server errors only: its pages sit behind sign-in, so a crash there never fails the liveness probe.
-  { project: 'repohq', url: 'https://repohq.vercel.app/api/health', tokenService: 'vault/repohq/CRON_SECRET', adminUrl: 'https://repohq.vercel.app' },
+  { project: 'repohq', url: 'https://repohq.vercel.app/api/health', tokenService: 'vault/repohq/CRON_SECRET', adminUrl: 'https://repohq.vercel.app', wakesNeon: true },
 ]
 
 /** Provider trouble that otherwise only shows up as a fallback (2026-10-10: Anthropic credit ran out silently). */
@@ -271,7 +285,7 @@ export function slackText(alerts: Alert[], now: Date): string {
 // ─── IO ─────────────────────────────────────────────────────────────────────
 
 const STATE_FILE = path.join(EVENTS_DIR, '.collector.json')
-interface CollectorState { offset: number; openclawSince: number; automationSince: string; probes: Record<string, { status: string; at: string }>; alerts: AlertState; lastPrune?: string; slackFailing?: boolean }
+interface CollectorState { offset: number; openclawSince: number; automationSince: string; probes: Record<string, { status: string; at: string }>; alerts: AlertState; lastPrune?: string; lastShip?: string; slackFailing?: boolean }
 
 function loadState(): CollectorState {
   try { return JSON.parse(readFileSync(STATE_FILE, 'utf8')) } catch { return { offset: 0, openclawSince: Date.now() - 3_600_000, automationSince: new Date(Date.now() - 3_600_000).toISOString(), probes: {}, alerts: { open: {} } } }
@@ -322,10 +336,10 @@ async function productHealthProbe(p: (typeof PRODUCT_HEALTH)[number], now: Date)
   }
 }
 
-export async function probeAll(now: Date, state: CollectorState): Promise<SystemEvent[]> {
+export async function probeAll(now: Date, state: CollectorState, neon: boolean): Promise<SystemEvent[]> {
   const out: SystemEvent[] = []
-  for (const p of HTTP_PROBES) out.push(await httpProbe(p, now))
-  for (const p of PRODUCT_HEALTH) out.push(...await productHealthProbe(p, now))
+  for (const p of HTTP_PROBES) if (neon || !p.wakesNeon) out.push(await httpProbe(p, now))
+  for (const p of PRODUCT_HEALTH) if (neon || !p.wakesNeon) out.push(...await productHealthProbe(p, now))
   const docker = sh('docker', ['info', '--format', '{{.ServerVersion}}'], 20_000)
   out.push(ev('ai-stack', 'docker', 'probe', !!docker?.trim(), docker?.trim() ? `Docker ${docker.trim()} running` : 'Docker is not running: factory cycles skip without the sandbox', undefined, now))
   const launchctl = sh('launchctl', ['list'])
@@ -368,38 +382,51 @@ export async function collect(opts: { databaseUrl: string | null; slack: { token
   const now = new Date()
   mkdirSync(EVENTS_DIR, { recursive: true })
   const state = loadState()
-  const fromFile = readNewEvents(state)
-  const fromOpenClaw = openClawEvents(state)
-  const probes = probesToShip(await probeAll(now, state), state.probes, now)
   const { neon } = await import('@neondatabase/serverless')
   const sql = opts.databaseUrl ? neon(opts.databaseUrl) : null
-  // RepoHQ's own automation runs (factory jobs, GitHub Actions cron routes) that failed since last time.
+  // Between shipments nothing touches Neon: the file offset, OpenClaw cursor and probe history stay where the last
+  // shipment left them, so the next one sends everything. Alerts re-read the same events each run, which is safe:
+  // decideAlerts acts on each fingerprint's latest status.
+  const due = !!sql && neonDue(state.lastShip, now)
+  const fromFile = readNewEvents(state)
+  const fromOpenClaw = openClawEvents(state)
+  const probed = await probeAll(now, state, due)
+  const probes = probesToShip(probed, state.probes, now)
   let fromRuns: SystemEvent[] = []
-  if (sql) {
-    try {
-      const rows = await sql`SELECT id, kind, status, error, finished_at FROM automation_runs WHERE finished_at > ${state.automationSince} AND status IN ('ok', 'failed') ORDER BY finished_at`
-      fromRuns = (rows as Array<{ id: string; kind: string; status: string; error: string | null; finished_at: string }>).map(r => ({
-        ts: new Date(r.finished_at).toISOString(), system: r.kind.startsWith('cron:') ? 'repohq' : 'factory', component: r.kind, event: 'run',
-        status: r.status === 'ok' ? 'ok' : 'fail', level: r.status === 'ok' ? 'info' : 'error',
-        message: r.status === 'ok' ? `${r.kind} ok` : `${r.kind} failed: ${String(r.error ?? '').slice(0, 300)}`, runId: r.id,
-      } as SystemEvent))
-    } catch { /* table missing on a fresh DB */ }
-  }
-  const all = [...fromFile.events, ...fromOpenClaw, ...fromRuns, ...probes.ship]
-  // Alerts consider every probe result (not only shipped ones), so recoveries are noticed at once.
-  const alertInput = [...fromFile.events, ...fromOpenClaw, ...fromRuns, ...probes.ship]
-  const { alerts, state: alertState } = decideAlerts(alertInput, state.alerts, now)
   let shipped = 0
-  if (sql && all.length && !opts.dryRun) {
-    for (let i = 0; i < all.length; i += 200) {
-      const batch = all.slice(i, i + 200)
-      await sql.query(
-        `INSERT INTO system_events (ts, system, component, event, status, level, message, run_id, subject, data, duration_ms, host, fingerprint) SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(ts timestamptz, system text, component text, event text, status text, level text, message text, run_id text, subject jsonb, data jsonb, duration_ms int, host text, fingerprint text)`,
-        [JSON.stringify(batch.map(e => ({ ts: e.ts, system: e.system, component: e.component, event: e.event, status: e.status, level: e.level, message: e.message, run_id: e.runId ?? null, subject: e.subject ?? null, data: e.data ?? null, duration_ms: e.durationMs ?? null, host: e.host ?? null, fingerprint: fingerprint(e) })))],
-      )
-      shipped += batch.length
+  let neonEvent: SystemEvent | null = null
+  if (sql && due && !opts.dryRun) {
+    try {
+      // RepoHQ's own automation runs (factory jobs, GitHub Actions cron routes) that finished since last time.
+      try {
+        const rows = await sql`SELECT id, kind, status, error, finished_at FROM automation_runs WHERE finished_at > ${state.automationSince} AND status IN ('ok', 'failed') ORDER BY finished_at`
+        fromRuns = (rows as Array<{ id: string; kind: string; status: string; error: string | null; finished_at: string }>).map(r => ({
+          ts: new Date(r.finished_at).toISOString(), system: r.kind.startsWith('cron:') ? 'repohq' : 'factory', component: r.kind, event: 'run',
+          status: r.status === 'ok' ? 'ok' : 'fail', level: r.status === 'ok' ? 'info' : 'error',
+          message: r.status === 'ok' ? `${r.kind} ok` : `${r.kind} failed: ${String(r.error ?? '').slice(0, 300)}`, runId: r.id,
+        } as SystemEvent))
+      } catch { /* table missing on a fresh DB */ }
+      const all = [...fromFile.events, ...fromOpenClaw, ...fromRuns, ...probes.ship]
+      for (let i = 0; i < all.length; i += 200) {
+        const batch = all.slice(i, i + 200)
+        await sql.query(
+          `INSERT INTO system_events (ts, system, component, event, status, level, message, run_id, subject, data, duration_ms, host, fingerprint) SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(ts timestamptz, system text, component text, event text, status text, level text, message text, run_id text, subject jsonb, data jsonb, duration_ms int, host text, fingerprint text)`,
+          [JSON.stringify(batch.map(e => ({ ts: e.ts, system: e.system, component: e.component, event: e.event, status: e.status, level: e.level, message: e.message, run_id: e.runId ?? null, subject: e.subject ?? null, data: e.data ?? null, duration_ms: e.durationMs ?? null, host: e.host ?? null, fingerprint: fingerprint(e) })))],
+        )
+        shipped += batch.length
+      }
+      neonEvent = ev('repohq', 'neon', 'ship', true, `system log shipped to Neon (${shipped} events)`, undefined, now)
+    } catch (e) {
+      // Nothing advances, so the next run (5 minutes on, due again) retries; Slack still hears about it below.
+      neonEvent = ev('repohq', 'neon', 'ship', false, `Neon won't take the system log, so RepoHQ's database is likely down: ${String((e as Error).message).slice(0, 300)}`, undefined, now)
+      fromRuns = []
+      shipped = 0
     }
   }
+  const neonOk = neonEvent?.status === 'ok'
+  // Alerts consider every probe result (not only shipped ones), so recoveries are noticed at once.
+  const alertInput = [...fromFile.events, ...fromOpenClaw, ...fromRuns, ...probed, ...(neonEvent ? [neonEvent] : [])]
+  const { alerts, state: alertState } = decideAlerts(alertInput, state.alerts, now)
   let posted = false
   if (alerts.length && opts.slack.token && opts.slack.channel && !opts.dryRun) {
     const r = await fetch('https://slack.com/api/chat.postMessage', {
@@ -411,7 +438,7 @@ export async function collect(opts: { databaseUrl: string | null; slack: { token
     if (outcome) emitEvent(outcome) // read back next cycle, so it reaches Neon, the report's "Failing now" and the agents' brief
     state.slackFailing = !r.ok
   }
-  if (sql && !opts.dryRun && state.lastPrune?.slice(0, 10) !== now.toISOString().slice(0, 10)) {
+  if (sql && neonOk && state.lastPrune?.slice(0, 10) !== now.toISOString().slice(0, 10)) {
     try { await sql`DELETE FROM system_events WHERE ts < now() - interval '90 days'`; state.lastPrune = now.toISOString() } catch { /* keep going */ }
     // Once a day: every secret copy matches the keychain and is owner-only (~/ai-stack/bin/secrets logs its own event).
     sh(path.join(process.env.HOME ?? '', 'ai-stack', 'bin', 'secrets'), ['check'], 60_000)
@@ -420,13 +447,16 @@ export async function collect(opts: { databaseUrl: string | null; slack: { token
   if (alerts.length && !opts.dryRun) refreshOpenClawBrief(Object.entries(alertState.open).map(([fingerprint, o]) => ({ fingerprint, message: o.message })), now)
   if (!opts.dryRun) {
     const next: CollectorState = {
-      ...state, offset: fromFile.offset, probes: probes.last, alerts: posted || !opts.slack.token ? alertState : state.alerts,
-      openclawSince: Math.max(state.openclawSince, ...fromOpenClaw.map(e => Date.parse(e.ts))),
-      automationSince: fromRuns.length ? fromRuns[fromRuns.length - 1]!.ts : state.automationSince,
+      ...state, alerts: posted || !opts.slack.token ? alertState : state.alerts,
+      ...(neonOk || !sql ? {
+        offset: fromFile.offset, probes: probes.last, lastShip: neonOk ? now.toISOString() : state.lastShip,
+        openclawSince: Math.max(state.openclawSince, ...fromOpenClaw.map(e => Date.parse(e.ts))),
+        automationSince: fromRuns.length ? fromRuns[fromRuns.length - 1]!.ts : state.automationSince,
+      } : {}),
     }
     writeFileSync(STATE_FILE, JSON.stringify(next, null, 1))
     rotate(next)
     writeFileSync(STATE_FILE, JSON.stringify(next, null, 1))
   }
-  return { at: now.toISOString(), read: fromFile.events.length, openclaw: fromOpenClaw.length, runs: fromRuns.length, probes: probes.ship.length, shipped, alerts: alerts.map(a => `${a.kind} ${a.fp}`), posted }
+  return { at: now.toISOString(), neon: !due || opts.dryRun ? 'later' : neonOk ? 'shipped' : 'failed', read: fromFile.events.length, openclaw: fromOpenClaw.length, runs: fromRuns.length, probes: probes.ship.length, shipped, alerts: alerts.map(a => `${a.kind} ${a.fp}`), posted }
 }

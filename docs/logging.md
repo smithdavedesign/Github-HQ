@@ -13,7 +13,7 @@ Each of these is now a probe that alerts.
 
 ```
 any system ──append one JSON line──▶ ~/.system-events/events.jsonl ─┐
-                                                                     ├─▶ collector (launchd, every 5 min) ──▶ Neon system_events (90 days)
+                                                                     ├─▶ collector (launchd, every 5 min) ──hourly──▶ Neon system_events (90 days)
 probes: services, launchd, OpenClaw cron, GitHub crons, LiteLLM log ─┘            │
 RepoHQ automation_runs (factory jobs, cron routes) ──────────────────────────────┤
                                                                                   ├─▶ Slack #team-agents: 🔴 failing · 🟠 still failing (6h) · 🟢 recovered
@@ -21,6 +21,8 @@ RepoHQ automation_runs (factory jobs, cron routes) ─────────�
 ```
 
 - **The file is the source.** Writing to it works offline and from any language. Neon is the searchable index.
+- **Neon hears from the collector once an hour** (`NEON_SHIP_MS`): the shipment, the `automation_runs` read and the RepoHQ `/api/health` probes (its health check queries Neon). Neon suspends after 5 idle minutes, and touching it every 5 minutes kept it awake around the clock: the free plan's 100 compute-hours ran out on 2026-10-25 and RepoHQ was down until the monthly reset. Everything else, Slack alerts included, still runs every 5 minutes.
+- **A Neon failure still alerts.** If Neon won't take the shipment (quota, outage), Slack gets `repohq:neon:ship`, nothing is marked shipped, and the next run retries.
 - **Secrets are redacted** before anything ships: API keys, Slack/GitHub/Notion tokens, bearer tokens and database URLs, plus any data field named like a key or token.
 - **Probes ship only when their status changes**, plus an hourly heartbeat, so the table holds transitions rather than identical "ok" rows.
 - **Alerts group by fingerprint** `system:component:event`. There's one alert when something starts failing, a reminder every 6 hours while it stays down, and one message when it recovers.
@@ -85,18 +87,19 @@ Older events without `data` still show: the page reads the model and engine from
 
 | Probe | Fails when |
 |---|---|
-| LiteLLM, Ollama (`:11434`), Headroom, OpenClaw gateway, RepoHQ (`/api/health`, 503 when it can't reach its database) | not reachable or HTTP 5xx |
+| LiteLLM, Ollama (`:11434`), Headroom, OpenClaw gateway, RepoHQ (`/api/health`, hourly, 503 when it can't reach its database) | not reachable or HTTP 5xx |
+| RepoHQ's Neon (`repohq:neon:ship`, hourly) | Neon rejects the shipment, e.g. the free plan's compute quota is used up |
 | Docker | not running (factory cycles skip without the sandbox) |
 | launchd: factory worker, OpenClaw gateway, Headroom, caffeinate | not running |
 | launchd: idea pipeline, front door, the collector itself | last run exited non-zero, or not loaded |
 | OpenClaw cron runs (briefing, companion messages, idea research) | a run finished with an error |
 | GitHub Actions cron workflows (Github-HQ) | disabled (the 60-day inactivity trap) |
 | LiteLLM log | Anthropic out of credit, a provider rejecting its key, rate limits |
-| RepoHQ `automation_runs` | a factory job or cron route failed |
+| RepoHQ `automation_runs` (hourly) | a factory job or cron route failed |
 | Vercel production deploys (every project) | the latest finished production deploy is `ERROR` or `CANCELED` |
 | Live product: botchelor (`/api/health`) | not reachable or HTTP 5xx (503: it can't reach its database) |
 | botchelor health detail (its cron secret from the keychain) | an episode report is waiting for review at `/admin`, a date is stuck generating for 15+ minutes, the paid-model daily cap is reached (dates fall back to the free model until 00:00 UTC), or the app recorded server errors in the last hour (API and page errors, route pattern and cleaned message) |
-| RepoHQ health detail (`vault/repohq/CRON_SECRET` from the keychain) | the app recorded server errors in the last hour (pages, server components, actions: `src/instrumentation.ts` → `server_errors`). Its pages sit behind sign-in, so this is what catches a crashed dashboard (2026-10-19) |
+| RepoHQ health detail (`vault/repohq/CRON_SECRET` from the keychain, hourly) | the app recorded server errors in the last hour (pages, server components, actions: `src/instrumentation.ts` → `server_errors`). Its pages sit behind sign-in, so this is what catches a crashed dashboard (2026-10-19) |
 | launchd: nightly factory backup | last run failed or not loaded |
 | launchd: factory self-deploy (`com.repohq.factory.deploy`, every 10 min) | last run failed or not loaded; a failed deploy is also its own event, `factory:self-deploy:deploy` |
 | launchd: ai-stack `com.localai.media-gen` (local image/video worker) | last run failed or not loaded |
@@ -110,7 +113,7 @@ Ollama isn't watched as a launchd job: Ollama.app owns port 11434, so `homebrew.
 
 | What | Where |
 |---|---|
-| Collector | launchd `com.user.system-events`, every 5 min, installed by `factory/bin/install-launchd.sh`, log `~/.system-events/collector.log` |
+| Collector | launchd `com.user.system-events`, every 5 min (Neon hourly), installed by `factory/bin/install-launchd.sh`, log `~/.system-events/collector.log` |
 | Run it now | `npm run events -- collect` (`--dry-run` ships and posts nothing) |
 | What's failing / volume | `npm run events -- summary`; `npm run events -- tail` |
 | Table | `system_events` (migration `factory/sql/0005`), pruned to 90 days |

@@ -3,7 +3,7 @@ import { mkdtempSync, appendFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fingerprint, normalizeEvent, redact, type SystemEvent } from '../../factory/system/events'
-import { WATCHED_JOBS, HTTP_PROBES, PRODUCT_HEALTH, decideAlerts, slackPostEvent, vercelEvents, launchdEvents, mediaQueueEvent, modelRouterEvent, MEDIA_STUCK_MS, openClawCronEvents, probesToShip, productHealthEvents, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
+import { WATCHED_JOBS, HTTP_PROBES, PRODUCT_HEALTH, NEON_SHIP_MS, neonDue, decideAlerts, slackPostEvent, vercelEvents, launchdEvents, mediaQueueEvent, modelRouterEvent, MEDIA_STUCK_MS, openClawCronEvents, probesToShip, productHealthEvents, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
 import { systemEventLines } from '../../factory/lib/report'
 
 const e = (fp: string, status: SystemEvent['status'], ts: string, message = 'm'): SystemEvent => {
@@ -104,6 +104,17 @@ describe('probes', () => {
     // The dashboard sits behind sign-in: its crashes reach the collector as server errors, not a failed probe.
     expect(HTTP_PROBES.find(p => p.system === 'repohq')?.url).toBe('https://repohq.vercel.app/api/health')
     expect(PRODUCT_HEALTH.find(p => p.project === 'repohq')).toMatchObject({ tokenService: 'vault/repohq/CRON_SECRET' })
+  })
+  it("RepoHQ's health check queries Neon, so its probes wait for the hourly shipment", () => {
+    expect(HTTP_PROBES.filter(p => p.wakesNeon).map(p => p.url)).toEqual(['https://repohq.vercel.app/api/health'])
+    expect(PRODUCT_HEALTH.filter(p => p.wakesNeon).map(p => p.project)).toEqual(['repohq'])
+  })
+  it('Neon is touched at most once an hour, so it can suspend in between (2026-10-25: out of free compute)', () => {
+    expect(neonDue(undefined, now)).toBe(true)
+    const shipped = new Date(now.getTime() - 5 * 60_000).toISOString()
+    expect(neonDue(shipped, now)).toBe(false)
+    expect(neonDue(new Date(now.getTime() - NEON_SHIP_MS + 30_000).toISOString(), now)).toBe(true) // launchd jitter
+    expect(neonDue(new Date(now.getTime() - NEON_SHIP_MS + 5 * 60_000).toISOString(), now)).toBe(false)
   })
   it('provider errors in the LiteLLM log (out of credit) become failures', () => {
     const evs = providerEvents('AnthropicError: Your credit balance is too low to access the Anthropic API\n... credit balance is too low', now)
