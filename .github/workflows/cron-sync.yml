@@ -1,8 +1,6 @@
 name: Cron — Sync
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'   # every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
   workflow_dispatch:          # manual trigger from GitHub UI or CLI
 
 jobs:

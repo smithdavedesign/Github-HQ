@@ -1,8 +1,6 @@
 name: Cron — Deployment Checks
 
 on:
-  schedule:
-    - cron: '0 */12 * * *'  # every 12 hours (00:00, 12:00 UTC)
   workflow_dispatch:
 
 jobs:
