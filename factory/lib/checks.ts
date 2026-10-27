@@ -87,7 +87,11 @@ export function planChecks(pkg: PackageJson, pm: PackageManager, hasTsconfig: bo
 
   if (scripts.lint && !/next lint/.test(scripts.lint)) specs.push(runScript('lint', 'lint'))
 
-  if (!isPlaceholderTestScript(scripts.test) && !WATCH_MODE.test(scripts.test ?? '')) specs.push(runScript('test', 'test'))
+  // A repo that splits its tests (botchelor, 2026-10-24: `test` is the quick suite for working, `test:full` everything)
+  // is checked on the full one: the factory merges on this, and a merge waits on every test.
+  const full = scripts['test:full']
+  if (full && !isPlaceholderTestScript(full) && !WATCH_MODE.test(full)) specs.push(runScript('test', 'test:full'))
+  else if (!isPlaceholderTestScript(scripts.test) && !WATCH_MODE.test(scripts.test ?? '')) specs.push(runScript('test', 'test'))
 
   return specs
 }

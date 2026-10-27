@@ -53,6 +53,10 @@ describe('planChecks', () => {
     expect(planChecks({ scripts: { test: 'vitest' } }, 'npm', false)).toEqual([])
     expect(planChecks({ scripts: { lint: 'next lint' } }, 'npm', false)).toEqual([])
   })
+  it('checks a split suite on its full script (test:full), the one a merge waits on', () => {
+    const specs = planChecks({ scripts: { test: 'node scripts/run-tests.mjs fast', 'test:full': 'node scripts/run-tests.mjs full' } }, 'npm', false)
+    expect(specs).toEqual([{ name: 'test', cmd: 'npm', args: ['run', 'test:full'], display: 'npm run test:full' }])
+  })
   it('recognises placeholder test scripts', () => {
     expect(isPlaceholderTestScript(undefined)).toBe(true)
     expect(isPlaceholderTestScript('exit 0')).toBe(true)
