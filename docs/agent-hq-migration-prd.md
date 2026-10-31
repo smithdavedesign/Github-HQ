@@ -235,7 +235,7 @@ The flow tests already ran this whole path on a throwaway database before cutove
 2. Then a fix request: it goes running → verified (held at `report` stage).
 3. Promote `owner-requested` to `pr` when the verified results look right.
 
-**6. Retire (after about a week of clean runs)**
+**6. Retire (after about a week of clean runs)** — 2026-10-31: the four Nexus Render services are deleted (no `pg_dump` was taken); `agent-hq-redis` is kept. Archiving the repo is the step left.
 1. `pg_dump` the Nexus Postgres from `ai-devops-nexus-db`'s external URL.
 2. Delete the four Nexus Render services (web, worker, Redis, Postgres).
 3. Archive `smithdavedesign/AI-Took-My-Job` on GitHub.
