@@ -208,13 +208,15 @@ The judge's checks (typecheck, lint, tests) don't run the app. Two checks added 
 
   The result is a PR comment, a `smoke:fail` label on failure, and a line in the morning report's QA section. Vercel protection is passed with each project's automation-bypass secret (created once, cached in `~/.repohq-factory/vercel-bypass.json`).
 
+  A repo whose PRs get no Vercel preview is skipped, not waited for: `repoGetsPreviews` asks Vercel (`vercel api /v9/projects?repoUrl=…`, cached half an hour) whether a project is git-linked to the repo with git deployments on. Since 2026-10-31 the owner's projects are disconnected from git (the team was soft-blocked for over-use) and `~/ai-stack/bin/release` builds `main` on the Mac and deploys it prebuilt once a day, so their PRs merge on green checks alone. Reconnect a project and its PRs are smoke-tested again. When Vercel can't be asked (CLI logged out), the factory looks for a preview as before.
+
 ## Autonomy
 
 The owner's call on 2026-10-12: the factory merges its own work and carries on, and he reviews what it did in the morning email. `autonomy` in `factory.config.json` (`merge`, `revert`, `protectedPaths`; merging is off unless the config turns it on). The reconcile step of each cycle, after the smoke tests (`lib/automerge.ts`, `automerge` and `watchMerged` in `run.ts`):
 
 - **Merge.** An open factory PR is marked ready and squash-merged when:
   - every GitHub check is green (CI, GitGuardian, the Vercel preview, and on RepoHQ the Autonomous PR Policy check);
-  - nothing objected: no failed preview smoke test (it waits up to 6 hours for one), no `needs-careful-review`, `smoke:fail`, `hold` or `do-not-merge` label, no review asking for changes;
+  - nothing objected: no failed preview smoke test (it waits up to 6 hours for one, on a repo that gets previews), no `needs-careful-review`, `smoke:fail`, `hold` or `do-not-merge` label, no review asking for changes;
   - it doesn't conflict and touches none of `protectedPaths` (`factory/`, `.github/workflows/`, `src/lib/agents/model-router.ts`).
 
   Anything else stays open. The reason is recorded once per reason (an `automerge` ledger entry with `action: 'held'`) and shown in the morning report's review queue ("not merged: …"). A PR is looked at again every cycle, so a re-run check or a pushed fix lets it merge. Put a `hold` label on a PR to keep it.
