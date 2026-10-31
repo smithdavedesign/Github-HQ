@@ -7,7 +7,9 @@
   ],
   "allowFreeCloud": [],
   "monthlyBudgetUsd": 0,
-  "maxPrsPerCycle": 1,
+  "maxPrsPerCycle": 3,
+  "maxPrsPerDay": 12,
+  "_maxPrsPerCycle": "Was 1 a cycle and 8 a day. David's call on 2026-10-31 (\"tackle bigger PRs at night and really push the PC\"): up to 3 PRs a cycle and 12 a day. They still merge only when every check is green (autonomy).",
   "_comment": "Allowlist of repos the factory may open PRs on (and merge them, see autonomy): RepoHQ, the live idea products with CI, and the owner's live focus projects (family-tree earns, AI-Trend-Tracker; both public, so the free pool may work on them). Since 2026-10-12 it no longer maintains dormant personal repos (Open-Travel and five others): in the 14 days before, 201 attempts produced 22 merges, mostly lint and docs, and a quarter hit the free models' rate limits. family-tree and AI-Trend-Tracker came back on 2026-10-13: dropping them left 80 critical/high alerts on live sites with nobody patching. A private repo gets only the local model and deterministic fixes (npm audit fix) at $0. Add a live idea product once it has a CI workflow (codespend has none yet). Repos opened from RepoHQ's repo page (repositories.factory_enabled) come on top of this list.",
   "smoke": {
     "enabled": true,

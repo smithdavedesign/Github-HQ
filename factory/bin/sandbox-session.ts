@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createInterface } from 'node:readline'
 import { loadConfig } from '../lib/config'
-import { RELAY_URL, SANDBOX_MODEL_KEY, Sandbox, WORKDIR, dockerAvailable, ensureSandboxImages, sweepSandboxes, type SandboxOpenOptions } from '../lib/sandbox'
+import { RELAY_URL, SANDBOX_MODEL_KEY, Sandbox, WORKDIR, ensureDocker, ensureSandboxImages, sweepSandboxes, type SandboxOpenOptions } from '../lib/sandbox'
 import type { ProcOptions, ProcResult } from '../lib/proc'
 
 export interface SessionSandbox {
@@ -136,7 +136,7 @@ async function main() {
     tmpDir: () => mkdtempSync(path.join(tmpdir(), 'idea-build-')),
     open: async ({ allowHosts, allowModels, lifetimeMs }) => {
       if (cfg.sandbox.mode === 'off') throw new Error('the factory sandbox is off (FACTORY_SANDBOX=off)')
-      if (!(await dockerAvailable())) throw new Error('Docker is not running')
+      if (!(await ensureDocker()).ok) throw new Error('Docker is not running (and starting it failed)')
       // Only a crashed build's leftovers: other idea builds may be running in this scope right now.
       await sweepSandboxes(scope, { orphansOnly: true })
       const images = await ensureSandboxImages(cfg.sandbox, log)
