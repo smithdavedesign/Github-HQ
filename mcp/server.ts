@@ -23,7 +23,9 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { neon } from '@neondatabase/serverless'
-import { drizzle } from 'drizzle-orm/neon-http'
+import { drizzle as drizzleNeon } from 'drizzle-orm/neon-http'
+import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js'
+import postgres from 'postgres'
 import * as schema from '../src/lib/db/schema.js'
 import { eq, and, desc, inArray, gt, count } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
@@ -63,8 +65,19 @@ if (!USER_ID) {
   process.exit(1)
 }
 
-const sql = neon(DATABASE_URL)
-const db = drizzle(sql, { schema })
+let sql: any
+let db: any
+
+if (DATABASE_URL.includes('localhost') || DATABASE_URL.includes('127.0.0.1')) {
+  sql = postgres(DATABASE_URL)
+  if (!sql.query) {
+    sql.query = (str: string, params: any[] = []) => sql.unsafe(str, params)
+  }
+  db = drizzlePostgres(sql, { schema })
+} else {
+  sql = neon(DATABASE_URL)
+  db = drizzleNeon(sql, { schema })
+}
 
 const server = new Server(
   { name: 'repohq', version: '1.0.0' },

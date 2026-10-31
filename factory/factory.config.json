@@ -3,9 +3,12 @@
     "smithdavedesign/Github-HQ",
     "smithdavedesign/tiebreak",
     "smithdavedesign/family-tree",
-    "smithdavedesign/AI-Trend-Tracker"
+    "smithdavedesign/AI-Trend-Tracker",
+    "smithdavedesign/botchelor"
   ],
-  "allowFreeCloud": [],
+  "allowFreeCloud": [
+    "smithdavedesign/botchelor"
+  ],
   "monthlyBudgetUsd": 0,
   "maxPrsPerCycle": 1,
   "_comment": "Allowlist of repos the factory may open PRs on (and merge them, see autonomy): RepoHQ, the live idea products with CI, and the owner's live focus projects (family-tree earns, AI-Trend-Tracker; both public, so the free pool may work on them). Since 2026-10-12 it no longer maintains dormant personal repos (Open-Travel and five others): in the 14 days before, 201 attempts produced 22 merges, mostly lint and docs, and a quarter hit the free models' rate limits. family-tree and AI-Trend-Tracker came back on 2026-10-13: dropping them left 80 critical/high alerts on live sites with nobody patching. A private repo gets only the local model and deterministic fixes (npm audit fix) at $0. Add a live idea product once it has a CI workflow (codespend has none yet). Repos opened from RepoHQ's repo page (repositories.factory_enabled) come on top of this list.",
