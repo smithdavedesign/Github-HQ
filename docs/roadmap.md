@@ -103,7 +103,7 @@ Turns the closed loop into a cost-aware autonomous factory: a local lane on the 
 - [ ] Feed factory tier stats into the RepoHQ advisor accuracy table
 
 ### Phase 64 — Model Scout + Eval Harness
-- [x] `factory/scout.ts`: OpenRouter free + `tools` models → preflight → eval suite (seeded bug, multi-file fix, read-only report) → rank with 21-day history → update `free-agent` / `free-agent-b` → commit `~/ai-stack` → `model_scout_report` event
+- [x] `factory/scout.ts`: OpenRouter free + `tools` models → preflight → eval suite (seeded bug, multi-file fix, read-only report) → rank with 21-day history → update `free-agent` / `free-agent-b` → commit `~/ai-stack`, push it as a PR and merge it (no CI there; failures log `repohq/factory/scout-push`) → `model_scout_report` event
 - [x] Quota-aware: evaluates only as many models as today's free requests allow; rotates untested models in; falls back to history when quota is exhausted; keeps (or demotes) incumbents rather than leaving no alias
 - [x] `factory/eval/e2e.sh`: full cycle against a local fixture repo (M0 fixes a seeded type error → judge → squashed commit)
 

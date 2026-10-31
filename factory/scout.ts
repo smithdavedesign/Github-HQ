@@ -13,7 +13,8 @@
  *    Studio), Ollama Cloud (free plan, tool-calling models), OpenRouter (:free).
  * 2. Exposes them as scout-N aliases and runs the eval suite through Claude Code.
  * 3. Ranks today's results with 21 days of history and writes a provider-diverse
- *    chain, keeps local-agent on Ollama, and commits the change in ~/ai-stack.
+ *    chain, keeps local-agent on Ollama, and commits the change in ~/ai-stack, then
+ *    pushes it as a PR and merges it (no CI there), so origin never drifts.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -136,7 +137,8 @@ async function main() {
   const final = dryRun ? incumbents : chain
   await applyLiteLLMModels(cfg, poolMembers(final), poolFallbacks(final))
   if (!dryRun && chain.join() !== incumbents.join()) {
-    await commitStackConfig(cfg, `factory scout: pool ${chain.map((id, i) => `${POOL_ALIASES[i]}=${id}`).join(' ')}`)
+    const pub = await commitStackConfig(cfg, `factory scout: pool ${chain.map((id, i) => `${POOL_ALIASES[i]}=${id}`).join(' ')}`)
+    log(`ai-stack config: ${pub.status}${pub.prUrl ? ` ${pub.prUrl}` : ''}${pub.reason ? ` (${pub.reason})` : ''}`)
   }
 
   const at = new Date().toISOString()
