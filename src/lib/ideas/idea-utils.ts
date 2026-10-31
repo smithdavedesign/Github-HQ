@@ -350,7 +350,13 @@ const DEFAULTS = {
 }
 
 /** The Ideas page, linked from the morning report. */
-export const IDEAS_PAGE_URL = 'https://repohq.vercel.app/ideas'
+/**
+ * Where David opens RepoHQ, for links in the email, Slack and the factory's brief. Since 2026-10-31 it runs on his Mac
+ * (ai-stack bin/repohq-web) and his devices reach it over Tailscale (tailnet only); repohq.vercel.app answers 402
+ * until Vercel's block lifts (2026-11-30). REPOHQ_URL overrides it.
+ */
+export const REPOHQ_URL = (process.env.REPOHQ_URL || 'https://davids-macbook-pro.tail39508b.ts.net').replace(/\/+$/, '')
+export const IDEAS_PAGE_URL = `${REPOHQ_URL}/ideas`
 
 /** "permitly — permit and rule-change tracker…" → "permitly". */
 export function shortTitle(title: string): string {

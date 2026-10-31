@@ -8,6 +8,7 @@
  *   4. post failures and recoveries to Slack (deduplicated: one alert per failure, repeated every 6h).
  * Pure parts are exported for tests; IO is at the bottom.
  */
+import { REPOHQ_URL } from '../../src/lib/ideas/idea-utils'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -55,7 +56,11 @@ export const HTTP_PROBES: Array<{ system: string; component: string; url: string
   { system: 'ai-stack', component: 'ollama', url: 'http://127.0.0.1:11434/api/version' },
   { system: 'ai-stack', component: 'headroom', url: 'http://127.0.0.1:8787/health' },
   { system: 'openclaw', component: 'gateway', url: 'http://127.0.0.1:18789/' },
-  { system: 'repohq', component: 'app', url: 'https://repohq.vercel.app/api/health', wakesNeon: true },
+  // RepoHQ on this Mac since 2026-10-31 (ai-stack bin/repohq-web): repohq.vercel.app answers 402 while Vercel is blocked.
+  { system: 'repohq', component: 'app', url: 'http://127.0.0.1:3200/api/health', wakesNeon: true },
+  // The public demand-signal endpoint and landing pages (idea-factory worker/ideas.mjs, Cloudflare): every product
+  // beacon and demand test posts there. 503 when its database secret is missing. Its health doesn't touch Neon.
+  { system: 'idea-factory', component: 'signal', url: 'https://idea-factory.1426davejobs.workers.dev/api/health' },
   // Live products: 503 when the app can't reach its database (botchelor docs/launch-readiness.md).
   { system: 'vercel', component: 'botchelor', url: 'https://botchelor.com/api/health' },
 ]
@@ -67,7 +72,7 @@ export const HTTP_PROBES: Array<{ system: string; component: string; url: string
 export const PRODUCT_HEALTH: Array<{ project: string; url: string; tokenService: string; adminUrl: string; wakesNeon?: true }> = [
   { project: 'botchelor', url: 'https://botchelor.com/api/health', tokenService: 'vault/botchelor/CRON_SECRET', adminUrl: 'https://botchelor.com/admin' },
   // RepoHQ reports server errors only: its pages sit behind sign-in, so a crash there never fails the liveness probe.
-  { project: 'repohq', url: 'https://repohq.vercel.app/api/health', tokenService: 'vault/repohq/CRON_SECRET', adminUrl: 'https://repohq.vercel.app', wakesNeon: true },
+  { project: 'repohq', url: 'http://127.0.0.1:3200/api/health', tokenService: 'vault/repohq/CRON_SECRET', adminUrl: REPOHQ_URL, wakesNeon: true },
 ]
 
 /** Provider trouble that otherwise only shows up as a fallback (2026-10-10: Anthropic credit ran out silently). */
@@ -316,10 +321,24 @@ const sh = (cmd: string, args: string[], timeout = 30_000) => {
   try { return execFileSync(cmd, args, { encoding: 'utf8', timeout, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 20_000_000 }) } catch (e) { return (e as { stdout?: string }).stdout ?? null }
 }
 
+/**
+ * Whether a health URL's answer means up. Below 400 only: until 2026-10-31 anything under 500 passed, so Vercel's
+ * 402 (DEPLOYMENT_DISABLED, the whole team blocked) read as healthy and RepoHQ and the signal endpoint were down
+ * for hours without an alert. Every watched health URL answers 200 when up.
+ */
+export function probeUp(status: number): boolean {
+  return status >= 200 && status < 400
+}
+
+/** The probe's message: 402 is named, since it means the host blocked the account, not that the code broke. */
+export function probeMessage(url: string, status: number): string {
+  return status === 402 ? `${url} → HTTP 402: the hosting account is blocked (payment or usage), not the app` : `${url} → HTTP ${status}`
+}
+
 async function httpProbe(p: (typeof HTTP_PROBES)[number], now: Date): Promise<SystemEvent> {
   try {
     const r = await fetch(p.url, { signal: AbortSignal.timeout(8_000) })
-    return ev(p.system, p.component, 'probe', r.status < 500, `${p.url} → HTTP ${r.status}`, undefined, now)
+    return ev(p.system, p.component, 'probe', probeUp(r.status), probeMessage(p.url, r.status), undefined, now)
   } catch (e) {
     return ev(p.system, p.component, 'probe', false, `${p.url} unreachable: ${String((e as Error).message).slice(0, 120)}`, undefined, now)
   }

@@ -3,7 +3,7 @@ import { mkdtempSync, appendFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fingerprint, normalizeEvent, redact, type SystemEvent } from '../../factory/system/events'
-import { WATCHED_JOBS, HTTP_PROBES, PRODUCT_HEALTH, NEON_SHIP_MS, neonDue, decideAlerts, slackPostEvent, vercelEvents, launchdEvents, mediaQueueEvent, modelRouterEvent, MEDIA_STUCK_MS, openClawCronEvents, probesToShip, productHealthEvents, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
+import { WATCHED_JOBS, HTTP_PROBES, probeUp, probeMessage, PRODUCT_HEALTH, NEON_SHIP_MS, neonDue, decideAlerts, slackPostEvent, vercelEvents, launchdEvents, mediaQueueEvent, modelRouterEvent, MEDIA_STUCK_MS, openClawCronEvents, probesToShip, productHealthEvents, providerEvents, slackText, workflowEvents, REALERT_MS } from '../../factory/system/collector'
 import { systemEventLines } from '../../factory/lib/report'
 
 const e = (fp: string, status: SystemEvent['status'], ts: string, message = 'm'): SystemEvent => {
@@ -102,12 +102,26 @@ describe('probes', () => {
     expect(WATCHED_JOBS.some(j => j.component === 'ollama')).toBe(false)
     expect(HTTP_PROBES.find(p => p.component === 'ollama')?.url).toContain(':11434')
     // The dashboard sits behind sign-in: its crashes reach the collector as server errors, not a failed probe.
-    expect(HTTP_PROBES.find(p => p.system === 'repohq')?.url).toBe('https://repohq.vercel.app/api/health')
+    expect(HTTP_PROBES.find(p => p.system === 'repohq')?.url).toBe('http://127.0.0.1:3200/api/health') // on the Mac since 2026-10-31
     expect(PRODUCT_HEALTH.find(p => p.project === 'repohq')).toMatchObject({ tokenService: 'vault/repohq/CRON_SECRET' })
   })
   it("RepoHQ's health check queries Neon, so its probes wait for the hourly shipment", () => {
-    expect(HTTP_PROBES.filter(p => p.wakesNeon).map(p => p.url)).toEqual(['https://repohq.vercel.app/api/health'])
+    expect(HTTP_PROBES.filter(p => p.wakesNeon).map(p => p.url)).toEqual(['http://127.0.0.1:3200/api/health'])
     expect(PRODUCT_HEALTH.filter(p => p.wakesNeon).map(p => p.project)).toEqual(['repohq'])
+  })
+  it('a 402 is down, not up: the hosting account is blocked (2026-10-31: repohq.vercel.app read as healthy for hours)', () => {
+    expect(probeUp(200)).toBe(true)
+    expect(probeUp(307)).toBe(true)
+    expect(probeUp(402)).toBe(false)
+    expect(probeUp(404)).toBe(false)
+    expect(probeUp(503)).toBe(false)
+    expect(probeMessage('https://x.vercel.app/api/health', 402)).toMatch(/hosting account is blocked/)
+    expect(probeMessage('https://x/api/health', 500)).toBe('https://x/api/health → HTTP 500')
+  })
+  it('watches the public signal endpoint, which every demand test and product beacon posts to', () => {
+    const p = HTTP_PROBES.find(x => x.component === 'signal')
+    expect(p?.url).toMatch(/^https:\/\/idea-factory\.[a-z0-9-]+\.workers\.dev\/api\/health$/)
+    expect(p?.wakesNeon).toBeUndefined()
   })
   it('Neon is touched at most once an hour, so it can suspend in between (2026-10-25: out of free compute)', () => {
     expect(neonDue(undefined, now)).toBe(true)

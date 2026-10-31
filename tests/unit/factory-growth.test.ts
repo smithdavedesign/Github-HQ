@@ -39,7 +39,7 @@ describe('Today', () => {
   it("money first: the focus product's checklist step, its next post, a demand test's missing kit, then idea PRs", () => {
     const lines = todayLines([tiebreak, permitly], growth(), [pr({}), pr({ repo: 'o/other', number: 9 })], NOW)
     expect(lines).toEqual([
-      'tiebreak, your step on the road to revenue: Stripe product created and mapped to the repo in RepoHQ (https://repohq.vercel.app/ideas/tiebreak)',
+      'tiebreak, your step on the road to revenue: Stripe product created and mapped to the repo in RepoHQ (https://davids-macbook-pro.tail39508b.ts.net/ideas/tiebreak)',
       'Post tiebreak to r/SideProject (1 of 3 in its launch kit, written and ready), then log it with /launch tiebreak posted',
       'permitly has no launch kit yet: run /launch permitly for posts ready to paste',
       'Merge or close tiebreak#4 (Growth: SEO pages): https://github.com/o/tiebreak/pull/4',
@@ -64,7 +64,7 @@ describe('Today', () => {
     const validating = Array.from({ length: 6 }, (_, k): IdeaState => ({ slug: `v${k}`, title: `v${k}`, stage: 'validate' }))
     const lines = todayLines([tiebreak, ...validating], growth(), [], NOW)
     expect(lines).toHaveLength(TODAY_MAX + 1)
-    expect(lines.at(-1)).toBe('…and 3 more: https://repohq.vercel.app/ideas')
+    expect(lines.at(-1)).toBe('…and 3 more: https://davids-macbook-pro.tail39508b.ts.net/ideas')
   })
   it('says when there is nothing to do', () => {
     const done = { ...tiebreak, launch: { ...tiebreak.launch!, next: { id: 'firstUser', label: 'First user or signup', owner: 'david' as const } } }
@@ -114,7 +114,7 @@ describe('Growth loop lines', () => {
   })
   it('asks whether to park a product whose experiments moved nothing', () => {
     const parked: IdeaState = { ...tiebreak, launch: undefined, growth: { stage: 'park', bottleneck: 'the last 2 experiments moved nothing', next: { kind: 'park', executor: 'owner' } } }
-    expect(todayLines([parked], growth({ kits: {} }), [], NOW)[0]).toBe('tiebreak: the last 2 experiments moved nothing. Park it or keep going? (https://repohq.vercel.app/ideas/tiebreak)')
+    expect(todayLines([parked], growth({ kits: {} }), [], NOW)[0]).toBe('tiebreak: the last 2 experiments moved nothing. Park it or keep going? (https://davids-macbook-pro.tail39508b.ts.net/ideas/tiebreak)')
   })
 })
 
