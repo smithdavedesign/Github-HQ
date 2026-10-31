@@ -2,7 +2,7 @@
 
 **Personal GitHub portfolio intelligence dashboard** — health scoring, AI analysis, revenue tracking, lifecycle management, automated weekly intelligence, and an AI agent execution pipeline for every repo you own.
 
-**Live:** https://repohq.vercel.app · **[System overview: start here](docs/system-overview.md)** · [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
+**Live:** on the owner's Mac since 2026-10-31 ([hosting](docs/hosting.md); https://repohq.vercel.app is down while the Vercel team is blocked) · **[System overview: start here](docs/system-overview.md)** · [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
 
 RepoHQ is one part of a larger system whose goal is **products people use and pay for, with near-zero overhead for the owner and no financial risk**: a local AI stack with context on every repo, a research center, an idea pipeline that reviews and demand-tests ideas before building them, and a factory that keeps everything healthy. The [system overview](docs/system-overview.md) has the map, the rules and the scorecard.
 
@@ -158,7 +158,7 @@ RepoHQ syncs all your GitHub repos (public + private) and gives you a unified vi
 | ORM | Drizzle ORM |
 | Auth | Auth.js v5 (GitHub OAuth, DrizzleAdapter) |
 | AI | OpenRouter free models and Gemini's free tier by default; Claude and OpenAI with `LLM_ALLOW_PAID=1` (BYOK) |
-| Hosting | Vercel |
+| Hosting | The owner's Mac (`next start` under launchd, reached over Tailscale) since 2026-10-31; Vercel before ([hosting](docs/hosting.md)) |
 | Crons | GitHub Actions (primary) + Vercel weekly fallback |
 | Revenue | Stripe REST API (restricted key, no SDK) |
 | IDE | MCP Server (stdio, `@modelcontextprotocol/sdk`) |

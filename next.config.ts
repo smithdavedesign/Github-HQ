@@ -1,6 +1,11 @@
 import type { NextConfig } from 'next'
 
 const dev = process.env.NODE_ENV !== 'production'
+// upgrade-insecure-requests rewrites every request to https. Chromium applies it to http://localhost
+// too, so a production build served over plain http (the owner's Mac, docs/hosting.md) can't post the
+// sign-in form or fetch RSC payloads. CSP_UPGRADE_INSECURE=0 at build time leaves it out; https
+// hosts (Vercel, tailscale serve) keep it.
+const upgradeInsecure = !dev && process.env.CSP_UPGRADE_INSECURE !== '0'
 // Vercel injects its toolbar (vercel.live) for signed-in team members on preview AND production
 // deployments; these are the origins Vercel documents for it.
 const toolbar = {
@@ -27,7 +32,7 @@ const csp = [
   "base-uri 'self'",
   "form-action 'self' https://github.com",
   "object-src 'none'",
-  ...(dev ? [] : ['upgrade-insecure-requests']),
+  ...(upgradeInsecure ? ['upgrade-insecure-requests'] : []),
 ].join('; ')
 
 const nextConfig: NextConfig = {
