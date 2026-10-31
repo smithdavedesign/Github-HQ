@@ -56,7 +56,7 @@ export const HTTP_PROBES: Array<{ system: string; component: string; url: string
   { system: 'openclaw', component: 'gateway', url: 'http://127.0.0.1:18789/' },
   { system: 'repohq', component: 'app', url: 'https://repohq.vercel.app/api/health', wakesNeon: true },
   // Live products: 503 when the app can't reach its database (botchelor docs/launch-readiness.md).
-  { system: 'vercel', component: 'botchelor', url: 'https://botchelor.vercel.app/api/health' },
+  { system: 'vercel', component: 'botchelor', url: 'https://botchelor.com/api/health' },
 ]
 
 /**
@@ -64,7 +64,7 @@ export const HTTP_PROBES: Array<{ system: string; component: string; url: string
  * the product's cron secret, read from the keychain at probe time; liveness itself is the plain HTTP probe above.
  */
 export const PRODUCT_HEALTH: Array<{ project: string; url: string; tokenService: string; adminUrl: string; wakesNeon?: true }> = [
-  { project: 'botchelor', url: 'https://botchelor.vercel.app/api/health', tokenService: 'vault/botchelor/CRON_SECRET', adminUrl: 'https://botchelor.vercel.app/admin' },
+  { project: 'botchelor', url: 'https://botchelor.com/api/health', tokenService: 'vault/botchelor/CRON_SECRET', adminUrl: 'https://botchelor.com/admin' },
   // RepoHQ reports server errors only: its pages sit behind sign-in, so a crash there never fails the liveness probe.
   { project: 'repohq', url: 'https://repohq.vercel.app/api/health', tokenService: 'vault/repohq/CRON_SECRET', adminUrl: 'https://repohq.vercel.app', wakesNeon: true },
 ]

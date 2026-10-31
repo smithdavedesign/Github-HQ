@@ -79,7 +79,7 @@ describe('probes', () => {
     expect(evs[1]!.message).toMatch(/latest production deploy is ERROR: https:\/\/vercel\.com\/x/)
   })
   it('a live product\'s health detail: reports waiting, stuck dates and the paid cap fail; nothing waiting is ok', () => {
-    const admin = 'https://botchelor.vercel.app/admin'
+    const admin = 'https://botchelor.com/admin'
     const busy = productHealthEvents('botchelor', admin, {
       reports: { episodes: 2, reports: 4, oldest_at: '2026-10-10T18:00:00.000Z' }, stuck_generating: 1, paid_dates: { today: 100, cap: 100 },
     }, now)
