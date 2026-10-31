@@ -9,7 +9,7 @@ on:
 jobs:
   quality:
     name: Type check · Lint · Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # Playwright has no Chromium for ubuntu-latest (26.04) yet
     timeout-minutes: 10
 
     steps:
@@ -45,7 +45,7 @@ jobs:
   # tests/flow/harness/flow.ts — it never sees a real database or queue.
   flow:
     name: Agent HQ flow (queue → worker → UI)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # Playwright has no Chromium for ubuntu-latest (26.04) yet
     timeout-minutes: 20
 
     services:
@@ -98,7 +98,7 @@ jobs:
   # secret. Agents merge only once every check passes, this one included (factory/lib/automerge.ts).
   e2e:
     name: Browser tests (e2e)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # Playwright has no Chromium for ubuntu-latest (26.04) yet
     timeout-minutes: 25
 
     services:
@@ -141,7 +141,7 @@ jobs:
 
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # Playwright has no Chromium for ubuntu-latest (26.04) yet
     timeout-minutes: 15
 
     steps:
