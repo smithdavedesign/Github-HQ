@@ -23,7 +23,9 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { neon } from '@neondatabase/serverless'
-import { drizzle } from 'drizzle-orm/neon-http'
+import { drizzle as drizzleNeon } from 'drizzle-orm/neon-http'
+import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js'
+import postgres from 'postgres'
 import * as schema from '../src/lib/db/schema.js'
 import { eq, and, desc, inArray, gt, count } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
@@ -36,6 +38,7 @@ import { isGstackSkill, isSkillAllowedForRepo, parseEnvSkillAllowlistMap, parseR
 import { closedPrTaskIds } from '../src/lib/agents/lifecycle-utils.js'
 import { IMPACT_TYPES, computeAccuracy, type AccuracyStat } from '../src/lib/actions/advisor-accuracy-utils.js'
 import factoryConfig from '../factory/factory.config.json'
+import { asNeonClient, isLocalDatabase } from '../factory/lib/sql-client.js'
 import { formatSystemStatus, systemStatus } from '../factory/system/status.js'
 import { readIdeaStates } from '../factory/context/ideas.js'
 import { formatIdea, formatPipeline, readLaunchLog, readValidationPolicy, type LaunchLog, type ReferrerCount } from '../factory/context/idea-pipeline.js'
@@ -63,8 +66,11 @@ if (!USER_ID) {
   process.exit(1)
 }
 
-const sql = neon(DATABASE_URL)
-const db = drizzle(sql, { schema })
+// A localhost URL is a local Postgres (postgres-js), anything else Neon over HTTP (factory/lib/sql-client.ts).
+const neonDb = (url: string) => drizzleNeon(neon(url), { schema })
+const pg = isLocalDatabase(DATABASE_URL) ? postgres(DATABASE_URL) : null
+const sql = pg ? asNeonClient(pg) : neon(DATABASE_URL)
+const db = pg ? (drizzlePostgres(pg, { schema }) as unknown as ReturnType<typeof neonDb>) : neonDb(DATABASE_URL)
 
 const server = new Server(
   { name: 'repohq', version: '1.0.0' },

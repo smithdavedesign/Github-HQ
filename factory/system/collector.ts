@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, s
 import path from 'node:path'
 import { EVENTS_DIR, EVENTS_FILE, emitEvent, fingerprint, normalizeEvent, type SystemEvent } from './events'
 import { refreshOpenClawBrief } from '../context/brief'
+import { sqlClient } from '../lib/sql-client'
 
 // ─── What's watched ─────────────────────────────────────────────────────────
 
@@ -382,8 +383,7 @@ export async function collect(opts: { databaseUrl: string | null; slack: { token
   const now = new Date()
   mkdirSync(EVENTS_DIR, { recursive: true })
   const state = loadState()
-  const { neon } = await import('@neondatabase/serverless')
-  const sql = opts.databaseUrl ? neon(opts.databaseUrl) : null
+  const sql = opts.databaseUrl ? sqlClient(opts.databaseUrl) : null
   // Between shipments nothing touches Neon: the file offset, OpenClaw cursor and probe history stay where the last
   // shipment left them, so the next one sends everything. Alerts re-read the same events each run, which is safe:
   // decideAlerts acts on each fingerprint's latest status.
