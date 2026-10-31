@@ -67,10 +67,10 @@ if (!USER_ID) {
 }
 
 // A localhost URL is a local Postgres (postgres-js), anything else Neon over HTTP (factory/lib/sql-client.ts).
-const neonDb = (client: ReturnType<typeof neon>) => drizzleNeon(client, { schema })
+const neonDb = (url: string) => drizzleNeon(neon(url), { schema })
 const pg = isLocalDatabase(DATABASE_URL) ? postgres(DATABASE_URL) : null
 const sql = pg ? asNeonClient(pg) : neon(DATABASE_URL)
-const db = pg ? (drizzlePostgres(pg, { schema }) as unknown as ReturnType<typeof neonDb>) : neonDb(sql)
+const db = pg ? (drizzlePostgres(pg, { schema }) as unknown as ReturnType<typeof neonDb>) : neonDb(DATABASE_URL)
 
 const server = new Server(
   { name: 'repohq', version: '1.0.0' },
