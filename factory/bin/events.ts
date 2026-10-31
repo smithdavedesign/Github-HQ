@@ -12,6 +12,7 @@ import { emitEvent, type EventStatus } from '../system/events'
 import { collect } from '../system/collector'
 import { loadConfig } from '../lib/config'
 import { systemStatus } from '../system/status'
+import { sqlClient } from '../lib/sql-client'
 
 const args = process.argv.slice(2)
 const flag = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined }
@@ -20,16 +21,7 @@ const keychain = (service: string) => { try { return execFileSync('security', ['
 async function db() {
   const url = process.env.FACTORY_DATABASE_URL ?? keychain('repohq-factory-database-url')
   if (!url) throw new Error('no database URL (keychain repohq-factory-database-url)')
-  if (url.includes('localhost') || url.includes('127.0.0.1')) {
-    const postgres = (await import('postgres')).default
-    const sql = postgres(url)
-    if (!(sql as unknown as { query?: unknown }).query) {
-      (sql as unknown as { query: (str: string, params?: unknown[]) => unknown }).query = (str, params = []) => sql.unsafe(str, params as never)
-    }
-    return sql
-  }
-  const { neon } = await import('@neondatabase/serverless')
-  return neon(url)
+  return sqlClient(url)
 }
 
 async function main() {

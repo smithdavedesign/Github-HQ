@@ -38,6 +38,7 @@ import { isGstackSkill, isSkillAllowedForRepo, parseEnvSkillAllowlistMap, parseR
 import { closedPrTaskIds } from '../src/lib/agents/lifecycle-utils.js'
 import { IMPACT_TYPES, computeAccuracy, type AccuracyStat } from '../src/lib/actions/advisor-accuracy-utils.js'
 import factoryConfig from '../factory/factory.config.json'
+import { asNeonClient, isLocalDatabase } from '../factory/lib/sql-client.js'
 import { formatSystemStatus, systemStatus } from '../factory/system/status.js'
 import { readIdeaStates } from '../factory/context/ideas.js'
 import { formatIdea, formatPipeline, readLaunchLog, readValidationPolicy, type LaunchLog, type ReferrerCount } from '../factory/context/idea-pipeline.js'
@@ -65,19 +66,11 @@ if (!USER_ID) {
   process.exit(1)
 }
 
-let sql: any
-let db: any
-
-if (DATABASE_URL.includes('localhost') || DATABASE_URL.includes('127.0.0.1')) {
-  sql = postgres(DATABASE_URL)
-  if (!sql.query) {
-    sql.query = (str: string, params: any[] = []) => sql.unsafe(str, params)
-  }
-  db = drizzlePostgres(sql, { schema })
-} else {
-  sql = neon(DATABASE_URL)
-  db = drizzleNeon(sql, { schema })
-}
+// A localhost URL is a local Postgres (postgres-js), anything else Neon over HTTP (factory/lib/sql-client.ts).
+const neonDb = (client: ReturnType<typeof neon>) => drizzleNeon(client, { schema })
+const pg = isLocalDatabase(DATABASE_URL) ? postgres(DATABASE_URL) : null
+const sql = pg ? asNeonClient(pg) : neon(DATABASE_URL)
+const db = pg ? (drizzlePostgres(pg, { schema }) as unknown as ReturnType<typeof neonDb>) : neonDb(sql)
 
 const server = new Server(
   { name: 'repohq', version: '1.0.0' },
