@@ -3,9 +3,12 @@
     "smithdavedesign/Github-HQ",
     "smithdavedesign/tiebreak",
     "smithdavedesign/family-tree",
-    "smithdavedesign/AI-Trend-Tracker"
+    "smithdavedesign/AI-Trend-Tracker",
+    "smithdavedesign/botchelor"
   ],
-  "allowFreeCloud": [],
+  "allowFreeCloud": [
+    "smithdavedesign/botchelor"
+  ],
   "monthlyBudgetUsd": 0,
   "maxPrsPerCycle": 3,
   "maxPrsPerDay": 12,
