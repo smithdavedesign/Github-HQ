@@ -36,7 +36,7 @@ import { listAliases } from './lib/litellm-ops'
 import { branchName, commitMessage, prBody, prTitle } from './lib/pr'
 
 import { run, type Runner } from './lib/proc'
-import { SANDBOX_MODEL_KEY, Sandbox, dockerAvailable, ensureSandboxImages, sandboxModels, sweepSandboxes } from './lib/sandbox'
+import { SANDBOX_MODEL_KEY, Sandbox, dockerAvailable, ensureDocker, ensureSandboxImages, sandboxModels, sweepSandboxes } from './lib/sandbox'
 import { factoryRepos, healthScores, recordApprovalNeeded, recordAttempt, recordResolution, recordValue } from './lib/sink'
 import { prValueFromLabels } from '../src/lib/agents/pr-value'
 import { pendingOutcomes, scoreOutcome } from './lib/outcomes'
@@ -168,7 +168,18 @@ async function main(): Promise<RunResult> {
   publishCopilotUsage(cfg.home, copilotUsageData(quota, todaysUsage(readLedger(cfg.home), new Date()), cfg.copilot, copilotInstalled))
   await tracer.span('reconcile', () => reconcile(cfg, args.dryRun))
 
-  const aliases = await listAliases(cfg).catch((): string[] => [])
+  // LiteLLM runs in Docker too: start Docker first if it's down, then give the gateway a minute to come up.
+  let dockerStarted = false
+  if (cfg.sandbox.mode === 'docker' && !args.dryRun) {
+    const d = await ensureDocker()
+    dockerStarted = d.started
+    if (d.started) log(d.ok ? 'Docker was down — started it' : 'Docker was down and did not come up after starting it')
+  }
+  let aliases = await listAliases(cfg).catch((): string[] => [])
+  for (let i = 0; dockerStarted && aliases.length === 0 && i < 6; i++) {
+    await new Promise(r => setTimeout(r, 10_000))
+    aliases = await listAliases(cfg).catch((): string[] => [])
+  }
   for (const t of ['M0', 'M1'] as const) {
     if (!aliases.includes(cfg.models[t])) log(`warning: LiteLLM alias ${cfg.models[t]} (${t}) not available`)
   }

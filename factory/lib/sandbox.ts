@@ -45,6 +45,25 @@ export async function dockerAvailable(): Promise<boolean> {
 }
 
 /**
+ * Docker up, started if it isn't (2026-10-31: Docker Desktop was down at 22:24, so the night's first
+ * build couldn't start and nothing started it). `docker desktop start`, else `open -a Docker`, then
+ * waits for the engine. Docker's "start at login" and memory cap stay GUI settings (ai-stack CLAUDE.md).
+ */
+export async function ensureDocker(
+  { probe = dockerAvailable, exec = run, waitMs = 180_000, pollMs = 5_000, sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms)) }:
+  { probe?: () => Promise<boolean>; exec?: typeof run; waitMs?: number; pollMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<{ ok: boolean; started: boolean }> {
+  if (await dockerAvailableConfirmed(probe)) return { ok: true, started: false }
+  const start = await exec('docker', ['desktop', 'start', '--detach'], { timeoutMs: 60_000 })
+  if (start.code !== 0 && (await exec('open', ['-a', 'Docker'], { timeoutMs: 30_000 })).code !== 0) return { ok: false, started: false }
+  for (let waited = 0; waited < waitMs; waited += pollMs) {
+    await sleep(pollMs)
+    if (await probe()) return { ok: true, started: true }
+  }
+  return { ok: false, started: true }
+}
+
+/**
  * Docker is only reported down after a second probe agrees. `docker info` can miss its timeout on a
  * busy Mac (2026-10-12 03:05: an idea build's sandbox and a factory cycle starting together), and a
  * single miss turned the Agents page to "Docker isn't running" while both sandboxes were up.
