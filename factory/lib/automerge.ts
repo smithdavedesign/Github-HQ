@@ -4,9 +4,9 @@
  * pipeline does the same for its PRs (idea-factory lib/autonomy.js).
  *
  * A factory PR merges when every GitHub check is green (CI, GitGuardian, the Vercel preview, and on
- * RepoHQ the Autonomous PR Policy check), the preview smoke test and the adversarial reviewer didn't
- * object, nobody asked for changes or put a hold label on it, it doesn't conflict, and it touches no
- * protected path. Anything else stays open for the owner. After a merge, the merge commit's own
+ * RepoHQ the Autonomous PR Policy check), the preview smoke test (on a repo that gets previews:
+ * smokeWait) and the adversarial reviewer didn't object, nobody asked for changes or put a hold
+ * label on it, it doesn't conflict, and it touches no protected path. Anything else stays open for the owner. After a merge, the merge commit's own
  * runs on the base branch decide: green stays, red is reverted by a revert PR the factory merges.
  *
  * Pure decisions first; then `automerge` and `watchMerged`, which run.ts's reconcile step calls
@@ -18,6 +18,7 @@ import type { FactoryConfig } from './config'
 import { GIT_CRED, humanCommitsOn } from './git'
 import { appendEntry, openPrAttempts, readLedger, type AttemptEntry, type AutomergeEntry, type LedgerEntry, type PostmergeEntry, type SmokeEntry } from './ledger'
 import { run as defaultRun, type Runner } from './proc'
+import { repoGetsPreviews } from './smoke'
 import { emitEvent } from '../system/events'
 
 /** One entry of gh's statusCheckRollup, a workflow run, or a commit status. */
@@ -165,12 +166,25 @@ export interface AutonomyDeps {
   /** Where revert clones go (this run's work folder). */
   workDir: string
   now?: () => Date
+  /** Whether a repo's PRs get a Vercel preview (smoke.ts repoGetsPreviews; null = couldn't tell). */
+  getsPreviews?: (repo: string) => Promise<boolean | null>
 }
 
 type AutonomyConfig = Pick<FactoryConfig, 'home' | 'smoke' | 'autonomy'>
 
 /** How long a PR waits for its preview smoke test (a few run per cycle) before it merges without one. */
 export const SMOKE_WAIT_MS = 6 * 60 * MINUTE
+
+/**
+ * Whether a PR still waits for its preview smoke test (pure): smoke is on, it hasn't run, the PR is
+ * younger than SMOKE_WAIT_MS, and the repo gets previews at all. A repo whose Vercel project isn't
+ * connected to git (`previews: false`, since 2026-10-31 all of the owner's) has nothing to smoke: it
+ * merges on green checks. `null` (Vercel couldn't be asked) waits as before.
+ */
+export function smokeWait(input: { enabled: boolean; smoke: SmokeEntry | null; attemptAt: string; now: Date; previews: boolean | null }): boolean {
+  const { enabled, smoke, attemptAt, now, previews } = input
+  return enabled && !smoke && previews !== false && now.getTime() - new Date(attemptAt).getTime() < SMOKE_WAIT_MS
+}
 
 const SHA = /^[0-9a-f]{40}$/
 const lastLine = (out: string) => out.trim().split('\n').pop()?.slice(0, 200) ?? ''
@@ -185,6 +199,7 @@ export async function automerge(cfg: AutonomyConfig, deps: AutonomyDeps): Promis
   const emit = deps.emit ?? emitEvent
   const now = deps.now ?? (() => new Date())
   const ledger = readLedger(cfg.home)
+  const getsPreviews = deps.getsPreviews ?? ((repo: string) => repoGetsPreviews(repo, cfg.smoke.vercelScope, run))
   const smokes = new Map(ledger.filter((e): e is SmokeEntry => e.type === 'smoke').map(e => [e.attemptId, e]))
   const lastHold = new Map(ledger.filter((e): e is AutomergeEntry => e.type === 'automerge' && e.action === 'held').map(e => [e.attemptId, e.reason]))
   // From the factory's home, not a checkout: --delete-branch must never touch a local clone's branches.
@@ -195,7 +210,9 @@ export async function automerge(cfg: AutonomyConfig, deps: AutonomyDeps): Promis
     try { pr = JSON.parse(view.output) } catch { continue }
     const at = now()
     const smoke = smokes.get(a.id) ?? null
-    const smokePending = cfg.smoke.enabled && !smoke && at.getTime() - new Date(a.at).getTime() < SMOKE_WAIT_MS
+    const wait = (previews: boolean | null) => smokeWait({ enabled: cfg.smoke.enabled, smoke, attemptAt: a.at, now: at, previews })
+    // Vercel is asked only when the PR would otherwise wait.
+    const smokePending = wait(null) && wait(await getsPreviews(a.repo))
     const d = factoryMergeDecision({ pr, attempt: a, smoke, smokePending, protectedPaths: cfg.autonomy.protectedPaths, now: at })
     const subject = { repo: a.repo, pr: a.prUrl }
     if (d.action === 'leave' && lastHold.get(a.id) !== d.reason) {

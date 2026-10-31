@@ -6,14 +6,14 @@
  *
  * Verdict per PR: `fail` when a page that works on production doesn't on the preview (HTTP status,
  * a page crash, or a console error production doesn't have); `pass`; or `skipped` with the reason
- * (no Vercel preview, not ready yet). Runs in the reconcile step of a later cycle, so no cycle waits
+ * (no Vercel preview, not ready yet, or the repo's Vercel project isn't connected to git: repoGetsPreviews). Runs in the reconcile step of a later cycle, so no cycle waits
  * on a preview build. Also run by hand: `npm run factory:smoke -- <pr-url>` (skill: preview-smoke).
  *
  * Pages behind a login are out of reach (no credentials are used); only public paths are compared.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { run } from './proc'
+import { run, type Runner } from './proc'
 import type { AttemptEntry, LedgerEntry } from './ledger'
 
 export const SMOKE_FAIL_LABEL = 'smoke:fail'
@@ -145,6 +145,49 @@ export async function deploymentUrl(repo: string, sha: string | null, env: RegEx
 /** `vercel api` prints a banner line ("api is in beta") before the JSON. */
 const cliJson = (out: string) => JSON.parse(out.slice(out.indexOf('{')))
 
+export const NO_PREVIEWS_REASON = "no Vercel previews: the repo's Vercel project isn't connected to git (deploys are prebuilt from the Mac)"
+
+interface VercelProjectLink { link?: { type?: string } | null; gitProviderOptions?: { createDeployments?: string } }
+
+/**
+ * Whether a repo's PRs get Vercel previews (pure), from the Vercel projects linked to it: one with a
+ * git link and git deployments not disabled. Since 2026-10-31 the owner's projects are disconnected
+ * from git and deployed prebuilt once a day (~/ai-stack/bin/release): no previews, nothing to smoke.
+ */
+export function projectsGetPreviews(projects: VercelProjectLink[]): boolean {
+  return projects.some(p => !!p.link?.type && p.gitProviderOptions?.createDeployments !== 'disabled')
+}
+
+const PREVIEWS_TTL_MS = 30 * 60_000
+const previewsCache = new Map<string, { at: number; value: boolean }>()
+
+/**
+ * Does this repo get a Vercel preview per PR? Asks Vercel once per repo per half hour (a cycle).
+ * `vercel api /v9/projects?repoUrl=` returns only projects git-linked to the repo, so a disconnected
+ * project or a repo with no Vercel project answers false. null when Vercel can't be asked (CLI logged
+ * out, network): the caller keeps the old behaviour and looks for a preview.
+ */
+export async function repoGetsPreviews(repo: string, scope?: string, runner: Runner = run, now = Date.now()): Promise<boolean | null> {
+  const hit = previewsCache.get(repo)
+  if (hit && now - hit.at < PREVIEWS_TTL_MS) return hit.value
+  const scopeArgs = scope ? ['--scope', scope] : []
+  // Project JSON is large (build settings, env metadata): lift the runner's output cap.
+  const r = await runner('vercel', ['api', `/v9/projects?repoUrl=https://github.com/${repo}`, ...scopeArgs], { timeoutMs: 60_000, maxOutput: 5_000_000 })
+  if (r.code !== 0) return null
+  let projects: VercelProjectLink[]
+  try {
+    const parsed = cliJson(r.output) as { projects?: VercelProjectLink[] }
+    if (!Array.isArray(parsed.projects)) return null
+    projects = parsed.projects
+  } catch { return null }
+  const value = projectsGetPreviews(projects)
+  previewsCache.set(repo, { at: now, value })
+  return value
+}
+
+/** Tests only: forget what Vercel said. */
+export function clearPreviewsCache(): void { previewsCache.clear() }
+
 /**
  * Vercel's "Protection Bypass for Automation" secret for the repo's project, created once and cached
  * (the owner's projects protect every deployment but custom domains). Null when the repo has no
@@ -221,6 +264,7 @@ export async function smokePr(opts: {
     const pr = await run('gh', ['pr', 'view', opts.prUrl, '--json', 'headRefOid,state'], { timeoutMs: 60_000 })
     const { headRefOid, state } = JSON.parse(pr.output) as { headRefOid: string; state: string }
     if (state !== 'OPEN') return skip(`PR is ${state.toLowerCase()}`)
+    if (await repoGetsPreviews(opts.repo, opts.vercelScope) === false) return skip(NO_PREVIEWS_REASON)
     const preview = await deploymentUrl(opts.repo, headRefOid, /preview/i)
     if (!preview.url) return skip(preview.state === 'none' ? 'no Vercel preview for this commit' : `preview ${preview.state}`)
     const production = await deploymentUrl(opts.repo, null, /^production$/i)

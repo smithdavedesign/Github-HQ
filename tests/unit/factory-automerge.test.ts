@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { automerge, checkState, factoryMergeDecision, mergesToWatch, postMergeVerdict, protectedTouched, revertSteps, watchMerged, type AutonomyDeps, type PrMergeInfo } from '../../factory/lib/automerge'
+import { SMOKE_WAIT_MS, automerge, checkState, factoryMergeDecision, smokeWait, mergesToWatch, postMergeVerdict, protectedTouched, revertSteps, watchMerged, type AutonomyDeps, type PrMergeInfo } from '../../factory/lib/automerge'
 import { loadConfig } from '../../factory/lib/config'
 import { readLedger, toAttemptRecords, type AttemptEntry, type LedgerEntry, type PostmergeEntry } from '../../factory/lib/ledger'
 import type { ProcOptions, ProcResult } from '../../factory/lib/proc'
@@ -67,6 +67,22 @@ describe('factoryMergeDecision', () => {
   })
   it('red checks are reported before a pending smoke test', () => {
     expect(decide({ statusCheckRollup: [run_('CI', 'FAILURE')] }, { smoke: null, smokePending: true }).action).toBe('leave')
+  })
+})
+
+describe('smokeWait', () => {
+  const base = { enabled: true, smoke: null, attemptAt: minsAgo(30), now: NOW, previews: true as boolean | null }
+  it('waits for a smoke test that has not run on a repo that gets previews', () => {
+    expect(smokeWait(base)).toBe(true)
+    expect(smokeWait({ ...base, previews: null }), "Vercel couldn't be asked: wait as before").toBe(true)
+  })
+  it('does not wait when the repo gets no Vercel previews (project not connected to git)', () => {
+    expect(smokeWait({ ...base, previews: false })).toBe(false)
+  })
+  it('does not wait once smoke ran, when smoke is off, or after SMOKE_WAIT_MS', () => {
+    expect(smokeWait({ ...base, smoke: smoke('skipped') })).toBe(false)
+    expect(smokeWait({ ...base, enabled: false })).toBe(false)
+    expect(smokeWait({ ...base, attemptAt: new Date(NOW.getTime() - SMOKE_WAIT_MS).toISOString() })).toBe(false)
   })
 })
 
@@ -191,6 +207,21 @@ describe('automerge and watchMerged against a fake GitHub', () => {
     expect(entries.find(e => e.type === 'resolution')).toMatchObject({ outcome: 'merged', humanCommits: 0 })
     expect(events.map(e => [e.event, e.status])).toEqual([['merge', 'ok']])
   })
+  it('merges a young unsmoked PR on green checks when the repo gets no Vercel previews, and waits when it does', async () => {
+    write([attempt({ at: minsAgo(20) })])
+    const asked: string[] = []
+    await automerge(cfg(), { ...deps(), getsPreviews: async repo => { asked.push(repo); return true } })
+    expect(calls, 'previews exist: waits for the smoke test').toEqual(['gh pr view'])
+    await automerge(cfg(), { ...deps(), getsPreviews: async repo => { asked.push(repo); return false } })
+    expect(asked).toEqual(['o/app', 'o/app'])
+    expect(readLedger(home).find(e => e.type === 'automerge')).toMatchObject({ action: 'merged', reason: '2 checks green' })
+  })
+  it('asks Vercel through the injected runner and keeps waiting when it cannot tell', async () => {
+    write([attempt({ at: minsAgo(20) })])
+    await automerge(cfg(), deps()) // the fake answers `vercel api` with nothing: unknown
+    expect(calls).toEqual(['gh pr view', 'vercel api /v9/projects?repoUrl=https://github.com/o/app'])
+    expect(readLedger(home).filter(e => e.type === 'automerge')).toEqual([])
+  })
   it('leaves a red PR, saying why once, and alerts when GitHub refuses a merge', async () => {
     write([attempt(), smoke('pass')])
     gh.pr = { ...gh.pr, statusCheckRollup: [run_('CI', 'FAILURE')] }
@@ -206,11 +237,12 @@ describe('automerge and watchMerged against a fake GitHub', () => {
     expect(readLedger(home).some(e => e.type === 'resolution'), 'still open').toBe(false)
   })
   it('waits for the smoke test, then merges without one after six hours', async () => {
+    const previews = { ...deps(), getsPreviews: async () => true }
     write([attempt({ at: minsAgo(60) })])
-    await automerge(cfg(), deps())
+    await automerge(cfg(), previews)
     expect(calls).toEqual(['gh pr view'])
     write([attempt({ at: minsAgo(7 * 60) })])
-    await automerge(cfg(), deps())
+    await automerge(cfg(), previews)
     expect(calls).toContain('gh pr merge')
   })
   it('reverts a merge that turned main red, then closes the alert once main is green again', async () => {

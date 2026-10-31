@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { compareSmoke, normalizeError, pendingSmokes, smokeComment, type PageResult, type SmokeEntry } from '../../factory/lib/smoke'
+import { clearPreviewsCache, compareSmoke, normalizeError, pendingSmokes, projectsGetPreviews, repoGetsPreviews, smokeComment, type PageResult, type SmokeEntry } from '../../factory/lib/smoke'
+import type { ProcOptions, ProcResult } from '../../factory/lib/proc'
 import type { LedgerEntry } from '../../factory/lib/ledger'
 import { smokeLines } from '../../factory/lib/report'
 
@@ -79,5 +80,33 @@ describe('smoke noise: Vercel\'s preview toolbar', () => {
     const { NOISE } = await import('../../factory/lib/smoke')
     expect(NOISE.test("Loading the script 'https://vercel.live/_next-live/feedback/feedback.js' violates the following Content Security Policy directive: \"script-src 'self' 'unsafe-inline'\"")).toBe(true)
     expect(NOISE.test("Loading the script 'https://cdn.example.com/app.js' violates the following Content Security Policy directive")).toBe(false)
+  })
+})
+
+describe('does the repo get Vercel previews', () => {
+  const linked = { link: { type: 'github' }, gitProviderOptions: { createDeployments: 'enabled' } }
+  it('a git-linked project with git deployments on gets previews; disconnected, disabled or no project does not', () => {
+    expect(projectsGetPreviews([linked])).toBe(true)
+    expect(projectsGetPreviews([{ link: { type: 'github' } }])).toBe(true)
+    expect(projectsGetPreviews([{ ...linked, link: null }, {}])).toBe(false)
+    expect(projectsGetPreviews([{ ...linked, gitProviderOptions: { createDeployments: 'disabled' } }])).toBe(false)
+    expect(projectsGetPreviews([])).toBe(false)
+  })
+  it('asks the Vercel CLI once per repo (cached), and answers null when it cannot', async () => {
+    clearPreviewsCache()
+    const calls: string[] = []
+    const reply = (code: number, output: string) => async (cmd: string, args: string[], _o?: ProcOptions): Promise<ProcResult> => {
+      calls.push([cmd, ...args].join(' '))
+      return { code, output, durationMs: 1, timedOut: false }
+    }
+    const banner = '> api is in beta\n'
+    expect(await repoGetsPreviews('o/a', 'team_x', reply(0, banner + JSON.stringify({ projects: [] })), 0)).toBe(false)
+    expect(await repoGetsPreviews('o/a', 'team_x', reply(0, banner + JSON.stringify({ projects: [{ link: { type: 'github' } }] })), 60_000)).toBe(false) // cached
+    expect(calls).toEqual(['vercel api /v9/projects?repoUrl=https://github.com/o/a --scope team_x'])
+    expect(await repoGetsPreviews('o/b', undefined, reply(0, JSON.stringify({ projects: [{ link: { type: 'github' } }] })), 0)).toBe(true)
+    expect(await repoGetsPreviews('o/c', undefined, reply(1, 'Error: not logged in'), 0)).toBeNull()
+    expect(await repoGetsPreviews('o/d', undefined, reply(0, 'garbage'), 0)).toBeNull()
+    expect(await repoGetsPreviews('o/c', undefined, reply(0, JSON.stringify({ projects: [] })), 0), 'a failure is not cached').toBe(false)
+    expect(await repoGetsPreviews('o/a', undefined, reply(0, JSON.stringify({ projects: [{ link: { type: 'github' } }] })), 31 * 60_000), 'cache expires').toBe(true)
   })
 })
