@@ -97,7 +97,7 @@ Older events without `data` still show: the page reads the model and engine from
 | LiteLLM log | Anthropic out of credit, a provider rejecting its key, rate limits |
 | RepoHQ `automation_runs` (hourly) | a factory job or cron route failed |
 | Vercel production deploys (every project) | the latest finished production deploy is `ERROR` or `CANCELED` |
-| Live product: botchelor (`/api/health`) | not reachable or HTTP 5xx (503: it can't reach its database) |
+| Live product: botchelor (`/api/health`) | not reachable or HTTP 5xx: every 5 min without the secret (no database query); hourly with the cron secret, 503 when it can't reach its database |
 | botchelor health detail (its cron secret from the keychain) | an episode report is waiting for review at `/admin`, a date is stuck generating for 15+ minutes, the paid-model daily cap is reached (dates fall back to the free model until 00:00 UTC), or the app recorded server errors in the last hour (API and page errors, route pattern and cleaned message) |
 | RepoHQ health detail (`vault/repohq/CRON_SECRET` from the keychain, hourly) | the app recorded server errors in the last hour (pages, server components, actions: `src/instrumentation.ts` → `server_errors`). Its pages sit behind sign-in, so this is what catches a crashed dashboard (2026-10-19) |
 | launchd: nightly factory backup | last run failed or not loaded |
