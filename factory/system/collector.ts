@@ -50,7 +50,7 @@ export function neonDue(lastShip: string | undefined, now: Date): boolean {
   return !lastShip || now.getTime() - new Date(lastShip).getTime() >= NEON_SHIP_MS - 60_000
 }
 
-/** Probes marked `wakesNeon` query RepoHQ's database, so they run only when shipping is due. */
+/** Probes marked `wakesNeon` query a Neon database (RepoHQ's, or a product's), so they run only when shipping is due. */
 export const HTTP_PROBES: Array<{ system: string; component: string; url: string; auth?: 'litellm'; wakesNeon?: true }> = [
   { system: 'ai-stack', component: 'litellm', url: 'http://127.0.0.1:4000/health/liveliness' },
   { system: 'ai-stack', component: 'ollama', url: 'http://127.0.0.1:11434/api/version' },
@@ -70,7 +70,9 @@ export const HTTP_PROBES: Array<{ system: string; component: string; url: string
  * the product's cron secret, read from the keychain at probe time; liveness itself is the plain HTTP probe above.
  */
 export const PRODUCT_HEALTH: Array<{ project: string; url: string; tokenService: string; adminUrl: string; wakesNeon?: true }> = [
-  { project: 'botchelor', url: 'https://botchelor.com/api/health', tokenService: 'vault/botchelor/CRON_SECRET', adminUrl: 'https://botchelor.com/admin' },
+  // Hourly: with the secret, botchelor's health check queries its Neon database, and every 5 minutes kept it awake
+  // around the clock (2026-11-01). Its public liveness probe above doesn't touch the database, so it stays every 5 minutes.
+  { project: 'botchelor', url: 'https://botchelor.com/api/health', tokenService: 'vault/botchelor/CRON_SECRET', adminUrl: 'https://botchelor.com/admin', wakesNeon: true },
   // RepoHQ reports server errors only: its pages sit behind sign-in, so a crash there never fails the liveness probe.
   { project: 'repohq', url: 'http://127.0.0.1:3200/api/health', tokenService: 'vault/repohq/CRON_SECRET', adminUrl: REPOHQ_URL, wakesNeon: true },
 ]

@@ -107,7 +107,7 @@ describe('probes', () => {
   })
   it("RepoHQ's health check queries Neon, so its probes wait for the hourly shipment", () => {
     expect(HTTP_PROBES.filter(p => p.wakesNeon).map(p => p.url)).toEqual(['http://127.0.0.1:3200/api/health'])
-    expect(PRODUCT_HEALTH.filter(p => p.wakesNeon).map(p => p.project)).toEqual(['repohq'])
+    expect(PRODUCT_HEALTH.filter(p => p.wakesNeon).map(p => p.project)).toEqual(['botchelor', 'repohq'])
   })
   it('a 402 is down, not up: the hosting account is blocked (2026-10-31: repohq.vercel.app read as healthy for hours)', () => {
     expect(probeUp(200)).toBe(true)
