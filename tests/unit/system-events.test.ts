@@ -96,6 +96,10 @@ describe('probes', () => {
     const errs = productHealthEvents('botchelor', admin, { errors: { last_hour: 3, latest: { kind: 'api', route: '/api/assets/:id', message: 'integer out of range' } } }, now)
     expect(errs[0]).toMatchObject({ event: 'errors', status: 'fail', message: expect.stringContaining('3 server errors in the last hour (latest api /api/assets/:id: integer out of range)') })
     expect(productHealthEvents('botchelor', admin, { errors: { last_hour: 0, latest: null } }, now)[0]!.status).toBe('ok')
+    // Reported companion replies wait on the admin reports page.
+    const companion = productHealthEvents('botchelor', admin, { companion_reports: { open: 2, oldest_at: '2026-11-04T18:00:00.000Z' } }, now)
+    expect(companion[0]).toMatchObject({ event: 'companion-reports', status: 'fail', message: expect.stringContaining(`2 reported companion replies waiting for review at ${admin}/reports`), data: { open: 2, oldest_at: '2026-11-04T18:00:00.000Z' } })
+    expect(productHealthEvents('botchelor', admin, { companion_reports: { open: 0, oldest_at: null } }, now)[0]).toMatchObject({ event: 'companion-reports', status: 'ok' })
   })
   it('watches Ollama by its port, not a launchd job, and RepoHQ by its health endpoint', () => {
     // Ollama.app owns :11434, so com.ollama.ollama idles while Ollama is up (false alarms until 2026-10-19).

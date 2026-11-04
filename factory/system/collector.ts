@@ -187,6 +187,8 @@ export function vercelEvents(deployments: Array<{ name: string; state?: string; 
 
 export interface ProductHealth {
   reports?: { episodes?: number; reports?: number; oldest_at?: string | null }
+  /** botchelor's companion replies people reported, waiting on /admin/reports (its docs/companions.md). */
+  companion_reports?: { open?: number; oldest_at?: string | null }
   stuck_generating?: number
   paid_dates?: { today?: number; cap?: number }
   errors?: { last_hour?: number; latest?: { kind?: string; route?: string; message?: string } | null }
@@ -194,8 +196,8 @@ export interface ProductHealth {
 
 /**
  * A product's health detail → one event per thing the owner may have to act on, each ok when there's nothing:
- * reports waiting for review, dates stuck generating, and the paid-model daily cap being reached (dates then run
- * on the free model until 00:00 UTC, which is either a good day or abuse).
+ * reports waiting for review (episodes, and companion replies), dates stuck generating, and the paid-model daily cap
+ * being reached (dates then run on the free model until 00:00 UTC, which is either a good day or abuse).
  */
 export function productHealthEvents(project: string, adminUrl: string, h: ProductHealth, now = new Date()): SystemEvent[] {
   const out: SystemEvent[] = []
@@ -204,6 +206,12 @@ export function productHealthEvents(project: string, adminUrl: string, h: Produc
     out.push(ev('vercel', project, 'reports', n === 0,
       n === 0 ? `${project}: no reports waiting` : `${project}: ${n} reported episode${n === 1 ? '' : 's'} waiting for review at ${adminUrl}`,
       n ? { episodes: n, reports: h.reports.reports ?? n, oldest_at: h.reports.oldest_at ?? null } : undefined, now))
+  }
+  if (h.companion_reports) {
+    const n = h.companion_reports.open ?? 0
+    out.push(ev('vercel', project, 'companion-reports', n === 0,
+      n === 0 ? `${project}: no companion replies reported` : `${project}: ${n} reported companion ${n === 1 ? 'reply' : 'replies'} waiting for review at ${adminUrl}/reports`,
+      n ? { open: n, oldest_at: h.companion_reports.oldest_at ?? null } : undefined, now))
   }
   if (typeof h.stuck_generating === 'number') {
     const n = h.stuck_generating
