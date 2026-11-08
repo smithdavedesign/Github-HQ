@@ -28,8 +28,9 @@ roadmap is merged. David's one step only he can do, posting, has no daily slot.
 
 David set these on 2026-10-12.
 
-- **Focus: tiebreak, then botchelor.** tiebreak was the one live product; botchelor joined on 2026-10-16, once it
-  was live on botchelor.com with the funnel beacon. The next product joins once its MVP is live.
+- **Focus: botchelor.** tiebreak was the pilot and the one live product; botchelor joined on 2026-10-16, once it
+  was live on botchelor.com with the funnel beacon. David took tiebreak out of the pilot on 2026-11-08, so its
+  daily missions stopped; it stays live on its Worker. The next product joins once its MVP is live.
 - **Finish started MVPs; start no new ones.** The weekly build slot finishes codespend and dawnlog and
   their go-lives. The 6 approved ideas wait for a first build until a focus product reaches 50 visitors
   a week. "Start build now" still works.
@@ -124,7 +125,7 @@ tiebreak becomes a proposed rule; once David accepts it, every later landing-pag
 
 The morning email opens with a Today block of at most five items, money first:
 
-- checklist steps for focus products, such as "create tiebreak's Stripe payment link";
+- checklist steps for focus products, such as "create the product's Stripe payment link";
 - the next channel to post from a launch kit, at most one post a day per product;
 - growth PRs the pipeline left for him, with why (it merges the green ones itself);
 - whether to park a product whose last two experiments moved nothing;
