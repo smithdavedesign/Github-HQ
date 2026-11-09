@@ -316,6 +316,28 @@ On 2026-10-10 the owner chose to build the idea loop now rather than after the 3
 - **After M1 merges, the idea repo is an ordinary repo.** It can join the factory's allowlist like any other, and its tests become the judge's checks.
 - **Model constraint:** private repos never go to free cloud models, so in the factory they get the local tier until better local hardware arrives. Claude Pro (in idea-build) is how they get real building quality today.
 
+## The marketing loop (posting with David's approval)
+
+Added 2026-11-09, when David asked to "create an automation to run the social media and marketing for botchelor", with approvals from his phone. It is separate from the launch kit (`bin/idea-growth.js`, which only writes `LAUNCH-KIT.md`).
+
+- **Code:** `bin/idea-market.js` runs it. `lib/market.js` holds the pure rules and has tests in `test/market.test.js`. `lib/market-io.js` handles everything outside the repo.
+- **Inputs, per product:** `ideas/<slug>/marketing.json` is the calendar: channels, cooldowns, windows and daily caps. `MARKETING-FACTS.md` holds the facts and voice that drafts are written from. `marketing-queue.json` holds the drafts and their state.
+- **launchd jobs:** `com.user.idea-market` runs a tick every 30 minutes. `com.user.idea-market-inbox` drains David's replies; its plist lives in ai-stack `launchd/`.
+- **What a tick does:**
+  - posts approved drafts, inside each community's window;
+  - drafts what's due, from 08:00 PT: Claude on the subscription with read-only tools and no free-pool fallback, and every draft checked for its tagged link, length and banned words;
+  - sends each draft to WhatsApp and Slack;
+  - checks Reddit replies every 3 hours, drafts an answer to each and forwards mod mail;
+  - after 18:00, sends that day's TikTok/Reels/Shorts kit (David uploads it);
+  - sends the numbers report on Fridays;
+  - watches pending directory listings.
+- **Approval:** David replies `mk post|edit|skip|done <n>`, `mk list` or `mk pause`. The OpenClaw plugin `mk-bridge` (ai-stack `openclaw/mk-bridge`) catches those replies. **Nothing posts without `mk post` on the exact text David saw;** a hash of that text is checked before posting.
+- **Logging:** each post is appended to `launch-log.json` and recorded in the system log under component `market`.
+- **Reddit:**
+  - It goes through David's signed-in headed browser, using gstack browse with the state file `~/.gstack/marketing/browse.json`, and 15 fetches a run at most.
+  - This Mac gets 403 from Reddit's hot and search JSON, so pinned threads are read from the subreddit's HTML.
+- **Not wired up yet:** Bluesky, Discord and X are written but waiting for accounts (`status: needs-account`).
+
 ## Operations
 
 | What | Where |
