@@ -87,6 +87,14 @@ function createOpenRouterAdapter(apiKey: string): LLMAdapter {
   }
 }
 
+// Gemini's thinking models count their reasoning against maxOutputTokens: on 2026-11-12
+// gemini-flash-latest (Gemini 3.8 Flash) spent 983 of the digest's 1024 tokens thinking and cut the
+// JSON off after 37, so every digest failed. Thinking is turned off where the model allows it. Not all
+// do: Flash-Lite rejects any thinkingConfig and Pro can't turn thinking off. Those get a 400 once, are
+// remembered here, and from then on run with their default thinking plus room for it.
+const GEMINI_THINKING_HEADROOM = 4096
+const geminiRejectsThinkingOff = new Set<string>()
+
 function createGeminiAdapter(apiKey: string): LLMAdapter {
   return {
     provider: 'gemini',
@@ -97,17 +105,25 @@ function createGeminiAdapter(apiKey: string): LLMAdapter {
         : process.env.GEMINI_MODEL_CAPABLE || PROVIDER_MODELS.gemini.capable
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
 
-      const body = {
-        contents: [{ role: 'user', parts: [{ text: user }] }],
-        systemInstruction: { parts: [{ text: system }] },
-        generationConfig: { maxOutputTokens: maxTokens },
-      }
-
-      const res = await fetch(url, {
+      const call = (thinkingOff: boolean) => fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: user }] }],
+          systemInstruction: { parts: [{ text: system }] },
+          generationConfig: thinkingOff
+            ? { maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } }
+            : { maxOutputTokens: maxTokens + GEMINI_THINKING_HEADROOM },
+        }),
       })
+
+      const tryThinkingOff = !geminiRejectsThinkingOff.has(model)
+      let res = await call(tryThinkingOff)
+      if (!res.ok && res.status === 400 && tryThinkingOff) {
+        await res.body?.cancel().catch(() => {})
+        geminiRejectsThinkingOff.add(model)
+        res = await call(false)
+      }
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: { message?: string } }
@@ -115,9 +131,11 @@ function createGeminiAdapter(apiKey: string): LLMAdapter {
       }
 
       const data = await res.json() as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>
       }
-      return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '{}'
+      const parts = data.candidates?.[0]?.content?.parts ?? []
+      const text = parts.filter(p => !p.thought).map(p => p.text ?? '').join('').trim()
+      return text || '{}'
     },
   }
 }
