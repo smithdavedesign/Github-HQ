@@ -16,7 +16,7 @@ Part of the [system overview](system-overview.md). Agents will build whole produ
 | Command | Does |
 |---|---|
 | `provision status` | which broker tokens and CLIs are ready (yes/no only) |
-| `provision neon db <repo>` | Neon project (free tier) → `DATABASE_URL` in the keychain, and in Vercel env if the project exists |
+| `provision neon db <repo>` | Neon project (free tier) → `DATABASE_URL` in the keychain, and as a secret on the repo's Cloudflare Worker if it has one (no Vercel since 2026-11) |
 | `provision vercel project <repo>` | Vercel project (Hobby) linked to the GitHub repo; pushes every value already stored for the repo |
 | `provision vercel env <repo> <KEY>` | a stored value → the repo's Vercel env (production, preview, development) |
 | `provision github secret <repo> <KEY>` | a stored value → GitHub Actions secret (value on stdin, never in argv) |
