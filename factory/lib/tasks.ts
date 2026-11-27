@@ -223,6 +223,7 @@ const REPORT_SKILL_FOCUS: Record<string, string> = {
   investigate: 'Find the root cause of the problem the request describes. Reproduce it if you can and point at the exact code responsible.',
   retro: "Look back at the last 7 days of commits (`git log --since='7 days ago' --stat`): what shipped, what's risky, what's unfinished.",
   'show-producer': showSkillGuidance('show-producer', "Act as the show's executive producer: read the season's clock, the story machinery and the show's pages, then list ranked bets (impact, effort, the file each lands in) as findings."),
+  'show-casting': showSkillGuidance('show-casting', "Act as the show's casting director: for the moves the request names (or the producer's next bets), list who can carry each from their public card, who is waiting on the record, and the one detail each creator could add, as findings."),
   'show-editor': showSkillGuidance('show-editor', "Review the show's pages the request names like an editor watching a cut, against the skill's checklist. Each finding names the file and the fix."),
 }
 

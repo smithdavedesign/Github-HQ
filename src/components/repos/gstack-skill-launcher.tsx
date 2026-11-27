@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Search, Heart, GitPullRequest, FileText, ChevronDown, ChevronUp, ChevronRight, Eye, Tv, RotateCcw, BookOpen, ShieldCheck, Clapperboard, PenLine, Image } from 'lucide-react'
+import { Search, Heart, GitPullRequest, FileText, ChevronDown, ChevronUp, ChevronRight, Eye, Tv, RotateCcw, BookOpen, ShieldCheck, Clapperboard, PenLine, Image, Users } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { queueGstackSkill } from '@/lib/actions/agent-queue'
@@ -24,7 +24,7 @@ interface SkillDef {
 }
 
 const ICON_MAP: Record<string, typeof Search> = {
-  Search, Heart, GitPullRequest, FileText, Eye, Tv, RotateCcw, BookOpen, ShieldCheck, Clapperboard, PenLine, Image,
+  Search, Heart, GitPullRequest, FileText, Eye, Tv, RotateCcw, BookOpen, ShieldCheck, Clapperboard, PenLine, Image, Users,
 }
 
 // 'Show' (the production roles) is offered only on a show repo (showSkills).

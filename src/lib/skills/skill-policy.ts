@@ -16,8 +16,8 @@ export type GstackSkill =
  * each is a SKILL.md in the repo's own `.claude/skills/<name>/`, which the factory's prompt tells the agent to follow.
  * Offered only on show repos (isShowRepo).
  */
-export type ShowSkill = 'show-producer' | 'show-writer' | 'show-assets' | 'show-editor'
-export const SHOW_SKILLS: readonly ShowSkill[] = ['show-producer', 'show-writer', 'show-assets', 'show-editor']
+export type ShowSkill = 'show-producer' | 'show-casting' | 'show-writer' | 'show-assets' | 'show-editor'
+export const SHOW_SKILLS: readonly ShowSkill[] = ['show-producer', 'show-casting', 'show-writer', 'show-assets', 'show-editor']
 
 /** Repos that run a show: tagged `show`, or Botchelor itself. */
 const SHOW_REPOS = new Set(['smithdavedesign/botchelor'])
@@ -31,6 +31,7 @@ export function isShowSkill(skill: string): skill is ShowSkill {
 export function showSkillObjectives(repoName: string): Record<ShowSkill, string> {
   return {
     'show-producer': `Read the season's clock and the show's surfaces in ${repoName} and return a ranked beat sheet: what should the show build or stage next for more drama and better visuals`,
+    'show-casting': `Rank which of ${repoName}'s cast can carry the show's next format moves, and what each creator could add to be cast`,
     'show-writer': `Punch up the show's in-world words in ${repoName} on the surface the beat sheet names, in the show's voice and every language`,
     'show-assets': `Build the next visual the show needs in ${repoName} (a share card, poster, promo cut or set), wired into its page with a test that it renders`,
     'show-editor': `Review the show's pages in ${repoName} like an editor watching a cut: does it read like TV, does it spoil, does it work on a phone and in every language`,
@@ -52,7 +53,7 @@ export function resolveAdvisorSkill(impactType: AdvisorImpactType): GstackSkill 
   return impactType === 'security' ? 'cso' : 'ship'
 }
 
-const REPORT_ONLY_SKILLS = new Set<GstackSkill>(['health', 'qa-only', 'review', 'canary', 'retro', 'show-producer', 'show-editor'])
+const REPORT_ONLY_SKILLS = new Set<GstackSkill>(['health', 'qa-only', 'review', 'canary', 'retro', 'show-producer', 'show-casting', 'show-editor'])
 
 export function resolveSkillPolicyTier(skill: GstackSkill, impactType?: AdvisorImpactType): SkillPolicyTier {
   if (REPORT_ONLY_SKILLS.has(skill)) return 'report-only'
@@ -283,6 +284,12 @@ export const SKILL_META: Record<GstackSkill, SkillMeta> = {
     description: "The executive producer: reads the season's clock and the story machinery, then returns a ranked beat sheet of bets (impact, effort, where each lands). Queue the top one as /show-writer or /show-assets.",
     icon: 'Clapperboard', iconColor: 'text-rose-500',
     typeLabel: 'Report only', typeBadgeColor: 'bg-rose-50 text-rose-600 border-rose-200',
+  },
+  'show-casting': {
+    label: '/show-casting', phase: 'Show', type: 'report',
+    description: "The casting director: who can carry which format move (hometowns, the villain edit, the cliffhanger…) from their public card, what each creator could add to be cast, and who's due a \"where are they now\".",
+    icon: 'Users', iconColor: 'text-amber-500',
+    typeLabel: 'Report only', typeBadgeColor: 'bg-amber-50 text-amber-600 border-amber-200',
   },
   'show-writer': {
     label: '/show-writer', phase: 'Show', type: 'pr',

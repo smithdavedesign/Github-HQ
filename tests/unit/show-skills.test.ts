@@ -16,6 +16,7 @@ describe('the show skills', () => {
     }
     expect(modeForSkill('show-producer')).toBe('report')
     expect(modeForSkill('show-editor')).toBe('report')
+    expect(modeForSkill('show-casting')).toBe('report')
     expect(modeForSkill('show-writer')).toBe('fix')
     expect(modeForSkill('show-assets')).toBe('fix')
     expect(isShowSkill('ship')).toBe(false)
