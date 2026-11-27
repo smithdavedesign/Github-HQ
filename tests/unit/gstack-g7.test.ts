@@ -16,13 +16,14 @@ const ALL_SKILLS: GstackSkill[] = [
   'ship', 'document-release', 'cso',
   'health', 'canary',
   'retro',
+  'show-producer', 'show-writer', 'show-assets', 'show-editor',
 ]
 
 const LIFECYCLE_PHASES = ['Understand', 'Build Quality', 'Ship', 'Monitor', 'Reflect']
 
 describe('SKILL_META — taxonomy', () => {
-  it('defines all 10 skills', () => {
-    expect(Object.keys(SKILL_META)).toHaveLength(10)
+  it('defines all 14 skills', () => {
+    expect(Object.keys(SKILL_META)).toHaveLength(14)
     for (const skill of ALL_SKILLS) {
       expect(SKILL_META).toHaveProperty(skill)
     }
@@ -52,9 +53,9 @@ describe('SKILL_META — taxonomy', () => {
 
   // Agent HQ (roadmap Phase 81): the factory turns fix skills into one judged draft PR and runs
   // every other skill as a read-only report (docs/agent-hq-migration-prd.md §8).
-  it('/ship, /qa, /document-release and /cso are the PR-creating skills', () => {
+  it('/ship, /qa, /document-release and /cso (and the show writer and assets) are the PR-creating skills', () => {
     const prSkills = ALL_SKILLS.filter(s => SKILL_META[s].type === 'pr')
-    expect(prSkills.sort()).toEqual(['cso', 'document-release', 'qa', 'ship'])
+    expect(prSkills.sort()).toEqual(['cso', 'document-release', 'qa', 'ship', 'show-assets', 'show-writer'])
   })
 
   it('/investigate is a read-only report in the factory', () => {

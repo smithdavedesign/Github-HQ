@@ -26,6 +26,8 @@ import {
   parseRepoSkillAllowlist,
   parseEnvSkillAllowlistMap,
   isSkillAllowedForRepo,
+  isShowRepo,
+  isShowSkill,
   resolveSkillPolicyTier,
   resolveConfidenceBand,
   isTierAllowedForLifecycle,
@@ -173,6 +175,10 @@ export async function enqueueRequest(input: EnqueueInput): Promise<QueueResult> 
 
   const mode = modeForSkill(input.skill)
   if (!mode) return { ok: false, reason: `/${input.skill} has no factory equivalent (it needs a browser and live network access the sandbox doesn't have).` }
+
+  if (isShowSkill(input.skill) && !isShowRepo(repo.fullName, repo.tags)) {
+    return { ok: false, reason: `/${input.skill} is a show-production skill: it runs on a repo that runs a show (tag the repo \`show\`).` }
+  }
 
   if (!input.skipSkillPolicy) {
     const allowed = isSkillAllowedForRepo(input.skill, repo.fullName, parseRepoSkillAllowlist(repo.tags), parseEnvSkillAllowlistMap(process.env.REPO_GSTACK_SKILL_ALLOWLIST_JSON))

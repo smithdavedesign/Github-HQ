@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Search, Heart, GitPullRequest, FileText, ChevronDown, ChevronUp, ChevronRight, Eye, Tv, RotateCcw, BookOpen, ShieldCheck } from 'lucide-react'
+import { Search, Heart, GitPullRequest, FileText, ChevronDown, ChevronUp, ChevronRight, Eye, Tv, RotateCcw, BookOpen, ShieldCheck, Clapperboard, PenLine, Image } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { queueGstackSkill } from '@/lib/actions/agent-queue'
@@ -24,10 +24,11 @@ interface SkillDef {
 }
 
 const ICON_MAP: Record<string, typeof Search> = {
-  Search, Heart, GitPullRequest, FileText, Eye, Tv, RotateCcw, BookOpen, ShieldCheck,
+  Search, Heart, GitPullRequest, FileText, Eye, Tv, RotateCcw, BookOpen, ShieldCheck, Clapperboard, PenLine, Image,
 }
 
-const PHASE_ORDER = ['Understand', 'Build Quality', 'Ship', 'Monitor', 'Reflect']
+// 'Show' (the production roles) is offered only on a show repo (showSkills).
+const PHASE_ORDER = ['Understand', 'Build Quality', 'Ship', 'Monitor', 'Reflect', 'Show']
 
 const SKILLS_BY_PHASE: { phase: string; skills: SkillDef[] }[] = PHASE_ORDER.map(phase => ({
   phase,
@@ -54,6 +55,8 @@ interface GstackSkillLauncherProps {
   repoId: number
   repoName: string
   defaultObjectives: Record<GstackSkill, string>
+  /** The repo runs a show (isShowRepo): offer the Show phase's production roles. */
+  showSkills?: boolean
   /** The factory takes requests for this repo (owner + allowlist); otherwise why not. */
   factoryEnabled: boolean
   factoryReason?: string | null
@@ -66,7 +69,7 @@ const POLL_MS = 15_000
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, factoryEnabled, factoryReason, canOpenFactory = false, skillHistory = {} }: GstackSkillLauncherProps) {
+export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, showSkills = false, factoryEnabled, factoryReason, canOpenFactory = false, skillHistory = {} }: GstackSkillLauncherProps) {
   // Start from the defaults on both server and client, then apply the stored choice after mount:
   // reading localStorage during render made the server and client HTML differ (hydration error).
   const [openPhases, setOpenPhases] = useState<Set<string>>(() => new Set(['Understand', 'Monitor']))
@@ -188,7 +191,7 @@ export function GstackSkillLauncher({ repoId, repoName, defaultObjectives, facto
 
   return (
     <div className="space-y-1">
-      {SKILLS_BY_PHASE.map(({ phase, skills }) => {
+      {SKILLS_BY_PHASE.filter(p => showSkills || p.phase !== 'Show').map(({ phase, skills }) => {
         const isOpen = openPhases.has(phase)
 
         return (
