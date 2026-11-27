@@ -196,12 +196,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     // ── G7: Full lifecycle gstack skill integration ───────────────────
     {
       name: 'queue_gstack_skill',
-      description: 'Queue a gstack skill for the RepoHQ factory (the only agent executor; it runs sandboxed on free models and judges every change). Fix skills open a draft PR — /ship (implement), /qa (find + fix bugs), /document-release (docs only). Report skills come back as findings, no PR — /investigate (root cause), /review (code review), /qa-only (bugs with repro), /health (code health score), /retro (weekly commits). On a show repo (tag `show`, or Botchelor) the production roles too: /show-producer (beat sheet, report), /show-writer (in-world words, PR), /show-assets (posters, promo videos, sets, PR), /show-editor (style review, report), each following the repo .claude/skills/<name>/SKILL.md. Only repos on the factory allowlist. Returns a taskId; follow it with get_active_work() or get_skill_findings().',
+      description: 'Queue a gstack skill for the RepoHQ factory (the only agent executor; it runs sandboxed on free models and judges every change). Fix skills open a draft PR — /ship (implement), /qa (find + fix bugs), /document-release (docs only). Report skills come back as findings, no PR — /investigate (root cause), /review (code review), /qa-only (bugs with repro), /health (code health score), /retro (weekly commits). On a show repo (tag `show`, or Botchelor) the production roles too: /show-producer (beat sheet, report), /show-casting (who can carry which move, report), /show-writer (in-world words, PR), /show-assets (posters, promo videos, sets, PR), /show-editor (style review, report), each following the repo .claude/skills/<name>/SKILL.md. Only repos on the factory allowlist. Returns a taskId; follow it with get_active_work() or get_skill_findings().',
       inputSchema: {
         type: 'object',
         properties: {
           repo_name: { type: 'string', description: 'Repository name (e.g. "repohq")' },
-          skill:     { type: 'string', enum: ['investigate', 'review', 'qa-only', 'qa', 'ship', 'document-release', 'health', 'retro', 'show-producer', 'show-writer', 'show-assets', 'show-editor'], description: 'gstack skill to run' },
+          skill:     { type: 'string', enum: ['investigate', 'review', 'qa-only', 'qa', 'ship', 'document-release', 'health', 'retro', 'show-producer', 'show-casting', 'show-writer', 'show-assets', 'show-editor'], description: 'gstack skill to run' },
           objective: { type: 'string', description: 'What the agent should do — defaults to a sensible objective if omitted' },
         },
         required: ['repo_name', 'skill'],

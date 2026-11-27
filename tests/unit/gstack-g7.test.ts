@@ -16,14 +16,14 @@ const ALL_SKILLS: GstackSkill[] = [
   'ship', 'document-release', 'cso',
   'health', 'canary',
   'retro',
-  'show-producer', 'show-writer', 'show-assets', 'show-editor',
+  'show-producer', 'show-casting', 'show-writer', 'show-assets', 'show-editor',
 ]
 
 const LIFECYCLE_PHASES = ['Understand', 'Build Quality', 'Ship', 'Monitor', 'Reflect']
 
 describe('SKILL_META — taxonomy', () => {
-  it('defines all 14 skills', () => {
-    expect(Object.keys(SKILL_META)).toHaveLength(14)
+  it('defines all 15 skills', () => {
+    expect(Object.keys(SKILL_META)).toHaveLength(15)
     for (const skill of ALL_SKILLS) {
       expect(SKILL_META).toHaveProperty(skill)
     }

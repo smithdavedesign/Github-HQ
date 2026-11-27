@@ -35,6 +35,7 @@ export const SKILL_MODES: Record<GstackSkill, RequestMode | null> = {
   retro: 'report',
   canary: null,
   'show-producer': 'report',
+  'show-casting': 'report',
   'show-writer': 'fix',
   'show-assets': 'fix',
   'show-editor': 'report',
