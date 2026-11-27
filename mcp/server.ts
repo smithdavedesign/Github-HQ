@@ -34,7 +34,7 @@ import path from 'node:path'
 import { overview as contextOverview, search as searchContext, type ContextIndex } from '../factory/context/index.js'
 import { OPEN_REQUEST_STATUSES, isAllowlisted, modeForSkill, newRequestRow, queuedEventValues } from '../src/lib/agents/factory-request-utils.js'
 import { requestJobOptions, withQueue } from '../factory/lib/queue.js'
-import { isGstackSkill, isSkillAllowedForRepo, parseEnvSkillAllowlistMap, parseRepoSkillAllowlist } from '../src/lib/skills/skill-policy.js'
+import { isGstackSkill, isShowRepo, isShowSkill, isSkillAllowedForRepo, showSkillObjectives, parseEnvSkillAllowlistMap, parseRepoSkillAllowlist, type GstackSkill } from '../src/lib/skills/skill-policy.js'
 import { closedPrTaskIds } from '../src/lib/agents/lifecycle-utils.js'
 import { IMPACT_TYPES, computeAccuracy, type AccuracyStat } from '../src/lib/actions/advisor-accuracy-utils.js'
 import factoryConfig from '../factory/factory.config.json'
@@ -196,12 +196,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     // ── G7: Full lifecycle gstack skill integration ───────────────────
     {
       name: 'queue_gstack_skill',
-      description: 'Queue a gstack skill for the RepoHQ factory (the only agent executor; it runs sandboxed on free models and judges every change). Fix skills open a draft PR — /ship (implement), /qa (find + fix bugs), /document-release (docs only). Report skills come back as findings, no PR — /investigate (root cause), /review (code review), /qa-only (bugs with repro), /health (code health score), /retro (weekly commits). Only repos on the factory allowlist. Returns a taskId; follow it with get_active_work() or get_skill_findings().',
+      description: 'Queue a gstack skill for the RepoHQ factory (the only agent executor; it runs sandboxed on free models and judges every change). Fix skills open a draft PR — /ship (implement), /qa (find + fix bugs), /document-release (docs only). Report skills come back as findings, no PR — /investigate (root cause), /review (code review), /qa-only (bugs with repro), /health (code health score), /retro (weekly commits). On a show repo (tag `show`, or Botchelor) the production roles too: /show-producer (beat sheet, report), /show-writer (in-world words, PR), /show-assets (posters, promo videos, sets, PR), /show-editor (style review, report), each following the repo .claude/skills/<name>/SKILL.md. Only repos on the factory allowlist. Returns a taskId; follow it with get_active_work() or get_skill_findings().',
       inputSchema: {
         type: 'object',
         properties: {
           repo_name: { type: 'string', description: 'Repository name (e.g. "repohq")' },
-          skill:     { type: 'string', enum: ['investigate', 'review', 'qa-only', 'qa', 'ship', 'document-release', 'health', 'retro'], description: 'gstack skill to run' },
+          skill:     { type: 'string', enum: ['investigate', 'review', 'qa-only', 'qa', 'ship', 'document-release', 'health', 'retro', 'show-producer', 'show-writer', 'show-assets', 'show-editor'], description: 'gstack skill to run' },
           objective: { type: 'string', description: 'What the agent should do — defaults to a sensible objective if omitted' },
         },
         required: ['repo_name', 'skill'],
@@ -964,7 +964,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'queue_gstack_skill': {
         const { repo_name, skill, objective: rawObjective } = args as {
           repo_name: string
-          skill: 'investigate' | 'review' | 'qa-only' | 'qa' | 'ship' | 'document-release' | 'health' | 'canary' | 'retro'
+          skill: GstackSkill
           objective?: string
         }
 
@@ -984,6 +984,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         if (!isGstackSkill(skill)) {
           return { content: [{ type: 'text', text: `Unknown skill "/${skill}".` }] }
+        }
+        if (isShowSkill(skill) && !isShowRepo(repo.fullName, repo.tags)) {
+          return { content: [{ type: 'text', text: `/${skill} is a show-production skill: it runs on a repo that runs a show (tag the repo \`show\`).` }] }
         }
         if (!isSkillAllowedForRepo(skill, repo.fullName, parseRepoSkillAllowlist(repo.tags), parseEnvSkillAllowlistMap(process.env.REPO_GSTACK_SKILL_ALLOWLIST_JSON))) {
           return { content: [{ type: 'text', text: `Repo policy blocks /${skill} for ${repo.fullName}. Add tag gstack-allow:${skill} (or set REPO_GSTACK_SKILL_ALLOWLIST_JSON) to allow it.` }] }
@@ -1006,6 +1009,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           health:             `Run code health check on ${repo.name} — TypeScript errors, tests, dead code, lint`,
           canary:             `Monitor ${repo.name} live app for console errors and performance issues`,
           retro:              `Summarise this week's commits and engineering patterns in ${repo.name}`,
+          ...showSkillObjectives(repo.name),
         }
         const defaultObjective = SKILL_DEFAULTS_MCP[skill] ?? `Run /${skill} on ${repo.name}`
 

@@ -6,7 +6,7 @@ import { getMyAccuracyStats } from '@/lib/actions/advisor-accuracy'
 import { RepoAdvisorSection } from '@/components/repos/repo-advisor-section'
 import { GstackSkillLauncher } from '@/components/repos/gstack-skill-launcher'
 import { SkillReportFindings } from '@/components/repos/skill-report-findings'
-import type { GstackSkill } from '@/lib/skills/skill-policy'
+import { isShowRepo, showSkillObjectives, type GstackSkill } from '@/lib/skills/skill-policy'
 import { auth } from '@/lib/auth'
 import { factoryAccess } from '@/lib/agents/factory-queue'
 import { db } from '@/lib/db'
@@ -437,6 +437,7 @@ export default async function RepoDetailPage({ params }: Props) {
               health:             `Run a full code health check on ${repo.name}${stack?.language ? ` (${stack.language})` : ''} — type checking, tests, lint, and dead code, covering whichever of these apply to this project's stack`,
               canary:             repo.homepage ? `Check ${repo.homepage} for console errors and performance issues` : `Monitor ${repo.name} deployments for errors`,
               retro:              `Summarise this week's commits and engineering patterns in ${repo.name}`,
+              ...showSkillObjectives(repo.name),
             }
 
             return (
@@ -444,6 +445,7 @@ export default async function RepoDetailPage({ params }: Props) {
                 repoId={repoId}
                 repoName={repo.name}
                 defaultObjectives={defaultObjectives}
+                showSkills={isShowRepo(repo.fullName, repo.tags)}
                 factoryEnabled={factory.ok}
                 factoryReason={factoryReason}
                 canOpenFactory={canOpenFactory}

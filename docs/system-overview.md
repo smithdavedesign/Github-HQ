@@ -43,6 +43,10 @@ left for him) and posting; each morning he reviews what the agents merged and re
 - **Where it shows:** the Ideas page's Growth card, the email's Growth section, and MCP.
 - **Until a focus product reaches 50 visitors a week,** the pipeline's own builds only finish MVPs it has started (Start build now still builds anything).
 
+**Producing a show** (since 2026-11-27, for Botchelor): gstack-style production roles a show repo keeps in its own `.claude/skills/` (`showrunner`, `show-producer`, `show-writer`, `show-assets`, `show-editor`).
+- **In a Claude Code session** they load by themselves: `showrunner` chains producer (beat sheet) → writer (words) → assets (posters, promo videos, sets) → editor (style review) → one PR.
+- **Through the factory:** RepoHQ's repo page shows a **Show** phase with `/show-producer` and `/show-editor` (reports) and `/show-writer` and `/show-assets` (draft PRs), on Botchelor or a repo tagged `show` (`isShowRepo`, `src/lib/skills/skill-policy.ts`; MCP `queue_gstack_skill` too). The factory runs `claude -p --bare`, so the prompt tells the agent to read the repo's skill file and stop if it's missing (`factory/lib/tasks.ts`).
+
 ## Where everything lives
 
 | Part | Where | What it is |

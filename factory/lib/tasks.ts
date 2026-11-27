@@ -204,6 +204,15 @@ const FIX_SKILL_GUIDANCE: Record<string, string> = {
   // The judge rejects test-file edits on owner requests (verify.ts), so the fix stays in source.
   qa: 'Find bugs in the area the request describes and fix them in the source code. Do not edit test files; every existing test must keep passing.',
   'document-release': 'Update README, docs and CHANGELOG so they match the code as it is today. Documentation files only: change no functional code.',
+  // The show-production roles (src/lib/skills/skill-policy.ts ShowSkill). The run is `claude -p --bare`, so the repo's
+  // skills don't load by themselves: the prompt points at the file.
+  'show-writer': showSkillGuidance('show-writer', "Write the show's in-world words the request asks for. Every string the site shows goes through its translations, in every language. Do not edit test files except to add one for a new line or template."),
+  'show-assets': showSkillGuidance('show-assets', "Build the visual the request asks for and wire it into the page that shows it, with a test that it renders. No new paid service, no network at run time beyond what the code already calls."),
+}
+
+/** A show skill's instructions: follow the repo's own SKILL.md for the role, and stop if the repo has none. */
+function showSkillGuidance(skill: string, task: string): string {
+  return `${task}\n\nFirst read \`.claude/skills/${skill}/SKILL.md\` (and \`.claude/skills/showrunner/SKILL.md\` for the rules that never bend) in this repo and follow it. If the file is missing, change nothing and say so.`
 }
 
 /** Agent HQ report skills: the focus of a read-only investigation (docs/agent-hq-migration-prd.md §8). */
@@ -213,6 +222,8 @@ const REPORT_SKILL_FOCUS: Record<string, string> = {
   health: 'Assess code health: typecheck errors, lint problems, failing or missing tests, dead code, outdated or vulnerable dependencies. End the summary with a 0–10 health score.',
   investigate: 'Find the root cause of the problem the request describes. Reproduce it if you can and point at the exact code responsible.',
   retro: "Look back at the last 7 days of commits (`git log --since='7 days ago' --stat`): what shipped, what's risky, what's unfinished.",
+  'show-producer': showSkillGuidance('show-producer', "Act as the show's executive producer: read the season's clock, the story machinery and the show's pages, then list ranked bets (impact, effort, the file each lands in) as findings."),
+  'show-editor': showSkillGuidance('show-editor', "Review the show's pages the request names like an editor watching a cut, against the skill's checklist. Each finding names the file and the fix."),
 }
 
 /**
